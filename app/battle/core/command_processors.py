@@ -1,5 +1,10 @@
 from typing import TYPE_CHECKING
 
+from battle.admin_utils import (
+    AdminCommandData,
+    ChangePhaseCommand,
+    ChangePhaseCommandData,
+)
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.models import (
     BanResult,
@@ -13,6 +18,13 @@ from battle.objects.models import ValueWithModifiers
 
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager
+
+
+def process_admin_command(
+    round_manager: "RoundManager", command: AdminCommandData
+) -> None:
+    if isinstance(command, ChangePhaseCommandData):
+        round_manager.to_phase(command.target_phase)
 
 
 def is_valid(context: BattlefieldContext, command: CharacterCommandData) -> bool:

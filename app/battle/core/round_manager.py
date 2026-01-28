@@ -1,6 +1,8 @@
+from battle.admin_utils import AdminCommand
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_expanders import expand_admin_command, expand_character_command
 from battle.core.command_processors import (
+    process_admin_command,
     process_ally_command,
     process_enemy_command,
 )
@@ -45,6 +47,10 @@ class RoundManager:
 
     def process_command(self, command: CommandBase) -> None:
         print(command)
+
+        if isinstance(command, AdminCommand):
+            expanded_command = expand_admin_command(command)
+            process_admin_command(self, expanded_command)
 
         elif isinstance(command, (MoveCommand, ActionCommand, ItemCommand)):
             expanded_command = expand_character_command(command)
