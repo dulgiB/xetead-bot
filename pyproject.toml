@@ -3,6 +3,7 @@ name = "xetead-bot"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "discord-py>=2.7.1",
     "gspread>=6.2.1",
     "optional>=0.0.1",
     "pytest>=9.0.3",
