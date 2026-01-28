@@ -96,3 +96,41 @@ class BattlefieldContext:
 
         return BattlefieldSlotIndex.NONE
 
+    def move_character_to(
+        self, char_id: CharacterId, to_position: BattlefieldSlotIndex
+    ):
+        char = self.characters[char_id]
+        char_pos = self.find_character_position(char_id)
+        self.position_map[char.faction][char_pos].remove(char_id)
+        self.position_map[char.faction][to_position].add(char_id)
+
+    def apply_damage(
+        self,
+        attacker_id: CharacterId,
+        target_id: CharacterId,
+        damage_value: ValueWithModifiers,
+    ):
+        target = self.characters[target_id]
+        final_value = damage_value.get_value(self, attacker_id, target_id)
+        target.status.curr_hp -= final_value
+
+        if damage_value.roll_result:
+            roll_result_str = "+".join(
+                str(roll) for roll in damage_value.roll_result.rolls
+            )
+
+        print(
+            f"[apply_damage] {attacker_id} > {target_id} | ({roll_result_str}) → -{final_value}"
+        )
+
+    def apply_heal(
+        self,
+        healer_id: CharacterId,
+        target_id: CharacterId,
+        heal_value: ValueWithModifiers,
+    ):
+        target = self.characters[target_id]
+        final_value = heal_value.get_value(self, healer_id, target_id)
+        target.status.curr_hp += final_value
+        print(f"[apply_heal] {healer_id} > {target_id} (+{final_value})")
+
