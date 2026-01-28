@@ -80,6 +80,7 @@ class BuffTargetType(str, Enum):
 
 
 class ActionType(str, Enum):
+    MOVE = "이동"
     ATTACK = "공격"
     SKILL_1 = "스킬1"
     SKILL_2 = "스킬2"
