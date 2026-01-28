@@ -12,7 +12,7 @@ from battle.core.commands.models import (
     CommandProcessResult,
 )
 from battle.exceptions import CommandValidationError
-from battle.objects.buff.buff_events import BanActionEvent
+from battle.objects.buff.buffs.buff_ban_action import BanActionEvent
 from battle.objects.define import BuffApplyTiming
 from battle.objects.models import ValueWithModifiers
 
@@ -59,19 +59,17 @@ def process_ally_command(
         attacker_buff_list = context.buff_container.get_buffs_by(
             damage_data.attacker_id, BuffApplyTiming.ON_ATTACK
         )
-        attacker_modifiers = [buff.apply() for buff in attacker_buff_list]
+        attacker_events = [buff.apply() for buff in attacker_buff_list]
 
         attack_target_buff_list = context.buff_container.get_buffs_by(
             damage_data.target_id, BuffApplyTiming.ON_HIT
         )
-        target_modifiers = [buff.apply() for buff in attack_target_buff_list]
+        target_events = [buff.apply() for buff in attack_target_buff_list]
 
         context.apply_damage(
             damage_data.attacker_id,
             damage_data.target_id,
-            ValueWithModifiers(
-                damage_data.value, attacker_modifiers + target_modifiers
-            ),
+            ValueWithModifiers(damage_data.value, attacker_events + target_events),
         )
 
     for heal_data in command.heal_list:
