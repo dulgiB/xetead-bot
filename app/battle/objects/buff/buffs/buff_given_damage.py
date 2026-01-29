@@ -1,9 +1,12 @@
 from dataclasses import dataclass
 
-from battle.objects.buff.buff_base import BuffBase, BuffValueType
+from battle.core.battlefield_context import BattlefieldContext
+from battle.core.commands.models import CommandCalculator
+from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
+from battle.objects.buff.define import BuffValueType
 from battle.objects.define import BuffApplyTiming
-from battle.objects.models import FloatValueModifier, IntValueModifier
+from battle.objects.models import CharacterId, FloatValueModifier, IntValueModifier
 
 
 @dataclass(frozen=True)
@@ -13,6 +16,18 @@ class GivenDamageModEvent(BuffEvent):
     @property
     def priority(self) -> BuffEventCalculatePriority:
         return BuffEventCalculatePriority.NORMAL
+
+    def apply(
+        self,
+        holder: CharacterId,
+        attacker_or_target: CharacterId,
+        context: BattlefieldContext,
+        calculator: CommandCalculator,
+    ) -> None:
+        for damage_data in calculator.damage_data_list:
+            if damage_data.base.attacker_id == holder:
+                damage_data.modifiers.append(self.value)
+
 
 @dataclass
 class BuffGivenDamage(BuffBase):
