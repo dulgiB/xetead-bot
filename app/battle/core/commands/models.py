@@ -4,8 +4,8 @@ from typing import Optional
 
 from battle.objects.buff.buff_base import BuffAddEvent, BuffRemoveEvent
 from battle.objects.buff.buff_events import BanActionEvent
-from battle.objects.define import ActionType, BattlefieldSlotIndex
 from battle.objects.models import BaseValueIndicator, CharacterId
+from battle.objects.define import ActionType, BattlefieldColumnIndex
 
 # user input -> parse() -> list[CommandBase] -> expand_xxx_command() ->
 # list[CommandData] -> process_xxx_command() -> list[CommandProcessResult]
@@ -18,7 +18,7 @@ class CommandBase(abc.ABC):
 @dataclass(frozen=True)
 class MoveCommand(CommandBase):
     user: CharacterId
-    to_position: BattlefieldSlotIndex
+    to_position: BattlefieldColumnIndex
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class ItemCommand(CommandBase):
 @dataclass(frozen=True)
 class MoveData:
     character_id: CharacterId
-    to_position: BattlefieldSlotIndex
+    to_position: BattlefieldColumnIndex
 
 
 @dataclass(frozen=True)

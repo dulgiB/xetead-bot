@@ -6,7 +6,7 @@ from battle.core.commands.models import (
     MoveCommand,
 )
 from battle.exceptions import CommandValidationError, error_invalid_command_format
-from battle.objects.define import ActionType, BattlefieldSlotIndex
+from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 
 # 커맨드 작성 예시
@@ -51,7 +51,7 @@ def parse(user_id: CharacterId, input_str: str) -> list[CommandBase]:
             try:
                 if match := command_format_move.match(command):
                     d = match.capturesdict()
-                    move_pos = BattlefieldSlotIndex(int(d["pos"][0]))
+                    move_pos = BattlefieldColumnIndex(int(d["pos"][0]))
                     parsed_commands.append(
                         MoveCommand(user=user_id, to_position=move_pos)
                     )

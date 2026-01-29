@@ -1,16 +1,16 @@
 from enum import Enum
 
 
-class BattlefieldSlotIndex(Enum):
+class BattlefieldColumnIndex(Enum):
     NONE = 7
 
-    SLOT_1 = 0
-    SLOT_2 = 1
-    SLOT_3 = 2
-    SLOT_4 = 3
-    SLOT_5 = 4
-    SLOT_6 = 5
-    SLOT_7 = 6
+    COL1 = 0
+    COL2 = 1
+    COL3 = 2
+    COL4 = 3
+    COL5 = 4
+    COL6 = 5
+    COL7 = 6
 
     def __str__(self):
         return str(self.value + 1)
@@ -18,19 +18,19 @@ class BattlefieldSlotIndex(Enum):
     @classmethod
     def from_str(cls, input_str: str):
         if input_str == "1열" or input_str == "1":
-            return BattlefieldSlotIndex.SLOT_1
+            return BattlefieldColumnIndex.COL1
         elif input_str == "2열" or input_str == "2":
-            return BattlefieldSlotIndex.SLOT_2
+            return BattlefieldColumnIndex.COL2
         elif input_str == "3열" or input_str == "3":
-            return BattlefieldSlotIndex.SLOT_3
+            return BattlefieldColumnIndex.COL3
         elif input_str == "4열" or input_str == "4":
-            return BattlefieldSlotIndex.SLOT_4
+            return BattlefieldColumnIndex.COL4
         elif input_str == "5열" or input_str == "5":
-            return BattlefieldSlotIndex.SLOT_5
+            return BattlefieldColumnIndex.COL5
         elif input_str == "6열" or input_str == "6":
-            return BattlefieldSlotIndex.SLOT_6
+            return BattlefieldColumnIndex.COL6
         elif input_str == "7열" or input_str == "7":
-            return BattlefieldSlotIndex.SLOT_7
+            return BattlefieldColumnIndex.COL7
         else:
             raise ValueError(input_str)
 

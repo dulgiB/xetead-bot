@@ -1,7 +1,7 @@
 import pytest
 from battle.core.commands import ActionCommand, CommandBase, MoveCommand, parse
 from battle.exceptions import CommandValidationError
-from battle.objects.define import ActionType, BattlefieldSlotIndex
+from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 
 test_character = CharacterId("테스트")
@@ -13,7 +13,7 @@ test_character = CharacterId("테스트")
         ("단순 지문", []),
         (
             "[이동/1]",
-            [MoveCommand(user=test_character, to_position=BattlefieldSlotIndex(1))],
+            [MoveCommand(user=test_character, to_position=BattlefieldColumnIndex(1))],
         ),
         (
             "[공격/대상]",

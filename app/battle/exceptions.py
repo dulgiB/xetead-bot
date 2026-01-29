@@ -1,4 +1,4 @@
-from battle.objects.define import ActionType, BattlefieldSlotIndex
+from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 
 
@@ -6,7 +6,7 @@ class CommandValidationError(Exception):
     pass
 
 
-def error_too_many_characters(pos: BattlefieldSlotIndex) -> str:
+def error_too_many_characters(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})에 이미 2명이 위치하고 있어 이동할 수 없습니다."
 
 
@@ -14,11 +14,11 @@ def error_target_does_not_exist(target_id: CharacterId) -> str:
     return f"지정한 대상({target_id.name})을 찾을 수 없습니다."
 
 
-def error_move_position_too_far(pos: BattlefieldSlotIndex) -> str:
+def error_move_position_too_far(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})가 이동 가능 범위를 벗어나 이동할 수 없습니다."
 
 
-def error_attack_position_too_far(pos: BattlefieldSlotIndex) -> str:
+def error_attack_position_too_far(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})가 공격 가능 범위를 벗어나 공격할 수 없습니다."
 
 

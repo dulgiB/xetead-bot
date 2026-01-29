@@ -7,7 +7,7 @@ from battle.core.round_manager import RoundManager, RoundPhaseType
 from battle.objects.character.combat_character import CombatCharacter, CombatStats
 from battle.objects.define import (
     ActionType,
-    BattlefieldSlotIndex,
+    BattlefieldColumnIndex,
     FactionType,
     MagicResistanceType,
 )
@@ -37,7 +37,7 @@ def test_basic():
         FactionType.ALLY,
         test_stat_preset,
     )
-    test_context.add_character(test_character, BattlefieldSlotIndex(0))
+    test_context.add_character(test_character, BattlefieldColumnIndex(0))
     print(test_context)
     print("\n=============================================\n")
 
@@ -65,8 +65,8 @@ def test_basic_attack():
         copy.deepcopy(test_stat_preset),
     )
 
-    test_context.add_character(test_character_1, BattlefieldSlotIndex(0))
-    test_context.add_character(test_character_2, BattlefieldSlotIndex(0))
+    test_context.add_character(test_character_1, BattlefieldColumnIndex(0))
+    test_context.add_character(test_character_2, BattlefieldColumnIndex(0))
 
     print(test_context)
     print("\n=============================================\n")
