@@ -2,13 +2,15 @@ from dataclasses import dataclass
 from functools import cached_property
 
 from battle.objects.buff.buff_base import BuffBase
-from battle.objects.buff.buff_events import BuffEvent
+from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming
 
 
 @dataclass(frozen=True)
 class NoDamageEvent(BuffEvent):
-    pass
+    @property
+    def priority(self) -> BuffEventCalculatePriority:
+        return BuffEventCalculatePriority.POST
 
 
 class BuffNoDamage(BuffBase):

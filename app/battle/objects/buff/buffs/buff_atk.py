@@ -1,15 +1,18 @@
 from dataclasses import dataclass
 
 from battle.objects.buff.buff_base import BuffBase, BuffValueType
-from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.define import BuffApplyTiming
 from battle.objects.models import FloatValueModifier, IntValueModifier
+from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 
 
 @dataclass(frozen=True)
 class AtkModEvent(BuffEvent):
     value: IntValueModifier | FloatValueModifier
 
+    @property
+    def priority(self) -> BuffEventCalculatePriority:
+        return BuffEventCalculatePriority.NORMAL
 
 @dataclass
 class BuffAtk(BuffBase):
