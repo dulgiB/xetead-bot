@@ -1,5 +1,5 @@
 import abc
-from dataclasses import KW_ONLY, dataclass, field
+from dataclasses import KW_ONLY, dataclass
 from typing import TYPE_CHECKING, Optional
 
 from battle.objects.buff.buff_base import BuffAddEvent, BuffRemoveEvent
@@ -65,20 +65,16 @@ class HealData:
     value: int | BaseValueIndicator
 
 
-class CommandData(abc.ABC):
-    command: CommandBase
-
-
 @dataclass(frozen=True)
-class CharacterCommandData(CommandData):
+class CommandData:
     command: CommandBase
 
     _: KW_ONLY
-    move_list: list[MoveData] = field(default_factory=list)
-    damage_list: list[DamageData] = field(default_factory=list)
-    heal_list: list[HealData] = field(default_factory=list)
-    buff_add_list: list[BuffAddEvent] = field(default_factory=list)
-    buff_remove_list: list[BuffRemoveEvent] = field(default_factory=list)
+    move_list: list[MoveData]
+    damage_list: list[DamageData]
+    heal_list: list[HealData]
+    buff_add_list: list[BuffAddEvent]
+    buff_remove_list: list[BuffRemoveEvent]
 
 
 @dataclass(frozen=True)

@@ -1,8 +1,7 @@
-import abc
-from dataclasses import dataclass
+from dataclasses import KW_ONLY, dataclass
 
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import CommandBase
+from battle.core.commands.models import CommandBase, CommandData
 
 
 class AdminCommand(CommandBase):
@@ -14,12 +13,13 @@ class ChangePhaseCommand(AdminCommand):
     target_phase: RoundPhaseType
 
 
-class AdminCommandData(abc.ABC):
+class AdminCommandData(CommandData):
     pass
 
 
 @dataclass(frozen=True)
 class ChangePhaseCommandData(AdminCommandData):
+    _: KW_ONLY
     target_phase: RoundPhaseType
 
 

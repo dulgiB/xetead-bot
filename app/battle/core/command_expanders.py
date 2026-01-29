@@ -5,8 +5,8 @@ from battle.admin_utils import (
 )
 from battle.core.commands.models import (
     ActionCommand,
-    CharacterCommandData,
     CommandBase,
+    CommandData,
     DamageData,
     ItemCommand,
     MoveCommand,
@@ -18,14 +18,22 @@ from battle.objects.models import BaseValueIndicator
 
 def expand_admin_command(command: CommandBase) -> AdminCommandData:
     if isinstance(command, ChangePhaseCommand):
-        return ChangePhaseCommandData(command.target_phase)
+        return ChangePhaseCommandData(
+            command=command,
+            target_phase=command.target_phase,
+            move_list=[],
+            damage_list=[],
+            heal_list=[],
+            buff_add_list=[],
+            buff_remove_list=[],
+        )
     else:
         raise TypeError(command)
 
 
-def expand_character_command(command: CommandBase) -> CharacterCommandData:
+def expand_character_command(command: CommandBase) -> CommandData:
     if isinstance(command, MoveCommand):
-        return CharacterCommandData(
+        return CommandData(
             command,
             move_list=[MoveData(command.user, command.to_position)],
             damage_list=[],
@@ -36,7 +44,7 @@ def expand_character_command(command: CommandBase) -> CharacterCommandData:
 
     elif isinstance(command, ActionCommand):
         if command.type_ == ActionType.ATTACK:
-            return CharacterCommandData(
+            return CommandData(
                 command,
                 move_list=[],
                 damage_list=[
@@ -51,7 +59,7 @@ def expand_character_command(command: CommandBase) -> CharacterCommandData:
                 buff_remove_list=[],
             )
         else:
-            return CharacterCommandData(
+            return CommandData(
                 command,
                 move_list=[],
                 damage_list=[],
@@ -61,7 +69,7 @@ def expand_character_command(command: CommandBase) -> CharacterCommandData:
             )
 
     elif isinstance(command, ItemCommand):
-        return CharacterCommandData(
+        return CommandData(
             command,
             move_list=[],
             damage_list=[],

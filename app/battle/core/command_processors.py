@@ -1,16 +1,8 @@
 from typing import TYPE_CHECKING
 
-from battle.admin_utils import (
-    AdminCommandData,
-    ChangePhaseCommand,
-    ChangePhaseCommandData,
-)
+from battle.admin_utils import AdminCommandData, ChangePhaseCommandData
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import (
-    BanResult,
-    CharacterCommandData,
-    CommandProcessResult,
-)
+from battle.core.commands.models import BanResult, CommandData, CommandProcessResult
 from battle.exceptions import CommandValidationError
 from battle.objects.buff.buffs.buff_ban_action import BanActionEvent
 from battle.objects.define import BuffApplyTiming
@@ -27,12 +19,12 @@ def process_admin_command(
         round_manager.to_phase(command.target_phase)
 
 
-def is_valid(context: BattlefieldContext, command: CharacterCommandData) -> bool:
+def is_valid(context: BattlefieldContext, command: CommandData) -> bool:
     return True
 
 
 def process_ally_command(
-    context: BattlefieldContext, command: CharacterCommandData
+    context: BattlefieldContext, command: CommandData
 ) -> CommandProcessResult:
     if not is_valid(context, command):
         raise CommandValidationError()
@@ -100,7 +92,5 @@ def process_ally_command(
     return CommandProcessResult(command_data=command)
 
 
-def process_enemy_command(
-    context: BattlefieldContext, command: CharacterCommandData
-) -> None:
+def process_enemy_command(context: BattlefieldContext, command: CommandData) -> None:
     pass
