@@ -1,11 +1,16 @@
 import abc
 from dataclasses import KW_ONLY, dataclass, field
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from battle.objects.buff.buff_base import BuffAddEvent, BuffRemoveEvent
-from battle.objects.buff.buff_events import BanActionEvent
+from battle.objects.buff.buff_events import BuffEvent
+from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.models import BaseValueIndicator, CharacterId
 from battle.objects.define import ActionType, BattlefieldColumnIndex
+
+if TYPE_CHECKING:
+    from battle.core.battlefield_context import BattlefieldContext
+
 
 # user input -> parse() -> list[CommandBase] -> expand_xxx_command() ->
 # list[CommandData] -> process_xxx_command() -> list[CommandProcessResult]
@@ -74,7 +79,16 @@ class CharacterCommandData(CommandData):
 @dataclass(frozen=True)
 class BanResult:
     is_banned: bool
-    source: BanActionEvent
+    source: BuffEvent
+
+
+# TODO: something intermediate that each BuffEvent can mutate
+class CharacterCommandCalculator:
+    def __init__(
+        self, command_data: CharacterCommandData, context: "BattlefieldContext"
+    ):
+        self.command_data = command_data
+        self.context = context
 
 
 @dataclass(frozen=True)
