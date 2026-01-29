@@ -1,5 +1,5 @@
 from battle.objects.buff.buff_base import BuffBase
-from battle.objects.buff.buff_events import BanActionEvent
+from battle.objects.buff.buffs.buff_ban_action import BanActionEvent
 from battle.objects.define import ActionType, BuffApplyTiming
 
 
