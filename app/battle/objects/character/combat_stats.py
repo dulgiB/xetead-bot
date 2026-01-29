@@ -12,6 +12,7 @@ class CombatStats:
         max_hp: int,
         attack_range: int,
         magic_resistance: MagicResistanceType,
+        is_magic_attacker: bool,
         max_cost: int,
         curr_hp: int = None,
     ):
@@ -20,11 +21,12 @@ class CombatStats:
         self._curr_hp = curr_hp if curr_hp is not None else max_hp
         self._max_hp = max_hp
         self._m_res = magic_resistance
+        self._is_magic_attacker = is_magic_attacker
 
         self._curr_cost = max_cost
         self._max_cost = max_cost
 
-    def __getitem__(self, item: CombatStatType):
+    def __getitem__(self, item: CombatStatType) -> int:
         if item == CombatStatType.ATK:
             return self._base_atk
         elif item == CombatStatType.RANGE:
@@ -62,3 +64,7 @@ class CombatStats:
             return FloatValueModifier(-0.1)
         else:
             raise ValueError(f"Unknown MagicResistanceType: {self._m_res}")
+
+    @property
+    def is_magic_attacker(self) -> bool:
+        return self._is_magic_attacker
