@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING
 
+from battle.objects.buff.buff_base import BuffBase
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import (
     ActionType,
@@ -21,10 +22,9 @@ class CombatCharacter:
         faction: FactionType,
         stats: CombatStats,
         *,
-        passive_skill: SkillBaseData = None,
+        passive_buff: BuffBase = None,
         skill_1: SkillBaseData = None,
         skill_2: SkillBaseData = None,
-        skill_3: SkillBaseData = None,
     ):
         self.field = field
 
@@ -32,12 +32,11 @@ class CombatCharacter:
         self.faction: FactionType = faction
         self.status: CombatStats = stats
 
-        self.passive_skill: SkillBaseData | None = passive_skill
+        self.passive_buff: BuffBase | None = passive_buff
 
         self.skills: dict[ActionType, SkillBaseData | None] = {
             ActionType.SKILL_1: skill_1,
             ActionType.SKILL_2: skill_2,
-            ActionType.SKILL_3: skill_3,
         }
 
     def __str__(self):
@@ -57,9 +56,3 @@ class CombatCharacter:
             return FactionType.ALLY
 
         raise ValueError(f"Unknown faction {self.faction}")
-
-    def apply_damage(self, value: int):
-        self.status.curr_hp -= value
-
-    def apply_heal(self, value: int):
-        self.status.curr_hp += value

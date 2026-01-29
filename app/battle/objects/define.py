@@ -83,7 +83,6 @@ class ActionType(str, Enum):
     ATTACK = "공격"
     SKILL_1 = "스킬1"
     SKILL_2 = "스킬2"
-    SKILL_3 = "스킬3"
     USE_ITEM = "아이템"
 
 
