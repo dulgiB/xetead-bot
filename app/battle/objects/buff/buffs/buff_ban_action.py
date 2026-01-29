@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from functools import cached_property
 
 from battle.objects.buff.buff_base import BuffBase
-from battle.objects.buff.buff_events import BuffEvent
+from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import ActionType, BuffApplyTiming
 
 
@@ -10,6 +10,9 @@ from battle.objects.define import ActionType, BuffApplyTiming
 class BanActionEvent(BuffEvent):
     banned_actions: list[ActionType]
 
+    @property
+    def priority(self) -> BuffEventCalculatePriority:
+        return BuffEventCalculatePriority.NORMAL
 
 class BuffBanAction(BuffBase):
     @cached_property
