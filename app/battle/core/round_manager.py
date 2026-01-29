@@ -9,8 +9,8 @@ from battle.core.command_processors import (
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
     ActionCommand,
-    CharacterCommandData,
     CommandBase,
+    CommandData,
     ItemCommand,
     MoveCommand,
 )
@@ -25,8 +25,8 @@ class RoundManager:
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
         self._acted_characters: set[CharacterId] = set()
 
-        self._ally_commands: list[CharacterCommandData] = []
-        self._enemy_commands: list[CharacterCommandData] = []
+        self._ally_commands: list[CommandData] = []
+        self._enemy_commands: list[CommandData] = []
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
