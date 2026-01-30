@@ -77,10 +77,6 @@ class CommandData:
     buff_remove_list: list[BuffRemoveEvent]
 
 
-@dataclass(frozen=True)
-class BanResult:
-    is_banned: bool
-    source: "BuffEvent"
 
 
 @dataclass
@@ -116,4 +112,3 @@ class CommandCalculator:
 @dataclass(frozen=True)
 class CommandProcessResult:
     command_data: CommandData
-    ban_result: Optional[BanResult] = None
