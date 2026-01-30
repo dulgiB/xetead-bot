@@ -8,7 +8,7 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId
-from battle.objects.skill.models import SkillBaseData
+from battle.objects.skill.models import SkillData
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -23,8 +23,8 @@ class CombatCharacter:
         stats: CombatStats,
         *,
         passive_buff: BuffBase = None,
-        skill_1: SkillBaseData = None,
-        skill_2: SkillBaseData = None,
+        skill_1: SkillData = None,
+        skill_2: SkillData = None,
     ):
         self.field = field
 
@@ -34,7 +34,7 @@ class CombatCharacter:
 
         self.passive_buff: BuffBase | None = passive_buff
 
-        self.skills: dict[ActionType, SkillBaseData | None] = {
+        self.skills: dict[ActionType, SkillData | None] = {
             ActionType.SKILL_1: skill_1,
             ActionType.SKILL_2: skill_2,
         }

@@ -4,8 +4,7 @@ from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.models import CommandCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.buff.define import BuffValueType
-from battle.objects.define import BuffApplyTiming
+from battle.objects.define import BuffApplyTiming, ValueType
 from battle.objects.models import CharacterId, FloatValueModifier, IntValueModifier
 
 
@@ -37,11 +36,11 @@ class BuffGivenDamage(BuffBase):
         return {BuffApplyTiming.ON_ATTACK}
 
     def apply(self) -> GivenDamageModEvent:
-        if self.value_type == BuffValueType.INTEGER:
+        if self.value_type == ValueType.INTEGER:
             return GivenDamageModEvent(
                 condition=self.condition, value=IntValueModifier(self.value)
             )
-        elif self.value_type == BuffValueType.PERCENT:
+        elif self.value_type == ValueType.PERCENT:
             return GivenDamageModEvent(
                 condition=self.condition, value=FloatValueModifier(self.value)
             )

@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING
 from battle.core.commands.models import CommandCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.buff.define import BuffValueType
-from battle.objects.define import BuffApplyTiming, CombatStatType
+from battle.objects.define import BuffApplyTiming, CombatStatType, ValueType
 from battle.objects.models import CharacterId, FloatValueModifier, IntValueModifier
 
 if TYPE_CHECKING:
@@ -40,12 +39,12 @@ class BuffAtk(BuffBase):
         return {BuffApplyTiming.ON_ATTACK}
 
     def apply(self) -> AtkModEvent:
-        if self.value_type == BuffValueType.INTEGER:
+        if self.value_type == ValueType.INTEGER:
             return AtkModEvent(
                 condition=self.condition,
                 value=IntValueModifier(self.value),
             )
-        elif self.value_type == BuffValueType.PERCENT:
+        elif self.value_type == ValueType.PERCENT:
             return AtkModEvent(
                 condition=self.condition,
                 value=FloatValueModifier(self.value),

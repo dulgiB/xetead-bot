@@ -48,6 +48,8 @@ class CombatStatType(str, Enum):
 
 
 class ValueSourceType(str, Enum):
+    FIXED = "고정값"
+
     STAT_ATK = "공격력 스탯"
     STAT_ATK_ROLL = "공격력 스탯 굴림"
     STAT_RANGE = "사거리 스탯"
@@ -58,6 +60,13 @@ class ValueSourceType(str, Enum):
     SELF_CURR_POSITION = "자신의 현재 위치"
     TARGET_CURR_HP = "상대의 현재 체력"
     TARGET_CURR_POSITION = "상대의 현재 위치"
+
+    GIVEN_DAMAGE = "해당 공격으로 입힌 대미지"
+
+
+class ValueType(str, Enum):
+    INTEGER = "정수"
+    PERCENT = "퍼센트"
 
 
 class MagicResistanceType(str, Enum):
