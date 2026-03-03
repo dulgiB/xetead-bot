@@ -14,16 +14,10 @@ from battle.objects.models import (
 
 
 @dataclass(frozen=True, eq=True)
-class BuffAddEvent:
+class BuffAddData:
     given_by: CharacterId
     applied_to: CharacterId
     buff_name: str
-    value: int
-
-
-@dataclass(frozen=True, eq=True)
-class BuffRemoveEvent:
-    buff_id: BuffId
 
 
 class BuffDurationCounter:

@@ -8,15 +8,25 @@ from battle.exceptions import (
     error_target_does_not_exist,
     error_too_many_characters,
 )
+from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
+from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId, ValueWithModifiers
+from battle.objects.skill.models import SkillData
+from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 
 CHARACTER_PER_COLUMN = 3
 
 
 class BattlefieldContext:
-    def __init__(self):
+    def __init__(
+        self, buff_dict: dict[str, BuffData], skill_dict: dict[str, SkillData]
+    ):
+        self._buff_dictionary: dict[str, BuffData] = buff_dict
+        self._skill_dictionary: dict[str, SkillData] = skill_dict
+
         self.characters: dict[CharacterId, CombatCharacter] = {}
 
         self.position_map: dict[
@@ -83,17 +93,43 @@ class BattlefieldContext:
         }
 
     def add_character(
-        self, character: CombatCharacter, column_idx: BattlefieldColumnIndex
+        self,
+        name: str,
+        data: CharacterDataFromSpreadsheet,
+        faction: FactionType,
+        column_idx: BattlefieldColumnIndex,
     ):
-        char_id = character.id
-        maybe_empty_slot = self.try_find_empty_slot(character.faction, column_idx)
+        char_id = CharacterId(name)
+        character = CombatCharacter(
+            self,
+            char_id,
+            faction,
+            CombatStats(
+                data.atk,
+                data.max_hp,
+                data.attack_range,
+                data.m_res,
+                data.is_magic_attacker,
+                data.max_cost,
+                data.curr_hp if data.curr_hp else None,
+            ),
+            skill_1=self._skill_dictionary[data.skill_1_id].to_skill_instance(
+                self, char_id
+            ),
+            skill_2=self._skill_dictionary[data.skill_2_id].to_skill_instance(
+                self, char_id
+            ),
+        )
+
+        passive_buff_add_data = BuffAddData(char_id, char_id, data.passive_buff_id)
+        self.buff_container.add(passive_buff_add_data)
+
+        maybe_empty_slot = self.try_find_empty_slot(faction, column_idx)
 
         if maybe_empty_slot is None:
             raise CommandValidationError(error_too_many_characters(column_idx))
 
-        self.position_map[character.faction][column_idx][maybe_empty_slot] = (
-            character.id
-        )
+        self.position_map[faction][column_idx][maybe_empty_slot] = char_id
         self.characters[char_id] = character
 
     def remove_character(self, char_id: CharacterId) -> "CombatCharacter":
@@ -173,3 +209,9 @@ class BattlefieldContext:
     def on_finish_round(self):
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
+
+    def get_buff_data_by_id(self, buff_name: str) -> BuffData:
+        return self._buff_dictionary[buff_name]
+
+    def get_skill_data_by_id(self, skill_name: str) -> SkillData:
+        return self._skill_dictionary[skill_name]

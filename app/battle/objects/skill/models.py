@@ -1,25 +1,19 @@
 import abc
-from dataclasses import KW_ONLY, dataclass, field
-from typing import TYPE_CHECKING, Optional
+import importlib
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Optional, Type
 
-from battle.core.commands.models import DamageData, HealData, MoveData
-from battle.exceptions import CommandValidationError, error_no_remaining_cost
-from battle.objects.buff.buff_base import BuffBase
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
-    ActionType,
-    CombatStatType,
     ValueSourceType,
     ValueType,
 )
-from battle.objects.models import BuffId, CharacterId
-from battle.objects.skill.target_functions import (
-    SkillTargetRule,
-    SkillTargetRuleNamed,
-)
+from battle.objects.models import CharacterId, DamageData, HealData, MoveData
+from battle.objects.skill.define import SkillValueType
+from battle.objects.skill.target_functions import SkillTargetRule
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.objects.character.combat_character import CombatCharacter
 
 
 @dataclass(frozen=True)
@@ -27,12 +21,80 @@ class SkillEffectBase(abc.ABC):
     value_source: Optional[ValueSourceType]
     value: Optional[int]
     value_type: Optional[ValueType]
-    buff_id: Optional[str]
+    buff_name: Optional[str]
+
+    @abc.abstractmethod
+    def expand(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        targets: list[CharacterId],
+    ) -> tuple[
+        list[MoveData],
+        list[DamageData],
+        list[HealData],
+        list[BuffAddData],
+    ]:
+        pass
+
+
+@dataclass(frozen=True)
+class Skill:
+    target_rule: SkillTargetRule
+    data: "SkillData"
 
 
 @dataclass(frozen=True)
 class SkillData:
     id: int
-    skill_type: ActionType
+    target_rule: str
     cost: int
     effects: list[SkillEffectBase]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, str | int]) -> "SkillData":
+        skill_effects: list[SkillEffectBase] = []
+        skill_effect_module = importlib.import_module("battle.objects.skill.effects")
+
+        for i in range(3):
+            if effect_name := data.get(f"effect_{i}"):
+                effect: Type[SkillEffectBase] = getattr(
+                    skill_effect_module, effect_name
+                )
+                value_source = (
+                    ValueSourceType(data[f"value_source_{i}"])
+                    if data[f"value_source_{i}"]
+                    else None
+                )
+                value = data[f"value_{i}"] if data[f"value_{i}"] else None
+                value_type = (
+                    SkillValueType(data[f"value_type_{i}"])
+                    if data[f"value_type_{i}"]
+                    else None
+                )
+                buff_name = data[f"buff_name_{i}"] if data[f"buff_name_{i}"] else None
+
+                skill_effects.append(
+                    effect(
+                        value_source=value_source,
+                        value=value,
+                        value_type=value_type,
+                        buff_name=buff_name,
+                    )
+                )
+
+        return SkillData(
+            id=data["id"],
+            target_rule=data["target_rule"],
+            cost=data["cost"],
+            effects=skill_effects,
+        )
+
+    def to_skill_instance(
+        self, context: "BattlefieldContext", holder: CharacterId
+    ) -> Skill:
+        target_rule_module = importlib.import_module(
+            "battle.objects.skill.target_functions"
+        )
+        rule: Type[SkillTargetRule] = getattr(target_rule_module, self.target_rule)
+        return Skill(target_rule=rule(context, holder), data=self)

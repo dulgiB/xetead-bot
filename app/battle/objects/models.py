@@ -2,7 +2,11 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
-from battle.objects.define import CombatStatType, ValueSourceType
+from battle.objects.define import (
+    BattlefieldColumnIndex,
+    CombatStatType,
+    ValueSourceType,
+)
 from utils.dice import DiceRollResult, nd6
 
 if TYPE_CHECKING:
@@ -115,3 +119,22 @@ class ValueWithModifiers:
             pass
 
         raise TypeError(type(self.base_value))
+
+@dataclass(frozen=True)
+class MoveData:
+    character_id: CharacterId
+    to_position: BattlefieldColumnIndex
+
+
+@dataclass(frozen=True)
+class DamageData:
+    attacker_id: CharacterId
+    target_id: CharacterId
+    value: int | BaseValueIndicator
+
+
+@dataclass(frozen=True)
+class HealData:
+    healer_id: CharacterId
+    target_id: CharacterId
+    value: int | BaseValueIndicator

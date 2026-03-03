@@ -13,6 +13,8 @@ if TYPE_CHECKING:
 
 @dataclass
 class BuffData:
+    id: str
+
     # 클래스 명칭과 동일
     buff_name: str
 
@@ -21,12 +23,27 @@ class BuffData:
     duration_value: int
 
     # 값 (정수 or 퍼센트, 보너스)
-    value_type: Optional[ValueType] = None
-    value: int = 0
+    value_type: Optional[ValueType]
+    value: int
 
     # 적용 조건
-    condition_: Optional[str] = None
-    condition_value: Optional[int] = None
+    condition_: Optional[str]
+    condition_value: Optional[int]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, str | int]) -> "BuffData":
+        return BuffData(
+            id=data["id"],
+            buff_name=data["buff_name"],
+            duration_type=BuffDurationType(data["duration_type"]),
+            duration_value=data["duration_value"],
+            value_type=ValueType(data["value_type"]) if data["value_type"] else None,
+            value=data["value"] if data["value_type"] else 0,
+            condition_=data["condition"] if data["condition"] else None,
+            condition_value=data["condition_value"]
+            if data["condition_value"]
+            else None,
+        )
 
     @property
     def condition(self) -> Optional[Condition]:

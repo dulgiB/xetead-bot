@@ -2,13 +2,15 @@ import abc
 from dataclasses import KW_ONLY, dataclass
 from typing import TYPE_CHECKING, Optional
 
-from battle.objects.buff.buff_base import BuffAddEvent, BuffRemoveEvent
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import (
-    BaseValueIndicator,
     CharacterId,
+    DamageData,
     FloatValueModifier,
+    HealData,
     IntValueModifier,
+    MoveData,
 )
 
 if TYPE_CHECKING:
@@ -46,26 +48,6 @@ class ItemCommand(CommandBase):
 
 
 @dataclass(frozen=True)
-class MoveData:
-    character_id: CharacterId
-    to_position: BattlefieldColumnIndex
-
-
-@dataclass(frozen=True)
-class DamageData:
-    attacker_id: CharacterId
-    target_id: CharacterId
-    value: int | BaseValueIndicator
-
-
-@dataclass(frozen=True)
-class HealData:
-    healer_id: CharacterId
-    target_id: CharacterId
-    value: int | BaseValueIndicator
-
-
-@dataclass(frozen=True)
 class CommandData:
     command: CommandBase
 
@@ -73,8 +55,7 @@ class CommandData:
     move_list: list[MoveData]
     damage_list: list[DamageData]
     heal_list: list[HealData]
-    buff_add_list: list[BuffAddEvent]
-    buff_remove_list: list[BuffRemoveEvent]
+    buff_add_list: list[BuffAddData]
 
 
 @dataclass(frozen=True)
