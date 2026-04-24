@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import cached_property
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.models import (
@@ -41,13 +40,9 @@ class DamageOverTimeEvent(BuffEvent):
 
 
 class BuffDamageOverTime(BuffBase):
-    def __init__(self, **kwargs):
-        super(BuffDamageOverTime, self).__init__(**kwargs)
-        self._value = self.value
-
-    @cached_property
+    @property
     def timing(self) -> set[BuffApplyTiming]:
         return {BuffApplyTiming.ROUND_END}
 
-    def apply(self) -> DamageOverTimeEvent:
+    def create_event(self) -> DamageOverTimeEvent:
         return DamageOverTimeEvent(condition=self.condition, value=self.value)

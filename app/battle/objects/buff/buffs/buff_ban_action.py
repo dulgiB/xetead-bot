@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import cached_property
 from typing import TYPE_CHECKING
 
 from battle.core.commands.models import CommandCalculator
@@ -31,11 +30,11 @@ class BanActionEvent(BuffEvent):
 
 
 class BuffBanAction(BuffBase):
-    @cached_property
+    @property
     def timing(self) -> set[BuffApplyTiming]:
         return {BuffApplyTiming.ON_ATTACK, BuffApplyTiming.ON_MOVE}
 
-    def apply(self) -> BanActionEvent:
+    def create_event(self) -> BanActionEvent:
         return BanActionEvent(
             condition=self.condition,
             banned_actions=[
@@ -43,7 +42,6 @@ class BuffBanAction(BuffBase):
                 ActionType.ATTACK,
                 ActionType.SKILL_1,
                 ActionType.SKILL_2,
-                ActionType.SKILL_3,
                 ActionType.USE_ITEM,
             ],
         )

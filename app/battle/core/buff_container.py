@@ -47,9 +47,8 @@ class BuffContainer:
                 buffs_to_remove.append(buff)
 
         if buffs_to_remove:
-            remove_buff_list = [buff.id for buff in buffs_to_remove]
-            for buff in remove_buff_list:
+            for buff in buffs_to_remove:
                 self._buffs.remove(buff)
-            return remove_buff_list
+            return [buff.id for buff in buffs_to_remove]
 
         return []

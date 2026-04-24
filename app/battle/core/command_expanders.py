@@ -25,7 +25,6 @@ def expand_admin_command(command: CommandBase) -> AdminCommandData:
             damage_list=[],
             heal_list=[],
             buff_add_list=[],
-            buff_remove_list=[],
         )
     else:
         raise TypeError(command)
@@ -39,7 +38,6 @@ def expand_character_command(command: CommandBase) -> CommandData:
             damage_list=[],
             heal_list=[],
             buff_add_list=[],
-            buff_remove_list=[],
         )
 
     elif isinstance(command, ActionCommand):
@@ -56,7 +54,6 @@ def expand_character_command(command: CommandBase) -> CommandData:
                 ],
                 heal_list=[],
                 buff_add_list=[],
-                buff_remove_list=[],
             )
         else:
             return CommandData(
@@ -65,7 +62,6 @@ def expand_character_command(command: CommandBase) -> CommandData:
                 damage_list=[],
                 heal_list=[],
                 buff_add_list=[],
-                buff_remove_list=[],
             )
 
     elif isinstance(command, ItemCommand):
@@ -75,7 +71,6 @@ def expand_character_command(command: CommandBase) -> CommandData:
             damage_list=[],
             heal_list=[],
             buff_add_list=[],
-            buff_remove_list=[],
         )
 
     else:

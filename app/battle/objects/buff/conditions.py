@@ -31,6 +31,9 @@ class IsInSameColumnCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
+        if attacker_or_target is None:
+            return False
+
         return context.find_character_position(
             holder
         ) == context.find_character_position(attacker_or_target)

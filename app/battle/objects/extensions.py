@@ -22,8 +22,6 @@ def to_cost(action_type: ActionType) -> int:
         return 2
     elif action_type == ActionType.SKILL_2:
         return 3
-    elif action_type == ActionType.SKILL_3:
-        return 4
     elif action_type == ActionType.USE_ITEM:
         return 1
     else:

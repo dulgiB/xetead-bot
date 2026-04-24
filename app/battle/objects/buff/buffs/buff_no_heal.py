@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import cached_property
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.models import CommandCalculator
@@ -33,9 +32,9 @@ class NoHealEvent(BuffEvent):
 
 
 class BuffNoHeal(BuffBase):
-    @cached_property
+    @property
     def timing(self) -> set[BuffApplyTiming]:
         return {BuffApplyTiming.ON_RECEIVE_HEAL}
 
-    def apply(self) -> NoHealEvent:
+    def create_event(self) -> NoHealEvent:
         return NoHealEvent(condition=self.condition)

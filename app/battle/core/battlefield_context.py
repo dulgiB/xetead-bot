@@ -169,9 +169,18 @@ class BattlefieldContext:
         self, char_id: CharacterId, to_position: BattlefieldColumnIndex
     ):
         char = self.characters[char_id]
-        char_pos = self.find_character_position(char_id)
-        self.position_map[char.faction][char_pos].remove(char_id)
-        self.position_map[char.faction][to_position].add(char_id)
+        if empty_slot := self.try_find_empty_slot(char.faction, to_position):
+            char_pos = self.find_character_position(char_id)
+            for slot_idx, character in self.position_map[char.faction][
+                char_pos
+            ].items():
+                if character == char.id:
+                    self.position_map[char.faction][char_pos].pop(slot_idx)
+                    break
+            self.position_map[char.faction][to_position][empty_slot] = char_id
+
+        else:
+            raise CommandValidationError(error_too_many_characters(to_position))
 
     def apply_damage(
         self,
@@ -187,10 +196,11 @@ class BattlefieldContext:
             roll_result_str = "+".join(
                 str(roll) for roll in damage_value.roll_result.rolls
             )
-
-        print(
-            f"[apply_damage] {attacker_id} > {target_id} | ({roll_result_str}) → -{final_value}"
-        )
+            print(
+                f"[apply_damage] {attacker_id} > {target_id} | ({roll_result_str}) → -{final_value}"
+            )
+        else:
+            print(f"[apply_damage] {attacker_id} > {target_id} | -{final_value}")
 
     def apply_heal(
         self,

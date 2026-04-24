@@ -1,5 +1,6 @@
 import pytest
-from battle.core.commands import ActionCommand, CommandBase, MoveCommand, parse
+from battle.core.commands.models import ActionCommand, CommandBase, MoveCommand
+from battle.core.commands.parser import parse
 from battle.exceptions import CommandValidationError
 from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId
@@ -67,14 +68,6 @@ test_character = CharacterId("테스트")
                         CharacterId("대상 3"),
                         CharacterId("대상4"),
                     ],
-                )
-            ],
-        ),
-        (
-            "[스킬3] 지문 12345",
-            [
-                ActionCommand(
-                    user=test_character, type_=ActionType.SKILL_3, targets=None
                 )
             ],
         ),

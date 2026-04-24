@@ -35,10 +35,11 @@ class AtkModEvent(BuffEvent):
 class BuffAtk(BuffBase):
     """공격력 증가/감소"""
 
+    @property
     def timing(self) -> set[BuffApplyTiming]:
         return {BuffApplyTiming.ON_ATTACK}
 
-    def apply(self) -> AtkModEvent:
+    def create_event(self) -> AtkModEvent:
         if self.value_type == ValueType.INTEGER:
             return AtkModEvent(
                 condition=self.condition,

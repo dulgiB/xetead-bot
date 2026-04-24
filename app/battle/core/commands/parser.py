@@ -51,7 +51,7 @@ def parse(user_id: CharacterId, input_str: str) -> list[CommandBase]:
             try:
                 if match := command_format_move.match(command):
                     d = match.capturesdict()
-                    move_pos = BattlefieldColumnIndex(int(d["pos"][0]))
+                    move_pos = BattlefieldColumnIndex.from_str(d["pos"][0])
                     parsed_commands.append(
                         MoveCommand(user=user_id, to_position=move_pos)
                     )

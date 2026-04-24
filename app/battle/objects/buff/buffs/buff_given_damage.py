@@ -32,10 +32,11 @@ class GivenDamageModEvent(BuffEvent):
 class BuffGivenDamage(BuffBase):
     """주는 대미지 증가/감소"""
 
+    @property
     def timing(self) -> set[BuffApplyTiming]:
         return {BuffApplyTiming.ON_ATTACK}
 
-    def apply(self) -> GivenDamageModEvent:
+    def create_event(self) -> GivenDamageModEvent:
         if self.value_type == ValueType.INTEGER:
             return GivenDamageModEvent(
                 condition=self.condition, value=IntValueModifier(self.value)

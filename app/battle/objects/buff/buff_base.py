@@ -80,5 +80,5 @@ class BuffBase(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def apply(self) -> BuffEvent:
+    def create_event(self) -> BuffEvent:
         pass
