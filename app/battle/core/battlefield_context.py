@@ -156,7 +156,7 @@ class BattlefieldContext:
 
     def find_character_position(self, char_id: CharacterId) -> BattlefieldColumnIndex:
         if char_id not in self.characters.keys():
-            raise ValueError(error_target_does_not_exist(char_id))
+            raise CommandValidationError(error_target_does_not_exist(char_id))
 
         char = self.characters[char_id]
         for column_idx, characters in self.position_map[char.faction].items():
@@ -169,18 +169,20 @@ class BattlefieldContext:
         self, char_id: CharacterId, to_position: BattlefieldColumnIndex
     ):
         char = self.characters[char_id]
-        if empty_slot := self.try_find_empty_slot(char.faction, to_position):
-            char_pos = self.find_character_position(char_id)
-            for slot_idx, character in self.position_map[char.faction][
-                char_pos
-            ].items():
-                if character == char.id:
-                    self.position_map[char.faction][char_pos].pop(slot_idx)
-                    break
-            self.position_map[char.faction][to_position][empty_slot] = char_id
+        char_pos = self.find_character_position(char_id)
+        empty_slot = self.try_find_empty_slot(char.faction, to_position)
 
-        else:
+        # is_valid에서 사전 검증되었으므로 None 케이스는 발생하지 않는다.
+        # 단, 버프에 의한 강제 이동(스킬 효과 등)은 is_valid를 거치지 않으므로
+        # 방어적으로 체크를 유지한다.
+        if empty_slot is None:
             raise CommandValidationError(error_too_many_characters(to_position))
+
+        for slot_idx, character in self.position_map[char.faction][char_pos].items():
+            if character == char.id:
+                self.position_map[char.faction][char_pos].pop(slot_idx)
+                break
+        self.position_map[char.faction][to_position][empty_slot] = char_id
 
     def apply_damage(
         self,

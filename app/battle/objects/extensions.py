@@ -1,3 +1,5 @@
+from battle.core.battlefield_context import BattlefieldContext
+from battle.core.commands.models import ActionCommand, CommandBase, MoveCommand
 from battle.objects.define import ActionType, ElementType
 from battle.objects.models import FloatValueModifier
 
@@ -15,14 +17,23 @@ def get_bonus_damage(
     return FloatValueModifier(0)
 
 
-def to_cost(action_type: ActionType) -> int:
-    if action_type == ActionType.ATTACK:
-        return 1
-    elif action_type == ActionType.SKILL_1:
-        return 2
-    elif action_type == ActionType.SKILL_2:
-        return 3
-    elif action_type == ActionType.USE_ITEM:
-        return 1
-    else:
-        raise ValueError(action_type)
+def to_cost(command: CommandBase, context: BattlefieldContext) -> int:
+    if isinstance(command, MoveCommand):
+        user_pos = context.find_character_position(command.user)
+        if user_pos:
+            return abs(user_pos.value - command.to_position.value)
+
+    # TODO: MoveCommand를 따로 쓰면 ActionType.MOVE 가 애매함
+    elif isinstance(command, ActionCommand):
+        if command.type_ == ActionType.ATTACK:
+            return 1
+        elif command.type_ == ActionType.SKILL_1:
+            return 2
+        elif command.type_ == ActionType.SKILL_2:
+            return 3
+        elif command.type_ == ActionType.USE_ITEM:
+            return 1
+        else:
+            raise ValueError(command.type_)
+
+    return 0
