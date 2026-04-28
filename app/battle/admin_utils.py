@@ -1,11 +1,11 @@
-from dataclasses import KW_ONLY, dataclass
+from dataclasses import dataclass
 
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import CommandPartBase, CommandPartData
+from battle.core.commands.models import CommandPart
 
 
 # Admin은 파트 단위로 커맨드를 입력하지 않으므로 커맨드 = 파트
-class AdminCommand(CommandPartBase):
+class AdminCommand(CommandPart):
     pass
 
 

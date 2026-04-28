@@ -1,19 +1,13 @@
 from battle.admin_utils import AdminCommand
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.command_expanders import expand_admin_command, expand_character_command
+from battle.core.command_expanders import expand_admin_command
 from battle.core.command_processors import (
     process_admin_command,
     process_ally_command,
     process_enemy_command,
 )
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import (
-    ActionCommandPart,
-    CharacterCommand,
-    CommandPartBase,
-    CommandPartData,
-    ItemCommandPart,
-)
+from battle.core.commands.models import CharacterCommand, CommandPartData
 from battle.exceptions import CommandValidationError
 from battle.objects.define import FactionType
 from battle.objects.models import CharacterId
@@ -38,7 +32,7 @@ class RoundManager:
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
             pass
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
-            self._context.buff_container.on_round_end()
+            self._context.on_finish_round()
             self._acted_characters.clear()
             self._ally_commands.clear()
             self._enemy_commands.clear()

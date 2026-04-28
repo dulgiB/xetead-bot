@@ -3,6 +3,7 @@ from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager, RoundPhaseType
 from battle.objects.define import (
+    ActionType,
     BattlefieldColumnIndex,
     FactionType,
     MagicResistanceType,
@@ -34,7 +35,9 @@ def test_basic_attack():
     test_context.clear()
     print()
 
-    test_manager.process_command(ChangePhaseCommand(RoundPhaseType.ALLY_ACTION))
+    test_manager.process_command(
+        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+    )
     test_context.add_character(
         _get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
@@ -45,7 +48,6 @@ def test_basic_attack():
     print(test_context)
     print("\n=============================================\n")
 
-    test_manager.to_phase(RoundPhaseType.ALLY_ACTION)
     test_command = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]")
     test_manager.process_command(test_command)
     print(test_context)

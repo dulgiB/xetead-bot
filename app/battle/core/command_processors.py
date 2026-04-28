@@ -31,8 +31,8 @@ if TYPE_CHECKING:
 def process_admin_command(
     round_manager: "RoundManager", expanded_command: CommandPartData
 ) -> None:
-    if isinstance(expanded_command, ChangePhaseCommand):
-        round_manager.to_phase(expanded_command.target_phase)
+    if expanded_command.admin_target_phase:
+        round_manager.to_phase(expanded_command.admin_target_phase)
 
 
 def process_ally_command(
@@ -69,6 +69,7 @@ def process_ally_command(
                     original_part=part_data.original_part, ban_result=maybe_ban_result
                 )
             )
+            continue
 
         # 2. 이동
         for move_data in calculator.data.move_list:
@@ -124,13 +125,14 @@ def process_ally_command(
         for buff_add_event in part_data.buff_add_list:
             context.buff_container.add(buff_add_event)
 
-        # 코스트 차감 - 검증 통과 후 실제 처리 시점에 차감
-        user = context.characters[command.user_id]
-        user.status.remaining_cost -= needed_cost
+    # 코스트 차감 - 검증 통과 후 실제 처리 시점에 차감
+    user = context.characters[command.user_id]
+    user.status.remaining_cost -= needed_cost
 
     return CommandProcessResult(original_command=command, part_results=results_per_part)
 
 
+# TODO
 def process_enemy_command(
     context: BattlefieldContext, command: CharacterCommand
 ) -> None:

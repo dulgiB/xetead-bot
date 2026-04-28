@@ -1,12 +1,7 @@
 from typing import Optional
 
 import regex
-from battle.core.commands.models import (
-    ActionCommandPart,
-    CharacterCommand,
-    CommandPartBase,
-    ItemCommandPart,
-)
+from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.exceptions import CommandValidationError, error_invalid_command_format
 from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId
@@ -49,7 +44,7 @@ def parse_character_command(
         d = match.capturesdict()
         command_str = d["command"][0].strip()
         command_list = command_str.split("-")
-        parts: list[CommandPartBase] = []
+        parts: list[CommandPart] = []
 
         for command in command_list:
             try:
@@ -57,7 +52,7 @@ def parse_character_command(
                     d = match.capturesdict()
                     move_pos = BattlefieldColumnIndex.from_str(d["pos"][0])
                     parts.append(
-                        ActionCommandPart(
+                        CommandPart(
                             type_=ActionType.MOVE,
                             target_positions=[move_pos],
                         )
@@ -66,15 +61,13 @@ def parse_character_command(
                 elif match := command_format_skill_no_target.match(command):
                     d = match.capturesdict()
                     skill_type = ActionType(d["skill_type"][0])
-                    parts.append(
-                        ActionCommandPart(type_=skill_type, target_characters=None)
-                    )
+                    parts.append(CommandPart(type_=skill_type))
 
                 elif match := command_format_attack.match(command):
                     d = match.capturesdict()
                     attack_target = d["target"][0].strip()
                     parts.append(
-                        ActionCommandPart(
+                        CommandPart(
                             type_=ActionType.ATTACK,
                             target_characters=[CharacterId(attack_target)],
                         )
@@ -96,7 +89,7 @@ def parse_character_command(
                             character_targets.append(CharacterId(target.strip()))
 
                     parts.append(
-                        ActionCommandPart(
+                        CommandPart(
                             type_=skill_type,
                             target_positions=column_targets,
                             target_characters=character_targets,
@@ -111,7 +104,13 @@ def parse_character_command(
                     else:
                         # 대상을 명시하지 않으면 자신에게 사용한 것으로 간주
                         targets = [user_id]
-                    parts.append(ItemCommandPart(item_name=item_name, targets=targets))
+                    parts.append(
+                        CommandPart(
+                            type_=ActionType.USE_ITEM,
+                            item_name=item_name,
+                            target_characters=targets,
+                        )
+                    )
 
             except ValueError as e:
                 print(e)

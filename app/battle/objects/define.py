@@ -89,6 +89,7 @@ class BuffTargetType(str, Enum):
 
 
 class ActionType(str, Enum):
+    ADMIN = "시스템 커맨드"
     MOVE = "이동"
     ATTACK = "공격"
     SKILL_1 = "스킬1"

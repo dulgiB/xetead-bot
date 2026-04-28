@@ -27,32 +27,22 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class CharacterCommand:
     user_id: CharacterId
-    parts: list["CommandPartBase"]
+    parts: list["CommandPart"]
 
 
 @dataclass(frozen=True)
-class CommandPartBase(abc.ABC):
-    pass
-
-
-@dataclass(frozen=True)
-class ActionCommandPart(CommandPartBase):
+class CommandPart:
     type_: ActionType
-    target_positions: Optional[list[BattlefieldColumnIndex]] = field(
-        default_factory=list
-    )
-    target_characters: Optional[list[CharacterId]] = field(default_factory=list)
 
-
-@dataclass(frozen=True)
-class ItemCommandPart(CommandPartBase):
-    item_name: str
-    targets: Optional[list[CharacterId]]
+    _: KW_ONLY
+    target_positions: list[BattlefieldColumnIndex] = field(default_factory=list)
+    target_characters: list[CharacterId] = field(default_factory=list)
+    item_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class CommandPartData:
-    original_part: CommandPartBase
+    original_part: CommandPart
 
     _: KW_ONLY
     move_list: list[MoveData]
@@ -101,7 +91,8 @@ class CommandPartCalculator:
 
 @dataclass(frozen=True)
 class CommandPartProcessResult:
-    original_part: CommandPartBase
+    original_part: CommandPart
+    expanded_part: CommandPartData
     ban_result: Optional[BanResult] = None
 
 

@@ -1,11 +1,7 @@
 import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_processors import try_expansion_if_valid
-from battle.core.commands.models import (
-    ActionCommandPart,
-    CharacterCommand,
-    CommandPartBase,
-)
+from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.exceptions import CommandValidationError
@@ -26,7 +22,7 @@ test_manager = RoundManager(test_context)
             CharacterCommand(
                 user_id=test_character,
                 parts=[
-                    ActionCommandPart(
+                    CommandPart(
                         type_=ActionType.MOVE,
                         target_positions=[BattlefieldColumnIndex(0)],
                     )
@@ -38,7 +34,7 @@ test_manager = RoundManager(test_context)
             CharacterCommand(
                 user_id=test_character,
                 parts=[
-                    ActionCommandPart(
+                    CommandPart(
                         type_=ActionType.ATTACK,
                         target_characters=[CharacterId("대상")],
                     )
@@ -50,7 +46,7 @@ test_manager = RoundManager(test_context)
             CharacterCommand(
                 user_id=test_character,
                 parts=[
-                    ActionCommandPart(
+                    CommandPart(
                         type_=ActionType.ATTACK,
                         target_characters=[CharacterId("띄어쓰기가 있는 대상")],
                     )
@@ -62,7 +58,7 @@ test_manager = RoundManager(test_context)
             CharacterCommand(
                 user_id=test_character,
                 parts=[
-                    ActionCommandPart(
+                    CommandPart(
                         type_=ActionType.ATTACK,
                         target_characters=[
                             CharacterId("띄어쓰기와 숫자 표기가 있는 대상 1")
@@ -76,7 +72,7 @@ test_manager = RoundManager(test_context)
             CharacterCommand(
                 user_id=test_character,
                 parts=[
-                    ActionCommandPart(
+                    CommandPart(
                         type_=ActionType.SKILL_1,
                         target_characters=[CharacterId("대상1")],
                     )
@@ -88,7 +84,7 @@ test_manager = RoundManager(test_context)
             CharacterCommand(
                 user_id=test_character,
                 parts=[
-                    ActionCommandPart(
+                    CommandPart(
                         type_=ActionType.SKILL_2,
                         target_characters=[
                             CharacterId("대상1"),
@@ -105,7 +101,7 @@ test_manager = RoundManager(test_context)
             CharacterCommand(
                 user_id=test_character,
                 parts=[
-                    ActionCommandPart(
+                    CommandPart(
                         type_=ActionType.SKILL_1,
                         target_positions=[BattlefieldColumnIndex(0)],
                     )
@@ -114,7 +110,7 @@ test_manager = RoundManager(test_context)
         ),
     ],
 )
-def test_parse_smoke(command: str, expected_output: CommandPartBase):
+def test_parse_smoke(command: str, expected_output: CommandPart):
     parsed_command = parse_character_command(test_character, command)
     assert parsed_command == expected_output
 

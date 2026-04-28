@@ -219,10 +219,8 @@ class BattlefieldContext:
         target.status.curr_hp += final_value
         print(f"[apply_heal] {healer_id} > {target_id} (+{final_value})")
 
-    def on_finish_turn(self, char_id: CharacterId):
-        pass
-
     def on_finish_round(self):
+        self.buff_container.on_round_end()
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
 

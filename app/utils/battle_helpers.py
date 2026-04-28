@@ -1,4 +1,4 @@
-from battle.core.battlefield_context import BattlefieldColumnIndex
+from battle.objects.define import BattlefieldColumnIndex
 
 
 def is_reachable(

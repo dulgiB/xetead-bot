@@ -57,6 +57,6 @@ if __name__ == "__main__":
     }
 
     for name, faction_type, column_idx in characters_to_add:
-        context.add_character(name, character_data_dict[name], faction_type, column_idx)
+        context.add_character(character_data_dict[name], faction_type, column_idx)
 
     print(context)
