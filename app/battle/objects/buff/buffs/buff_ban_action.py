@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from battle.core.commands.models import CommandCalculator
+from battle.core.commands.models import CommandPartCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import ActionType, BuffApplyTiming
@@ -24,7 +24,7 @@ class BanActionEvent(BuffEvent):
         holder: CharacterId,
         attacker_or_target: CharacterId,
         context: "BattlefieldContext",
-        calculator: CommandCalculator,
+        calculator: CommandPartCalculator,
     ) -> None:
         calculator.ban_event_list.append(self)
 

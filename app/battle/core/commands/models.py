@@ -1,8 +1,10 @@
 import abc
-from dataclasses import KW_ONLY, dataclass
+from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Optional
 
+from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import (
     CharacterId,
@@ -16,46 +18,49 @@ from battle.objects.models import (
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.buff.buff_events import BuffEvent
-    from battle.objects.character.buffed_stats import BuffedStats
 
 
 # user input -> parse() -> list[CommandBase] -> expand_xxx_command() ->
 # list[CommandData] -> process_xxx_command() -> list[CommandProcessResult]
 
 
-class CommandBase(abc.ABC):
-    user: CharacterId
+@dataclass(frozen=True)
+class CharacterCommand:
+    user_id: CharacterId
+    parts: list["CommandPartBase"]
 
 
 @dataclass(frozen=True)
-class MoveCommand(CommandBase):
-    user: CharacterId
-    to_position: BattlefieldColumnIndex
+class CommandPartBase(abc.ABC):
+    pass
 
 
 @dataclass(frozen=True)
-class ActionCommand(CommandBase):
-    user: CharacterId
+class ActionCommandPart(CommandPartBase):
     type_: ActionType
-    targets: Optional[list[CharacterId]]
+    target_positions: Optional[list[BattlefieldColumnIndex]] = field(
+        default_factory=list
+    )
+    target_characters: Optional[list[CharacterId]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
-class ItemCommand(CommandBase):
-    user: CharacterId
+class ItemCommandPart(CommandPartBase):
     item_name: str
     targets: Optional[list[CharacterId]]
 
 
 @dataclass(frozen=True)
-class CommandData:
-    command: CommandBase
+class CommandPartData:
+    original_part: CommandPartBase
 
     _: KW_ONLY
     move_list: list[MoveData]
     damage_list: list[DamageData]
     heal_list: list[HealData]
     buff_add_list: list[BuffAddData]
+
+    admin_target_phase: Optional[RoundPhaseType] = None
 
 
 @dataclass(frozen=True)
@@ -76,9 +81,9 @@ class HealCalculateData:
     modifiers: list[IntValueModifier | FloatValueModifier]
 
 
-class CommandCalculator:
-    def __init__(self, command_data: CommandData, context: "BattlefieldContext"):
-        self.command_data = command_data
+class CommandPartCalculator:
+    def __init__(self, data: CommandPartData, context: "BattlefieldContext"):
+        self.data = data
         self.context = context
         self.buffed_stats_by_character: dict[CharacterId, BuffedStats] = {
             char_id: BuffedStats(character.status, {})
@@ -87,14 +92,20 @@ class CommandCalculator:
 
         self.ban_event_list: list[BuffEvent] = []
         self.damage_data_list: list[DamageCalculateData] = [
-            DamageCalculateData(data, []) for data in command_data.damage_list
+            DamageCalculateData(damage_data, []) for damage_data in data.damage_list
         ]
         self.heal_data_list: list[HealCalculateData] = [
-            HealCalculateData(data, []) for data in command_data.heal_list
+            HealCalculateData(heal_data, []) for heal_data in data.heal_list
         ]
 
 
 @dataclass(frozen=True)
-class CommandProcessResult:
-    command_data: CommandData
+class CommandPartProcessResult:
+    original_part: CommandPartBase
     ban_result: Optional[BanResult] = None
+
+
+@dataclass(frozen=True)
+class CommandProcessResult:
+    original_command: CharacterCommand
+    part_results: list[CommandPartProcessResult]

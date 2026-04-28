@@ -8,7 +8,7 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.core.commands.models import CommandCalculator
+    from battle.core.commands.models import CommandPartCalculator
 
 
 class BuffEventCalculatePriority(Enum):
@@ -38,7 +38,7 @@ class BuffEvent(abc.ABC):
         holder: CharacterId,
         attacker_or_target: CharacterId,
         context: "BattlefieldContext",
-        calculator: "CommandCalculator",
+        calculator: "CommandPartCalculator",
     ) -> None:
         pass
 

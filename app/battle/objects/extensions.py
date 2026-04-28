@@ -1,7 +1,7 @@
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import ActionCommand, CommandBase, MoveCommand
+from battle.core.commands.models import ActionCommandPart, CommandPartBase
 from battle.objects.define import ActionType, ElementType
-from battle.objects.models import FloatValueModifier
+from battle.objects.models import CharacterId, FloatValueModifier
 
 
 def get_bonus_damage(
@@ -17,23 +17,33 @@ def get_bonus_damage(
     return FloatValueModifier(0)
 
 
-def to_cost(command: CommandBase, context: BattlefieldContext) -> int:
-    if isinstance(command, MoveCommand):
-        user_pos = context.find_character_position(command.user)
-        if user_pos:
-            return abs(user_pos.value - command.to_position.value)
+def get_total_cost(
+    parts: list[CommandPartBase], user: CharacterId, context: BattlefieldContext
+) -> int:
+    return sum(_get_part_cost(part, user, context) for part in parts)
 
-    # TODO: MoveCommand를 따로 쓰면 ActionType.MOVE 가 애매함
-    elif isinstance(command, ActionCommand):
-        if command.type_ == ActionType.ATTACK:
+
+def _get_part_cost(
+    part: CommandPartBase, user: CharacterId, context: BattlefieldContext
+) -> int:
+    if isinstance(part, ActionCommandPart):
+        if (
+            part.type_ == ActionType.MOVE
+            and part.target_positions is not None
+            and len(part.target_positions) == 1
+        ):
+            user_pos = context.find_character_position(user)
+            if user_pos:
+                return abs(part.target_positions[0].value - user_pos.value)
+        elif part.type_ == ActionType.ATTACK:
             return 1
-        elif command.type_ == ActionType.SKILL_1:
+        elif part.type_ == ActionType.SKILL_1:
             return 2
-        elif command.type_ == ActionType.SKILL_2:
+        elif part.type_ == ActionType.SKILL_2:
             return 3
-        elif command.type_ == ActionType.USE_ITEM:
+        elif part.type_ == ActionType.USE_ITEM:
             return 1
         else:
-            raise ValueError(command.type_)
+            raise ValueError(part.type_)
 
     return 0

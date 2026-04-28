@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.models import (
-    CommandCalculator,
+    CommandPartCalculator,
     DamageCalculateData,
     DamageData,
 )
@@ -25,7 +25,7 @@ class DamageOverTimeEvent(BuffEvent):
         holder: CharacterId,
         attacker_or_target: CharacterId,
         context: BattlefieldContext,
-        calculator: CommandCalculator,
+        calculator: CommandPartCalculator,
     ) -> None:
         calculator.damage_data_list.append(
             DamageCalculateData(

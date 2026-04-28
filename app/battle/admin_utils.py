@@ -1,25 +1,16 @@
 from dataclasses import KW_ONLY, dataclass
 
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import CommandBase, CommandData
+from battle.core.commands.models import CommandPartBase, CommandPartData
 
 
-class AdminCommand(CommandBase):
+# Admin은 파트 단위로 커맨드를 입력하지 않으므로 커맨드 = 파트
+class AdminCommand(CommandPartBase):
     pass
 
 
 @dataclass(frozen=True)
 class ChangePhaseCommand(AdminCommand):
-    target_phase: RoundPhaseType
-
-
-class AdminCommandData(CommandData):
-    pass
-
-
-@dataclass(frozen=True)
-class ChangePhaseCommandData(AdminCommandData):
-    _: KW_ONLY
     target_phase: RoundPhaseType
 
 
@@ -31,10 +22,10 @@ class ChangePhaseCommandData(AdminCommandData):
 
 
 # 특정 버프 무조건 부여
-class ForceAddBuffByNameCommand(AdminCommandData):
+class ForceAddBuffByNameCommand(AdminCommand):
     buff_name: str
 
 
 # 특정 버프 무조건 해제
-class ForceRemoveBuffByNameCommand(AdminCommandData):
+class ForceRemoveBuffByNameCommand(AdminCommand):
     buff_name: str

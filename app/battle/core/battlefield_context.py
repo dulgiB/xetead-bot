@@ -94,12 +94,11 @@ class BattlefieldContext:
 
     def add_character(
         self,
-        name: str,
         data: CharacterDataFromSpreadsheet,
         faction: FactionType,
         column_idx: BattlefieldColumnIndex,
     ):
-        char_id = CharacterId(name)
+        char_id = CharacterId(data.name)
         character = CombatCharacter(
             self,
             char_id,
@@ -115,14 +114,19 @@ class BattlefieldContext:
             ),
             skill_1=self._skill_dictionary[data.skill_1_id].to_skill_instance(
                 self, char_id
-            ),
+            )
+            if data.skill_1_id
+            else None,
             skill_2=self._skill_dictionary[data.skill_2_id].to_skill_instance(
                 self, char_id
-            ),
+            )
+            if data.skill_2_id
+            else None,
         )
 
-        passive_buff_add_data = BuffAddData(char_id, char_id, data.passive_buff_id)
-        self.buff_container.add(passive_buff_add_data)
+        if data.passive_buff_id:
+            passive_buff_add_data = BuffAddData(char_id, char_id, data.passive_buff_id)
+            self.buff_container.add(passive_buff_add_data)
 
         maybe_empty_slot = self.try_find_empty_slot(faction, column_idx)
 

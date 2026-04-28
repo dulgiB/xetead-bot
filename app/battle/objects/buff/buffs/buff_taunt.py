@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import CommandCalculator, DamageData
+from battle.core.commands.models import CommandPartCalculator, DamageData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming
@@ -21,7 +21,7 @@ class TauntedByEvent(BuffEvent):
         holder: CharacterId,
         attacker_or_target: CharacterId,
         context: "BattlefieldContext",
-        calculator: "CommandCalculator",
+        calculator: "CommandPartCalculator",
     ) -> None:
         for damage_data in calculator.damage_data_list:
             if damage_data.base.attacker_id == holder:

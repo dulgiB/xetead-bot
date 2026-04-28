@@ -1,29 +1,17 @@
-import copy
-
 from battle.admin_utils import ChangePhaseCommand
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import ActionCommand
+from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager, RoundPhaseType
-from battle.objects.character.combat_character import CombatCharacter, CombatStats
 from battle.objects.define import (
-    ActionType,
     BattlefieldColumnIndex,
     FactionType,
     MagicResistanceType,
 )
 from battle.objects.models import CharacterId
+from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 
-test_context = BattlefieldContext()
+test_context = BattlefieldContext(buff_dict={}, skill_dict={})
 test_manager = RoundManager(test_context)
-
-test_stat_preset = CombatStats(
-    attack=3,
-    max_hp=100,
-    attack_range=2,
-    magic_resistance=MagicResistanceType.NORMAL,
-    is_magic_attacker=False,
-    max_cost=3,
-)
 
 
 def test_basic():
@@ -32,13 +20,9 @@ def test_basic():
 
     print("\n=============================================\n")
 
-    test_character = CombatCharacter(
-        test_context,
-        "테스트",
-        FactionType.ALLY,
-        test_stat_preset,
+    test_context.add_character(
+        _get_test_preset("테스트"), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
-    test_context.add_character(test_character, BattlefieldColumnIndex(0))
     print(test_context)
     print("\n=============================================\n")
 
@@ -51,32 +35,34 @@ def test_basic_attack():
     print()
 
     test_manager.process_command(ChangePhaseCommand(RoundPhaseType.ALLY_ACTION))
-
-    test_character_1 = CombatCharacter(
-        test_context,
-        "아군 1",
-        FactionType.ALLY,
-        copy.deepcopy(test_stat_preset),
+    test_context.add_character(
+        _get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
-
-    test_character_2 = CombatCharacter(
-        test_context,
-        "적군 1",
-        FactionType.ENEMY,
-        copy.deepcopy(test_stat_preset),
+    test_context.add_character(
+        _get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
-
-    test_context.add_character(test_character_1, BattlefieldColumnIndex(0))
-    test_context.add_character(test_character_2, BattlefieldColumnIndex(0))
 
     print(test_context)
     print("\n=============================================\n")
 
-    test_command = ActionCommand(
-        user=CharacterId("아군 1"),
-        type_=ActionType.ATTACK,
-        targets=[CharacterId("적군 1")],
-    )
-
+    test_manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    test_command = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]")
     test_manager.process_command(test_command)
     print(test_context)
+
+
+def _get_test_preset(character_name: str) -> CharacterDataFromSpreadsheet:
+    return CharacterDataFromSpreadsheet(
+        name=character_name,
+        mastodon_id="",
+        curr_hp=100,
+        max_hp=100,
+        atk=5,
+        attack_range=3,
+        m_res=MagicResistanceType.NORMAL,
+        is_magic_attacker=False,
+        max_cost=3,
+        passive_buff_id="",
+        skill_1_id="",
+        skill_2_id="",
+    )

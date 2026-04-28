@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional
 
 from battle.objects.define import MagicResistanceType
 
@@ -8,7 +7,6 @@ from battle.objects.define import MagicResistanceType
 class CharacterDataFromSpreadsheet:
     name: str
     mastodon_id: str
-    state: str
     curr_hp: int
     max_hp: int
     atk: int
@@ -20,8 +18,6 @@ class CharacterDataFromSpreadsheet:
     skill_1_id: str
     skill_2_id: str
 
-    battlefield_id: Optional[str] = None
-
     @classmethod
     def from_dict(
         cls, raw: dict[str, str | int | bool]
@@ -29,8 +25,6 @@ class CharacterDataFromSpreadsheet:
         return cls(
             name=raw["name"],
             mastodon_id=raw["mastodon_id"],
-            state=raw["state"],
-            battlefield_id=raw["battlefield_id"],
             curr_hp=raw["curr_hp"],
             max_hp=raw["max_hp"],
             atk=raw["atk"],
