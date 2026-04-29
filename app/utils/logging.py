@@ -32,7 +32,7 @@ def value_with_modifiers_to_str(value: ValueWithModifiers) -> str:
             '+'.join(str(roll) for roll in value.roll_result.rolls)
         })"
     else:
-        result_str += value.base_value
+        result_str += str(value.base_value)
 
     if value.int_modifiers:
         result_str += " + ("

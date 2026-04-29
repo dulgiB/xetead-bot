@@ -12,9 +12,10 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
-from battle.objects.define import BattlefieldColumnIndex, FactionType
+from battle.objects.define import BattlefieldColumnIndex, CombatStatType, FactionType
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.skill.models import SkillData
+from discord.types.activity import StatusType
 from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 from utils.logging import print_apply_damage, print_apply_heal
 
@@ -204,7 +205,7 @@ class BattlefieldContext:
     ):
         target = self.characters[target_id]
         final_value = damage_value.get_value(self, attacker_id, target_id)
-        target.status.curr_hp -= final_value
+        target.status.curr_hp = max(0, target.status.curr_hp - final_value)
         print_apply_damage(attacker_id, target_id, damage_value, final_value)
 
     def apply_heal(
@@ -215,7 +216,9 @@ class BattlefieldContext:
     ):
         target = self.characters[target_id]
         final_value = heal_value.get_value(self, healer_id, target_id)
-        target.status.curr_hp += final_value
+        target.status.curr_hp = min(
+            target.status[CombatStatType.MAX_HP], target.status.curr_hp + final_value
+        )
         print_apply_heal(healer_id, target_id, heal_value, final_value)
 
     def on_finish_round(self):
