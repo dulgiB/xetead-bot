@@ -1,4 +1,3 @@
-import abc
 from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -9,10 +8,9 @@ from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import (
     CharacterId,
     DamageData,
-    FloatValueModifier,
     HealData,
-    IntValueModifier,
     MoveData,
+    ValueModifierBase,
 )
 
 if TYPE_CHECKING:
@@ -35,8 +33,9 @@ class CommandPart:
     type_: ActionType
 
     _: KW_ONLY
-    target_positions: list[BattlefieldColumnIndex] = field(default_factory=list)
-    target_characters: list[CharacterId] = field(default_factory=list)
+    targets: list[CharacterId] | list[BattlefieldColumnIndex] = field(
+        default_factory=list
+    )
     item_name: Optional[str] = None
 
 
@@ -62,13 +61,13 @@ class BanResult:
 @dataclass
 class DamageCalculateData:
     base: DamageData
-    modifiers: list[IntValueModifier | FloatValueModifier]
+    modifiers: list[ValueModifierBase]
 
 
 @dataclass
 class HealCalculateData:
     base: HealData
-    modifiers: list[IntValueModifier | FloatValueModifier]
+    modifiers: list[ValueModifierBase]
 
 
 class CommandPartCalculator:

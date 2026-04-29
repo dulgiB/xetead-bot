@@ -1,6 +1,8 @@
 import abc
 from dataclasses import dataclass
+from typing import Literal, Optional
 
+from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.buff.define import BuffDurationType
 from battle.objects.buff.models import BuffData
@@ -18,6 +20,11 @@ class BuffAddData:
     given_by: CharacterId
     applied_to: CharacterId
     buff_name: str
+
+    # 에너미 커맨드는 나눠서 처리하기 때문에 선행 버프와 후행 버프가 있음
+    add_timing: Optional[
+        Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
+    ]
 
 
 class BuffDurationCounter:
@@ -55,6 +62,7 @@ class BuffBase(abc.ABC):
         applied_to: CharacterId,
         data: BuffData,
     ):
+        self.name = data.buff_name
         self.id = BuffId(
             given_by,
             applied_to,

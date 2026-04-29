@@ -5,12 +5,17 @@ from battle.core.commands.models import CommandPartCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming, ValueType
-from battle.objects.models import CharacterId, FloatValueModifier, IntValueModifier
+from battle.objects.models import (
+    CharacterId,
+    FloatValueModifier,
+    IntValueModifier,
+    ValueModifierBase,
+)
 
 
 @dataclass(frozen=True)
 class GivenDamageModEvent(BuffEvent):
-    value: IntValueModifier | FloatValueModifier
+    value: ValueModifierBase
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -39,11 +44,13 @@ class BuffGivenDamage(BuffBase):
     def create_event(self) -> GivenDamageModEvent:
         if self.value_type == ValueType.INTEGER:
             return GivenDamageModEvent(
-                condition=self.condition, value=IntValueModifier(self.value)
+                condition=self.condition,
+                value=IntValueModifier(source_name=self.name, value=self.value),
             )
         elif self.value_type == ValueType.PERCENT:
             return GivenDamageModEvent(
-                condition=self.condition, value=FloatValueModifier(self.value)
+                condition=self.condition,
+                value=FloatValueModifier(source_name=self.name, value=self.value),
             )
         else:
             raise ValueError(self.value_type)

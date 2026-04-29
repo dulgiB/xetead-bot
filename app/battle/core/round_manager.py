@@ -4,38 +4,38 @@ from battle.core.command_expanders import expand_admin_command
 from battle.core.command_processors import (
     process_admin_command,
     process_ally_command,
-    process_enemy_command,
+    process_enemy_command_on_pre_action,
+    try_process_enemy_command_on_post_action,
 )
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import CharacterCommand, CommandPartData
 from battle.exceptions import CommandValidationError
 from battle.objects.define import FactionType
-from battle.objects.models import CharacterId
 
 
 class RoundManager:
     def __init__(self, context: BattlefieldContext) -> None:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
-        self._acted_characters: set[CharacterId] = set()
-
-        self._ally_commands: list[CommandPartData] = []
-        self._enemy_commands: list[CommandPartData] = []
+        self._enemy_commands: list[CharacterCommand] = []
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
 
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
-            pass
+            self._enemy_commands.clear()
+
         elif phase == RoundPhaseType.ALLY_ACTION:
             pass
+
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
-            pass
+            for command_part in self._enemy_commands:
+                try_process_enemy_command_on_post_action(self._context, command_part)
+
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             self._context.on_finish_round()
-            self._acted_characters.clear()
-            self._ally_commands.clear()
             self._enemy_commands.clear()
+
         else:
             raise ValueError(f"Unknown phase: {phase}")
 
@@ -64,4 +64,4 @@ class RoundManager:
                         "커맨드를 입력할 수 있는 타이밍이 아닙니다."
                     )
 
-                process_enemy_command(self._context, command)
+                process_enemy_command_on_pre_action(self._context, command)

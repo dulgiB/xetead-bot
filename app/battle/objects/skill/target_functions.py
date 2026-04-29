@@ -1,14 +1,12 @@
 import abc
-import random
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from battle.objects.define import BattlefieldColumnIndex, FactionType
+from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.objects.character.combat_character import CombatCharacter
 
 
 @dataclass(frozen=True)
@@ -17,7 +15,9 @@ class SkillTargetRule(abc.ABC):
     skill_holder_id: CharacterId
 
     @abc.abstractmethod
-    def get_targets(self) -> list["CombatCharacter"]:
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+    ) -> list[CharacterId]:
         pass
 
 
@@ -29,8 +29,10 @@ class SkillTargetRuleSelf(SkillTargetRule):
     ex. 자신에게 버프 부여, 자신의 체력을 회복, 자신의 체력을 10 소모
     """
 
-    def get_targets(self) -> list["CombatCharacter"]:
-        return [self.context.characters[self.skill_holder_id]]
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+    ) -> list[CharacterId]:
+        return [self.skill_holder_id]
 
 
 @dataclass(frozen=True)
@@ -43,13 +45,16 @@ class SkillTargetRuleColumn(SkillTargetRule):
     "2슬롯을 공격한다"는 효과로 2, 3열을 대상으로 지정해서 사용 가능
     """
 
-    def get_targets(self, *args: BattlefieldColumnIndex) -> list["CombatCharacter"]:
-        targets = []
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+    ) -> list[CharacterId]:
+        target_id_list = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
-        for column in args:
-            targets += self.context.position_map[target_faction][column]
-        return targets
+        assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
+        for column in targets:
+            target_id_list += self.context.position_map[target_faction][column]
+        return target_id_list
 
 
 @dataclass(frozen=True)
@@ -61,5 +66,8 @@ class SkillTargetRuleNamed(SkillTargetRule):
     ex. 좌우 2칸 내의 아군을 1인 지정하여 회복, 전방 3칸 내의 적군을 1인 지정하여 공격
     """
 
-    def get_targets(self) -> list["CombatCharacter"]:
-        return []
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+    ) -> list[CharacterId]:
+        assert all(isinstance(target, CharacterId) for target in targets)
+        return targets

@@ -24,7 +24,7 @@ test_manager = RoundManager(test_context)
                 parts=[
                     CommandPart(
                         type_=ActionType.MOVE,
-                        target_positions=[BattlefieldColumnIndex(0)],
+                        targets=[BattlefieldColumnIndex(0)],
                     )
                 ],
             ),
@@ -36,7 +36,7 @@ test_manager = RoundManager(test_context)
                 parts=[
                     CommandPart(
                         type_=ActionType.ATTACK,
-                        target_characters=[CharacterId("대상")],
+                        targets=[CharacterId("대상")],
                     )
                 ],
             ),
@@ -48,7 +48,7 @@ test_manager = RoundManager(test_context)
                 parts=[
                     CommandPart(
                         type_=ActionType.ATTACK,
-                        target_characters=[CharacterId("띄어쓰기가 있는 대상")],
+                        targets=[CharacterId("띄어쓰기가 있는 대상")],
                     )
                 ],
             ),
@@ -60,9 +60,7 @@ test_manager = RoundManager(test_context)
                 parts=[
                     CommandPart(
                         type_=ActionType.ATTACK,
-                        target_characters=[
-                            CharacterId("띄어쓰기와 숫자 표기가 있는 대상 1")
-                        ],
+                        targets=[CharacterId("띄어쓰기와 숫자 표기가 있는 대상 1")],
                     )
                 ],
             ),
@@ -74,7 +72,7 @@ test_manager = RoundManager(test_context)
                 parts=[
                     CommandPart(
                         type_=ActionType.SKILL_1,
-                        target_characters=[CharacterId("대상1")],
+                        targets=[CharacterId("대상1")],
                     )
                 ],
             ),
@@ -86,7 +84,7 @@ test_manager = RoundManager(test_context)
                 parts=[
                     CommandPart(
                         type_=ActionType.SKILL_2,
-                        target_characters=[
+                        targets=[
                             CharacterId("대상1"),
                             CharacterId("대상2"),
                             CharacterId("대상 3"),
@@ -103,7 +101,7 @@ test_manager = RoundManager(test_context)
                 parts=[
                     CommandPart(
                         type_=ActionType.SKILL_1,
-                        target_positions=[BattlefieldColumnIndex(0)],
+                        targets=[BattlefieldColumnIndex(0)],
                     )
                 ],
             ),

@@ -35,12 +35,17 @@ class BuffId:
 
 
 @dataclass(frozen=True)
-class IntValueModifier:
+class ValueModifierBase:
+    source_name: str
+
+
+@dataclass(frozen=True)
+class IntValueModifier(ValueModifierBase):
     value: int
 
 
 @dataclass(frozen=True)
-class FloatValueModifier:
+class FloatValueModifier(ValueModifierBase):
     value: float
 
 
@@ -53,7 +58,10 @@ class BaseValueIndicator:
         self, context: "BattlefieldContext", user: CharacterId, target: CharacterId
     ) -> int | DiceRollResult:
         if self.value_source == ValueSourceType.STAT_ATK_ROLL:
-            return nd6(context.characters[user].status[CombatStatType.ATK])
+            result = nd6(
+                context.milestone_n, context.characters[user].status[CombatStatType.ATK]
+            )
+            return result
         else:
             raise ValueError(self.value_source)
 
@@ -69,17 +77,25 @@ class ValueWithModifiers:
     def __init__(
         self,
         base_value: int | BaseValueIndicator,
-        modifiers: list[IntValueModifier | FloatValueModifier],
+        modifiers: list[ValueModifierBase],
     ):
         self.base_value = base_value
-        self.int_modifiers = [
-            modifier for modifier in modifiers if isinstance(modifier, IntValueModifier)
-        ]
-        self.float_modifiers = [
-            modifier
-            for modifier in modifiers
-            if isinstance(modifier, FloatValueModifier)
-        ]
+        self.int_modifiers = []
+        self.float_modifiers = []
+
+        if (
+            isinstance(self.base_value, BaseValueIndicator)
+            and self.base_value.coefficient is not None
+        ):
+            self.float_modifiers.append(self.base_value.coefficient)
+
+        for modifier in modifiers:
+            if isinstance(modifier, IntValueModifier):
+                if modifier.value != 0:
+                    self.int_modifiers.append(modifier)
+            elif isinstance(modifier, FloatValueModifier):
+                if modifier.value != 0:
+                    self.float_modifiers.append(modifier)
 
     def get_value(
         self, context: "BattlefieldContext", user: CharacterId, target: CharacterId
@@ -119,6 +135,7 @@ class ValueWithModifiers:
             pass
 
         raise TypeError(type(self.base_value))
+
 
 @dataclass(frozen=True)
 class MoveData:

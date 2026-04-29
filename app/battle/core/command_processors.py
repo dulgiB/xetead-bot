@@ -20,7 +20,7 @@ from battle.exceptions import (
 )
 from battle.objects.buff.buffs.buff_ban_action import BanActionEvent
 from battle.objects.define import BuffApplyTiming, CombatStatType
-from battle.objects.extensions import get_total_cost
+from battle.objects.extensions import get_bonus_damage, get_total_cost
 from battle.objects.models import ValueWithModifiers
 from utils.battle_helpers import is_reachable
 
@@ -92,6 +92,15 @@ def process_ally_command(
                 damage_calc.base.attacker_id,
             )
         for damage_calc in calculator.damage_data_list:
+            attacker = context.characters[damage_calc.base.attacker_id]
+            target = context.characters[damage_calc.base.target_id]
+
+            if attacker.status.is_magic_attacker:
+                damage_calc.modifiers.append(target.status.m_res)
+            damage_calc.modifiers.append(
+                get_bonus_damage(target.element, attacker.element)
+            )
+
             context.apply_damage(
                 damage_calc.base.attacker_id,
                 damage_calc.base.target_id,
@@ -132,8 +141,16 @@ def process_ally_command(
     return CommandProcessResult(original_command=command, part_results=results_per_part)
 
 
-# TODO
-def process_enemy_command(
+# TODO: Pre-action에서는 이동과 버프 부여를 처리
+def process_enemy_command_on_pre_action(
+    context: BattlefieldContext, command: CharacterCommand
+) -> None:
+    pass
+
+
+# TODO: Post-action에서는 에너미가 살아있을 경우 공격 대미지만 처리.
+#  공격 대상에게 디버프를 부여하는 등 "공격의 부가 효과"는 이곳에서 처리한다.
+def try_process_enemy_command_on_post_action(
     context: BattlefieldContext, command: CharacterCommand
 ) -> None:
     pass
@@ -168,7 +185,7 @@ def try_expansion_if_valid(
             error_no_remaining_cost(needed_cost, user.status.remaining_cost)
         )
 
-    expanded_command_data_list = expand_character_command(command)
+    expanded_command_data_list = expand_character_command(command, context)
     for command_data in expanded_command_data_list:
         # 3. 대미지/힐 대상 존재 및 사거리 확인
         for damage_data in command_data.damage_list:

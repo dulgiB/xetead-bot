@@ -57,11 +57,11 @@ class CombatStats:
     @property
     def m_res(self) -> FloatValueModifier:
         if self._m_res == MagicResistanceType.WEAK:
-            return FloatValueModifier(0.1)
+            return FloatValueModifier(source_name="마법 저항", value=0.1)
         elif self._m_res == MagicResistanceType.NORMAL:
-            return FloatValueModifier(0)
+            return FloatValueModifier(source_name="마법 저항", value=0)
         elif self._m_res == MagicResistanceType.STRONG:
-            return FloatValueModifier(-0.1)
+            return FloatValueModifier(source_name="마법 저항", value=-0.1)
         else:
             raise ValueError(f"Unknown MagicResistanceType: {self._m_res}")
 

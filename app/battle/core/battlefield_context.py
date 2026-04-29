@@ -16,16 +16,22 @@ from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.skill.models import SkillData
 from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from utils.logging import print_apply_damage, print_apply_heal
 
 CHARACTER_PER_COLUMN = 3
 
 
 class BattlefieldContext:
     def __init__(
-        self, buff_dict: dict[str, BuffData], skill_dict: dict[str, SkillData]
+        self,
+        buff_dict: dict[str, BuffData],
+        skill_dict: dict[str, SkillData],
+        *,
+        milestone_n: int = 1,
     ):
         self._buff_dictionary: dict[str, BuffData] = buff_dict
         self._skill_dictionary: dict[str, SkillData] = skill_dict
+        self.milestone_n: int = milestone_n
 
         self.characters: dict[CharacterId, CombatCharacter] = {}
 
@@ -91,6 +97,7 @@ class BattlefieldContext:
             for index in BattlefieldColumnIndex
             if index != BattlefieldColumnIndex.NONE
         }
+        self.prev_round_results = []
 
     def add_character(
         self,
@@ -102,6 +109,7 @@ class BattlefieldContext:
         character = CombatCharacter(
             self,
             char_id,
+            data.element,
             faction,
             CombatStats(
                 data.atk,
@@ -197,16 +205,7 @@ class BattlefieldContext:
         target = self.characters[target_id]
         final_value = damage_value.get_value(self, attacker_id, target_id)
         target.status.curr_hp -= final_value
-
-        if damage_value.roll_result:
-            roll_result_str = "+".join(
-                str(roll) for roll in damage_value.roll_result.rolls
-            )
-            print(
-                f"[apply_damage] {attacker_id} > {target_id} | ({roll_result_str}) → -{final_value}"
-            )
-        else:
-            print(f"[apply_damage] {attacker_id} > {target_id} | -{final_value}")
+        print_apply_damage(attacker_id, target_id, damage_value, final_value)
 
     def apply_heal(
         self,
@@ -217,7 +216,7 @@ class BattlefieldContext:
         target = self.characters[target_id]
         final_value = heal_value.get_value(self, healer_id, target_id)
         target.status.curr_hp += final_value
-        print(f"[apply_heal] {healer_id} > {target_id} (+{final_value})")
+        print_apply_heal(healer_id, target_id, heal_value, final_value)
 
     def on_finish_round(self):
         self.buff_container.on_round_end()

@@ -4,6 +4,7 @@ from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import (
     ActionType,
     CombatStatType,
+    ElementType,
     FactionType,
 )
 from battle.objects.models import CharacterId
@@ -18,6 +19,7 @@ class CombatCharacter:
         self,
         context: "BattlefieldContext",
         char_id: CharacterId,
+        element: ElementType,
         faction: FactionType,
         stats: CombatStats,
         *,
@@ -26,6 +28,7 @@ class CombatCharacter:
     ):
         self.field = context
         self.id = char_id
+        self.element = element
 
         self.faction: FactionType = faction
         self.status: CombatStats = stats

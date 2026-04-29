@@ -54,7 +54,7 @@ def parse_character_command(
                     parts.append(
                         CommandPart(
                             type_=ActionType.MOVE,
-                            target_positions=[move_pos],
+                            targets=[move_pos],
                         )
                     )
 
@@ -69,7 +69,7 @@ def parse_character_command(
                     parts.append(
                         CommandPart(
                             type_=ActionType.ATTACK,
-                            target_characters=[CharacterId(attack_target)],
+                            targets=[CharacterId(attack_target)],
                         )
                     )
 
@@ -88,13 +88,14 @@ def parse_character_command(
                         except ValueError:
                             character_targets.append(CharacterId(target.strip()))
 
-                    parts.append(
-                        CommandPart(
-                            type_=skill_type,
-                            target_positions=column_targets,
-                            target_characters=character_targets,
+                    if character_targets:
+                        parts.append(
+                            CommandPart(type_=skill_type, targets=character_targets)
                         )
-                    )
+                    elif column_targets:
+                        parts.append(
+                            CommandPart(type_=skill_type, targets=column_targets)
+                        )
 
                 elif match := command_format_item.match(command):
                     d = match.capturesdict()

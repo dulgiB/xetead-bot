@@ -28,14 +28,16 @@ class SkillEffectHeal(SkillEffectBase):
         list[HealData],
         list[BuffAddData],
     ]:
-        assert self.value_source is not None
+        assert self.value is not None and self.value_source is not None
 
         if self.value_source is ValueSourceType.FIXED:
             heal_value = self.value
         else:
             heal_value = BaseValueIndicator(
                 value_source=self.value_source,
-                coefficient=FloatValueModifier(value=self.value / 100),
+                coefficient=FloatValueModifier(
+                    source_name="계수", value=self.value / 100
+                ),
             )
         return (
             [],

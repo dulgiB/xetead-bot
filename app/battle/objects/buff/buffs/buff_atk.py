@@ -5,7 +5,12 @@ from battle.core.commands.models import CommandPartCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming, CombatStatType, ValueType
-from battle.objects.models import CharacterId, FloatValueModifier, IntValueModifier
+from battle.objects.models import (
+    CharacterId,
+    FloatValueModifier,
+    IntValueModifier,
+    ValueModifierBase,
+)
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -13,7 +18,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class AtkModEvent(BuffEvent):
-    value: IntValueModifier | FloatValueModifier
+    value: ValueModifierBase
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -43,12 +48,12 @@ class BuffAtk(BuffBase):
         if self.value_type == ValueType.INTEGER:
             return AtkModEvent(
                 condition=self.condition,
-                value=IntValueModifier(self.value),
+                value=IntValueModifier(source_name=self.name, value=self.value),
             )
         elif self.value_type == ValueType.PERCENT:
             return AtkModEvent(
                 condition=self.condition,
-                value=FloatValueModifier(self.value),
+                value=FloatValueModifier(source_name=self.name, value=self.value),
             )
         else:
             raise ValueError(self.value_type)

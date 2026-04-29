@@ -20,6 +20,7 @@ class SkillEffectAddBuff(SkillEffectBase):
         list[HealData],
         list[BuffAddData],
     ]:
+        assert self.buff_name is not None
         return (
             [],
             [],
@@ -29,6 +30,7 @@ class SkillEffectAddBuff(SkillEffectBase):
                     given_by=holder,
                     applied_to=target,
                     buff_name=self.buff_name,
+                    add_timing=self.buff_add_timing,
                 )
                 for target in targets
             ],

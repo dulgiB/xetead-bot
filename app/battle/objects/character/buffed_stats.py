@@ -3,8 +3,7 @@ from dataclasses import dataclass
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import CombatStatType
 from battle.objects.models import (
-    FloatValueModifier,
-    IntValueModifier,
+    ValueModifierBase,
     ValueWithModifiers,
 )
 
@@ -12,7 +11,7 @@ from battle.objects.models import (
 @dataclass(frozen=True)
 class BuffedStats:
     base_stats: CombatStats
-    stat_bonuses: dict[CombatStatType, list[IntValueModifier | FloatValueModifier]]
+    stat_bonuses: dict[CombatStatType, list[ValueModifierBase]]
 
     def __getitem__(self, stat_type: CombatStatType) -> ValueWithModifiers:
         return ValueWithModifiers(

@@ -1,8 +1,9 @@
 import abc
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional, Type
+from typing import TYPE_CHECKING, Literal, Optional, Type
 
+from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ValueSourceType,
@@ -22,6 +23,9 @@ class SkillEffectBase(abc.ABC):
     value: Optional[int]
     value_type: Optional[ValueType]
     buff_name: Optional[str]
+    buff_add_timing: Optional[
+        Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
+    ]
 
     @abc.abstractmethod
     def expand(
@@ -46,7 +50,7 @@ class Skill:
 
 @dataclass(frozen=True)
 class SkillData:
-    id: int
+    id: str
     target_rule: str
     cost: int
     effects: list[SkillEffectBase]
