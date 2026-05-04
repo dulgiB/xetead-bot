@@ -1,19 +1,28 @@
-from battle.admin_utils import (
+from battle.core.battlefield_context import BattlefieldContext
+from battle.core.commands.admin import (
+    ADMIN_ID,
     AdminCommand,
     ChangePhaseCommand,
+    ForceAddBuffByIdCommand,
+    ForceDamageCommand,
+    ForceHealCommand,
+    ForceMoveCommand,
+    ForceRemoveBuffByIdCommand,
 )
-from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.models import (
     CharacterCommand,
     CommandPartData,
     DamageData,
     MoveData,
 )
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import ActionType, BattlefieldColumnIndex, ValueSourceType
-from battle.objects.models import BaseValueIndicator, CharacterId
+from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
 
 
-def expand_admin_command(command: AdminCommand) -> CommandPartData:
+def expand_admin_command(
+    command: AdminCommand, context: BattlefieldContext
+) -> CommandPartData:
     if isinstance(command, ChangePhaseCommand):
         return CommandPartData(
             original_part=command,
@@ -22,6 +31,71 @@ def expand_admin_command(command: AdminCommand) -> CommandPartData:
             damage_list=[],
             heal_list=[],
             buff_add_list=[],
+        )
+    elif isinstance(command, ForceMoveCommand):
+        return CommandPartData(
+            original_part=command,
+            move_list=[
+                MoveData(character_id=target, to_position=command.to_position)
+                for target in command.targets
+            ],
+            damage_list=[],
+            heal_list=[],
+            buff_add_list=[],
+        )
+    elif isinstance(command, ForceDamageCommand):
+        return CommandPartData(
+            original_part=command,
+            move_list=[],
+            damage_list=[
+                DamageData(
+                    attacker_id=ADMIN_ID, target_id=target, value=command.damage_value
+                )
+                for target in command.targets
+            ],
+            heal_list=[],
+            buff_add_list=[],
+        )
+    elif isinstance(command, ForceHealCommand):
+        return CommandPartData(
+            original_part=command,
+            move_list=[],
+            damage_list=[],
+            heal_list=[
+                HealData(healer_id=ADMIN_ID, target_id=target, value=command.heal_value)
+                for target in command.targets
+            ],
+            buff_add_list=[],
+        )
+    elif isinstance(command, ForceAddBuffByIdCommand):
+        return CommandPartData(
+            original_part=command,
+            move_list=[],
+            damage_list=[],
+            heal_list=[],
+            buff_add_list=[
+                BuffAddData(
+                    given_by=ADMIN_ID,
+                    applied_to=target,
+                    buff_id=command.buff_id,
+                )
+                for target in command.targets
+            ],
+        )
+    elif isinstance(command, ForceRemoveBuffByIdCommand):
+        buff_remove_list: list[BuffUid] = []
+        for target in command.targets:
+            target_buff_list = context.buff_container.get_buffs_by(target, None)
+            buff_remove_list.extend(
+                buff.uid for buff in target_buff_list if buff.id == command.buff_id
+            )
+        return CommandPartData(
+            original_part=command,
+            move_list=[],
+            damage_list=[],
+            heal_list=[],
+            buff_add_list=[],
+            admin_buff_remove_list=buff_remove_list,
         )
     else:
         raise TypeError(command)

@@ -33,7 +33,6 @@ class ReceivedDamageModEvent(BuffEvent):
                 damage_data.modifiers.append(self.value)
 
 
-@dataclass
 class BuffReceivedDamage(BuffBase):
     """주는 대미지 증가/감소"""
 
@@ -45,12 +44,12 @@ class BuffReceivedDamage(BuffBase):
         if self.value_type == ValueType.INTEGER:
             return ReceivedDamageModEvent(
                 condition=self.condition,
-                value=IntValueModifier(source_name=self.name, value=self.value),
+                value=IntValueModifier(source_name=self.id, value=self.value),
             )
         elif self.value_type == ValueType.PERCENT:
             return ReceivedDamageModEvent(
                 condition=self.condition,
-                value=FloatValueModifier(source_name=self.name, value=self.value),
+                value=FloatValueModifier(source_name=self.id, value=self.value),
             )
         else:
             raise ValueError(self.value_type)

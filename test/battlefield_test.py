@@ -1,19 +1,9 @@
-from typing import Optional
-
-from battle.admin_utils import ChangePhaseCommand
 from battle.core.battlefield_context import BattlefieldContext
+from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager, RoundPhaseType
-from battle.objects.define import (
-    ActionType,
-    BattlefieldColumnIndex,
-    FactionType,
-    ValueSourceType,
-    ValueType,
-)
+from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
-from battle.objects.skill.effects import SkillEffectDamage
-from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
 
 

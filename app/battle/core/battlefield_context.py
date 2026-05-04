@@ -2,7 +2,7 @@ import copy
 from typing import Optional
 
 from battle.core.buff_container import BuffContainer
-from battle.core.commands.models import CommandProcessResult
+from battle.core.commands.models import CommandPartCalculator, CommandProcessResult
 from battle.exceptions import (
     CommandValidationError,
     error_target_does_not_exist,
@@ -15,7 +15,6 @@ from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import BattlefieldColumnIndex, CombatStatType, FactionType
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.skill.models import SkillData
-from discord.types.activity import StatusType
 from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 from utils.logging import print_apply_damage, print_apply_heal
 
@@ -202,9 +201,10 @@ class BattlefieldContext:
         attacker_id: CharacterId,
         target_id: CharacterId,
         damage_value: ValueWithModifiers,
+        calculator: Optional[CommandPartCalculator],
     ):
         target = self.characters[target_id]
-        final_value = damage_value.get_value(self, attacker_id, target_id)
+        final_value = damage_value.get_value(calculator, attacker_id, target_id)
         target.status.curr_hp = max(0, target.status.curr_hp - final_value)
         print_apply_damage(attacker_id, target_id, damage_value, final_value)
 
@@ -213,9 +213,10 @@ class BattlefieldContext:
         healer_id: CharacterId,
         target_id: CharacterId,
         heal_value: ValueWithModifiers,
+        calculator: Optional[CommandPartCalculator],
     ):
         target = self.characters[target_id]
-        final_value = heal_value.get_value(self, healer_id, target_id)
+        final_value = heal_value.get_value(calculator, healer_id, target_id)
         target.status.curr_hp = min(
             target.status[CombatStatType.MAX_HP], target.status.curr_hp + final_value
         )
@@ -226,8 +227,8 @@ class BattlefieldContext:
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
 
-    def get_buff_data_by_id(self, buff_name: str) -> BuffData:
-        return self._buff_dictionary[buff_name]
+    def get_buff_data_by_id(self, buff_id: str) -> BuffData:
+        return self._buff_dictionary[buff_id]
 
-    def get_skill_data_by_id(self, skill_name: str) -> SkillData:
-        return self._skill_dictionary[skill_name]
+    def get_skill_data_by_id(self, skill_id: str) -> SkillData:
+        return self._skill_dictionary[skill_id]

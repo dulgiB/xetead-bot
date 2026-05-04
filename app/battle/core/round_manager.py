@@ -1,4 +1,3 @@
-from battle.admin_utils import AdminCommand
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_expanders import expand_admin_command
 from battle.core.command_processors import (
@@ -7,6 +6,7 @@ from battle.core.command_processors import (
     process_enemy_command_on_pre_action,
     try_process_enemy_command_on_post_action,
 )
+from battle.core.commands.admin import AdminCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import CharacterCommand, CommandPartData
 from battle.exceptions import CommandValidationError
@@ -46,7 +46,7 @@ class RoundManager:
         print(command)
 
         if isinstance(command, AdminCommand):
-            expanded_command = expand_admin_command(command)
+            expanded_command = expand_admin_command(command, self._context)
             process_admin_command(self, expanded_command)
 
         elif isinstance(command, CharacterCommand):

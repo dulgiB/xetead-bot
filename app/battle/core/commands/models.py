@@ -4,8 +4,9 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.character.buffed_stats import BuffedStats
-from battle.objects.define import ActionType, BattlefieldColumnIndex
+from battle.objects.define import ActionType, BattlefieldColumnIndex, CombatStatType
 from battle.objects.models import (
+    BuffUid,
     CharacterId,
     DamageData,
     HealData,
@@ -50,6 +51,7 @@ class CommandPartData:
     buff_add_list: list[BuffAddData]
 
     admin_target_phase: Optional[RoundPhaseType] = None
+    admin_buff_remove_list: list[BuffUid] = None
 
 
 @dataclass(frozen=True)
@@ -75,7 +77,9 @@ class CommandPartCalculator:
         self.data = data
         self.context = context
         self.buffed_stats_by_character: dict[CharacterId, BuffedStats] = {
-            char_id: BuffedStats(character.status, {})
+            char_id: BuffedStats(
+                character.status, {stat: [] for stat in CombatStatType}
+            )
             for char_id, character in context.characters.items()
         }
 

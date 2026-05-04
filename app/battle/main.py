@@ -1,12 +1,10 @@
 import json
 import os
-from xml.dom.minidom import CharacterData
 
 import gspread
 from battle.core.battlefield_context import BattlefieldContext
 from battle.objects.buff.models import BuffData
 from battle.objects.define import BattlefieldColumnIndex, FactionType
-from battle.objects.models import CharacterId
 from battle.objects.skill.models import SkillData
 from dotenv import load_dotenv
 from gspread.utils import ValueRenderOption

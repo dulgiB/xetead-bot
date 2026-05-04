@@ -109,11 +109,14 @@ def parse_character_command(
                         CommandPart(
                             type_=ActionType.USE_ITEM,
                             item_name=item_name,
-                            target_characters=targets,
+                            targets=targets,
                         )
                     )
 
-            except ValueError as e:
+                else:
+                    raise CommandValidationError(error_invalid_command_format())
+
+            except Exception as e:
                 print(e)
                 raise CommandValidationError(error_invalid_command_format())
 

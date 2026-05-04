@@ -31,7 +31,7 @@ class SkillEffectHeal(SkillEffectBase):
         assert self.value is not None and self.value_source is not None
 
         if self.value_source is ValueSourceType.FIXED:
-            heal_value = self.value
+            heal_value = BaseValueIndicator(ValueSourceType.FIXED, self.value)
         else:
             heal_value = BaseValueIndicator(
                 value_source=self.value_source,

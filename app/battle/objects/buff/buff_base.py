@@ -6,25 +6,20 @@ from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.buff.define import BuffDurationType
 from battle.objects.buff.models import BuffData
-from battle.objects.define import (
-    BuffApplyTiming,
-)
-from battle.objects.models import (
-    BuffId,
-    CharacterId,
-)
+from battle.objects.define import BuffApplyTiming
+from battle.objects.models import BuffUid, CharacterId
 
 
 @dataclass(frozen=True, eq=True)
 class BuffAddData:
     given_by: CharacterId
     applied_to: CharacterId
-    buff_name: str
+    buff_id: str
 
     # 에너미 커맨드는 나눠서 처리하기 때문에 선행 버프와 후행 버프가 있음
     add_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
-    ]
+    ] = None
 
 
 class BuffDurationCounter:
@@ -62,11 +57,11 @@ class BuffBase(abc.ABC):
         applied_to: CharacterId,
         data: BuffData,
     ):
-        self.name = data.buff_name
-        self.id = BuffId(
+        self.id = data.id
+        self.uid = BuffUid(
             given_by,
             applied_to,
-            data.buff_name,
+            data.buff_class_name,
         )
 
         self.given_by = given_by
@@ -80,7 +75,7 @@ class BuffBase(abc.ABC):
         self.condition = data.condition
 
     def __hash__(self):
-        return hash(self.id)
+        return hash(self.uid)
 
     @property
     @abc.abstractmethod

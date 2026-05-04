@@ -1,5 +1,5 @@
-from battle.admin_utils import ChangePhaseCommand
 from battle.core.battlefield_context import BattlefieldContext
+from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager

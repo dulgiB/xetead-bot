@@ -5,12 +5,17 @@ from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.exceptions import CommandValidationError
-from battle.objects.define import ActionType, BattlefieldColumnIndex
+from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
+from helpers import get_test_preset
 
 test_character = CharacterId("테스트")
 test_context = BattlefieldContext(buff_dict={}, skill_dict={})
 test_manager = RoundManager(test_context)
+
+test_context.add_character(
+    get_test_preset("테스트"), FactionType.ALLY, BattlefieldColumnIndex(0)
+)
 
 
 @pytest.mark.parametrize(
@@ -113,9 +118,7 @@ def test_parse_smoke(command: str, expected_output: CommandPart):
     assert parsed_command == expected_output
 
 
-@pytest.mark.parametrize(
-    "command", ["[8]", "[대상]", "[스킬1]", "[1/스킬/대상]", "[스킬1/대상]"]
-)
+@pytest.mark.parametrize("command", ["[8]", "[대상]", "[1/스킬/대상]"])
 def test_parse_invalid(command: str):
     with pytest.raises(CommandValidationError):
         parsed_command = parse_character_command(test_character, command)

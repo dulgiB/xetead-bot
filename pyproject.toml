@@ -1,0 +1,32 @@
+[project]
+name = "xetead-bot"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "gspread>=6.2.1",
+    "python-dotenv>=1.2.2"
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+dev = [
+    "ruff==0.15.12",
+]
+
+[tool.setuptools.packages.find]
+where = ["app"]
+include = ["battle*", "bots*", "spreadsheets*", "story*", "utils*"]
+
+[tool.ruff]
+[tool.ruff.lint]
+[tool.ruff.format]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["app"]
+log_file = "logs/pytest.log"
+log_file_level = "DEBUG"
+log_format = "%(asctime)s %(levelname)s %(message)s"
+log_date_format = "%Y-%m-%d %H:%M:%S"

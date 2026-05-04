@@ -31,7 +31,7 @@ class SkillEffectDamage(SkillEffectBase):
         assert self.value is not None and self.value_source is not None
 
         if self.value_source is ValueSourceType.FIXED:
-            damage_value = self.value
+            damage_value = BaseValueIndicator(ValueSourceType.FIXED, self.value)
         else:
             damage_value = BaseValueIndicator(
                 value_source=self.value_source,

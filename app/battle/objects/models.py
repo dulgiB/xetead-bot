@@ -10,7 +10,7 @@ from battle.objects.define import (
 from utils.dice import DiceRollResult, nd6
 
 if TYPE_CHECKING:
-    from battle.core.battlefield_context import BattlefieldContext
+    from battle.core.commands.models import CommandPartCalculator
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,7 @@ class CharacterId:
 
 
 @dataclass(frozen=True)
-class BuffId:
+class BuffUid:
     given_by: CharacterId
     applied_to: CharacterId
     buff_name: str
@@ -52,14 +52,25 @@ class FloatValueModifier(ValueModifierBase):
 @dataclass(frozen=True)
 class BaseValueIndicator:
     value_source: ValueSourceType
+    value: Optional[int] = None
     coefficient: Optional[FloatValueModifier] = None
 
     def get_value(
-        self, context: "BattlefieldContext", user: CharacterId, target: CharacterId
+        self,
+        user_id: CharacterId,
+        target_id: CharacterId,
+        calculator: Optional["CommandPartCalculator"],
     ) -> int | DiceRollResult:
-        if self.value_source == ValueSourceType.STAT_ATK_ROLL:
+        if self.value_source == ValueSourceType.FIXED and self.value is not None:
+            return self.value
+
+        elif (
+            self.value_source == ValueSourceType.STAT_ATK_ROLL
+            and calculator is not None
+        ):
             result = nd6(
-                context.milestone_n, context.characters[user].status[CombatStatType.ATK]
+                calculator.context.milestone_n,
+                calculator.buffed_stats_by_character[user_id][CombatStatType.ATK],
             )
             return result
         else:
@@ -68,7 +79,7 @@ class BaseValueIndicator:
 
 @dataclass
 class ValueWithModifiers:
-    base_value: int | BaseValueIndicator
+    base_value: BaseValueIndicator
     int_modifiers: list[IntValueModifier]
     float_modifiers: list[FloatValueModifier]
 
@@ -76,7 +87,7 @@ class ValueWithModifiers:
 
     def __init__(
         self,
-        base_value: int | BaseValueIndicator,
+        base_value: BaseValueIndicator,
         modifiers: list[ValueModifierBase],
     ):
         self.base_value = base_value
@@ -98,12 +109,15 @@ class ValueWithModifiers:
                     self.float_modifiers.append(modifier)
 
     def get_value(
-        self, context: "BattlefieldContext", user: CharacterId, target: CharacterId
+        self,
+        calculator: Optional["CommandPartCalculator"],
+        user: CharacterId,
+        target: CharacterId,
     ) -> int:
         if isinstance(self.base_value, int):
             base_value = self.base_value
         elif isinstance(self.base_value, BaseValueIndicator):
-            base_value = self.base_value.get_value(context, user, target)
+            base_value = self.base_value.get_value(user, target, calculator)
         else:
             raise TypeError(type(self.base_value))
 
@@ -128,13 +142,23 @@ class ValueWithModifiers:
         return value
 
     def __str__(self):
-        if isinstance(self.base_value, int):
-            pass
+        result_str = ""
+        if self.roll_result:
+            result_str += str(self.roll_result)
+        else:
+            result_str += str(self.base_value)
 
-        elif isinstance(self.base_value, DiceRollResult):
-            pass
-
-        raise TypeError(type(self.base_value))
+        if self.int_modifiers:
+            result_str += " + ("
+            for modifier in self.int_modifiers:
+                result_str += f"{'' if modifier.value < 0 else '+'}{modifier.value}[{modifier.source_name}]"
+            result_str += ")"
+        if self.float_modifiers:
+            result_str += " * ("
+            for modifier in self.float_modifiers:
+                result_str += f"{'' if modifier.value < 0 else '+'}{math.floor(modifier.value * 100)}%[{modifier.source_name}]"
+            result_str += ")"
+        return result_str
 
 
 @dataclass(frozen=True)
@@ -147,11 +171,11 @@ class MoveData:
 class DamageData:
     attacker_id: CharacterId
     target_id: CharacterId
-    value: int | BaseValueIndicator
+    value: BaseValueIndicator
 
 
 @dataclass(frozen=True)
 class HealData:
     healer_id: CharacterId
     target_id: CharacterId
-    value: int | BaseValueIndicator
+    value: BaseValueIndicator

@@ -22,7 +22,7 @@ class SkillEffectBase(abc.ABC):
     value_source: Optional[ValueSourceType]
     value: Optional[int]
     value_type: Optional[ValueType]
-    buff_name: Optional[str]
+    buff_id: Optional[str]
     buff_add_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
     ]
@@ -77,13 +77,19 @@ class SkillData:
                     else None
                 )
                 buff_name = data[f"buff_name_{i}"] if data[f"buff_name_{i}"] else None
+                buff_add_timing = (
+                    RoundPhaseType(data[f"buff_add_timing_{i}"])
+                    if data[f"buff_add_timing_{i}"]
+                    else None
+                )
 
                 skill_effects.append(
                     effect(
                         value_source=value_source,
                         value=value,
                         value_type=value_type,
-                        buff_name=buff_name,
+                        buff_id=buff_name,
+                        buff_add_timing=buff_add_timing,
                     )
                 )
 

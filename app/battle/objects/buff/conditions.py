@@ -6,7 +6,6 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.core.commands.models import CommandPartData
 
 
 @dataclass(frozen=True)

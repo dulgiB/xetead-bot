@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class AtkModEvent(BuffEvent):
-    value: ValueModifierBase
+    value: IntValueModifier
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -28,7 +28,7 @@ class AtkModEvent(BuffEvent):
         self,
         holder: CharacterId,
         attacker_or_target: CharacterId,
-        context: BattlefieldContext,
+        context: "BattlefieldContext",
         calculator: CommandPartCalculator,
     ) -> None:
         calculator.buffed_stats_by_character[holder].stat_bonuses[
@@ -36,7 +36,6 @@ class AtkModEvent(BuffEvent):
         ].append(self.value)
 
 
-@dataclass
 class BuffAtk(BuffBase):
     """공격력 증가/감소"""
 
@@ -48,12 +47,7 @@ class BuffAtk(BuffBase):
         if self.value_type == ValueType.INTEGER:
             return AtkModEvent(
                 condition=self.condition,
-                value=IntValueModifier(source_name=self.name, value=self.value),
-            )
-        elif self.value_type == ValueType.PERCENT:
-            return AtkModEvent(
-                condition=self.condition,
-                value=FloatValueModifier(source_name=self.name, value=self.value),
+                value=IntValueModifier(source_name=self.id, value=self.value),
             )
         else:
             raise ValueError(self.value_type)

@@ -53,7 +53,7 @@ class SkillTargetRuleColumn(SkillTargetRule):
 
         assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
         for column in targets:
-            target_id_list += self.context.position_map[target_faction][column]
+            target_id_list += self.context.position_map[target_faction][column].values()
         return target_id_list
 
 
