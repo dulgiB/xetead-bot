@@ -21,26 +21,31 @@ class ChangePhaseCommand(AdminCommand):
 
 @dataclass(frozen=True)
 class ForceMoveCommand(AdminCommand):
+    targets: list[CharacterId]
     to_position: BattlefieldColumnIndex
 
 
 @dataclass(frozen=True)
 class ForceDamageCommand(AdminCommand):
+    targets: list[CharacterId]
     damage_value: int
 
 
 @dataclass(frozen=True)
 class ForceHealCommand(AdminCommand):
+    targets: list[CharacterId]
     heal_value: int
 
 
 # 특정 버프 무조건 부여
 @dataclass(frozen=True)
 class ForceAddBuffByIdCommand(AdminCommand):
+    targets: list[CharacterId]
     buff_id: str
 
 
 # 특정 버프 무조건 해제
 @dataclass(frozen=True)
 class ForceRemoveBuffByIdCommand(AdminCommand):
+    targets: list[CharacterId]
     buff_id: str

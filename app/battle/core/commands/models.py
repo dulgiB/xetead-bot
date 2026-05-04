@@ -42,7 +42,7 @@ class CommandPart:
 
 @dataclass(frozen=True)
 class CommandPartData:
-    original_part: CommandPart
+    original_part: Optional[CommandPart]
 
     _: KW_ONLY
     move_list: list[MoveData]
@@ -51,7 +51,7 @@ class CommandPartData:
     buff_add_list: list[BuffAddData]
 
     admin_target_phase: Optional[RoundPhaseType] = None
-    admin_buff_remove_list: list[BuffUid] = None
+    admin_buff_remove_list: list[BuffUid] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -74,7 +74,7 @@ class HealCalculateData:
 
 class CommandPartCalculator:
     def __init__(self, data: CommandPartData, context: "BattlefieldContext"):
-        self.data = data
+        self.move_list: list[MoveData] = data.move_list
         self.context = context
         self.buffed_stats_by_character: dict[CharacterId, BuffedStats] = {
             char_id: BuffedStats(
@@ -94,7 +94,6 @@ class CommandPartCalculator:
 
 @dataclass(frozen=True)
 class CommandPartProcessResult:
-    original_part: CommandPart
     expanded_part: CommandPartData
     ban_result: Optional[BanResult] = None
 

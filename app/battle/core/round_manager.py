@@ -11,30 +11,35 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import CharacterCommand, CommandPartData
 from battle.exceptions import CommandValidationError
 from battle.objects.define import FactionType
+from battle.objects.models import CharacterId
 
 
 class RoundManager:
     def __init__(self, context: BattlefieldContext) -> None:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
-        self._enemy_commands: list[CharacterCommand] = []
+        self._enemy_command_parts: dict[CharacterId, list[CommandPartData]] = {}
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
 
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
-            self._enemy_commands.clear()
+            pass
 
         elif phase == RoundPhaseType.ALLY_ACTION:
             pass
 
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
-            for command_part in self._enemy_commands:
-                try_process_enemy_command_on_post_action(self._context, command_part)
+            for user_id, command_part in self._enemy_command_parts.values():
+                post_result = try_process_enemy_command_on_post_action(
+                    self._context, user_id, command_part
+                )
+                if not post_result:
+                    pass
 
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             self._context.on_finish_round()
-            self._enemy_commands.clear()
+            self._enemy_command_parts.clear()
 
         else:
             raise ValueError(f"Unknown phase: {phase}")

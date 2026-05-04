@@ -18,11 +18,11 @@ class NoncombatStats:
 
     def roll(self, stat_type: NoncombatStatType):
         if stat_type == NoncombatStatType.INS:
-            return nd6(1, bonus=self.instinct)
+            return nd6(1, bonus_list=[self.instinct])
         if stat_type == NoncombatStatType.WSD:
-            return nd6(1, bonus=self.wisdom)
+            return nd6(1, bonus_list=[self.wisdom])
         if stat_type == NoncombatStatType.LUK:
-            return nd6(1, bonus=self.luck)
+            return nd6(1, bonus_list=[self.luck])
 
 
 @dataclass

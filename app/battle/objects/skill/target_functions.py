@@ -63,7 +63,7 @@ class SkillTargetRuleNamed(SkillTargetRule):
     대상의 이름을 지정하여 사용 가능한 스킬 효과
     - 스킬 사용자의 공격 사거리 제한을 따름
 
-    ex. 좌우 2칸 내의 아군을 1인 지정하여 회복, 전방 3칸 내의 적군을 1인 지정하여 공격
+    ex. 좌우 2칸 내의 아군을 1인 지정하여 회복, 전방 3칸 내의 적군을 1인 지정하여 공격_v
     """
 
     def get_targets(

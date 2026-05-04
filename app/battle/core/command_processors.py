@@ -22,7 +22,7 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.buffs.buff_ban_action import BanActionEvent
 from battle.objects.define import BuffApplyTiming, CombatStatType
 from battle.objects.extensions import get_bonus_damage, get_total_cost
-from battle.objects.models import CharacterId, ValueWithModifiers
+from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
 from utils.battle_helpers import is_reachable
 
 if TYPE_CHECKING:
@@ -87,15 +87,14 @@ def process_ally_command(
         if maybe_ban_result:
             results_per_part.append(
                 CommandPartProcessResult(
-                    original_part=part_data.original_part,
-                    expanded_part=maybe_expanded_parts,
+                    expanded_part=part_data,
                     ban_result=maybe_ban_result,
                 )
             )
             continue
 
         # 이동 처리
-        for move_data in calculator.data.move_list:
+        for move_data in calculator.move_list:
             context.move_character_to(move_data.character_id, move_data.to_position)
 
         _process_damage(calculator, context)
@@ -107,8 +106,7 @@ def process_ally_command(
 
         results_per_part.append(
             CommandPartProcessResult(
-                original_part=part_data,
-                expanded_part=maybe_expanded_parts,
+                expanded_part=part_data,
                 ban_result=None,
             )
         )
@@ -124,13 +122,16 @@ def process_ally_command(
 
 # Pre-action에서는 이동과 PRE 타이밍 버프 부여를 처리
 def process_enemy_command_on_pre_action(
-    context: BattlefieldContext, command: CharacterCommand
+    context: BattlefieldContext,
+    command: CharacterCommand,
+    remaining_parts_dict: dict[CharacterId, list[DamageData | HealData | BuffAddData]],
 ) -> CommandProcessResult:
     # 사전 검증 - 문제 있으면 여기서 raise
     maybe_expanded_parts, needed_cost = try_expansion_if_valid(context, command)
     if not maybe_expanded_parts:
         return CommandProcessResult(original_command=command, part_results=[])
 
+    remaining_parts_dict[command.user_id] = []
     results_per_part: list[CommandPartProcessResult] = []
 
     for part_data in maybe_expanded_parts:
@@ -147,7 +148,6 @@ def process_enemy_command_on_pre_action(
         if maybe_ban_result:
             results_per_part.append(
                 CommandPartProcessResult(
-                    original_part=part_data.original_part,
                     expanded_part=maybe_expanded_parts,
                     ban_result=maybe_ban_result,
                 )
@@ -155,13 +155,18 @@ def process_enemy_command_on_pre_action(
             continue
 
         # 이동
-        for move_data in calculator.data.move_list:
+        for move_data in calculator.move_list:
             context.move_character_to(move_data.character_id, move_data.to_position)
+
+        remaining_parts_dict[command.user_id].extend(part_data.damage_list)
+        remaining_parts_dict[command.user_id].extend(part_data.heal_list)
 
         # 버프 추가
         for buff_add_event in part_data.buff_add_list:
             if buff_add_event.add_timing == RoundPhaseType.ENEMY_PRE_ACTION:
                 context.buff_container.add(buff_add_event)
+            elif buff_add_event.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
+                remaining_parts_dict[command.user_id].append(buff_add_event)
 
     print(results_per_part)
 
@@ -175,45 +180,49 @@ def process_enemy_command_on_pre_action(
 # Post-action에서는 에너미가 살아있을 경우 공격 대미지만 처리.
 # 공격 대상에게 디버프를 부여하는 등 "공격의 부가 효과"로 설정된 버프는 POST 타이밍으로 이곳에서 처리한다.
 def try_process_enemy_command_on_post_action(
-    context: BattlefieldContext, command: CharacterCommand
-) -> CommandProcessResult:
-    expanded_parts, _ = try_expansion_if_valid(context, command)
-    if not expanded_parts:
-        raise AssertionError("Command should be valid as this point")
+    context: BattlefieldContext,
+    user_id: CharacterId,
+    remaining_data: list[DamageData | HealData | BuffAddData],
+) -> Optional[CommandPartProcessResult]:
+    # 적이 사망했다면 패스
+    if user_id not in context.characters.keys():
+        return None
 
-    results_per_part: list[CommandPartProcessResult] = []
+    damage_list = [data for data in remaining_data if isinstance(data, DamageData)]
+    heal_list = [data for data in remaining_data if isinstance(data, HealData)]
+    buff_add_list = [data for data in remaining_data if isinstance(data, BuffAddData)]
+    command_part = CommandPartData(
+        None,
+        move_list=[],
+        damage_list=damage_list,
+        heal_list=heal_list,
+        buff_add_list=buff_add_list,
+    )
+    calculator = CommandPartCalculator(command_part, context)
 
-    for part_data in expanded_parts:
-        calculator = CommandPartCalculator(part_data, context)
+    # 행동 가능 여부 체크
+    ban_results = _get_ban_results(calculator, context, user_id)
 
-        # 행동 가능 여부 체크
-        ban_results = _get_ban_results(calculator, context, command.user_id)
+    maybe_ban_result: Optional[BanResult] = None
+    for ban_result in ban_results:
+        if ban_result.is_banned:
+            maybe_ban_result = ban_result
+            break
+    if maybe_ban_result:
+        return CommandPartProcessResult(
+            expanded_part=command_part,
+            ban_result=maybe_ban_result,
+        )
 
-        maybe_ban_result: Optional[BanResult] = None
-        for ban_result in ban_results:
-            if ban_result.is_banned:
-                maybe_ban_result = ban_result
-                break
-        if maybe_ban_result:
-            results_per_part.append(
-                CommandPartProcessResult(
-                    original_part=part_data.original_part,
-                    expanded_part=expanded_parts,
-                    ban_result=maybe_ban_result,
-                )
-            )
-            continue
+    _process_damage(calculator, context)
+    _process_heal(calculator, context)
 
-        _process_damage(calculator, context)
-        _process_heal(calculator, context)
+    # 버프 추가
+    for buff_add_event in command_part.buff_add_list:
+        if buff_add_event.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
+            context.buff_container.add(buff_add_event)
 
-        # 버프 추가
-        for buff_add_event in part_data.buff_add_list:
-            if buff_add_event.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
-                context.buff_container.add(buff_add_event)
-
-    print(results_per_part)
-    return CommandProcessResult(original_command=command, part_results=results_per_part)
+    return CommandPartProcessResult(command_part, ban_result=None)
 
 
 def try_expansion_if_valid(
