@@ -34,7 +34,7 @@ class NoDamageEvent(BuffEvent):
 class BuffNoDamage(BuffBase):
     @property
     def timing(self) -> set[BuffApplyTiming]:
-        return {BuffApplyTiming.ON_HIT}
+        return {BuffApplyTiming.ON_ACTION}
 
     def create_event(self) -> NoDamageEvent:
         return NoDamageEvent(

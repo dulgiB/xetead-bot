@@ -18,12 +18,12 @@ command_format_move = regex.compile(r"^\s*이동\s*/\s*(?P<pos>[1-7])\s*$")
 
 # 기본 공격 :: 공격/대상
 command_format_attack = regex.compile(
-    rf"^\s*공격\s*/\s*(?P<target>[{kr_charset}0-9 ]+)\s*$"
+    rf"^\s*공격\s*/\s*(?P<target>[{kr_charset}0-9A-Za-z ]+)\s*$"
 )
 
 # 대상이 지정된 스킬 사용 :: 스킬1/대상1/대상2/대상3
 command_format_skill = regex.compile(
-    rf"^\s*(?P<skill_type>스킬1|스킬2|스킬3)\s*/\s*(?P<targets>[{kr_charset}0-9/ ]+)\s*$"
+    rf"^\s*(?P<skill_type>스킬1|스킬2|스킬3)\s*/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+)\s*$"
 )
 
 # 대상이 없는 스킬 사용 :: 스킬2
@@ -33,7 +33,7 @@ command_format_skill_no_target = regex.compile(
 
 # 아이템 사용 :: 아이템/아이템 이름(/대상)
 command_format_item = regex.compile(
-    rf"^\s*아이템\s*/\s*(?P<item_name>[{kr_charset} ]+)s*(/\s*(?P<targets>[{kr_charset}0-9/ ]+))?\s*$"
+    rf"^\s*아이템\s*/\s*(?P<item_name>[{kr_charset} ]+)s*(/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+))?\s*$"
 )
 
 

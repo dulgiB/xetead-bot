@@ -98,17 +98,6 @@ class ActionType(str, Enum):
 
 
 class BuffApplyTiming(str, Enum):
-    ROUND_START = "라운드 시작 시"
-    ROUND_END = "라운드 종료 시"
-
+    ON_ROUND_START = "라운드 시작 시"
     ON_ACTION = "행동 시"
-
-    ON_ATTACK = "공격 시"
-    ON_MOVE = "이동 시"
-    ON_KILL = "대상을 쓰러트릴 시"
-
-    ON_HIT = "피격 시"
-    ON_DEFEAT = "자신이 쓰러질 시"
-
-    ON_RECEIVE_HEAL = "체력을 회복할 시"
-    ON_GIVE_HEAL = "다른 캐릭터의 체력을 회복시킬 시"
+    ON_ROUND_END = "라운드 종료 시"

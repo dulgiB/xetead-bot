@@ -8,31 +8,34 @@ from battle.core.command_processors import (
 )
 from battle.core.commands.admin import AdminCommand
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import CharacterCommand, CommandPartData
+from battle.core.commands.models import CharacterCommand
 from battle.exceptions import CommandValidationError
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import FactionType
-from battle.objects.models import CharacterId
+from battle.objects.models import CharacterId, DamageData, HealData
 
 
 class RoundManager:
     def __init__(self, context: BattlefieldContext) -> None:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
-        self._enemy_command_parts: dict[CharacterId, list[CommandPartData]] = {}
+        self._enemy_command_parts: dict[
+            CharacterId, list[DamageData | HealData | BuffAddData]
+        ] = {}
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
 
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
-            pass
+            self._context.on_start_round()
 
         elif phase == RoundPhaseType.ALLY_ACTION:
             pass
 
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
-            for user_id, command_part in self._enemy_command_parts.values():
+            for user_id, remaining_data in self._enemy_command_parts.items():
                 post_result = try_process_enemy_command_on_post_action(
-                    self._context, user_id, command_part
+                    self._context, user_id, remaining_data
                 )
                 if not post_result:
                     pass
@@ -69,4 +72,6 @@ class RoundManager:
                         "커맨드를 입력할 수 있는 타이밍이 아닙니다."
                     )
 
-                process_enemy_command_on_pre_action(self._context, command)
+                process_enemy_command_on_pre_action(
+                    self._context, command, self._enemy_command_parts
+                )

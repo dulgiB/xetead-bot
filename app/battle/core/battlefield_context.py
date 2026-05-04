@@ -222,6 +222,9 @@ class BattlefieldContext:
         )
         print_apply_heal(healer_id, target_id, heal_value, final_value)
 
+    def on_start_round(self):
+        self.buff_container.on_round_start()
+
     def on_finish_round(self):
         self.buff_container.on_round_end()
         self.prev_round_results = copy.deepcopy(self.results)

@@ -4,7 +4,6 @@ from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_expanders import expand_character_command
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
-    BanResult,
     CharacterCommand,
     CommandPartCalculator,
     CommandPartData,
@@ -19,8 +18,7 @@ from battle.exceptions import (
     error_too_many_characters,
 )
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.buff.buffs.buff_ban_action import BanActionEvent
-from battle.objects.define import BuffApplyTiming, CombatStatType
+from battle.objects.define import ActionType, BuffApplyTiming, CombatStatType
 from battle.objects.extensions import get_bonus_damage, get_total_cost
 from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
 from utils.battle_helpers import is_reachable
@@ -75,23 +73,11 @@ def process_ally_command(
     results_per_part: list[CommandPartProcessResult] = []
 
     for part_data in maybe_expanded_parts:
+        assert (
+            isinstance(part_data, CommandPartData)
+            and part_data.original_part is not None
+        )
         calculator = CommandPartCalculator(part_data, context)
-
-        # 행동 가능 여부 체크
-        ban_results = _get_ban_results(calculator, context, command.user_id)
-        maybe_ban_result: Optional[BanResult] = None
-        for ban_result in ban_results:
-            if ban_result.is_banned:
-                maybe_ban_result = ban_result
-                break
-        if maybe_ban_result:
-            results_per_part.append(
-                CommandPartProcessResult(
-                    expanded_part=part_data,
-                    ban_result=maybe_ban_result,
-                )
-            )
-            continue
 
         # 이동 처리
         for move_data in calculator.move_list:
@@ -104,12 +90,7 @@ def process_ally_command(
         for buff_add_event in part_data.buff_add_list:
             context.buff_container.add(buff_add_event)
 
-        results_per_part.append(
-            CommandPartProcessResult(
-                expanded_part=part_data,
-                ban_result=None,
-            )
-        )
+        results_per_part.append(CommandPartProcessResult(expanded_part=part_data))
 
     print(results_per_part)
 
@@ -135,24 +116,11 @@ def process_enemy_command_on_pre_action(
     results_per_part: list[CommandPartProcessResult] = []
 
     for part_data in maybe_expanded_parts:
+        assert (
+            isinstance(part_data, CommandPartData)
+            and part_data.original_part is not None
+        )
         calculator = CommandPartCalculator(part_data, context)
-
-        # 행동 가능 여부 체크
-        ban_results = _get_ban_results(calculator, context, command.user_id)
-
-        maybe_ban_result: Optional[BanResult] = None
-        for ban_result in ban_results:
-            if ban_result.is_banned:
-                maybe_ban_result = ban_result
-                break
-        if maybe_ban_result:
-            results_per_part.append(
-                CommandPartProcessResult(
-                    expanded_part=maybe_expanded_parts,
-                    ban_result=maybe_ban_result,
-                )
-            )
-            continue
 
         # 이동
         for move_data in calculator.move_list:
@@ -200,20 +168,6 @@ def try_process_enemy_command_on_post_action(
     )
     calculator = CommandPartCalculator(command_part, context)
 
-    # 행동 가능 여부 체크
-    ban_results = _get_ban_results(calculator, context, user_id)
-
-    maybe_ban_result: Optional[BanResult] = None
-    for ban_result in ban_results:
-        if ban_result.is_banned:
-            maybe_ban_result = ban_result
-            break
-    if maybe_ban_result:
-        return CommandPartProcessResult(
-            expanded_part=command_part,
-            ban_result=maybe_ban_result,
-        )
-
     _process_damage(calculator, context)
     _process_heal(calculator, context)
 
@@ -222,7 +176,7 @@ def try_process_enemy_command_on_post_action(
         if buff_add_event.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
             context.buff_container.add(buff_add_event)
 
-    return CommandPartProcessResult(command_part, ban_result=None)
+    return CommandPartProcessResult(command_part)
 
 
 def try_expansion_if_valid(
@@ -284,7 +238,7 @@ def _apply_buff_events(
     calculator: CommandPartCalculator,
     context: BattlefieldContext,
     char_id,
-    timing: BuffApplyTiming,
+    timing: Optional[BuffApplyTiming],
     attacker_or_target=None,
 ):
     buffs = context.buff_container.get_buffs_by(char_id, timing)
@@ -295,17 +249,6 @@ def _apply_buff_events(
             event.apply(char_id, attacker_or_target, context, calculator)
 
 
-def _get_ban_results(
-    calculator: CommandPartCalculator, context: BattlefieldContext, user_id: CharacterId
-) -> list[BanResult]:
-    _apply_buff_events(calculator, context, user_id, BuffApplyTiming.ON_ACTION)
-    return [
-        BanResult(event.is_applied(context, user_id, None), event)
-        for event in calculator.ban_event_list
-        if isinstance(event, BanActionEvent)
-    ]
-
-
 def _process_damage(
     calculator: CommandPartCalculator, context: BattlefieldContext
 ) -> None:
@@ -314,14 +257,14 @@ def _process_damage(
             calculator,
             context,
             damage_calc.base.attacker_id,
-            BuffApplyTiming.ON_ATTACK,
+            BuffApplyTiming.ON_ACTION,
             damage_calc.base.target_id,
         )
         _apply_buff_events(
             calculator,
             context,
             damage_calc.base.target_id,
-            BuffApplyTiming.ON_HIT,
+            BuffApplyTiming.ON_ACTION,
             damage_calc.base.attacker_id,
         )
     for damage_calc in calculator.damage_data_list:
@@ -348,14 +291,14 @@ def _process_heal(
             calculator,
             context,
             heal_calc.base.healer_id,
-            BuffApplyTiming.ON_GIVE_HEAL,
+            BuffApplyTiming.ON_ACTION,
             heal_calc.base.target_id,
         )
         _apply_buff_events(
             calculator,
             context,
             heal_calc.base.target_id,
-            BuffApplyTiming.ON_RECEIVE_HEAL,
+            BuffApplyTiming.ON_ACTION,
             heal_calc.base.healer_id,
         )
     for heal_calc in calculator.heal_data_list:

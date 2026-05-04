@@ -132,7 +132,7 @@ def test_buff_applied_to_target(buff_skill_setup):
     cmd = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
     manager.process_command(cmd)
 
-    buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ATTACK)
+    buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
     assert len(buffs) > 0
 
 
@@ -147,7 +147,7 @@ def test_atk_buff_increases_damage(buff_skill_setup):
     cmd1 = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
     manager.process_command(cmd1)
 
-    buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ATTACK)
+    buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
     buff_values = [b.value for b in buffs]
     assert any(v > 0 for v in buff_values)
 
@@ -162,12 +162,12 @@ def test_buff_duration_decrements_on_round_end(buff_skill_setup):
     cmd = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
     manager.process_command(cmd)
 
-    buffs_before = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ATTACK)
+    buffs_before = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
     turns_before = buffs_before[0].duration.remaining_turns
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
 
     # 새 라운드에서 다시 확인 (버프가 아직 남아 있다면)
-    buffs_after = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ATTACK)
+    buffs_after = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
     if buffs_after:
         assert buffs_after[0].duration.remaining_turns == turns_before - 1

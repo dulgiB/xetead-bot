@@ -35,7 +35,7 @@ class BuffTaunt(BuffBase):
 
     @property
     def timing(self) -> set[BuffApplyTiming]:
-        return {BuffApplyTiming.ON_ATTACK}
+        return {BuffApplyTiming.ON_ACTION}
 
     def create_event(self) -> BuffEvent:
         return TauntedByEvent(condition=self.condition, taunter=self.given_by)

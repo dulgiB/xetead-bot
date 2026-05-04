@@ -16,7 +16,6 @@ from battle.objects.models import (
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.objects.buff.buff_events import BuffEvent
 
 
 # user input -> parse() -> list[CommandBase] -> expand_xxx_command() ->
@@ -54,12 +53,6 @@ class CommandPartData:
     admin_buff_remove_list: list[BuffUid] = field(default_factory=list)
 
 
-@dataclass(frozen=True)
-class BanResult:
-    is_banned: bool
-    source: "BuffEvent"
-
-
 @dataclass
 class DamageCalculateData:
     base: DamageData
@@ -83,7 +76,6 @@ class CommandPartCalculator:
             for char_id, character in context.characters.items()
         }
 
-        self.ban_event_list: list[BuffEvent] = []
         self.damage_data_list: list[DamageCalculateData] = [
             DamageCalculateData(damage_data, []) for damage_data in data.damage_list
         ]
@@ -91,11 +83,23 @@ class CommandPartCalculator:
             HealCalculateData(heal_data, []) for heal_data in data.heal_list
         ]
 
+    @classmethod
+    def create_empty(cls, context: "BattlefieldContext"):
+        return cls(
+            CommandPartData(
+                original_part=None,
+                move_list=[],
+                damage_list=[],
+                heal_list=[],
+                buff_add_list=[],
+            ),
+            context,
+        )
+
 
 @dataclass(frozen=True)
 class CommandPartProcessResult:
     expanded_part: CommandPartData
-    ban_result: Optional[BanResult] = None
 
 
 @dataclass(frozen=True)

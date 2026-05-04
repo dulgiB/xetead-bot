@@ -1,6 +1,9 @@
 import importlib
 from typing import TYPE_CHECKING, Optional, Type
 
+from battle.core.commands.models import CommandPartCalculator, CommandPartData
+from battle.objects.buff.buff_events import BuffEvent
+
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.buff.buff_base import (
@@ -48,7 +51,36 @@ class BuffContainer:
                 if buff.applied_to == char_id and timing in buff.timing
             ]
 
+    def on_round_start(self):
+        events = {
+            buff.create_event(): (buff.given_by, buff.applied_to)
+            for buff in self._buffs
+            if buff.timing == BuffApplyTiming.ON_ROUND_START
+        }
+        event_list = list(events.keys())
+        event_list.sort(key=lambda e: e.priority.value)
+
+        buff_calculator = CommandPartCalculator.create_empty(self._context)
+        for event in event_list:
+            given_by, applied_to = events[event]
+            if event.is_applied(self._context, applied_to, given_by):
+                event.apply(applied_to, given_by, self._context, buff_calculator)
+
     def on_round_end(self) -> list[BuffUid]:
+        events = {
+            buff.create_event(): (buff.given_by, buff.applied_to)
+            for buff in self._buffs
+            if buff.timing == BuffApplyTiming.ON_ROUND_END
+        }
+        event_list = list(events.keys())
+        event_list.sort(key=lambda e: e.priority.value)
+
+        buff_calculator = CommandPartCalculator.create_empty(self._context)
+        for event in event_list:
+            given_by, applied_to = events[event]
+            if event.is_applied(self._context, applied_to, given_by):
+                event.apply(applied_to, given_by, self._context, buff_calculator)
+
         buffs_to_remove: list[BuffBase] = []
 
         for buff in self._buffs:

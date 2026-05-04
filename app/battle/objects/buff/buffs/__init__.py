@@ -1,6 +1,4 @@
 from .buff_atk import BuffAtk
-from .buff_ban_action import BuffBanAction
-from .buff_ban_move import BuffBanMove
 from .buff_damage_over_time import BuffDamageOverTime
 from .buff_given_damage import BuffGivenDamage
 from .buff_heal_over_time import BuffHealOverTime
