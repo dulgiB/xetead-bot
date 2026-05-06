@@ -2,6 +2,12 @@ from typing import TYPE_CHECKING, Optional
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_expanders import expand_character_command
+from battle.core.command_process_helpers import (
+    process_buff_add,
+    process_damage,
+    process_heal,
+    process_move,
+)
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
     CharacterCommand,
@@ -18,8 +24,8 @@ from battle.exceptions import (
     error_too_many_characters,
 )
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.define import ActionType, BuffApplyTiming, CombatStatType
-from battle.objects.extensions import get_bonus_damage, get_total_cost
+from battle.objects.define import CombatStatType
+from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
 from utils.battle_helpers import is_reachable
 
@@ -79,16 +85,16 @@ def process_ally_command(
         )
         calculator = CommandPartCalculator(part_data, context)
 
-        # 이동 처리
-        for move_data in calculator.move_list:
-            context.move_character_to(move_data.character_id, move_data.to_position)
-
-        _process_damage(calculator, context)
-        _process_heal(calculator, context)
-
-        # 버프 추가
-        for buff_add_event in part_data.buff_add_list:
-            context.buff_container.add(buff_add_event)
+        process_move(calculator, context)
+        process_damage(calculator, context)
+        process_heal(calculator, context)
+        process_buff_add(
+            context,
+            part_data.buff_add_list,
+            RoundPhaseType.ALLY_ACTION,
+            remaining_parts_dict=None,
+            user_id=None,
+        )
 
         results_per_part.append(CommandPartProcessResult(expanded_part=part_data))
 
@@ -122,19 +128,18 @@ def process_enemy_command_on_pre_action(
         )
         calculator = CommandPartCalculator(part_data, context)
 
-        # 이동
-        for move_data in calculator.move_list:
-            context.move_character_to(move_data.character_id, move_data.to_position)
+        process_move(calculator, context)
 
         remaining_parts_dict[command.user_id].extend(part_data.damage_list)
         remaining_parts_dict[command.user_id].extend(part_data.heal_list)
 
-        # 버프 추가
-        for buff_add_event in part_data.buff_add_list:
-            if buff_add_event.add_timing == RoundPhaseType.ENEMY_PRE_ACTION:
-                context.buff_container.add(buff_add_event)
-            elif buff_add_event.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
-                remaining_parts_dict[command.user_id].append(buff_add_event)
+        process_buff_add(
+            context,
+            part_data.buff_add_list,
+            RoundPhaseType.ENEMY_PRE_ACTION,
+            remaining_parts_dict=remaining_parts_dict,
+            user_id=command.user_id,
+        )
 
     print(results_per_part)
 
@@ -168,13 +173,15 @@ def try_process_enemy_command_on_post_action(
     )
     calculator = CommandPartCalculator(command_part, context)
 
-    _process_damage(calculator, context)
-    _process_heal(calculator, context)
-
-    # 버프 추가
-    for buff_add_event in command_part.buff_add_list:
-        if buff_add_event.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
-            context.buff_container.add(buff_add_event)
+    process_damage(calculator, context)
+    process_heal(calculator, context)
+    process_buff_add(
+        context,
+        command_part.buff_add_list,
+        RoundPhaseType.ENEMY_POST_ACTION,
+        remaining_parts_dict=None,
+        user_id=None,
+    )
 
     return CommandPartProcessResult(command_part)
 
@@ -232,79 +239,3 @@ def try_expansion_if_valid(
                 raise CommandValidationError(error_too_many_characters(to_pos))
 
     return expanded_command_data_list, needed_cost
-
-
-def _apply_buff_events(
-    calculator: CommandPartCalculator,
-    context: BattlefieldContext,
-    char_id,
-    timing: Optional[BuffApplyTiming],
-    attacker_or_target=None,
-):
-    buffs = context.buff_container.get_buffs_by(char_id, timing)
-    events = [buff.create_event() for buff in buffs]
-    events.sort(key=lambda e: e.priority.value)
-    for event in events:
-        if event.is_applied(context, char_id, attacker_or_target):
-            event.apply(char_id, attacker_or_target, context, calculator)
-
-
-def _process_damage(
-    calculator: CommandPartCalculator, context: BattlefieldContext
-) -> None:
-    for damage_calc in list(calculator.damage_data_list):
-        _apply_buff_events(
-            calculator,
-            context,
-            damage_calc.base.attacker_id,
-            BuffApplyTiming.ON_ACTION,
-            damage_calc.base.target_id,
-        )
-        _apply_buff_events(
-            calculator,
-            context,
-            damage_calc.base.target_id,
-            BuffApplyTiming.ON_ACTION,
-            damage_calc.base.attacker_id,
-        )
-    for damage_calc in calculator.damage_data_list:
-        attacker = context.characters[damage_calc.base.attacker_id]
-        target = context.characters[damage_calc.base.target_id]
-
-        if attacker.status.is_magic_attacker:
-            damage_calc.modifiers.append(target.status.m_res)
-        damage_calc.modifiers.append(get_bonus_damage(target.element, attacker.element))
-
-        context.apply_damage(
-            damage_calc.base.attacker_id,
-            damage_calc.base.target_id,
-            ValueWithModifiers(damage_calc.base.value, damage_calc.modifiers),
-            calculator,
-        )
-
-
-def _process_heal(
-    calculator: CommandPartCalculator, context: BattlefieldContext
-) -> None:
-    for heal_calc in list(calculator.heal_data_list):
-        _apply_buff_events(
-            calculator,
-            context,
-            heal_calc.base.healer_id,
-            BuffApplyTiming.ON_ACTION,
-            heal_calc.base.target_id,
-        )
-        _apply_buff_events(
-            calculator,
-            context,
-            heal_calc.base.target_id,
-            BuffApplyTiming.ON_ACTION,
-            heal_calc.base.healer_id,
-        )
-    for heal_calc in calculator.heal_data_list:
-        context.apply_heal(
-            heal_calc.base.healer_id,
-            heal_calc.base.target_id,
-            ValueWithModifiers(heal_calc.base.value, heal_calc.modifiers),
-            calculator,
-        )

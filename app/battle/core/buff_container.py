@@ -1,8 +1,12 @@
 import importlib
 from typing import TYPE_CHECKING, Optional, Type
 
-from battle.core.commands.models import CommandPartCalculator, CommandPartData
-from battle.objects.buff.buff_events import BuffEvent
+from battle.core.command_process_helpers import (
+    process_damage,
+    process_heal,
+    process_move,
+)
+from battle.core.commands.models import CommandPartCalculator
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -66,6 +70,10 @@ class BuffContainer:
             if event.is_applied(self._context, applied_to, given_by):
                 event.apply(applied_to, given_by, self._context, buff_calculator)
 
+        process_move(buff_calculator, self._context)
+        process_damage(buff_calculator, self._context)
+        process_heal(buff_calculator, self._context)
+
     def on_round_end(self) -> list[BuffUid]:
         events = {
             buff.create_event(): (buff.given_by, buff.applied_to)
@@ -80,6 +88,10 @@ class BuffContainer:
             given_by, applied_to = events[event]
             if event.is_applied(self._context, applied_to, given_by):
                 event.apply(applied_to, given_by, self._context, buff_calculator)
+
+        process_move(buff_calculator, self._context)
+        process_damage(buff_calculator, self._context)
+        process_heal(buff_calculator, self._context)
 
         buffs_to_remove: list[BuffBase] = []
 
