@@ -98,3 +98,8 @@ class BuffApplyTiming(str, Enum):
     ON_ROUND_START = "라운드 시작 시"
     ON_ACTION = "행동 시"
     ON_ROUND_END = "라운드 종료 시"
+
+
+class BuffCountDeductCondition(str, Enum):
+    ON_ATTACK = "공격 시"
+    ON_HIT = "피격 시"

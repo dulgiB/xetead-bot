@@ -3,8 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Type
 
 from battle.objects.buff.conditions import Condition
-from battle.objects.buff.define import BuffDurationType
-from battle.objects.define import ValueType
+from battle.objects.define import BuffCountDeductCondition, ValueType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -17,8 +16,9 @@ class BuffData:
     buff_class_name: str
 
     # 지속 시간 (턴수 or 횟수)
-    duration_type: BuffDurationType
-    duration_value: int
+    duration_turn_value: Optional[int]
+    duration_count_value: Optional[int]
+    duration_count_deduct_condition: Optional[BuffCountDeductCondition]
 
     # 값 (정수 or 퍼센트, 보너스)
     value_type: Optional[ValueType]
@@ -33,8 +33,17 @@ class BuffData:
         return BuffData(
             id=data["id"],
             buff_class_name=data["buff_name"],
-            duration_type=BuffDurationType(data["duration_type"]),
-            duration_value=data["duration_value"],
+            duration_turn_value=data["duration_turn_value"]
+            if data["duration_turn_value"]
+            else None,
+            duration_count_value=data["duration_count_value"]
+            if data["duration_count_value"]
+            else None,
+            duration_count_deduct_condition=BuffCountDeductCondition(
+                data["duration_count_deduct_condition"]
+            )
+            if data["duration_count_deduct_condition"]
+            else None,
             value_type=ValueType(data["value_type"]) if data["value_type"] else None,
             value=data["value"] if data["value_type"] else 0,
             condition_=data["condition"] if data["condition"] else None,

@@ -13,12 +13,12 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
-from battle.objects.buff.define import BuffDurationType
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
     BuffApplyTiming,
+    BuffCountDeductCondition,
     FactionType,
     ValueType,
 )
@@ -53,8 +53,9 @@ def make_buff_data(
     return BuffData(
         id=buff_id,
         buff_class_name=buff_class_name,
-        duration_type=duration_type,
-        duration_value=duration_value,
+        duration_turn_value=duration_turn_value,
+        duration_count_value=duration_count_value,
+        duration_count_deduct_condition=duration_count_deduct_condition,
         value_type=value_type,
         value=value,
         condition_=condition_,
@@ -431,13 +432,7 @@ class TestBuffDamageOverTime:
 
     @pytest.fixture
     def ctx(self):
-        buff = make_buff_data(
-            "독",
-            "BuffDamageOverTime",
-            duration_type=BuffDurationType.TURN,
-            duration_value=2,
-            value=10,
-        )
+        buff = make_buff_data("독", "BuffDamageOverTime", value=10)
         skill = make_buff_skill(
             "독 스킬", "독", timing_if_enemy_skill=RoundPhaseType.ENEMY_PRE_ACTION
         )
@@ -482,9 +477,8 @@ class TestBuffDamageOverTime:
             parse_character_command(CharacterId("독사"), "[스킬1/아군]")
         )
 
-        # 2턴 경과
-        ctx.on_finish_round()
-        ctx.on_finish_round()
+        for i in range(3):
+            ctx.on_finish_round()
 
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ROUND_END)
         assert len(buffs) == 0
@@ -495,13 +489,7 @@ class TestBuffHealOverTime:
 
     @pytest.fixture
     def ctx(self):
-        buff = make_buff_data(
-            "재생",
-            "BuffHealOverTime",
-            duration_type=BuffDurationType.TURN,
-            duration_value=2,
-            value=20,
-        )
+        buff = make_buff_data("재생", "BuffHealOverTime", value=20)
         skill = make_buff_skill("재생 스킬", "재생")
         return make_context(buff, skill_dict={"재생 스킬": skill})
 
@@ -602,12 +590,7 @@ class TestBuffDuration:
 
     def test_turn_duration_decrements_on_round_end(self):
         buff = make_buff_data(
-            "테스트 버프",
-            "BuffAtk",
-            duration_type=BuffDurationType.TURN,
-            duration_value=3,
-            value_type=ValueType.INTEGER,
-            value=1,
+            "테스트 버프", "BuffAtk", value_type=ValueType.INTEGER, value=1
         )
         skill = make_buff_skill("버프 스킬", "테스트 버프")
         ctx = make_context(buff, skill_dict={"버프 스킬": skill})
@@ -638,8 +621,7 @@ class TestBuffDuration:
         buff = make_buff_data(
             "단기 버프",
             "BuffAtk",
-            duration_type=BuffDurationType.TURN,
-            duration_value=1,
+            duration_turn_value=1,
             value_type=ValueType.INTEGER,
             value=1,
         )
@@ -665,6 +647,91 @@ class TestBuffDuration:
         buffs = ctx.buff_container.get_buffs_by(
             CharacterId("대상"), BuffApplyTiming.ON_ACTION
         )
+        assert len(buffs) == 0
+
+    def test_count_duration_buff_decrements_on_hit(self):
+        buff = make_buff_data(
+            "테스트 버프",
+            "BuffAtk",
+            duration_turn_value=0,
+            duration_count_value=3,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_HIT,
+            value_type=ValueType.INTEGER,
+            value=1,
+        )
+        skill = make_buff_skill("버프 스킬", "테스트 버프")
+        ctx = make_context(buff, skill_dict={"버프 스킬": skill})
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="버프 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[공격/대상]")
+        )
+
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
+        )
+        target_id = CharacterId("대상")
+        buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
+        assert buffs[0].duration.remaining_count == 3
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+        buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
+        assert buffs[0].duration.remaining_count == 2
+
+        ctx.on_finish_round()
+        assert buffs[0].duration.remaining_count == 2
+
+    def test_count_duration_buff_removed_after_expiry(self):
+        buff = make_buff_data(
+            "단기 버프",
+            "BuffAtk",
+            duration_turn_value=0,
+            duration_count_value=1,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_HIT,
+            value_type=ValueType.INTEGER,
+            value=1,
+        )
+        skill = make_buff_skill("버프 스킬", "단기 버프")
+        ctx = make_context(buff, skill_dict={"버프 스킬": skill})
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="버프 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[공격/대상]")
+        )
+
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
+        )
+        target_id = CharacterId("대상")
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+        buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
         assert len(buffs) == 0
 
     def test_passive_buff_never_removed(self):

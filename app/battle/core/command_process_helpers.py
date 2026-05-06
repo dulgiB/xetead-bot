@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.define import BuffApplyTiming
+from battle.objects.define import BuffApplyTiming, BuffCountDeductCondition
 from battle.objects.extensions import get_bonus_damage
 from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
 
@@ -26,14 +26,14 @@ def process_damage(
             calculator,
             context,
             damage_calc.base.attacker_id,
-            BuffApplyTiming.ON_ACTION,
+            BuffCountDeductCondition.ON_ATTACK,
             damage_calc.base.target_id,
         )
         _apply_buff_events(
             calculator,
             context,
             damage_calc.base.target_id,
-            BuffApplyTiming.ON_ACTION,
+            BuffCountDeductCondition.ON_HIT,
             damage_calc.base.attacker_id,
         )
     for damage_calc in calculator.damage_data_list:
@@ -60,14 +60,14 @@ def process_heal(
             calculator,
             context,
             heal_calc.base.healer_id,
-            BuffApplyTiming.ON_ACTION,
+            None,
             heal_calc.base.target_id,
         )
         _apply_buff_events(
             calculator,
             context,
             heal_calc.base.target_id,
-            BuffApplyTiming.ON_ACTION,
+            None,
             heal_calc.base.healer_id,
         )
     for heal_calc in calculator.heal_data_list:
@@ -111,10 +111,16 @@ def _apply_buff_events(
     calculator: "CommandPartCalculator",
     context: "BattlefieldContext",
     char_id: CharacterId,
-    timing: Optional[BuffApplyTiming],
+    deduct_condition: Optional[BuffCountDeductCondition],
     attacker_or_target: CharacterId = None,
 ) -> None:
-    buffs = context.buff_container.get_buffs_by(char_id, timing)
+    buffs = context.buff_container.get_buffs_by(char_id, BuffApplyTiming.ON_ACTION)
+    if deduct_condition is not None:
+        for buff in buffs:
+            buff.duration.deduct_count(deduct_condition)
+            if buff.duration.finished:
+                context.buff_container.remove(buff.uid)
+
     events = [buff.create_event() for buff in buffs]
     events.sort(key=lambda e: e.priority.value)
     for event in events:

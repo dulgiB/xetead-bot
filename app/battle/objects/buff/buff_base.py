@@ -4,11 +4,8 @@ from typing import Literal, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_events import BuffEvent
-from battle.objects.buff.define import BuffDurationType
 from battle.objects.buff.models import BuffData
-from battle.objects.define import (
-    BuffApplyTiming,
-)
+from battle.objects.define import BuffApplyTiming, BuffCountDeductCondition
 from battle.objects.models import BuffUid, CharacterId
 
 
@@ -25,25 +22,36 @@ class BuffAddData:
 
 
 class BuffDurationCounter:
-    def __init__(self, duration_type: BuffDurationType, duration_value: int):
-        self.remaining_turns = (
-            duration_value if duration_type == BuffDurationType.TURN else None
-        )
-        self.remaining_count = (
-            duration_value if duration_type == BuffDurationType.COUNT else None
-        )
+    def __init__(
+        self,
+        duration_turn_value: Optional[int],
+        duration_count_value: Optional[int],
+        count_deduct_condition: Optional[BuffCountDeductCondition],
+    ):
+        self.remaining_turns = duration_turn_value
+        self.remaining_count = duration_count_value
+        self.count_deduct_condition = count_deduct_condition
+
+    @property
+    def is_passive(self) -> bool:
+        return self.remaining_turns is None and self.remaining_count is None
 
     def deduct_turn(self):
         if self.remaining_turns is not None:
             self.remaining_turns -= 1
 
-    def deduct_count(self):
-        if self.remaining_count is not None:
+    def deduct_count(self, condition: BuffCountDeductCondition):
+        if (
+            self.remaining_count is not None
+            and condition == self.count_deduct_condition
+        ):
             self.remaining_count -= 1
 
     @property
     def finished(self) -> bool:
-        if self.remaining_turns is not None and self.remaining_count is not None:
+        if self.is_passive:
+            return False
+        elif self.remaining_turns is not None and self.remaining_count is not None:
             return self.remaining_turns == 0 and self.remaining_count == 0
         elif self.remaining_turns is not None:
             return self.remaining_turns == 0
@@ -73,7 +81,11 @@ class BuffBase(abc.ABC):
         self.value = data.value
         self.value_type = data.value_type
 
-        self.duration = BuffDurationCounter(data.duration_type, data.duration_value)
+        self.duration = BuffDurationCounter(
+            data.duration_turn_value,
+            data.duration_count_value,
+            data.duration_count_deduct_condition,
+        )
         self.condition = data.condition
 
     def __hash__(self):

@@ -6,7 +6,6 @@
 import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.round_manager import RoundManager
-from battle.objects.buff.define import BuffDurationType
 from battle.objects.buff.models import BuffData
 from battle.objects.define import ValueSourceType, ValueType
 from battle.objects.skill.effects import (
@@ -33,8 +32,9 @@ def buff_atk_data() -> BuffData:
     return BuffData(
         id="공격력 증가",
         buff_class_name="BuffAtk",
-        duration_type=BuffDurationType.TURN,
-        duration_value=3,
+        duration_turn_value=3,
+        duration_count_value=0,
+        duration_count_deduct_condition=None,
         value_type=ValueType.INTEGER,
         value=1,
         condition_=None,
