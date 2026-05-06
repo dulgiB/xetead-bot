@@ -19,15 +19,12 @@ from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
     BuffApplyTiming,
-    ElementType,
     FactionType,
-    MagicResistanceType,
     ValueType,
 )
 from battle.objects.models import CharacterId
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
-    SkillEffectDamage,
     SkillEffectHeal,
 )
 from battle.objects.skill.models import SkillData
@@ -45,8 +42,9 @@ def make_buff_data(
     buff_id: str,
     buff_class_name: str,
     *,
-    duration_type: BuffDurationType = BuffDurationType.TURN,
-    duration_value: int = 3,
+    duration_turn_value: Optional[int] = 3,
+    duration_count_value: Optional[int] = None,
+    duration_count_deduct_condition: Optional[BuffCountDeductCondition] = None,
     value_type: ValueType | None = None,
     value: int = 0,
     condition_: str | None = None,
@@ -224,7 +222,6 @@ class TestBuffGivenDamage:
         manager.process_command(
             parse_character_command(CharacterId("버퍼"), "[스킬1/공격수]")
         )
-        ctx.characters[CharacterId("공격수")].status.remaining_cost = 3
 
         manager.process_command(
             parse_character_command(CharacterId("공격수"), "[공격/적군]")
@@ -277,18 +274,15 @@ class TestBuffReceivedDamage:
             BattlefieldColumnIndex(1),
         )
 
-        # 적군 A에게 취약 버프 부여
         manager.process_command(
             parse_character_command(CharacterId("버퍼"), "[스킬1/적군 A]")
         )
-        ctx.characters[CharacterId("공격수")].status.remaining_cost = 3
 
         manager.process_command(
             parse_character_command(CharacterId("공격수"), "[공격/적군 A]")
         )
         damage_to_buffed = 100 - ctx.characters[CharacterId("적군 A")].status.curr_hp
 
-        ctx.characters[CharacterId("공격수")].status.remaining_cost = 3
         manager.process_command(
             parse_character_command(CharacterId("공격수"), "[공격/적군 B]")
         )
@@ -319,18 +313,15 @@ class TestBuffReceivedDamage:
             BattlefieldColumnIndex(1),
         )
 
-        # 적군 A에게 방어 버프 부여
         manager.process_command(
             parse_character_command(CharacterId("버퍼"), "[스킬1/적군 A]")
         )
-        ctx.characters[CharacterId("공격수")].status.remaining_cost = 3
 
         manager.process_command(
             parse_character_command(CharacterId("공격수"), "[공격/적군 A]")
         )
         damage_to_buffed = 100 - ctx.characters[CharacterId("적군 A")].status.curr_hp
 
-        ctx.characters[CharacterId("공격수")].status.remaining_cost = 3
         manager.process_command(
             parse_character_command(CharacterId("공격수"), "[공격/적군 B]")
         )
@@ -367,7 +358,7 @@ class TestBuffNoDamage:
         manager.process_command(
             parse_character_command(CharacterId("버퍼"), "[스킬1/적군]")
         )
-        ctx.characters[CharacterId("공격수")].status.remaining_cost = 3
+
         initial_hp = ctx.characters[CharacterId("적군")].status.curr_hp
 
         manager.process_command(
@@ -426,7 +417,6 @@ class TestBuffNoHeal:
         manager.process_command(
             parse_character_command(CharacterId("디버퍼"), "[스킬1/환자]")
         )
-        ctx.characters[CharacterId("힐러")].status.remaining_cost = 3
         initial_hp = ctx.characters[CharacterId("환자")].status.curr_hp
 
         manager.process_command(
@@ -472,9 +462,7 @@ class TestBuffDamageOverTime:
         )
         initial_hp = ctx.characters[CharacterId("아군")].status.curr_hp
 
-        # 라운드 종료 처리 (on_finish_round 내에서 buff_container.on_round_end 호출됨)
         ctx.on_finish_round()
-
         assert ctx.characters[CharacterId("아군")].status.curr_hp < initial_hp
 
     def test_dot_expires_after_duration(self, ctx):
@@ -500,9 +488,6 @@ class TestBuffDamageOverTime:
 
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ROUND_END)
         assert len(buffs) == 0
-
-
-# ─── BuffHealOverTime (도트 회복) ─────────────────────────────────────────────
 
 
 class TestBuffHealOverTime:
@@ -567,9 +552,6 @@ class TestBuffHealOverTime:
         assert ctx.characters[target_id].status.curr_hp <= 100
 
 
-# ─── BuffTaunt (도발) ─────────────────────────────────────────────────────────
-
-
 class TestBuffTaunt:
     """BuffTaunt: 공격 시 공격 대상을 도발자로 강제 변경한다."""
 
@@ -581,11 +563,7 @@ class TestBuffTaunt:
 
     def test_taunt_redirects_attack(self, ctx):
         """도발 버프를 받은 캐릭터를 공격하면, 실제 대미지는 도발자에게 들어간다."""
-        manager = setup_ally_phase(ctx)
-        # 아군 버퍼가 도발 버프를 적군 A에게 부여한다. 도발 버프의 taunter는 버프 부여자.
-        # 아군이 적군 B를 공격하면, 도발 버프로 인해 실제 대미지는 버프 부여자(버퍼)에게 들어간다.
-        # → 여기서는 적군이 적군에게 도발을 거는 시나리오: 적군 A(도발자)가 아군에게 도발을 걺
-        # 구현 편의상 아군이 아군에게 도발 걸고, 다른 아군이 공격하는 케이스로 테스트
+        manager = setup_enemy_pre_phase(ctx)
 
         ctx.add_character(
             get_test_preset("도발자", skill_1_id="도발 스킬"),
@@ -596,51 +574,33 @@ class TestBuffTaunt:
             get_test_preset("공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
         ctx.add_character(
-            get_test_preset("미끼", max_hp=10000),
-            FactionType.ENEMY,
-            BattlefieldColumnIndex(0),
-        )
-        ctx.add_character(
-            get_test_preset("진짜 대상", max_hp=10000),
+            get_test_preset("적군"),
             FactionType.ENEMY,
             BattlefieldColumnIndex(1),
         )
 
-        # 미끼에게 도발 부여 → 실제 대미지는 도발자(도발 스킬 사용자)에게 가야 한다
-        # BuffTaunt의 taunter = given_by = 도발자
         manager.process_command(
-            parse_character_command(CharacterId("도발자"), "[스킬1/미끼]")
-        )
-        ctx.characters[CharacterId("공격수")].status.remaining_cost = 3
-
-        hp_decoy_before = ctx.characters[CharacterId("미끼")].status.curr_hp
-        hp_taunt_before = ctx.characters[CharacterId("진짜 대상")].status.curr_hp
-
-        # 공격수가 미끼를 공격 → 도발에 의해 진짜 대상(도발자=버프 부여자)에게 대미지가 가야 함
-        # 현 구조상 taunter == given_by == 도발자(아군), 적군은 아군을 공격 대상으로 지정 불가
-        # → 도발 버프의 실제 동작: attacker가 holder를 공격할 때 target을 taunter로 바꿈
-        # 즉 공격수가 미끼를 공격하면 → 실제로는 도발자(아군)에게 대미지가 감
-        # 아군 HP 감소 확인으로 테스트
-        taunt_holder_id = CharacterId("도발자")
-        hp_before = ctx.characters[taunt_holder_id].status.curr_hp
-
-        manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/미끼]")
+            parse_character_command(CharacterId("적군"), "[공격/공격수]")
         )
 
-        # 미끼는 피해를 받지 않고, 도발자가 피해를 받아야 한다
-        assert ctx.characters[CharacterId("미끼")].status.curr_hp == hp_decoy_before
-        assert ctx.characters[taunt_holder_id].status.curr_hp < hp_before
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자"), "[스킬1/적군]")
+        )
 
+        hp_dealer_before = ctx.characters[CharacterId("공격수")].status.curr_hp
+        hp_taunter_before = ctx.characters[CharacterId("도발자")].status.curr_hp
 
-# ─── 버프 지속 시간 공통 ──────────────────────────────────────────────────────
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        assert ctx.characters[CharacterId("공격수")].status.curr_hp == hp_dealer_before
+        assert ctx.characters[CharacterId("도발자")].status.curr_hp < hp_taunter_before
 
 
 class TestBuffDuration:
     """버프 지속 시간(TURN/COUNT) 공통 동작 테스트."""
 
     def test_turn_duration_decrements_on_round_end(self):
-        """TURN 타입 버프는 라운드 종료마다 남은 턴수가 차감된다."""
         buff = make_buff_data(
             "테스트 버프",
             "BuffAtk",
@@ -675,7 +635,6 @@ class TestBuffDuration:
         assert buffs[0].duration.remaining_turns == 2
 
     def test_turn_duration_buff_removed_after_expiry(self):
-        """TURN 타입 버프는 지속 턴수가 0이 되면 제거된다."""
         buff = make_buff_data(
             "단기 버프",
             "BuffAtk",
@@ -709,30 +668,19 @@ class TestBuffDuration:
         assert len(buffs) == 0
 
     def test_passive_buff_never_removed(self):
-        """PASSIVE 타입 버프는 라운드가 종료되어도 제거되지 않는다."""
         buff = make_buff_data(
             "패시브 버프",
             "BuffAtk",
-            duration_type=BuffDurationType.PASSIVE,
-            duration_value=0,
+            duration_turn_value=None,
+            duration_count_value=None,
             value_type=ValueType.INTEGER,
             value=1,
         )
-        skill = make_buff_skill("패시브 스킬", "패시브 버프")
-        ctx = make_context(buff, skill_dict={"패시브 스킬": skill})
-        manager = setup_ally_phase(ctx)
-
+        ctx = make_context(buff)
         ctx.add_character(
             get_test_preset("버퍼", skill_1_id="패시브 스킬"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
-        )
-        ctx.add_character(
-            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
-        )
-
-        manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
         )
 
         # 여러 라운드 종료
