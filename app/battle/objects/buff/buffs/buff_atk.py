@@ -5,12 +5,7 @@ from battle.core.commands.models import CommandPartCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming, CombatStatType, ValueType
-from battle.objects.models import (
-    CharacterId,
-    FloatValueModifier,
-    IntValueModifier,
-    ValueModifierBase,
-)
+from battle.objects.models import CharacterId, IntValueModifier
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -40,8 +35,8 @@ class BuffAtk(BuffBase):
     """공격력 증가/감소"""
 
     @property
-    def timing(self) -> set[BuffApplyTiming]:
-        return {BuffApplyTiming.ON_ACTION}
+    def timing(self) -> BuffApplyTiming:
+        return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> AtkModEvent:
         if self.value_type == ValueType.INTEGER:

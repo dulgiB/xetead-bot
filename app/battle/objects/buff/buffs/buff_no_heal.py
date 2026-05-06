@@ -33,8 +33,8 @@ class NoHealEvent(BuffEvent):
 
 class BuffNoHeal(BuffBase):
     @property
-    def timing(self) -> set[BuffApplyTiming]:
-        return {BuffApplyTiming.ON_ACTION}
+    def timing(self) -> BuffApplyTiming:
+        return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> NoHealEvent:
         return NoHealEvent(condition=self.condition)

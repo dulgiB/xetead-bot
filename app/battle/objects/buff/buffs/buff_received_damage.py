@@ -37,8 +37,8 @@ class BuffReceivedDamage(BuffBase):
     """주는 대미지 증가/감소"""
 
     @property
-    def timing(self) -> set[BuffApplyTiming]:
-        return {BuffApplyTiming.ON_ACTION}
+    def timing(self) -> BuffApplyTiming:
+        return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> ReceivedDamageModEvent:
         if self.value_type == ValueType.INTEGER:

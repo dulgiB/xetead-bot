@@ -81,7 +81,7 @@ class BuffBase(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def timing(self) -> set[BuffApplyTiming]:
+    def timing(self) -> BuffApplyTiming:
         pass
 
     @abc.abstractmethod

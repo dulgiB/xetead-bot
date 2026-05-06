@@ -48,7 +48,7 @@ class BuffContainer:
             return [
                 buff
                 for buff in self._buffs
-                if buff.applied_to == char_id and timing in buff.timing
+                if buff.applied_to == char_id and timing == buff.timing
             ]
 
     def on_round_start(self):
