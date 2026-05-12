@@ -297,7 +297,7 @@ async def cmd_스킬(
         return
 
     try:
-        session.set_skills(캐릭터이름, 패시브, 스킬1, 스킬2)
+        session.set_skills(캐릭터이름, 패시브, 스킬1, 스킬2, None)
     except CommandValidationError as e:
         await interaction.response.send_message(f"❌ {e}", ephemeral=True)
         return
@@ -324,7 +324,7 @@ async def cmd_스킬목록(interaction: discord.Interaction):
         return
     lines = ["**스킬 목록**"]
     for sid, skill in SKILL_DICT.items():
-        lines.append(f"- `{sid}` — 코스트 {skill.cost}")
+        lines.append(f"- `{sid}` — 코스트 {skill.cost}: {skill.description}")
     msg = "\n".join(lines)
     if len(msg) > 1900:
         msg = msg[:1900] + "\n...(생략)"
@@ -340,7 +340,11 @@ async def cmd_버프목록(interaction: discord.Interaction):
         return
     lines = ["**패시브 버프 목록**"]
     for bid in BUFF_DICT:
-        lines.append(f"- `{bid}`")
+        if (
+            BUFF_DICT[bid].duration_turn_value is None
+            and BUFF_DICT[bid].duration_count_value is None
+        ):
+            lines.append(f"- `{bid}`: {BUFF_DICT[bid].description}")
     msg = "\n".join(lines)
     if len(msg) > 1900:
         msg = msg[:1900] + "\n...(생략)"

@@ -55,6 +55,7 @@ class SkillData:
     target_count: int
     cost: int
     effects: list[SkillEffectBase]
+    description: str
 
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "SkillData":
@@ -100,6 +101,7 @@ class SkillData:
             target_count=data["target_count"],
             cost=data["cost"],
             effects=skill_effects,
+            description=data["description"],
         )
 
     def to_skill_instance(

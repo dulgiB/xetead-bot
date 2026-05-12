@@ -54,11 +54,11 @@ class CombatStatType(str, Enum):
 class ValueSourceType(str, Enum):
     FIXED = "고정값"
 
-    STAT_ATK = "공격력 스탯"
-    STAT_ATK_ROLL = "공격력 스탯 굴림"
-    STAT_RANGE = "사거리 스탯"
-    STAT_MAX_HP = "최대 체력 스탯"
-    STAT_COST_PER_TURN = "턴당 코스트 스탯"
+    STAT_ATK = "공격력"
+    STAT_ATK_ROLL = "공격 굴림값"
+    STAT_RANGE = "사거리"
+    STAT_MAX_HP = "최대 체력"
+    STAT_COST_PER_TURN = "턴당 코스트"
 
     SELF_CURR_HP = "자신의 현재 체력"
     SELF_CURR_POSITION = "자신의 현재 위치"

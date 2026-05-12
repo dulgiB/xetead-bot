@@ -28,6 +28,8 @@ class BuffData:
     condition_: Optional[str]
     condition_value: Optional[int]
 
+    description: str
+
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "BuffData":
         return BuffData(
@@ -50,6 +52,7 @@ class BuffData:
             condition_value=data["condition_value"]
             if data["condition_value"]
             else None,
+            description=data["description"],
         )
 
     @property
