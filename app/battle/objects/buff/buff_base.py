@@ -91,6 +91,9 @@ class BuffBase(abc.ABC):
     def __hash__(self):
         return hash(self.uid)
 
+    def get_target_override(self) -> Optional[CharacterId]:
+        return None
+
     @property
     @abc.abstractmethod
     def timing(self) -> BuffApplyTiming:

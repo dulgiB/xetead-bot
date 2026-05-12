@@ -1,3 +1,5 @@
+from typing import Optional
+
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import (
     ADMIN_ID,
@@ -16,7 +18,7 @@ from battle.core.commands.models import (
     MoveData,
 )
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.define import ActionType, BattlefieldColumnIndex, ValueSourceType
+from battle.objects.define import ActionType, BattlefieldColumnIndex, BuffApplyTiming, ValueSourceType
 from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
 
 
@@ -101,10 +103,21 @@ def expand_admin_command(
         raise TypeError(command)
 
 
+def _get_taunt_override(
+    user_id: CharacterId, context: BattlefieldContext
+) -> Optional[CharacterId]:
+    for buff in context.buff_container.get_buffs_by(user_id, BuffApplyTiming.ON_ACTION):
+        override = buff.get_target_override()
+        if override is not None:
+            return override
+    return None
+
+
 def expand_character_command(
     command: CharacterCommand, context: BattlefieldContext
 ) -> list[CommandPartData]:
     parts_list: list[CommandPartData] = []
+    taunted_target = _get_taunt_override(command.user_id, context)
 
     for part in command.parts:
         if part.type_ == ActionType.MOVE and part.targets is not None:
@@ -119,6 +132,7 @@ def expand_character_command(
             )
 
         elif part.type_ == ActionType.ATTACK and part.targets is not None:
+            effective_target = taunted_target if taunted_target is not None else part.targets[0]
             parts_list.append(
                 CommandPartData(
                     part,
@@ -126,7 +140,7 @@ def expand_character_command(
                     damage_list=[
                         DamageData(
                             command.user_id,
-                            part.targets[0],
+                            effective_target,
                             BaseValueIndicator(ValueSourceType.STAT_ATK_ROLL),
                         )
                     ],
@@ -138,7 +152,10 @@ def expand_character_command(
         elif part.type_ == ActionType.SKILL:
             for skill in context.characters[command.user_id].skills:
                 if skill.data.id == part.skill_id:
-                    target_characters = skill.target_rule.get_targets(part.targets)
+                    if taunted_target is not None and not skill.target_rule.ignores_input_targets:
+                        target_characters = [taunted_target]
+                    else:
+                        target_characters = skill.target_rule.get_targets(part.targets)
 
                     for skill_effect in skill.data.effects:
                         move_list, damage_list, heal_list, buff_add_list = (

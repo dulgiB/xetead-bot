@@ -14,6 +14,10 @@ class SkillTargetRule(abc.ABC):
     context: "BattlefieldContext"
     skill_holder_id: CharacterId
 
+    @property
+    def ignores_input_targets(self) -> bool:
+        return False
+
     @abc.abstractmethod
     def get_targets(
         self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
@@ -28,6 +32,10 @@ class SkillTargetRuleSelf(SkillTargetRule):
 
     ex. 자신에게 버프 부여, 자신의 체력을 회복, 자신의 체력을 10 소모
     """
+
+    @property
+    def ignores_input_targets(self) -> bool:
+        return True
 
     def get_targets(
         self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
