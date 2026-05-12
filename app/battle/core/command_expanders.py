@@ -133,6 +133,7 @@ def expand_character_command(
 
         elif part.type_ == ActionType.ATTACK and part.targets is not None:
             effective_target = taunted_target if taunted_target is not None else part.targets[0]
+            is_magic_attack = context.characters[command.user_id].status.is_magic_attacker
             parts_list.append(
                 CommandPartData(
                     part,
@@ -142,6 +143,7 @@ def expand_character_command(
                             command.user_id,
                             effective_target,
                             BaseValueIndicator(ValueSourceType.STAT_ATK_ROLL),
+                            is_magic_attack,
                         )
                     ],
                     heal_list=[],

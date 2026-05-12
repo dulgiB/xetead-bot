@@ -39,7 +39,12 @@ def process_damage(
         attacker = context.characters[damage_calc.base.attacker_id]
         target = context.characters[damage_calc.base.target_id]
 
-        if attacker.status.is_magic_attacker:
+        is_magic_attack = (
+            damage_calc.base.is_magic_attack
+            if damage_calc.base.is_magic_attack is not None
+            else attacker.status.is_magic_attacker
+        )
+        if is_magic_attack:
             damage_calc.modifiers.append(target.status.m_res)
 
         context.apply_damage(

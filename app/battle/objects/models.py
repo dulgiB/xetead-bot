@@ -172,6 +172,7 @@ class DamageData:
     attacker_id: CharacterId
     target_id: CharacterId
     value: BaseValueIndicator
+    is_magic_attack: Optional[bool] = None
 
 
 @dataclass(frozen=True)
