@@ -52,6 +52,7 @@ class Skill:
 class SkillData:
     id: str
     target_rule: str
+    target_count: int
     cost: int
     effects: list[SkillEffectBase]
 
@@ -96,6 +97,7 @@ class SkillData:
         return SkillData(
             id=data["id"],
             target_rule=data["target_rule"],
+            target_count=data["target_count"],
             cost=data["cost"],
             effects=skill_effects,
         )

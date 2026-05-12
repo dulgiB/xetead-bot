@@ -23,6 +23,7 @@ from battle.exceptions import (
     error_skill_not_registered,
     error_target_does_not_exist,
     error_too_many_characters,
+    error_too_many_targets,
 )
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import ActionType, CombatStatType
@@ -204,11 +205,16 @@ def try_expansion_if_valid(
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
 
-    # 2. 스킬 존재 여부 확인
+    # 2. 스킬 존재 여부 및 대상 수 확인
     for part in command.parts:
         if part.type_ == ActionType.SKILL and part.skill_id is not None:
-            if not any(s.data.id == part.skill_id for s in user.skills):
+            skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
+            if skill is None:
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
+            if len(part.targets) > skill.data.target_count:
+                raise CommandValidationError(
+                    error_too_many_targets(part.skill_id, skill.data.target_count, len(part.targets))
+                )
 
     # 3. 코스트 확인
     # 커맨드 전체의 코스트를 한꺼번에 산출한다. (되는 데까지 처리해주지 않고 전체 코스트가 부족하다면 아예 미처리)

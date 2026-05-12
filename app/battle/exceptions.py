@@ -30,5 +30,9 @@ def error_no_remaining_cost(needed_cost: int, remaining_cost: int) -> str:
     return f"코스트가 부족하여 사용할 수 없습니다. (필요 코스트: {needed_cost}, 잔여 코스트: {remaining_cost})"
 
 
+def error_too_many_targets(skill_id: str, max_count: int, actual_count: int) -> str:
+    return f"스킬({skill_id})의 최대 대상 수({max_count})를 초과하였습니다. (지정한 대상 수: {actual_count})"
+
+
 def error_invalid_command_format() -> str:
     return "커맨드가 잘못되었습니다. 형식을 다시 확인해 주세요."
