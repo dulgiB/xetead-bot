@@ -2,13 +2,15 @@ import json
 import os
 
 import gspread
+from dotenv import load_dotenv
+from gspread.utils import ValueRenderOption
+from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+
 from battle.core.battlefield_context import BattlefieldContext
 from battle.objects.buff.models import BuffData
 from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.skill.models import SkillData
-from dotenv import load_dotenv
-from gspread.utils import ValueRenderOption
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from battle.visualization import render_battlefield_image
 
 load_dotenv()
 
@@ -58,3 +60,4 @@ if __name__ == "__main__":
         context.add_character(character_data_dict[name], faction_type, column_idx)
 
     print(context)
+    render_battlefield_image(context)

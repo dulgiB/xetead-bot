@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: #fafafe;
+            color: #1a237e;
+            font-family: Arial, 'Malgun Gothic', sans-serif;
+            padding: 16px;
+            width: max-content;
+        }
+
+        .battlefield-title {
+            font-size: 11px;
+            color: #7986cb;
+            letter-spacing: 3px;
+            margin-bottom: 10px;
+            border-left: 3px solid #ffb74d;
+            padding-left: 6px;
+        }
+
+        /* 진영 헤더 */
+        .faction-header {
+            font-size: 11px;
+            font-weight: bold;
+            padding: 5px 10px;
+            border-bottom: none;
+            text-align: center;
+            letter-spacing: 1px;
+        }
+
+        .faction-header.enemy {
+            background: #e65100;
+            color: #ffffff;
+            border: 1px solid #bf360c;
+            border-bottom: none;
+        }
+
+        .faction-header.ally {
+            background: #1a237e;
+            color: #ffffff;
+            border: 1px solid #0d1a5e;
+            border-bottom: none;
+        }
+
+        /* 적군 헤더는 columns-row 아래 → 위쪽 border 제거, 아래쪽 복원 */
+        .faction-header.enemy {
+            border-top: none;
+            border-bottom: 1px solid #bf360c;
+        }
+
+        /* 열 그리드 */
+        .columns-row {
+            display: flex;
+            border: 1px solid #9fa8da;
+        }
+
+        .column {
+            display: flex;
+            flex-direction: column;
+            width: 118px;
+            flex-shrink: 0;
+            border-right: 1px dashed #9fa8da;
+        }
+
+        .column:last-child {
+            border-right: none;
+        }
+
+        /* 열 헤더 */
+        .column-header {
+            text-align: center;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 3px 0;
+        }
+
+        .column-header.ally {
+            background: #e8eaf6;
+            color: #5c6bc0;
+            border-bottom: 1px solid #9fa8da;
+        }
+
+        /* 적군 열 헤더는 카드 영역 아래 */
+        .column-header.bottom {
+            border-bottom: none;
+            border-top: 1px solid #9fa8da;
+        }
+
+        .column-header.enemy {
+            background: #fff3e0;
+            color: #e65100;
+        }
+
+        /* 카드 영역 */
+        .column-cards {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            background: #9fa8da;
+        }
+
+        .column-cards.enemy { justify-content: flex-end; }
+        .column-cards.ally  { justify-content: flex-start; }
+
+        .char-card {
+            background: #ffffff;
+            padding: 6px 8px;
+            height: 76px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            border-left: 3px solid transparent;
+        }
+
+        .char-card.enemy {
+            background: #fffdf8;
+            border-left-color: #f57c00;
+        }
+
+        .char-card.ally {
+            background: #f8f9ff;
+            border-left-color: #3949ab;
+        }
+
+        .char-name {
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .char-card.enemy .char-name { color: #bf360c; }
+        .char-card.ally  .char-name { color: #1a237e; }
+
+        .hp-bar-track {
+            background: #e0e0e0;
+            height: 4px;
+            margin-bottom: 2px;
+        }
+
+        .hp-bar-fill { height: 100%; }
+
+        .hp-text   { font-size: 9px; color: #9e9e9e; }
+        .cost-text { font-size: 9px; color: #f57c00; font-weight: bold; }
+
+        .empty-slot {
+            background: transparent;
+            height: 76px;
+            border-left: 3px solid transparent;
+        }
+
+        /* VS 구분선 */
+        .divider {
+            font-size: 10px;
+            font-weight: bold;
+            color: #ffb74d;
+            letter-spacing: 6px;
+            text-align: center;
+            padding: 5px 0;
+            background: #1a237e;
+            border-left: 1px solid #0d1a5e;
+            border-right: 1px solid #0d1a5e;
+        }
+    </style>
+</head>
+<body>
+<div class="battlefield-title">BATTLEFIELD</div>
+{CONTENT}
+</body>
+</html>
