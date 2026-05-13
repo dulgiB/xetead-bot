@@ -53,7 +53,7 @@ class SkillEffectMove(SkillEffectBase):
             return (
                 [
                     MoveData(
-                        character_id=target,
+                        character_id=holder,
                         to_position=context.find_character_position(target),
                     )
                     for target in targets
