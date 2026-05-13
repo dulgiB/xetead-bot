@@ -1,13 +1,12 @@
 from typing import Optional
 
-from battle.objects.define import ElementType, MagicResistanceType
+from battle.objects.define import MagicResistanceType
 from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 
 
 def get_test_preset(
     character_name: str,
     *,
-    element: ElementType = ElementType.FATE,
     atk: int = 5,
     attack_range: int = 3,
     initial_hp: Optional[int] = None,
@@ -22,7 +21,6 @@ def get_test_preset(
     return CharacterDataFromSpreadsheet(
         name=character_name,
         mastodon_id="",
-        element=element,
         curr_hp=max_hp if initial_hp is None else initial_hp,
         max_hp=max_hp,
         atk=atk,

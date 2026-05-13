@@ -1,24 +1,11 @@
 from typing import TYPE_CHECKING
 
 from battle.core.commands.models import CommandPart
-from battle.objects.define import ActionType, BattlefieldColumnIndex, ElementType
+from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId, FloatValueModifier
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-
-
-def get_bonus_damage(
-    element: ElementType, attacker_element: ElementType
-) -> FloatValueModifier:
-    if (
-        (element == ElementType.FATE and attacker_element == ElementType.RESIST)
-        or (element == ElementType.RESIST and attacker_element == ElementType.EXPLORE)
-        or (element == ElementType.EXPLORE and attacker_element == ElementType.CONNECT)
-        or (element == ElementType.CONNECT and attacker_element == ElementType.FATE)
-    ):
-        return FloatValueModifier(source_name="속성 보너스", value=0.1)
-    return FloatValueModifier(source_name="속성 보너스", value=0)
 
 
 def get_total_cost(

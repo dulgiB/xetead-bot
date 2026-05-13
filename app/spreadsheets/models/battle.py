@@ -1,13 +1,12 @@
 from dataclasses import dataclass
 
-from battle.objects.define import ElementType, MagicResistanceType
+from battle.objects.define import MagicResistanceType
 
 
 @dataclass(frozen=True)
 class CharacterDataFromSpreadsheet:
     name: str
     mastodon_id: str
-    element: ElementType
     curr_hp: int
     max_hp: int
     atk: int
@@ -26,7 +25,6 @@ class CharacterDataFromSpreadsheet:
         return cls(
             name=raw["name"],
             mastodon_id=raw["mastodon_id"],
-            element=ElementType(raw["element"]),
             curr_hp=raw["curr_hp"],
             max_hp=raw["max_hp"],
             atk=raw["atk"],

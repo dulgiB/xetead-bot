@@ -1,12 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
 from battle.objects.character.combat_stats import CombatStats
-from battle.objects.define import (
-    ActionType,
-    CombatStatType,
-    ElementType,
-    FactionType,
-)
+from battle.objects.define import CombatStatType, FactionType
 from battle.objects.models import CharacterId
 from battle.objects.skill.models import Skill, SkillData
 
@@ -19,7 +14,6 @@ class CombatCharacter:
         self,
         context: "BattlefieldContext",
         char_id: CharacterId,
-        element: ElementType,
         faction: FactionType,
         stats: CombatStats,
         *,
@@ -28,7 +22,6 @@ class CombatCharacter:
     ):
         self.field = context
         self.id = char_id
-        self.element = element
 
         self.faction: FactionType = faction
         self.status: CombatStats = stats

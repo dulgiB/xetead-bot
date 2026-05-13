@@ -109,7 +109,6 @@ class BattlefieldContext:
         character = CombatCharacter(
             self,
             char_id,
-            data.element,
             faction,
             CombatStats(
                 data.atk,

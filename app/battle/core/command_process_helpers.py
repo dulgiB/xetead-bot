@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import BuffApplyTiming, BuffCountDeductCondition
-from battle.objects.extensions import get_bonus_damage
 from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
 
 if TYPE_CHECKING:
@@ -42,7 +41,6 @@ def process_damage(
 
         if attacker.status.is_magic_attacker:
             damage_calc.modifiers.append(target.status.m_res)
-        damage_calc.modifiers.append(get_bonus_damage(target.element, attacker.element))
 
         context.apply_damage(
             damage_calc.base.attacker_id,

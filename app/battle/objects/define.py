@@ -72,13 +72,6 @@ class MagicResistanceType(str, Enum):
     STRONG = "높음"
 
 
-class ElementType(str, Enum):
-    FATE = "숙명"
-    RESIST = "저항"
-    EXPLORE = "개척"
-    CONNECT = "결속"
-
-
 class BuffTargetType(str, Enum):
     DAMAGE = "대미지"
     HEAL = "회복"
