@@ -14,10 +14,6 @@ def error_target_does_not_exist(target_id: CharacterId) -> str:
     return f"지정한 대상({target_id.name})을 찾을 수 없습니다."
 
 
-def error_move_position_too_far(pos: BattlefieldColumnIndex) -> str:
-    return f"지정한 위치({pos})가 이동 가능 범위를 벗어나 이동할 수 없습니다."
-
-
 def error_attack_position_too_far(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})가 공격 가능 범위를 벗어나 공격할 수 없습니다."
 

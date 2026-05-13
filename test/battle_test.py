@@ -21,6 +21,7 @@ test_stat_preset = CombatStats(
     max_hp=100,
     attack_range=2,
     magic_resistance=MagicResistanceType.NORMAL,
+    is_magic_attacker=False,
     max_cost=3,
 )
 
