@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
+from utils.battle_helpers import is_reachable
+
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_expanders import expand_character_command
 from battle.core.command_process_helpers import (
@@ -29,7 +31,6 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import ActionType, CombatStatType
 from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
-from utils.battle_helpers import is_reachable
 
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager

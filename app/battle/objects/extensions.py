@@ -2,7 +2,7 @@ from typing import TYPE_CHECKING
 
 from battle.core.commands.models import CommandPart
 from battle.objects.define import ActionType, BattlefieldColumnIndex
-from battle.objects.models import CharacterId, FloatValueModifier
+from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext

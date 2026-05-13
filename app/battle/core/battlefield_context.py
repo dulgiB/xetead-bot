@@ -1,8 +1,11 @@
 import copy
 from typing import Optional
 
+from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from utils.logging import print_apply_damage, print_apply_heal
+
 from battle.core.buff_container import BuffContainer
-from battle.core.commands.models import CommandPartCalculator, CommandProcessResult
+from battle.core.commands.models import CommandPartCalculator, CommandPartProcessResult
 from battle.exceptions import (
     CommandValidationError,
     error_target_does_not_exist,
@@ -20,8 +23,6 @@ from battle.objects.define import (
 )
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.skill.models import SkillData
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
-from utils.logging import print_apply_damage, print_apply_heal
 
 
 class BattlefieldContext:
