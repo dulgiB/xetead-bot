@@ -39,6 +39,7 @@ def buff_atk_data() -> BuffData:
         value=1,
         condition_=None,
         condition_value=None,
+        description="",
     )
 
 
@@ -46,14 +47,16 @@ def buff_atk_data() -> BuffData:
 def skill_strong_attack() -> SkillData:
     """공격력 스탯 굴림 * 20% 대미지 스킬."""
     return SkillData(
-        "강타",
-        "SkillTargetRuleNamed",
-        2,
-        [
+        id="강타",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=2,
+        effects=[
             SkillEffectDamage(
                 ValueSourceType.STAT_ATK_ROLL, 20, ValueType.PERCENT, None, None
             )
         ],
+        description="",
     )
 
 
@@ -61,10 +64,14 @@ def skill_strong_attack() -> SkillData:
 def skill_heal() -> SkillData:
     """고정값 10 회복 스킬."""
     return SkillData(
-        "회복",
-        "SkillTargetRuleNamed",
-        2,
-        [SkillEffectHeal(ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None)],
+        id="회복",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=2,
+        effects=[
+            SkillEffectHeal(ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None)
+        ],
+        description="",
     )
 
 
@@ -72,10 +79,11 @@ def skill_heal() -> SkillData:
 def skill_add_atk_buff(buff_atk_data) -> SkillData:
     """아군에게 공격력 증가 버프를 부여하는 스킬."""
     return SkillData(
-        "공격 보조",
-        "SkillTargetRuleNamed",
-        2,
-        [
+        id="공격 보조",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=2,
+        effects=[
             SkillEffectAddBuff(
                 value_source=None,
                 value=None,
@@ -84,6 +92,7 @@ def skill_add_atk_buff(buff_atk_data) -> SkillData:
                 buff_add_timing=None,
             )
         ],
+        description="",
     )
 
 

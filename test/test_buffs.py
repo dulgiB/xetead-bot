@@ -23,6 +23,7 @@ from battle.objects.define import (
     ValueType,
 )
 from battle.objects.models import CharacterId
+from battle.objects.skill import effects
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
     SkillEffectHeal,
@@ -52,6 +53,7 @@ def make_buff_data(
 ) -> BuffData:
     return BuffData(
         id=buff_id,
+        description="",
         buff_class_name=buff_class_name,
         duration_turn_value=duration_turn_value,
         duration_count_value=duration_count_value,
@@ -70,10 +72,11 @@ def make_buff_skill(
     timing_if_enemy_skill: Optional[RoundPhaseType] = None,
 ) -> SkillData:
     return SkillData(
-        skill_id,
-        "SkillTargetRuleNamed",
-        2,
-        [
+        id=skill_id,
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=2,
+        effects=[
             SkillEffectAddBuff(
                 value_source=None,
                 value=None,
@@ -82,6 +85,7 @@ def make_buff_skill(
                 buff_add_timing=timing_if_enemy_skill,
             )
         ],
+        description="",
     )
 
 
@@ -377,24 +381,24 @@ class TestBuffNoHeal:
     @pytest.fixture
     def ctx(self):
         debuff = make_buff_data("회복 불가", "BuffNoHeal")
-        heal_skill = SkillData(
-            "회복 스킬",
-            "SkillTargetRuleNamed",
-            2,
-            [SkillEffectHeal(None, 30, None, None, None)],
-        )
         debuff_skill = make_buff_skill("회복 불가 스킬", "회복 불가")
         from battle.objects.define import ValueSourceType
 
-        heal_skill2 = SkillData(
-            "회복 스킬",
-            "SkillTargetRuleNamed",
-            2,
-            [SkillEffectHeal(ValueSourceType.FIXED, 30, ValueType.INTEGER, None, None)],
+        heal_skill = SkillData(
+            id="회복 스킬",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=2,
+            effects=[
+                SkillEffectHeal(
+                    ValueSourceType.FIXED, 30, ValueType.INTEGER, None, None
+                )
+            ],
+            description="",
         )
         return make_context(
             debuff,
-            skill_dict={"회복 불가 스킬": debuff_skill, "회복 스킬": heal_skill2},
+            skill_dict={"회복 불가 스킬": debuff_skill, "회복 스킬": heal_skill},
         )
 
     def test_no_heal_when_debuffed(self, ctx):
