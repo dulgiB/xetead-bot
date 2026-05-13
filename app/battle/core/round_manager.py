@@ -1,28 +1,25 @@
-from battle.admin_utils import AdminCommand
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.command_expanders import expand_admin_command, expand_character_command
+from battle.core.command_expanders import expand_admin_command
 from battle.core.command_processors import (
     process_admin_command,
     process_ally_command,
-    process_enemy_command,
+    process_enemy_command_on_pre_action,
+    try_process_enemy_command_on_post_action,
 )
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import (
-    ActionCommand,
-    CommandBase,
-    CommandData,
-    ItemCommand,
-    MoveCommand,
-)
 from battle.exceptions import CommandValidationError
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import FactionType
-from battle.objects.models import CharacterId
+from battle.objects.models import CharacterId, DamageData, HealData
 
 
 class RoundManager:
     def __init__(self, context: BattlefieldContext) -> None:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
+        self._enemy_command_parts: dict[
+            CharacterId, list[DamageData | HealData | BuffAddData]
+        ] = {}
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
@@ -34,9 +31,17 @@ class RoundManager:
             pass
 
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
-            pass
+            for user_id, remaining_data in self._enemy_command_parts.items():
+                post_result = try_process_enemy_command_on_post_action(
+                    self._context, user_id, remaining_data
+                )
+                if not post_result:
+                    pass
+
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             self._context.on_finish_round()
+            self._enemy_command_parts.clear()
+
         else:
             raise ValueError(f"Unknown phase: {phase}")
 
@@ -47,27 +52,21 @@ class RoundManager:
             expanded_command = expand_admin_command(command)
             process_admin_command(self, expanded_command)
 
-        elif isinstance(command, (MoveCommand, ActionCommand, ItemCommand)):
-            expanded_command = expand_character_command(command)
-
-            if (
-                self._context.characters[expanded_command.command.user].faction
-                == FactionType.ALLY
-            ):
+        elif isinstance(command, CharacterCommand):
+            if self._context.characters[command.user_id].faction == FactionType.ALLY:
                 if self._phase != RoundPhaseType.ALLY_ACTION:
                     raise CommandValidationError(
                         "커맨드를 입력할 수 있는 타이밍이 아닙니다."
                     )
 
-                process_ally_command(self._context, expanded_command)
+                process_ally_command(self._context, command)
 
-            elif (
-                self._context.characters[expanded_command.command.user].faction
-                == FactionType.ENEMY
-            ):
+            elif self._context.characters[command.user_id].faction == FactionType.ENEMY:
                 if self._phase != RoundPhaseType.ENEMY_PRE_ACTION:
                     raise CommandValidationError(
                         "커맨드를 입력할 수 있는 타이밍이 아닙니다."
                     )
 
-                process_enemy_command(self._context, expanded_command)
+                process_enemy_command_on_pre_action(
+                    self._context, command, self._enemy_command_parts
+                )
