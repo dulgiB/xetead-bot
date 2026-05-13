@@ -7,18 +7,14 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     BuffApplyTiming,
 )
-from battle.objects.models import (
-    BuffId,
-    CharacterId,
-)
+from battle.objects.models import BuffUid, CharacterId
 
 
 @dataclass(frozen=True, eq=True)
-class BuffAddEvent:
+class BuffAddData:
     given_by: CharacterId
     applied_to: CharacterId
-    buff_name: str
-    value: int
+    buff_id: str
 
 
 @dataclass(frozen=True, eq=True)
@@ -61,10 +57,11 @@ class BuffBase(abc.ABC):
         applied_to: CharacterId,
         data: BuffData,
     ):
-        self.id = BuffId(
+        self.id = data.id
+        self.uid = BuffUid(
             given_by,
             applied_to,
-            data.buff_name,
+            data.buff_class_name,
         )
 
         self.given_by = given_by
@@ -78,7 +75,7 @@ class BuffBase(abc.ABC):
         self.condition = data.condition
 
     def __hash__(self):
-        return hash(self.id)
+        return hash(self.uid)
 
     @property
     @abc.abstractmethod
@@ -86,5 +83,5 @@ class BuffBase(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def apply(self) -> BuffEvent:
+    def create_event(self) -> BuffEvent:
         pass

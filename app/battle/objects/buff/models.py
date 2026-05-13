@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
 @dataclass
 class BuffData:
-    # 클래스 명칭과 동일
-    buff_name: str
+    id: str
+    buff_class_name: str
 
     # 지속 시간 (턴수 or 횟수)
     duration_type: BuffDurationType
@@ -42,5 +42,5 @@ class BuffData:
         self, given_by: CharacterId, applied_to: CharacterId
     ) -> "BuffBase":
         buff_module = importlib.import_module("battle.objects.buff")
-        buff_class: Type["BuffBase"] = getattr(buff_module, self.buff_name)
+        buff_class: Type["BuffBase"] = getattr(buff_module, self.buff_class_name)
         return buff_class(given_by=given_by, applied_to=applied_to, data=self)
