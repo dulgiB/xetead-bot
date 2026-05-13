@@ -38,7 +38,7 @@ class BuffGivenDamage(BuffBase):
 
     @property
     def timing(self) -> set[BuffApplyTiming]:
-        return {BuffApplyTiming.ON_ATTACK}
+        return {BuffApplyTiming.ON_ACTION}
 
     def create_event(self) -> GivenDamageModEvent:
         if self.value_type == ValueType.INTEGER:

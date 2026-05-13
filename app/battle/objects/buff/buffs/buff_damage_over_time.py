@@ -42,7 +42,7 @@ class DamageOverTimeEvent(BuffEvent):
 class BuffDamageOverTime(BuffBase):
     @property
     def timing(self) -> set[BuffApplyTiming]:
-        return {BuffApplyTiming.ROUND_END}
+        return {BuffApplyTiming.ON_ROUND_END}
 
     def create_event(self) -> DamageOverTimeEvent:
         return DamageOverTimeEvent(condition=self.condition, value=self.value)
