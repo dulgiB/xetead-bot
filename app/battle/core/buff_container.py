@@ -23,17 +23,11 @@ class BuffContainer:
     def __init__(self, field: "BattlefieldContext"):
         self._context: "BattlefieldContext" = field
         self._buffs: set[BuffBase] = set()
-        self._buff_module = importlib.import_module("battle.objects.buff.buffs")
 
     def add(self, add_event: "BuffAddData"):
         buff_data = self._context.get_buff_data_by_id(add_event.buff_id)
-        buff: Type[BuffBase] = getattr(self._buff_module, buff_data.buff_class_name)
         self._buffs.add(
-            buff(
-                add_event.given_by,
-                add_event.applied_to,
-                buff_data,
-            )
+            buff_data.to_buff_instance(add_event.given_by, add_event.applied_to)
         )
 
     def remove(self, buff_uid: BuffUid) -> None:
@@ -56,17 +50,15 @@ class BuffContainer:
             ]
 
     def on_round_start(self):
-        events = {
-            buff.create_event(): (buff.given_by, buff.applied_to)
+        event_pairs = [
+            (buff.create_event(), buff.given_by, buff.applied_to)
             for buff in self._buffs
             if buff.timing == BuffApplyTiming.ON_ROUND_START
-        }
-        event_list = list(events.keys())
-        event_list.sort(key=lambda e: e.priority.value)
+        ]
+        event_pairs.sort(key=lambda x: x[0].priority.value)
 
         buff_calculator = CommandPartCalculator.create_empty(self._context)
-        for event in event_list:
-            given_by, applied_to = events[event]
+        for event, given_by, applied_to in event_pairs:
             if event.is_applied(self._context, applied_to, given_by):
                 event.apply(applied_to, given_by, self._context, buff_calculator)
 
@@ -75,17 +67,15 @@ class BuffContainer:
         process_heal(buff_calculator, self._context)
 
     def on_round_end(self) -> list[BuffUid]:
-        events = {
-            buff.create_event(): (buff.given_by, buff.applied_to)
+        event_pairs = [
+            (buff.create_event(), buff.given_by, buff.applied_to)
             for buff in self._buffs
             if buff.timing == BuffApplyTiming.ON_ROUND_END
-        }
-        event_list = list(events.keys())
-        event_list.sort(key=lambda e: e.priority.value)
+        ]
+        event_pairs.sort(key=lambda x: x[0].priority.value)
 
         buff_calculator = CommandPartCalculator.create_empty(self._context)
-        for event in event_list:
-            given_by, applied_to = events[event]
+        for event, given_by, applied_to in event_pairs:
             if event.is_applied(self._context, applied_to, given_by):
                 event.apply(applied_to, given_by, self._context, buff_calculator)
 

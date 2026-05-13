@@ -95,10 +95,18 @@ def process_buff_add(
         and remaining_parts_dict is not None
         and user_id is not None
     ):
-        pre_buffs = [buff for buff in buff_add_list if buff.add_timing == phase]
+        pre_buffs = [
+            buff
+            for buff in buff_add_list
+            if buff.add_timing == RoundPhaseType.ENEMY_PRE_ACTION
+        ]
         for data in pre_buffs:
             context.buff_container.add(data)
-        post_buffs = [buff for buff in buff_add_list if buff.add_timing == phase]
+        post_buffs = [
+            buff
+            for buff in buff_add_list
+            if buff.add_timing == RoundPhaseType.ENEMY_POST_ACTION
+        ]
         for data in post_buffs:
             remaining_parts_dict[user_id].append(data)
     else:
@@ -113,14 +121,14 @@ def _apply_buff_events(
     attacker_or_target: CharacterId = None,
 ) -> None:
     buffs = context.buff_container.get_buffs_by(char_id, BuffApplyTiming.ON_ACTION)
-    if deduct_condition is not None:
-        for buff in buffs:
-            buff.duration.deduct_count(deduct_condition)
-            if buff.duration.finished:
-                context.buff_container.remove(buff.uid)
-
     events = [buff.create_event() for buff in buffs]
     events.sort(key=lambda e: e.priority.value)
     for event in events:
         if event.is_applied(context, char_id, attacker_or_target):
             event.apply(char_id, attacker_or_target, context, calculator)
+
+    if deduct_condition is not None:
+        for buff in buffs:
+            buff.duration.deduct_count(deduct_condition)
+            if buff.duration.finished:
+                context.buff_container.remove(buff.uid)

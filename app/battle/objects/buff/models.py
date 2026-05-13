@@ -65,6 +65,6 @@ class BuffData:
     def to_buff_instance(
         self, given_by: CharacterId, applied_to: CharacterId
     ) -> "BuffBase":
-        buff_module = importlib.import_module("battle.objects.buff")
+        buff_module = importlib.import_module("battle.objects.buff.buffs")
         buff_class: Type["BuffBase"] = getattr(buff_module, self.buff_class_name)
         return buff_class(given_by=given_by, applied_to=applied_to, data=self)

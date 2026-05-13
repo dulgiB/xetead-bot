@@ -30,6 +30,9 @@ class IsInSameColumnCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
+        if attacker_or_target is None:
+            return False
+
         return context.find_character_position(
             holder
         ) == context.find_character_position(attacker_or_target)
@@ -43,12 +46,8 @@ class WasNotAttackedCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        for result in context.prev_round_results:
-            for part_result in result.part_results:
-                if holder in [
-                    damage_data.target_id
-                    for damage_data in part_result.expanded_part.damage_list
-                ]:
-                    return False
+        for part_result in context.prev_round_results:
+            if holder in [d.target_id for d in part_result.expanded_part.damage_list]:
+                return False
 
         return True
