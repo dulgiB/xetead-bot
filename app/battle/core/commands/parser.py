@@ -1,10 +1,7 @@
+from typing import Optional
+
 import regex
-from battle.core.commands.models import (
-    ActionCommand,
-    CommandBase,
-    ItemCommand,
-    MoveCommand,
-)
+from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.exceptions import CommandValidationError, error_invalid_command_format
 from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId
@@ -17,16 +14,16 @@ kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{Ha
 command_base_format = regex.compile(r".*\[\s*(?P<command>.+)\s*].*")
 
 # 이동 :: 이동/1
-command_format_move = regex.compile(r"^\s*이동\s*\/\s*(?P<pos>[1-7])\s*$")
+command_format_move = regex.compile(r"^\s*이동\s*/\s*(?P<pos>[1-7])\s*$")
 
 # 기본 공격 :: 공격/대상
 command_format_attack = regex.compile(
-    rf"^\s*공격\s*\/\s*(?P<target>[{kr_charset}0-9 ]+)\s*$"
+    rf"^\s*공격\s*/\s*(?P<target>[{kr_charset}0-9A-Za-z ]+)\s*$"
 )
 
 # 대상이 지정된 스킬 사용 :: 스킬1/대상1/대상2/대상3
 command_format_skill = regex.compile(
-    rf"^\s*(?P<skill_type>스킬1|스킬2|스킬3)\s*\/\s*(?P<targets>[{kr_charset}0-9\/ ]+)\s*$"
+    rf"^\s*(?P<skill_type>스킬1|스킬2|스킬3)\s*/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+)\s*$"
 )
 
 # 대상이 없는 스킬 사용 :: 스킬2
@@ -36,39 +33,41 @@ command_format_skill_no_target = regex.compile(
 
 # 아이템 사용 :: 아이템/아이템 이름(/대상)
 command_format_item = regex.compile(
-    rf"^\s*아이템\s*\/\s*(?P<item_name>[{kr_charset} ]+)s*(\/\s*(?P<targets>[{kr_charset}0-9\/ ]+))?\s*$"
+    rf"^\s*아이템\s*/\s*(?P<item_name>[{kr_charset} ]+)s*(/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+))?\s*$"
 )
 
 
-def parse(user_id: CharacterId, input_str: str) -> list[CommandBase]:
+def parse_character_command(
+    user_id: CharacterId, input_str: str
+) -> Optional[CharacterCommand]:
     if match := command_base_format.match(input_str):
         d = match.capturesdict()
         command_str = d["command"][0].strip()
         command_list = command_str.split("-")
-        parsed_commands: list[CommandBase] = []
+        parts: list[CommandPart] = []
 
         for command in command_list:
             try:
                 if match := command_format_move.match(command):
                     d = match.capturesdict()
-                    move_pos = BattlefieldColumnIndex(int(d["pos"][0]))
-                    parsed_commands.append(
-                        MoveCommand(user=user_id, to_position=move_pos)
+                    move_pos = BattlefieldColumnIndex.from_str(d["pos"][0])
+                    parts.append(
+                        CommandPart(
+                            type_=ActionType.MOVE,
+                            targets=[move_pos],
+                        )
                     )
 
                 elif match := command_format_skill_no_target.match(command):
                     d = match.capturesdict()
                     skill_type = ActionType(d["skill_type"][0])
-                    parsed_commands.append(
-                        ActionCommand(user=user_id, type_=skill_type, targets=None)
-                    )
+                    parts.append(CommandPart(type_=skill_type))
 
                 elif match := command_format_attack.match(command):
                     d = match.capturesdict()
                     attack_target = d["target"][0].strip()
-                    parsed_commands.append(
-                        ActionCommand(
-                            user=user_id,
+                    parts.append(
+                        CommandPart(
                             type_=ActionType.ATTACK,
                             targets=[CharacterId(attack_target)],
                         )
@@ -77,15 +76,26 @@ def parse(user_id: CharacterId, input_str: str) -> list[CommandBase]:
                 elif match := command_format_skill.match(command):
                     d = match.capturesdict()
                     skill_type = ActionType(d["skill_type"][0])
-                    skill_targets = [
-                        CharacterId(target.strip())
-                        for target in d["targets"][0].split("/")
-                    ]
-                    parsed_commands.append(
-                        ActionCommand(
-                            user=user_id, type_=skill_type, targets=skill_targets
+                    targets_split = d["targets"][0].split("/")
+                    character_targets: list[CharacterId] = []
+                    column_targets: list[BattlefieldColumnIndex] = []
+                    for target in targets_split:
+                        try:
+                            column_parse = BattlefieldColumnIndex.from_str(
+                                target.strip()
+                            )
+                            column_targets.append(column_parse)
+                        except ValueError:
+                            character_targets.append(CharacterId(target.strip()))
+
+                    if character_targets:
+                        parts.append(
+                            CommandPart(type_=skill_type, targets=character_targets)
                         )
-                    )
+                    elif column_targets:
+                        parts.append(
+                            CommandPart(type_=skill_type, targets=column_targets)
+                        )
 
                 elif match := command_format_item.match(command):
                     d = match.capturesdict()
@@ -95,15 +105,22 @@ def parse(user_id: CharacterId, input_str: str) -> list[CommandBase]:
                     else:
                         # 대상을 명시하지 않으면 자신에게 사용한 것으로 간주
                         targets = [user_id]
-                    parsed_commands.append(
-                        ItemCommand(user=user_id, item_name=item_name, targets=targets)
+                    parts.append(
+                        CommandPart(
+                            type_=ActionType.USE_ITEM,
+                            item_name=item_name,
+                            targets=targets,
+                        )
                     )
 
-            except ValueError as e:
+                else:
+                    raise CommandValidationError(error_invalid_command_format())
+
+            except Exception as e:
                 print(e)
                 raise CommandValidationError(error_invalid_command_format())
 
-        return parsed_commands
+        return CharacterCommand(user_id=user_id, parts=parts)
 
     else:
-        return []
+        return None

@@ -1,114 +1,105 @@
-import abc
-from dataclasses import KW_ONLY, dataclass
+from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Optional
 
-from battle.objects.buff.buff_base import BuffAddEvent, BuffRemoveEvent
-from battle.objects.define import ActionType, BattlefieldColumnIndex
+from battle.core.commands.define import RoundPhaseType
+from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.character.buffed_stats import BuffedStats
+from battle.objects.define import ActionType, BattlefieldColumnIndex, CombatStatType
 from battle.objects.models import (
-    BaseValueIndicator,
     CharacterId,
-    FloatValueModifier,
-    IntValueModifier,
+    DamageData,
+    HealData,
+    MoveData,
+    ValueModifierBase,
 )
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.objects.buff.buff_events import BuffEvent
-    from battle.objects.character.buffed_stats import BuffedStats
 
 
 # user input -> parse() -> list[CommandBase] -> expand_xxx_command() ->
 # list[CommandData] -> process_xxx_command() -> list[CommandProcessResult]
 
 
-class CommandBase(abc.ABC):
-    user: CharacterId
+@dataclass(frozen=True)
+class CharacterCommand:
+    user_id: CharacterId
+    parts: list["CommandPart"]
 
 
 @dataclass(frozen=True)
-class MoveCommand(CommandBase):
-    user: CharacterId
-    to_position: BattlefieldColumnIndex
-
-
-@dataclass(frozen=True)
-class ActionCommand(CommandBase):
-    user: CharacterId
+class CommandPart:
     type_: ActionType
-    targets: Optional[list[CharacterId]]
+
+    _: KW_ONLY
+    targets: list[CharacterId] | list[BattlefieldColumnIndex] = field(
+        default_factory=list
+    )
+    item_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
-class ItemCommand(CommandBase):
-    user: CharacterId
-    item_name: str
-    targets: Optional[list[CharacterId]]
-
-
-@dataclass(frozen=True)
-class MoveData:
-    character_id: CharacterId
-    to_position: BattlefieldColumnIndex
-
-
-@dataclass(frozen=True)
-class DamageData:
-    attacker_id: CharacterId
-    target_id: CharacterId
-    value: int | BaseValueIndicator
-
-
-@dataclass(frozen=True)
-class HealData:
-    healer_id: CharacterId
-    target_id: CharacterId
-    value: int | BaseValueIndicator
-
-
-@dataclass(frozen=True)
-class CommandData:
-    command: CommandBase
+class CommandPartData:
+    original_part: Optional[CommandPart]
 
     _: KW_ONLY
     move_list: list[MoveData]
     damage_list: list[DamageData]
     heal_list: list[HealData]
-    buff_add_list: list[BuffAddEvent]
-    buff_remove_list: list[BuffRemoveEvent]
-
+    buff_add_list: list[BuffAddData]
 
 
 
 @dataclass
 class DamageCalculateData:
     base: DamageData
-    modifiers: list[IntValueModifier | FloatValueModifier]
+    modifiers: list[ValueModifierBase]
 
 
 @dataclass
 class HealCalculateData:
     base: HealData
-    modifiers: list[IntValueModifier | FloatValueModifier]
+    modifiers: list[ValueModifierBase]
 
 
-class CommandCalculator:
-    def __init__(self, command_data: CommandData, context: "BattlefieldContext"):
-        self.command_data = command_data
+class CommandPartCalculator:
+    def __init__(self, data: CommandPartData, context: "BattlefieldContext"):
+        self.move_list: list[MoveData] = data.move_list
         self.context = context
         self.buffed_stats_by_character: dict[CharacterId, BuffedStats] = {
-            char_id: BuffedStats(character.status, {})
+            char_id: BuffedStats(
+                character.status, {stat: [] for stat in CombatStatType}
+            )
             for char_id, character in context.characters.items()
         }
 
-        self.ban_event_list: list[BuffEvent] = []
         self.damage_data_list: list[DamageCalculateData] = [
-            DamageCalculateData(data, []) for data in command_data.damage_list
+            DamageCalculateData(damage_data, []) for damage_data in data.damage_list
         ]
         self.heal_data_list: list[HealCalculateData] = [
-            HealCalculateData(data, []) for data in command_data.heal_list
+            HealCalculateData(heal_data, []) for heal_data in data.heal_list
         ]
+
+    @classmethod
+    def create_empty(cls, context: "BattlefieldContext"):
+        return cls(
+            CommandPartData(
+                original_part=None,
+                move_list=[],
+                damage_list=[],
+                heal_list=[],
+                buff_add_list=[],
+            ),
+            context,
+        )
+
+
+@dataclass(frozen=True)
+class CommandPartProcessResult:
+    expanded_part: CommandPartData
 
 
 @dataclass(frozen=True)
 class CommandProcessResult:
-    command_data: CommandData
+    original_command: CharacterCommand
+    part_results: list[CommandPartProcessResult]

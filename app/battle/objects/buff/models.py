@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Type
 
 from battle.objects.buff.conditions import Condition
-from battle.objects.buff.define import BuffDurationType, BuffValueType
+from battle.objects.buff.define import BuffDurationType
+from battle.objects.define import ValueType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -20,8 +21,8 @@ class BuffData:
     duration_value: int
 
     # 값 (정수 or 퍼센트, 보너스)
-    value_type: Optional[BuffValueType] = None
-    value: int = 0
+    value_type: Optional[ValueType]
+    value: int
 
     # 적용 조건
     condition_: Optional[str] = None

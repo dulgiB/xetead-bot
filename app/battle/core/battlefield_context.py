@@ -36,8 +36,8 @@ class BattlefieldContext:
 
         self.buff_container: BuffContainer = BuffContainer(self)
 
-        self.results: list[CommandProcessResult] = []
-        self.prev_round_results: list[CommandProcessResult] = []
+        self.results: list[CommandPartProcessResult] = []
+        self.prev_round_results: list[CommandPartProcessResult] = []
 
     def __str__(self):
         enemy_str = []

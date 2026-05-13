@@ -1,8 +1,11 @@
 from dataclasses import dataclass
-from functools import cached_property
 
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import CommandCalculator, HealCalculateData, HealData
+from battle.core.commands.models import (
+    CommandPartCalculator,
+    HealCalculateData,
+    HealData,
+)
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming
@@ -22,7 +25,7 @@ class HealOverTimeEvent(BuffEvent):
         holder: CharacterId,
         attacker_or_target: CharacterId,
         context: BattlefieldContext,
-        calculator: CommandCalculator,
+        calculator: CommandPartCalculator,
     ) -> None:
         calculator.heal_data_list.append(
             HealCalculateData(
@@ -35,13 +38,9 @@ class HealOverTimeEvent(BuffEvent):
 
 
 class BuffHealOverTime(BuffBase):
-    def __init__(self, **kwargs):
-        super(BuffHealOverTime, self).__init__(**kwargs)
-        self._value = self.value
-
-    @cached_property
+    @property
     def timing(self) -> set[BuffApplyTiming]:
         return {BuffApplyTiming.ROUND_END}
 
-    def apply(self) -> HealOverTimeEvent:
+    def create_event(self) -> HealOverTimeEvent:
         return HealOverTimeEvent(condition=self.condition, value=self.value)

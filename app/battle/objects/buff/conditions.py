@@ -6,7 +6,6 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.core.commands.models import CommandData
 
 
 @dataclass(frozen=True)
@@ -45,9 +44,11 @@ class WasNotAttackedCondition(Condition):
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
         for result in context.prev_round_results:
-            if isinstance(result.command_data, CommandData) and holder in [
-                data.target_id for data in result.command_data.damage_list
-            ]:
-                return False
+            for part_result in result.part_results:
+                if holder in [
+                    damage_data.target_id
+                    for damage_data in part_result.expanded_part.damage_list
+                ]:
+                    return False
 
         return True

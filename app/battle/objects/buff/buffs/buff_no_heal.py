@@ -1,8 +1,7 @@
 from dataclasses import dataclass
-from functools import cached_property
 
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import CommandCalculator
+from battle.core.commands.models import CommandPartCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming
@@ -20,7 +19,7 @@ class NoHealEvent(BuffEvent):
         holder: CharacterId,
         attacker_or_target: CharacterId,
         context: BattlefieldContext,
-        calculator: CommandCalculator,
+        calculator: CommandPartCalculator,
     ) -> None:
         data_to_remove = []
 
@@ -33,9 +32,9 @@ class NoHealEvent(BuffEvent):
 
 
 class BuffNoHeal(BuffBase):
-    @cached_property
+    @property
     def timing(self) -> set[BuffApplyTiming]:
         return {BuffApplyTiming.ON_RECEIVE_HEAL}
 
-    def apply(self) -> NoHealEvent:
+    def create_event(self) -> NoHealEvent:
         return NoHealEvent(condition=self.condition)
