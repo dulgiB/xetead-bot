@@ -6,6 +6,7 @@ dependencies = [
     "discord-py>=2.7.1",
     "gspread>=6.2.1",
     "html2image>=2.0.7",
+    "mastodon-py>=2.2.1",
     "optional>=0.0.1",
     "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
