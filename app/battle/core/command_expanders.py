@@ -18,7 +18,12 @@ from battle.core.commands.models import (
     MoveData,
 )
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.define import ActionType, BattlefieldColumnIndex, BuffApplyTiming, ValueSourceType
+from battle.objects.define import (
+    ActionType,
+    BattlefieldColumnIndex,
+    BuffApplyTiming,
+    ValueSourceType,
+)
 from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
 
 
@@ -51,7 +56,11 @@ def expand_admin_command(
             move_list=[],
             damage_list=[
                 DamageData(
-                    attacker_id=ADMIN_ID, target_id=target, value=command.damage_value
+                    attacker_id=ADMIN_ID,
+                    target_id=target,
+                    value=BaseValueIndicator(
+                        value_source=ValueSourceType.FIXED, value=command.damage_value
+                    ),
                 )
                 for target in command.targets
             ],
@@ -64,7 +73,13 @@ def expand_admin_command(
             move_list=[],
             damage_list=[],
             heal_list=[
-                HealData(healer_id=ADMIN_ID, target_id=target, value=command.heal_value)
+                HealData(
+                    healer_id=ADMIN_ID,
+                    target_id=target,
+                    value=BaseValueIndicator(
+                        value_source=ValueSourceType.FIXED, value=command.heal_value
+                    ),
+                )
                 for target in command.targets
             ],
             buff_add_list=[],
