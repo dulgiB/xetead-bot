@@ -1,4 +1,8 @@
-from battle.objects.define import ActionType, BattlefieldColumnIndex
+from battle.objects.define import (
+    CHARACTER_PER_COLUMN,
+    ActionType,
+    BattlefieldColumnIndex,
+)
 from battle.objects.models import CharacterId
 
 
@@ -7,7 +11,7 @@ class CommandValidationError(Exception):
 
 
 def error_too_many_characters(pos: BattlefieldColumnIndex) -> str:
-    return f"지정한 위치({pos})에 이미 2명이 위치하고 있어 이동할 수 없습니다."
+    return f"지정한 위치({pos})에 이미 {CHARACTER_PER_COLUMN}명이 위치하고 있어 이동할 수 없습니다."
 
 
 def error_target_does_not_exist(target_id: CharacterId) -> str:

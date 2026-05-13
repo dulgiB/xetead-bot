@@ -4,7 +4,12 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.exceptions import CommandValidationError
-from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
+from battle.objects.define import (
+    CHARACTER_PER_COLUMN,
+    ActionType,
+    BattlefieldColumnIndex,
+    FactionType,
+)
 from battle.objects.models import CharacterId
 from helpers import get_test_preset
 
@@ -28,7 +33,6 @@ def test_remove_nonexistent_character_raises(empty_context):
 
 def test_column_overflow_raises(empty_context):
     """한 열에 CHARACTER_PER_COLUMN(3명)을 초과하면 CommandValidationError."""
-    from battle.core.battlefield_context import CHARACTER_PER_COLUMN
 
     for i in range(CHARACTER_PER_COLUMN):
         empty_context.add_character(
@@ -95,9 +99,7 @@ def test_attack_out_of_range_raises(empty_context):
     )
     # 사거리 1짜리 캐릭터를 1열에 배치하고 적을 7열에 배치
     empty_context.add_character(
-        get_test_preset("아군 1", attack_range=1)
-        if hasattr(get_test_preset("x"), "attack_range")
-        else get_test_preset("아군 1"),
+        get_test_preset("아군 1", attack_range=1),
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )

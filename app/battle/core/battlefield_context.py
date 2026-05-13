@@ -12,13 +12,16 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
-from battle.objects.define import BattlefieldColumnIndex, CombatStatType, FactionType
+from battle.objects.define import (
+    CHARACTER_PER_COLUMN,
+    BattlefieldColumnIndex,
+    CombatStatType,
+    FactionType,
+)
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.skill.models import SkillData
 from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 from utils.logging import print_apply_damage, print_apply_heal
-
-CHARACTER_PER_COLUMN = 3
 
 
 class BattlefieldContext:

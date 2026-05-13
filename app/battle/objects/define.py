@@ -1,5 +1,7 @@
 from enum import Enum
 
+CHARACTER_PER_COLUMN = 3
+
 
 class BattlefieldColumnIndex(Enum):
     NONE = 7
@@ -13,6 +15,8 @@ class BattlefieldColumnIndex(Enum):
     COL7 = 6
 
     def __str__(self):
+        if self.value == 7:
+            return "-"
         return str(self.value + 1)
 
     @classmethod
