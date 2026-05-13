@@ -23,25 +23,20 @@ class RoundManager:
     def __init__(self, context: BattlefieldContext) -> None:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
-        self._acted_characters: set[CharacterId] = set()
-
-        self._ally_commands: list[CommandData] = []
-        self._enemy_commands: list[CommandData] = []
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
 
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
-            pass
+            self._context.on_start_round()
+
         elif phase == RoundPhaseType.ALLY_ACTION:
             pass
+
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
             pass
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
-            self._context.buff_container.on_round_end()
-            self._acted_characters.clear()
-            self._ally_commands.clear()
-            self._enemy_commands.clear()
+            self._context.on_finish_round()
         else:
             raise ValueError(f"Unknown phase: {phase}")
 

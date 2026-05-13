@@ -1,10 +1,10 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
-from battle.objects.buff.buff_base import BuffBase
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import (
     ActionType,
     CombatStatType,
+    ElementType,
     FactionType,
 )
 from battle.objects.models import CharacterId
@@ -17,22 +17,21 @@ if TYPE_CHECKING:
 class CombatCharacter:
     def __init__(
         self,
-        field: "BattlefieldContext",
-        name: str,
+        context: "BattlefieldContext",
+        char_id: CharacterId,
+        element: ElementType,
         faction: FactionType,
         stats: CombatStats,
         *,
-        passive_buff: BuffBase = None,
         skill_1: Optional[Skill],
         skill_2: Optional[Skill],
     ):
-        self.field = field
+        self.field = context
+        self.id = char_id
+        self.element = element
 
-        self.name: str = name  # serves as UID
         self.faction: FactionType = faction
         self.status: CombatStats = stats
-
-        self.passive_buff: BuffBase | None = passive_buff
 
         self.skills: dict[ActionType, Optional[Skill]] = {
             ActionType.SKILL_1: skill_1,
@@ -40,13 +39,7 @@ class CombatCharacter:
         }
 
     def __str__(self):
-        return (
-            f"{self.name} ({self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]})"
-        )
-
-    @property
-    def id(self) -> CharacterId:
-        return CharacterId(self.name)
+        return f"{self.id} ({self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]})"
 
     @property
     def foe_faction(self) -> FactionType:

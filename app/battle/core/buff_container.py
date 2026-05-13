@@ -1,4 +1,8 @@
-from typing import TYPE_CHECKING, Type
+import importlib
+from typing import TYPE_CHECKING, Optional, Type
+
+from battle.core.commands.models import CommandPartCalculator, CommandPartData
+from battle.objects.buff.buff_events import BuffEvent
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -37,14 +41,46 @@ class BuffContainer:
     def clear(self):
         self._buffs = set()
 
-    def get_buffs_by(self, char_id: CharacterId, timing: BuffApplyTiming):
-        return [
-            buff
-            for buff in self._buffs
-            if buff.applied_to == char_id and timing in buff.timing
-        ]
+    def get_buffs_by(self, char_id: CharacterId, timing: Optional[BuffApplyTiming]):
+        if timing is None:
+            return [buff for buff in self._buffs if buff.applied_to == char_id]
+        else:
+            return [
+                buff
+                for buff in self._buffs
+                if buff.applied_to == char_id and timing in buff.timing
+            ]
 
-    def on_round_end(self) -> list["BuffRemoveEvent"]:
+    def on_round_start(self):
+        events = {
+            buff.create_event(): (buff.given_by, buff.applied_to)
+            for buff in self._buffs
+            if buff.timing == BuffApplyTiming.ON_ROUND_START
+        }
+        event_list = list(events.keys())
+        event_list.sort(key=lambda e: e.priority.value)
+
+        buff_calculator = CommandPartCalculator.create_empty(self._context)
+        for event in event_list:
+            given_by, applied_to = events[event]
+            if event.is_applied(self._context, applied_to, given_by):
+                event.apply(applied_to, given_by, self._context, buff_calculator)
+
+    def on_round_end(self) -> list[BuffUid]:
+        events = {
+            buff.create_event(): (buff.given_by, buff.applied_to)
+            for buff in self._buffs
+            if buff.timing == BuffApplyTiming.ON_ROUND_END
+        }
+        event_list = list(events.keys())
+        event_list.sort(key=lambda e: e.priority.value)
+
+        buff_calculator = CommandPartCalculator.create_empty(self._context)
+        for event in event_list:
+            given_by, applied_to = events[event]
+            if event.is_applied(self._context, applied_to, given_by):
+                event.apply(applied_to, given_by, self._context, buff_calculator)
+
         buffs_to_remove: list[BuffBase] = []
 
         for buff in self._buffs:
@@ -53,9 +89,8 @@ class BuffContainer:
                 buffs_to_remove.append(buff)
 
         if buffs_to_remove:
-            remove_event_list = [BuffRemoveEvent(buff.id) for buff in buffs_to_remove]
-            for event in remove_event_list:
-                self.remove(event)
-            return remove_event_list
+            for buff in buffs_to_remove:
+                self._buffs.remove(buff)
+            return [buff.uid for buff in buffs_to_remove]
 
         return []
