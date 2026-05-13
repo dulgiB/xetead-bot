@@ -129,7 +129,7 @@ class TestBuffAtk:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
         )
 
         buffs = ctx.buff_container.get_buffs_by(
@@ -170,7 +170,7 @@ class TestBuffAtk:
 
         # 버프 부여
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/공격수]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/공격수]")
         )
         manager.process_command(
             parse_character_command(CharacterId("공격수"), "[공격/적군]")
@@ -221,7 +221,9 @@ class TestBuffGivenDamage:
 
         # 버프 부여 후 공격
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/공격수]")
+            parse_character_command(
+                CharacterId("버퍼"), "[스킬/대미지 증가 스킬/공격수]"
+            )
         )
 
         manager.process_command(
@@ -276,7 +278,7 @@ class TestBuffReceivedDamage:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/적군 A]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/취약 스킬/적군 A]")
         )
 
         manager.process_command(
@@ -315,7 +317,7 @@ class TestBuffReceivedDamage:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/적군 A]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/방어 스킬/적군 A]")
         )
 
         manager.process_command(
@@ -357,7 +359,7 @@ class TestBuffNoDamage:
 
         # 적군에게 무적 부여
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/적군]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/무적 스킬/적군]")
         )
 
         initial_hp = ctx.characters[CharacterId("적군")].status.curr_hp
@@ -416,12 +418,12 @@ class TestBuffNoHeal:
 
         # 환자에게 회복 불가 부여
         manager.process_command(
-            parse_character_command(CharacterId("디버퍼"), "[스킬1/환자]")
+            parse_character_command(CharacterId("디버퍼"), "[스킬/회복 불가 스킬/환자]")
         )
         initial_hp = ctx.characters[CharacterId("환자")].status.curr_hp
 
         manager.process_command(
-            parse_character_command(CharacterId("힐러"), "[스킬2/환자]")
+            parse_character_command(CharacterId("힐러"), "[스킬/회복 스킬/환자]")
         )
 
         assert ctx.characters[CharacterId("환자")].status.curr_hp == initial_hp
@@ -453,7 +455,7 @@ class TestBuffDamageOverTime:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("독사"), "[스킬1/아군]")
+            parse_character_command(CharacterId("독사"), "[스킬/독 스킬/아군]")
         )
         initial_hp = ctx.characters[CharacterId("아군")].status.curr_hp
 
@@ -474,7 +476,7 @@ class TestBuffDamageOverTime:
         target_id = CharacterId("아군")
 
         manager.process_command(
-            parse_character_command(CharacterId("독사"), "[스킬1/아군]")
+            parse_character_command(CharacterId("독사"), "[스킬/독 스킬/아군]")
         )
 
         for i in range(3):
@@ -509,7 +511,7 @@ class TestBuffHealOverTime:
         target_id = CharacterId("환자")
 
         manager.process_command(
-            parse_character_command(CharacterId("힐러"), "[스킬1/환자]")
+            parse_character_command(CharacterId("힐러"), "[스킬/재생 스킬/환자]")
         )
         hp_after_buff = ctx.characters[target_id].status.curr_hp
 
@@ -533,7 +535,7 @@ class TestBuffHealOverTime:
         target_id = CharacterId("환자")
 
         manager.process_command(
-            parse_character_command(CharacterId("힐러"), "[스킬1/환자]")
+            parse_character_command(CharacterId("힐러"), "[스킬/재생 스킬/환자]")
         )
         ctx.on_finish_round()
 
@@ -573,7 +575,7 @@ class TestBuffTaunt:
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("도발자"), "[스킬1/적군]")
+            parse_character_command(CharacterId("도발자"), "[스킬/도발 스킬/적군]")
         )
 
         hp_dealer_before = ctx.characters[CharacterId("공격수")].status.curr_hp
@@ -606,7 +608,7 @@ class TestBuffDuration:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
         )
         target_id = CharacterId("대상")
 
@@ -639,7 +641,7 @@ class TestBuffDuration:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
         )
 
         ctx.on_finish_round()
@@ -681,7 +683,7 @@ class TestBuffDuration:
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
         )
         target_id = CharacterId("대상")
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
@@ -726,7 +728,7 @@ class TestBuffDuration:
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬1/대상]")
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
         )
         target_id = CharacterId("대상")
 
@@ -736,7 +738,7 @@ class TestBuffDuration:
 
     def test_passive_buff_never_removed(self):
         buff = make_buff_data(
-            "패시브 버프",
+            "패시브",
             "BuffAtk",
             duration_turn_value=None,
             duration_count_value=None,
@@ -745,7 +747,7 @@ class TestBuffDuration:
         )
         ctx = make_context(buff)
         ctx.add_character(
-            get_test_preset("버퍼", skill_1_id="패시브 스킬"),
+            get_test_preset("대상", passive_buff_id="패시브"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )

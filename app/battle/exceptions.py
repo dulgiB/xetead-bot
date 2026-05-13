@@ -18,8 +18,8 @@ def error_attack_position_too_far(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})가 공격 가능 범위를 벗어나 공격할 수 없습니다."
 
 
-def error_skill_not_registered(skill_type: ActionType) -> str:
-    return f"지정한 스킬({skill_type.value})이 등록되어 있지 않아 사용할 수 없습니다."
+def error_skill_not_registered(skill_name: str) -> str:
+    return f"지정한 스킬({skill_name})이 등록되어 있지 않아 사용할 수 없습니다."
 
 
 def error_no_remaining_cost(needed_cost: int, remaining_cost: int) -> str:

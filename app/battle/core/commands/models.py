@@ -33,10 +33,13 @@ class CommandPart:
     type_: ActionType
 
     _: KW_ONLY
+    # 스킬과 아이템은 id = name
+    skill_id: Optional[str] = None
+    item_id: Optional[str] = None
+
     targets: list[CharacterId] | list[BattlefieldColumnIndex] = field(
         default_factory=list
     )
-    item_name: Optional[str] = None
 
 
 @dataclass(frozen=True)

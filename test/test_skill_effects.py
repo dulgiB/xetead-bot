@@ -34,7 +34,7 @@ def test_damage_skill_reduces_hp(damage_skill_setup):
     enemy_id = CharacterId("적군 1")
     initial_hp = ctx.characters[enemy_id].status.curr_hp
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬1/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/강타/적군 1]")
     manager.process_command(cmd)
 
     assert ctx.characters[enemy_id].status.curr_hp < initial_hp
@@ -46,7 +46,7 @@ def test_damage_skill_costs_2(damage_skill_setup):
     user_id = CharacterId("아군 1")
     initial_cost = ctx.characters[user_id].status.remaining_cost
 
-    cmd = parse_character_command(user_id, "[스킬1/적군 1]")
+    cmd = parse_character_command(user_id, "[스킬/강타/적군 1]")
     manager.process_command(cmd)
 
     assert ctx.characters[user_id].status.remaining_cost == initial_cost - 2
@@ -80,7 +80,7 @@ def test_heal_skill_increases_hp(heal_skill_setup):
     target_id = CharacterId("아군 2")
     initial_hp = ctx.characters[target_id].status.curr_hp
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/회복/아군 2]")
     manager.process_command(cmd)
 
     assert ctx.characters[target_id].status.curr_hp > initial_hp
@@ -93,7 +93,7 @@ def test_heal_does_not_exceed_max_hp(heal_skill_setup):
     max_hp = ctx.characters[target_id].status._max_hp
     ctx.characters[target_id].status.curr_hp = max_hp  # HP를 최대치로 설정
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/회복/아군 2]")
     manager.process_command(cmd)
 
     assert ctx.characters[target_id].status.curr_hp <= max_hp
@@ -129,7 +129,7 @@ def test_buff_applied_to_target(buff_skill_setup):
     ctx, manager = buff_skill_setup
     target_id = CharacterId("아군 2")
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/공격 보조/아군 2]")
     manager.process_command(cmd)
 
     buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
@@ -144,7 +144,7 @@ def test_atk_buff_increases_damage(buff_skill_setup):
     target_id = CharacterId("아군 2")
 
     # 버프 부여
-    cmd1 = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
+    cmd1 = parse_character_command(CharacterId("아군 1"), "[스킬/공격 보조/아군 2]")
     manager.process_command(cmd1)
 
     buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
@@ -159,7 +159,7 @@ def test_buff_duration_decrements_on_round_end(buff_skill_setup):
     ctx, manager = buff_skill_setup
     target_id = CharacterId("아군 2")
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬1/아군 2]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/공격 보조/아군 2]")
     manager.process_command(cmd)
 
     buffs_before = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)

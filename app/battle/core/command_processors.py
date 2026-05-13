@@ -20,11 +20,12 @@ from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
     error_no_remaining_cost,
+    error_skill_not_registered,
     error_target_does_not_exist,
     error_too_many_characters,
 )
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.define import CombatStatType
+from battle.objects.define import ActionType, CombatStatType
 from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
 from utils.battle_helpers import is_reachable
@@ -207,7 +208,13 @@ def try_expansion_if_valid(
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
 
-    # 2. 코스트 확인
+    # 2. 스킬 존재 여부 확인
+    for part in command.parts:
+        if part.type_ == ActionType.SKILL and part.skill_id is not None:
+            if not any(s.data.id == part.skill_id for s in user.skills):
+                raise CommandValidationError(error_skill_not_registered(part.skill_id))
+
+    # 3. 코스트 확인
     # 커맨드 전체의 코스트를 한꺼번에 산출한다. (되는 데까지 처리해주지 않고 전체 코스트가 부족하다면 아예 미처리)
     needed_cost = get_total_cost(command.parts, command.user_id, context)
     if user.status.remaining_cost < needed_cost:
@@ -217,7 +224,7 @@ def try_expansion_if_valid(
 
     expanded_command_data_list = expand_character_command(command, context)
     for command_data in expanded_command_data_list:
-        # 3. 대미지/힐 대상 존재 및 사거리 확인
+        # 4. 대미지/힐 대상 존재 및 사거리 확인
         for damage_data in command_data.damage_list:
             target_id = damage_data.target_id
             if target_id not in context.characters:
@@ -232,7 +239,7 @@ def try_expansion_if_valid(
             if target_id not in context.characters:
                 raise CommandValidationError(error_target_does_not_exist(target_id))
 
-        # 4. 이동 목적지 검증
+        # 5. 이동 목적지 검증
         for move_data in command_data.move_list:
             to_pos = move_data.to_position
             if context.try_find_empty_slot(user.faction, to_pos) is None:

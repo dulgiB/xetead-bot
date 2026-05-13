@@ -73,24 +73,27 @@ def setup_character(empty_context):
         ),
         # 스킬1 + 단일 캐릭터 대상
         (
-            "[ 스킬1 / 대상1       ]",
+            "[ 스킬 / 스킬1 / 대상1       ]",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
                     CommandPart(
-                        type_=ActionType.SKILL_1, targets=[CharacterId("대상1")]
+                        type_=ActionType.SKILL,
+                        skill_id="스킬1",
+                        targets=[CharacterId("대상1")],
                     )
                 ],
             ),
         ),
         # 스킬2 + 복수 캐릭터 대상 + 후방 지문
         (
-            "[스킬2/ 대상1/  대상2/ 대상 3/대상4   ] 지문",
+            "[스킬/스킬2/ 대상1/  대상2/ 대상 3/대상4   ] 지문",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
                     CommandPart(
-                        type_=ActionType.SKILL_2,
+                        type_=ActionType.SKILL,
+                        skill_id="스킬2",
                         targets=[
                             CharacterId("대상1"),
                             CharacterId("대상2"),
@@ -103,12 +106,14 @@ def setup_character(empty_context):
         ),
         # 스킬1 + 열 지정 대상
         (
-            "[스킬1/1열] 지문",
+            "[스킬/스킬1/1열] 지문",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
                     CommandPart(
-                        type_=ActionType.SKILL_1, targets=[BattlefieldColumnIndex(0)]
+                        type_=ActionType.SKILL,
+                        skill_id="스킬1",
+                        targets=[BattlefieldColumnIndex(0)],
                     )
                 ],
             ),

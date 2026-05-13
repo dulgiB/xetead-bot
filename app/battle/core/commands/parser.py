@@ -21,19 +21,19 @@ command_format_attack = regex.compile(
     rf"^\s*공격\s*/\s*(?P<target>[{kr_charset}0-9A-Za-z ]+)\s*$"
 )
 
-# 대상이 지정된 스킬 사용 :: 스킬1/대상1/대상2/대상3
+# 대상이 지정된 스킬 사용 :: 스킬/스킬명/대상1/대상2/대상3
 command_format_skill = regex.compile(
-    rf"^\s*(?P<skill_type>스킬1|스킬2|스킬3)\s*/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+)\s*$"
+    rf"^\s*스킬\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+)\s*$"
 )
 
-# 대상이 없는 스킬 사용 :: 스킬2
+# 대상이 없는 스킬 사용 :: 스킬/스킬명
 command_format_skill_no_target = regex.compile(
-    r"^\s*(?P<skill_type>스킬1|스킬2|스킬3)\s*$"
+    rf"^\s*스킬\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*$"
 )
 
 # 아이템 사용 :: 아이템/아이템 이름(/대상)
 command_format_item = regex.compile(
-    rf"^\s*아이템\s*/\s*(?P<item_name>[{kr_charset} ]+)s*(/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+))?\s*$"
+    rf"^\s*아이템\s*/\s*(?P<item_name>[{kr_charset}0-9A-Za-z ]+)\s*(/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+))?\s*$"
 )
 
 
@@ -58,24 +58,9 @@ def parse_character_command(
                         )
                     )
 
-                elif match := command_format_skill_no_target.match(command):
-                    d = match.capturesdict()
-                    skill_type = ActionType(d["skill_type"][0])
-                    parts.append(CommandPart(type_=skill_type))
-
-                elif match := command_format_attack.match(command):
-                    d = match.capturesdict()
-                    attack_target = d["target"][0].strip()
-                    parts.append(
-                        CommandPart(
-                            type_=ActionType.ATTACK,
-                            targets=[CharacterId(attack_target)],
-                        )
-                    )
-
                 elif match := command_format_skill.match(command):
                     d = match.capturesdict()
-                    skill_type = ActionType(d["skill_type"][0])
+                    skill_name = d["skill_name"][0].strip()
                     targets_split = d["targets"][0].split("/")
                     character_targets: list[CharacterId] = []
                     column_targets: list[BattlefieldColumnIndex] = []
@@ -90,17 +75,42 @@ def parse_character_command(
 
                     if character_targets:
                         parts.append(
-                            CommandPart(type_=skill_type, targets=character_targets)
+                            CommandPart(
+                                type_=ActionType.SKILL,
+                                skill_id=skill_name,
+                                targets=character_targets,
+                            )
                         )
                     elif column_targets:
                         parts.append(
-                            CommandPart(type_=skill_type, targets=column_targets)
+                            CommandPart(
+                                type_=ActionType.SKILL,
+                                skill_id=skill_name,
+                                targets=column_targets,
+                            )
                         )
+
+                elif match := command_format_skill_no_target.match(command):
+                    d = match.capturesdict()
+                    skill_name = d["skill_name"][0].strip()
+                    parts.append(
+                        CommandPart(type_=ActionType.SKILL, skill_id=skill_name)
+                    )
+
+                elif match := command_format_attack.match(command):
+                    d = match.capturesdict()
+                    attack_target = d["target"][0].strip()
+                    parts.append(
+                        CommandPart(
+                            type_=ActionType.ATTACK,
+                            targets=[CharacterId(attack_target)],
+                        )
+                    )
 
                 elif match := command_format_item.match(command):
                     d = match.capturesdict()
                     item_name = d["item_name"][0].strip()
-                    if "targets" in d.keys():
+                    if d["targets"]:
                         targets = d["targets"][0].split("/")
                     else:
                         # 대상을 명시하지 않으면 자신에게 사용한 것으로 간주
@@ -108,7 +118,7 @@ def parse_character_command(
                     parts.append(
                         CommandPart(
                             type_=ActionType.USE_ITEM,
-                            item_name=item_name,
+                            item_id=item_name,
                             targets=targets,
                         )
                     )
