@@ -99,8 +99,6 @@ def process_ally_command(
 
         results_per_part.append(CommandPartProcessResult(expanded_part=part_data))
 
-    print(results_per_part)
-
     # 코스트 차감 - 검증 통과 후 실제 처리 시점에 차감
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
@@ -141,8 +139,6 @@ def process_enemy_command_on_pre_action(
             remaining_parts_dict=remaining_parts_dict,
             user_id=command.user_id,
         )
-
-    print(results_per_part)
 
     # 적군은 아직 처리하지 않은 parts가 남아 있어도 선언 시점에 코스트 전부 차감
     user = context.characters[command.user_id]
