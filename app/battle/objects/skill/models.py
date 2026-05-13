@@ -1,114 +1,106 @@
 import abc
-from dataclasses import KW_ONLY, dataclass, field
-from typing import TYPE_CHECKING, Optional
+import importlib
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal, Optional, Type
 
-from battle.core.commands.models import DamageData, HealData, MoveData
-from battle.exceptions import CommandValidationError, error_no_remaining_cost
-from battle.objects.buff.buff_base import BuffBase
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
-    ActionType,
-    CombatStatType,
+    ValueSourceType,
+    ValueType,
 )
-from battle.objects.models import BuffId, CharacterId
-from battle.objects.skill.target_functions import (
-    SkillTargetRule,
-    SkillTargetRuleNamed,
-)
+from battle.objects.models import CharacterId, DamageData, HealData, MoveData
+from battle.objects.skill.define import SkillValueType
+from battle.objects.skill.target_functions import SkillTargetRule
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.objects.character.combat_character import CombatCharacter
 
 
-@dataclass
-class SkillEffectApplyData:
-    _: KW_ONLY
-    move_data: list[MoveData] = field(default_factory=list)
-    damage_data: list[DamageData] = field(default_factory=list)
-    heal_data: list[HealData] = field(default_factory=list)
-    buff_add_data: list[BuffBase] = field(default_factory=list)
-    buff_remove_data: list[BuffId] = field(default_factory=list)
-
-    def __add__(self, other: "SkillEffectApplyData") -> "SkillEffectApplyData":
-        return SkillEffectApplyData(
-            move_data=self.move_data + other.move_data,
-            damage_data=self.damage_data + other.damage_data,
-            heal_data=self.heal_data + other.heal_data,
-            buff_add_data=self.buff_add_data + other.buff_add_data,
-            buff_remove_data=self.buff_remove_data + other.buff_remove_data,
-        )
-
-
+@dataclass(frozen=True)
 class SkillEffectBase(abc.ABC):
-    def __init__(
-        self,
-        target_rule: SkillTargetRule,
-        related_stat_1: Optional[CombatStatType] = None,
-        related_stat_2: Optional[CombatStatType] = None,
-        value_1: int | float | None = None,
-        value_2: int | float | None = None,
-    ):
-        self.target_rule = target_rule
-
-        self.related_stat_1 = related_stat_1
-        self.related_stat_2 = related_stat_2
-        self.value_1 = value_1
-        self.value_2 = value_2
+    value_source: Optional[ValueSourceType]
+    value: Optional[int]
+    value_type: Optional[ValueType]
+    buff_id: Optional[str]
 
     @abc.abstractmethod
-    def _apply(
-        self,
-        holder: "CombatCharacter",
-        target: "CombatCharacter | None",
-    ) -> SkillEffectApplyData:
-        raise NotImplementedError
-
-    def apply(
+    def expand(
         self,
         context: "BattlefieldContext",
-        holder: "CombatCharacter",
-        targets: Optional[list[CharacterId]],
-    ) -> SkillEffectApplyData:
-        if isinstance(self.target_rule, SkillTargetRuleNamed):
-            targets = [context.characters[target_id] for target_id in targets]
-        else:
-            targets = self.target_rule.get_targets()
-
-        result = SkillEffectApplyData()
-        for target in targets:
-            result += self._apply(holder, target)
-
-        return result
+        holder: CharacterId,
+        targets: list[CharacterId],
+    ) -> tuple[
+        list[MoveData],
+        list[DamageData],
+        list[HealData],
+        list[BuffAddData],
+    ]:
+        pass
 
 
 @dataclass(frozen=True)
 class Skill:
+    target_rule: SkillTargetRule
     data: "SkillData"
 
 
 @dataclass(frozen=True)
 class SkillData:
     id: str
+    target_rule: str
     cost: int
     effects: list[SkillEffectBase]
 
-    @abc.abstractmethod
-    def use(
-        self,
-        context: "BattlefieldContext",
-        holder: "CombatCharacter",
-        targets: list[CharacterId],
-    ) -> SkillExecutionData:
-        if self.cost > holder.status.remaining_cost:
-            raise CommandValidationError(
-                error_no_remaining_cost(
-                    self.cost,
-                    holder.status.remaining_cost,
+    @classmethod
+    def from_dict(cls, data: dict[str, str | int]) -> "SkillData":
+        skill_effects: list[SkillEffectBase] = []
+        skill_effect_module = importlib.import_module("battle.objects.skill.effects")
+
+        for i in range(3):
+            if effect_name := data.get(f"effect_{i}"):
+                effect: Type[SkillEffectBase] = getattr(
+                    skill_effect_module, effect_name
                 )
-            )
+                value_source = (
+                    ValueSourceType(data[f"value_source_{i}"])
+                    if data[f"value_source_{i}"]
+                    else None
+                )
+                value = data[f"value_{i}"] if data[f"value_{i}"] else None
+                value_type = (
+                    SkillValueType(data[f"value_type_{i}"])
+                    if data[f"value_type_{i}"]
+                    else None
+                )
+                buff_name = data[f"buff_name_{i}"] if data[f"buff_name_{i}"] else None
+                buff_add_timing = (
+                    RoundPhaseType(data[f"buff_add_timing_{i}"])
+                    if data[f"buff_add_timing_{i}"]
+                    else None
+                )
 
-        result: list[SkillEffectApplyData] = []
-        for effect in self.effects:
-            result.append(effect.apply(context, holder, targets))
+                skill_effects.append(
+                    effect(
+                        value_source=value_source,
+                        value=value,
+                        value_type=value_type,
+                        buff_id=buff_name,
+                        buff_add_timing=buff_add_timing,
+                    )
+                )
 
-        return SkillExecutionData(result)
+        return SkillData(
+            id=data["id"],
+            target_rule=data["target_rule"],
+            cost=data["cost"],
+            effects=skill_effects,
+        )
+
+    def to_skill_instance(
+        self, context: "BattlefieldContext", holder: CharacterId
+    ) -> Skill:
+        target_rule_module = importlib.import_module(
+            "battle.objects.skill.target_functions"
+        )
+        rule: Type[SkillTargetRule] = getattr(target_rule_module, self.target_rule)
+        return Skill(target_rule=rule(context, holder), data=self)

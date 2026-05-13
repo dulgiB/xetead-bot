@@ -8,15 +8,23 @@ from battle.exceptions import (
     error_target_does_not_exist,
     error_too_many_characters,
 )
+from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId, ValueWithModifiers
+from battle.objects.skill.models import SkillData
 
 CHARACTER_PER_COLUMN = 3
 
 
 class BattlefieldContext:
-    def __init__(self):
+    def __init__(
+        self,
+        buff_dict: dict[str, BuffData],
+        skill_dict: dict[str, SkillData],
+    ):
+        self._buff_dictionary: dict[str, BuffData] = buff_dict
+        self._skill_dictionary: dict[str, SkillData] = skill_dict
         self.characters: dict[CharacterId, CombatCharacter] = {}
 
         self.position_map: dict[
@@ -173,3 +181,9 @@ class BattlefieldContext:
     def on_finish_round(self):
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
+
+    def get_buff_data_by_id(self, buff_id: str) -> BuffData:
+        return self._buff_dictionary[buff_id]
+
+    def get_skill_data_by_id(self, skill_id: str) -> SkillData:
+        return self._skill_dictionary[skill_id]

@@ -3,35 +3,36 @@ from typing import TYPE_CHECKING, Type
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.buff.buff_base import (
-        BuffAddEvent,
+        BuffAddData,
         BuffBase,
-        BuffRemoveEvent,
     )
-    from battle.objects.buff.models import BuffData
 
 from battle.objects.define import BuffApplyTiming
-from battle.objects.models import CharacterId
+from battle.objects.models import BuffUid, CharacterId
 
 
 class BuffContainer:
     def __init__(self, field: "BattlefieldContext"):
         self._context: "BattlefieldContext" = field
         self._buffs: set[BuffBase] = set()
-        self._buff_module = __import__("battle.objects.buff.buffs", fromlist=[])
-        self._buff_dictionary: dict[str, BuffData] = {}
+        self._buff_module = importlib.import_module("battle.objects.buff.buffs")
 
-    def add(self, add_event: "BuffAddEvent"):
-        buff: Type[BuffBase] = getattr(self._buff_module, add_event.buff_name)
+    def add(self, add_event: "BuffAddData"):
+        buff_data = self._context.get_buff_data_by_id(add_event.buff_id)
+        buff: Type[BuffBase] = getattr(self._buff_module, buff_data.buff_class_name)
         self._buffs.add(
             buff(
                 add_event.given_by,
                 add_event.applied_to,
-                self._buff_dictionary[add_event.buff_name],
+                buff_data,
             )
         )
 
-    def remove(self, remove_event: "BuffRemoveEvent"):
-        self._buffs = {buff for buff in self._buffs if buff.id != remove_event.buff_id}
+    def remove(self, buff_uid: BuffUid) -> None:
+        for buff in self._buffs:
+            if buff.uid == buff_uid:
+                self._buffs.remove(buff)
+                return
 
     def clear(self):
         self._buffs = set()

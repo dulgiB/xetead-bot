@@ -25,8 +25,23 @@ class BuffData:
     value: int
 
     # 적용 조건
-    condition_: Optional[str] = None
-    condition_value: Optional[int] = None
+    condition_: Optional[str]
+    condition_value: Optional[int]
+
+    @classmethod
+    def from_dict(cls, data: dict[str, str | int]) -> "BuffData":
+        return BuffData(
+            id=data["id"],
+            buff_class_name=data["buff_name"],
+            duration_type=BuffDurationType(data["duration_type"]),
+            duration_value=data["duration_value"],
+            value_type=ValueType(data["value_type"]) if data["value_type"] else None,
+            value=data["value"] if data["value_type"] else 0,
+            condition_=data["condition"] if data["condition"] else None,
+            condition_value=data["condition_value"]
+            if data["condition_value"]
+            else None,
+        )
 
     @property
     def condition(self) -> Optional[Condition]:
