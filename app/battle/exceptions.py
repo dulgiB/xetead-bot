@@ -1,6 +1,5 @@
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
-    ActionType,
     BattlefieldColumnIndex,
 )
 from battle.objects.models import CharacterId

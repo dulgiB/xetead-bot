@@ -23,7 +23,6 @@ from battle.objects.define import (
     ValueType,
 )
 from battle.objects.models import CharacterId
-from battle.objects.skill import effects
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
     SkillEffectHeal,

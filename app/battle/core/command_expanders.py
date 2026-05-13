@@ -20,7 +20,6 @@ from battle.core.commands.models import (
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,
-    BattlefieldColumnIndex,
     BuffApplyTiming,
     ValueSourceType,
 )
@@ -147,8 +146,12 @@ def expand_character_command(
             )
 
         elif part.type_ == ActionType.ATTACK and part.targets is not None:
-            effective_target = taunted_target if taunted_target is not None else part.targets[0]
-            is_magic_attack = context.characters[command.user_id].status.is_magic_attacker
+            effective_target = (
+                taunted_target if taunted_target is not None else part.targets[0]
+            )
+            is_magic_attack = context.characters[
+                command.user_id
+            ].status.is_magic_attacker
             parts_list.append(
                 CommandPartData(
                     part,
@@ -169,7 +172,10 @@ def expand_character_command(
         elif part.type_ == ActionType.SKILL:
             for skill in context.characters[command.user_id].skills:
                 if skill.data.id == part.skill_id:
-                    if taunted_target is not None and not skill.target_rule.ignores_input_targets:
+                    if (
+                        taunted_target is not None
+                        and not skill.target_rule.ignores_input_targets
+                    ):
                         target_characters = [taunted_target]
                     else:
                         target_characters = skill.target_rule.get_targets(part.targets)

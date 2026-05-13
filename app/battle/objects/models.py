@@ -2,12 +2,13 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from utils.dice import DiceRollResult, nd6
+
 from battle.objects.define import (
     BattlefieldColumnIndex,
     CombatStatType,
     ValueSourceType,
 )
-from utils.dice import DiceRollResult, nd6
 
 if TYPE_CHECKING:
     from battle.core.commands.models import CommandPartCalculator

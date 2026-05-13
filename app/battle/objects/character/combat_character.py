@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import CombatStatType, FactionType

@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
