@@ -6,6 +6,7 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.define import ActionType, BattlefieldColumnIndex, CombatStatType
 from battle.objects.models import (
+    BuffUid,
     CharacterId,
     DamageData,
     HealData,
@@ -48,6 +49,8 @@ class CommandPartData:
     heal_list: list[HealData]
     buff_add_list: list[BuffAddData]
 
+    admin_target_phase: Optional[RoundPhaseType] = None
+    admin_buff_remove_list: list[BuffUid] = field(default_factory=list)
 
 
 @dataclass

@@ -6,7 +6,9 @@ from battle.core.command_processors import (
     process_enemy_command_on_pre_action,
     try_process_enemy_command_on_post_action,
 )
+from battle.core.commands.admin import AdminCommand
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import CharacterCommand
 from battle.exceptions import CommandValidationError
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import FactionType
@@ -45,11 +47,14 @@ class RoundManager:
         else:
             raise ValueError(f"Unknown phase: {phase}")
 
-    def process_command(self, command: CommandBase) -> None:
+    def process_command(self, command: CharacterCommand | AdminCommand | None) -> None:
+        if command is None:
+            return
+
         print(command)
 
         if isinstance(command, AdminCommand):
-            expanded_command = expand_admin_command(command)
+            expanded_command = expand_admin_command(command, self._context)
             process_admin_command(self, expanded_command)
 
         elif isinstance(command, CharacterCommand):

@@ -28,12 +28,38 @@ if TYPE_CHECKING:
 
 
 def process_admin_command(
-    round_manager: "RoundManager", command: AdminCommandData
+    round_manager: "RoundManager", expanded_command: CommandPartData
 ) -> None:
-    if isinstance(command, ChangePhaseCommandData):
-        round_manager.to_phase(command.target_phase)
+    if expanded_command.admin_target_phase:
+        round_manager.to_phase(expanded_command.admin_target_phase)
+        return
 
+    for move_data in expanded_command.move_list:
+        round_manager._context.move_character_to(
+            move_data.character_id, move_data.to_position
+        )
 
+    for damage_data in expanded_command.damage_list:
+        round_manager._context.apply_damage(
+            damage_data.attacker_id,
+            damage_data.target_id,
+            ValueWithModifiers(damage_data.value, []),
+            None,
+        )
+
+    for heal_data in expanded_command.heal_list:
+        round_manager._context.apply_heal(
+            heal_data.healer_id,
+            heal_data.target_id,
+            ValueWithModifiers(heal_data.value, []),
+            None,
+        )
+
+    for buff_add_event in expanded_command.buff_add_list:
+        round_manager._context.buff_container.add(buff_add_event)
+
+    for buff_to_remove in expanded_command.admin_buff_remove_list:
+        round_manager._context.buff_container.remove(buff_to_remove)
 
 
 def process_ally_command(
