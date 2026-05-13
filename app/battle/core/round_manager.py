@@ -10,18 +10,15 @@ from battle.core.commands.admin import AdminCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import CharacterCommand
 from battle.exceptions import CommandValidationError
-from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import FactionType
-from battle.objects.models import CharacterId, DamageData, HealData
+from battle.objects.models import CharacterId
 
 
 class RoundManager:
     def __init__(self, context: BattlefieldContext) -> None:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
-        self._enemy_command_parts: dict[
-            CharacterId, list[DamageData | HealData | BuffAddData]
-        ] = {}
+        self._enemy_command_list: dict[CharacterId, list[CharacterCommand]] = {}
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
@@ -33,16 +30,15 @@ class RoundManager:
             pass
 
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
-            for user_id, remaining_data in self._enemy_command_parts.items():
-                post_result = try_process_enemy_command_on_post_action(
-                    self._context, user_id, remaining_data
+            for user_id, remaining_commands in self._enemy_command_list.items():
+                post_results = try_process_enemy_command_on_post_action(
+                    self._context, user_id, remaining_commands
                 )
-                if post_result is not None:
-                    self._context.results.append(post_result)
+                self._context.results.extend(post_results)
 
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             self._context.on_finish_round()
-            self._enemy_command_parts.clear()
+            self._enemy_command_list.clear()
 
         else:
             raise ValueError(f"Unknown phase: {phase}")
@@ -74,6 +70,6 @@ class RoundManager:
                     )
 
                 enemy_pre_command_result = process_enemy_command_on_pre_action(
-                    self._context, command, self._enemy_command_parts
+                    self._context, command, self._enemy_command_list
                 )
                 self._context.results.extend(enemy_pre_command_result.part_results)

@@ -27,10 +27,9 @@ from battle.exceptions import (
     error_too_many_characters,
     error_too_many_targets,
 )
-from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import ActionType, CombatStatType
 from battle.objects.extensions import get_total_cost
-from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
+from battle.objects.models import CharacterId, ValueWithModifiers
 
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager
@@ -95,8 +94,6 @@ def process_ally_command(
             context,
             part_data.buff_add_list,
             RoundPhaseType.ALLY_ACTION,
-            remaining_parts_dict=None,
-            user_id=None,
         )
 
         results_per_part.append(CommandPartProcessResult(expanded_part=part_data))
@@ -108,19 +105,16 @@ def process_ally_command(
     return CommandProcessResult(original_command=command, part_results=results_per_part)
 
 
-# Pre-action에서는 이동과 PRE 타이밍 버프 부여를 처리
+# Pre-action에서는 이동과 PRE 타이밍 버프 부여를 처리. 원본 커맨드는 POST에서 재전개하기 위해 저장.
 def process_enemy_command_on_pre_action(
     context: BattlefieldContext,
     command: CharacterCommand,
-    remaining_parts_dict: dict[CharacterId, list[DamageData | HealData | BuffAddData]],
+    remaining_commands_dict: dict[CharacterId, list[CharacterCommand]],
 ) -> CommandProcessResult:
     # 사전 검증 - 문제 있으면 여기서 raise
     maybe_expanded_parts, needed_cost = try_expansion_if_valid(context, command)
     if not maybe_expanded_parts:
         return CommandProcessResult(original_command=command, part_results=[])
-
-    remaining_parts_dict[command.user_id] = []
-    results_per_part: list[CommandPartProcessResult] = []
 
     for part_data in maybe_expanded_parts:
         assert (
@@ -130,59 +124,55 @@ def process_enemy_command_on_pre_action(
         calculator = CommandPartCalculator(part_data, context)
 
         process_move(calculator, context)
-
-        remaining_parts_dict[command.user_id].extend(part_data.damage_list)
-        remaining_parts_dict[command.user_id].extend(part_data.heal_list)
-
         process_buff_add(
             context,
             part_data.buff_add_list,
             RoundPhaseType.ENEMY_PRE_ACTION,
-            remaining_parts_dict=remaining_parts_dict,
-            user_id=command.user_id,
         )
+
+    # 원본 커맨드를 저장 — POST 페이즈에서 도발 등 버프를 반영해 재전개
+    remaining_commands_dict.setdefault(command.user_id, []).append(command)
 
     # 적군은 아직 처리하지 않은 parts가 남아 있어도 선언 시점에 코스트 전부 차감
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
 
-    return CommandProcessResult(original_command=command, part_results=results_per_part)
+    return CommandProcessResult(original_command=command, part_results=[])
 
 
-# Post-action에서는 에너미가 살아있을 경우 공격 대미지만 처리.
-# 공격 대상에게 디버프를 부여하는 등 "공격의 부가 효과"로 설정된 버프는 POST 타이밍으로 이곳에서 처리한다.
+# Post-action에서는 에너미가 살아있을 경우 저장된 원본 커맨드를 재전개해 대미지/힐/POST 버프를 처리.
+# 재전개 시점에 도발 등 현재 버프 상태가 반영되므로, PRE 선언 이후 걸린 도발도 정상 적용된다.
 def try_process_enemy_command_on_post_action(
     context: BattlefieldContext,
     user_id: CharacterId,
-    remaining_data: list[DamageData | HealData | BuffAddData],
-) -> Optional[CommandPartProcessResult]:
+    remaining_commands: list[CharacterCommand],
+) -> list[CommandPartProcessResult]:
     # 적이 사망했다면 패스
-    if user_id not in context.characters.keys():
-        return None
+    if user_id not in context.characters:
+        return []
 
-    damage_list = [data for data in remaining_data if isinstance(data, DamageData)]
-    heal_list = [data for data in remaining_data if isinstance(data, HealData)]
-    buff_add_list = [data for data in remaining_data if isinstance(data, BuffAddData)]
-    command_part = CommandPartData(
-        None,
-        move_list=[],
-        damage_list=damage_list,
-        heal_list=heal_list,
-        buff_add_list=buff_add_list,
-    )
-    calculator = CommandPartCalculator(command_part, context)
-
-    process_damage(calculator, context)
-    process_heal(calculator, context)
-    process_buff_add(
-        context,
-        command_part.buff_add_list,
-        RoundPhaseType.ENEMY_POST_ACTION,
-        remaining_parts_dict=None,
-        user_id=None,
-    )
-
-    return CommandPartProcessResult(command_part)
+    results: list[CommandPartProcessResult] = []
+    for command in remaining_commands:
+        expanded_parts = expand_character_command(command, context)
+        for part_data in expanded_parts:
+            # 이동은 PRE에서 이미 처리했으므로 제외
+            post_part = CommandPartData(
+                part_data.original_part,
+                move_list=[],
+                damage_list=part_data.damage_list,
+                heal_list=part_data.heal_list,
+                buff_add_list=part_data.buff_add_list,
+            )
+            calculator = CommandPartCalculator(post_part, context)
+            process_damage(calculator, context)
+            process_heal(calculator, context)
+            process_buff_add(
+                context,
+                post_part.buff_add_list,
+                RoundPhaseType.ENEMY_POST_ACTION,
+            )
+            results.append(CommandPartProcessResult(post_part))
+    return results
 
 
 def try_expansion_if_valid(
@@ -214,7 +204,9 @@ def try_expansion_if_valid(
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
             if len(part.targets) > skill.data.target_count:
                 raise CommandValidationError(
-                    error_too_many_targets(part.skill_id, skill.data.target_count, len(part.targets))
+                    error_too_many_targets(
+                        part.skill_id, skill.data.target_count, len(part.targets)
+                    )
                 )
 
     # 3. 코스트 확인
