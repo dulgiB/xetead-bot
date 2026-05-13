@@ -17,6 +17,7 @@ class CharacterDataFromSpreadsheet:
     passive_buff_id: str
     skill_1_id: str
     skill_2_id: str
+    skill_3_id: str
 
     @classmethod
     def from_dict(
@@ -35,4 +36,5 @@ class CharacterDataFromSpreadsheet:
             passive_buff_id=raw["passive_buff_id"],
             skill_1_id=raw["skill_1_id"],
             skill_2_id=raw["skill_2_id"],
+            skill_3_id=raw["skill_3_id"],
         )

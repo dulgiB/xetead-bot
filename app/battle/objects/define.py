@@ -82,8 +82,7 @@ class ActionType(str, Enum):
     ADMIN = "시스템 커맨드"
     MOVE = "이동"
     ATTACK = "공격"
-    SKILL_1 = "스킬1"
-    SKILL_2 = "스킬2"
+    SKILL = "스킬"
     USE_ITEM = "아이템"
 
 

@@ -106,6 +106,20 @@ class BattlefieldContext:
         column_idx: BattlefieldColumnIndex,
     ):
         char_id = CharacterId(data.name)
+        skills = []
+        if data.skill_1_id:
+            skills.append(
+                self._skill_dictionary[data.skill_1_id].to_skill_instance(self, char_id)
+            )
+        if data.skill_2_id:
+            skills.append(
+                self._skill_dictionary[data.skill_2_id].to_skill_instance(self, char_id)
+            )
+        if data.skill_3_id:
+            skills.append(
+                self._skill_dictionary[data.skill_3_id].to_skill_instance(self, char_id)
+            )
+
         character = CombatCharacter(
             self,
             char_id,
@@ -119,16 +133,7 @@ class BattlefieldContext:
                 data.max_cost,
                 data.curr_hp if data.curr_hp else None,
             ),
-            skill_1=self._skill_dictionary[data.skill_1_id].to_skill_instance(
-                self, char_id
-            )
-            if data.skill_1_id
-            else None,
-            skill_2=self._skill_dictionary[data.skill_2_id].to_skill_instance(
-                self, char_id
-            )
-            if data.skill_2_id
-            else None,
+            skills=skills,
         )
 
         if data.passive_buff_id:

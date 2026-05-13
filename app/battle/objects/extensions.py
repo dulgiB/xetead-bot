@@ -13,10 +13,12 @@ def get_total_cost(
 ) -> int:
     user_pos = context.find_character_position(user)
     assert user_pos is not None
-    return sum(_get_part_cost(part, user_pos) for part in parts)
+    return sum(_get_part_cost(part, user_pos, context) for part in parts)
 
 
-def _get_part_cost(part: CommandPart, user_pos: BattlefieldColumnIndex) -> int:
+def _get_part_cost(
+    part: CommandPart, user_pos: BattlefieldColumnIndex, context: "BattlefieldContext"
+) -> int:
     if part.type_ == ActionType.MOVE and part.targets is not None:
         assert len(part.targets) == 1 and isinstance(
             part.targets[0], BattlefieldColumnIndex
@@ -24,10 +26,8 @@ def _get_part_cost(part: CommandPart, user_pos: BattlefieldColumnIndex) -> int:
         return abs(part.targets[0].value - user_pos.value)
     elif part.type_ == ActionType.ATTACK:
         return 1
-    elif part.type_ == ActionType.SKILL_1:
-        return 2
-    elif part.type_ == ActionType.SKILL_2:
-        return 3
+    elif part.type_ == ActionType.SKILL and part.skill_id is not None:
+        return context.get_skill_data_by_id(part.skill_id).cost
     elif part.type_ == ActionType.USE_ITEM:
         return 1
     elif part.type_ == ActionType.ADMIN:

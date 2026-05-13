@@ -17,6 +17,7 @@ def get_test_preset(
     passive_buff_id: Optional[str] = None,
     skill_1_id: Optional[str] = None,
     skill_2_id: Optional[str] = None,
+    skill_3_id: Optional[str] = None,
 ) -> CharacterDataFromSpreadsheet:
     return CharacterDataFromSpreadsheet(
         name=character_name,
@@ -31,4 +32,5 @@ def get_test_preset(
         passive_buff_id=passive_buff_id if passive_buff_id else "",
         skill_1_id=skill_1_id if skill_1_id else "",
         skill_2_id=skill_2_id if skill_2_id else "",
+        skill_3_id=skill_3_id if skill_3_id else "",
     )

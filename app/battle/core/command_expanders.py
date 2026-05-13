@@ -135,23 +135,26 @@ def expand_character_command(
                 )
             )
 
-        elif part.type_ == ActionType.SKILL_1 or part.type_ == ActionType.SKILL_2:
-            skill = context.characters[command.user_id].skills[part.type_]
-            target_characters = skill.target_rule.get_targets(part.targets)
+        elif part.type_ == ActionType.SKILL:
+            for skill in context.characters[command.user_id].skills:
+                if skill.data.id == part.skill_id:
+                    target_characters = skill.target_rule.get_targets(part.targets)
 
-            for skill_effect in skill.data.effects:
-                move_list, damage_list, heal_list, buff_add_list = skill_effect.expand(
-                    context, command.user_id, target_characters
-                )
-                parts_list.append(
-                    CommandPartData(
-                        part,
-                        move_list=move_list,
-                        damage_list=damage_list,
-                        heal_list=heal_list,
-                        buff_add_list=buff_add_list,
-                    )
-                )
+                    for skill_effect in skill.data.effects:
+                        move_list, damage_list, heal_list, buff_add_list = (
+                            skill_effect.expand(
+                                context, command.user_id, target_characters
+                            )
+                        )
+                        parts_list.append(
+                            CommandPartData(
+                                part,
+                                move_list=move_list,
+                                damage_list=damage_list,
+                                heal_list=heal_list,
+                                buff_add_list=buff_add_list,
+                            )
+                        )
 
         else:
             raise ValueError(part)

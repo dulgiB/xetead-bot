@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import CombatStatType, FactionType
 from battle.objects.models import CharacterId
-from battle.objects.skill.models import Skill, SkillData
+from battle.objects.skill.models import Skill
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -17,19 +17,14 @@ class CombatCharacter:
         faction: FactionType,
         stats: CombatStats,
         *,
-        skill_1: Optional[Skill],
-        skill_2: Optional[Skill],
+        skills: list[Skill],
     ):
         self.field = context
         self.id = char_id
 
         self.faction: FactionType = faction
         self.status: CombatStats = stats
-
-        self.skills: dict[ActionType, Optional[Skill]] = {
-            ActionType.SKILL_1: skill_1,
-            ActionType.SKILL_2: skill_2,
-        }
+        self.skills = skills
 
     def __str__(self):
         return f"{self.id} ({self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]})"
