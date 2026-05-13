@@ -23,6 +23,23 @@ class DiceRollResult:
 
         return sum(self.rolls) + bonus_value
 
+    def __str__(self):
+        result_str = "("
+        if len(self.bonus_list) == 1:
+            result_str += str(self.bonus_list[0])
+        else:
+            result_str += "("
+            for bonus in self.bonus_list:
+                if isinstance(bonus, int):
+                    result_str += str(bonus)
+                else:
+                    result_str += f" + {bonus.value}[{bonus.source_name}]"
+            result_str += ")"
+
+        result_str += " + "
+        result_str += " + ".join(str(roll) for roll in self.rolls)
+        result_str += ")"
+        return result_str
 
 
 def nd6(n: int, bonus_list: list[Union[int, "IntValueModifier"]]) -> DiceRollResult:

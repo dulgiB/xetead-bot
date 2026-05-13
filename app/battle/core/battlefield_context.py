@@ -206,6 +206,7 @@ class BattlefieldContext:
         target = self.characters[target_id]
         final_value = damage_value.get_value(calculator, attacker_id, target_id)
         target.status.curr_hp = max(0, target.status.curr_hp - final_value)
+        print_apply_damage(attacker_id, target_id, damage_value, final_value)
 
     def apply_heal(
         self,
@@ -219,6 +220,7 @@ class BattlefieldContext:
         target.status.curr_hp = min(
             target.status[CombatStatType.MAX_HP], target.status.curr_hp + final_value
         )
+        print_apply_heal(healer_id, target_id, heal_value, final_value)
 
     def on_start_round(self):
         self.buff_container.on_round_start()

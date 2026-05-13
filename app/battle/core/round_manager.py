@@ -37,8 +37,8 @@ class RoundManager:
                 post_result = try_process_enemy_command_on_post_action(
                     self._context, user_id, remaining_data
                 )
-                if not post_result:
-                    pass
+                if post_result is not None:
+                    self._context.results.append(post_result)
 
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             self._context.on_finish_round()
@@ -64,7 +64,8 @@ class RoundManager:
                         "커맨드를 입력할 수 있는 타이밍이 아닙니다."
                     )
 
-                process_ally_command(self._context, command)
+                ally_command_result = process_ally_command(self._context, command)
+                self._context.results.extend(ally_command_result.part_results)
 
             elif self._context.characters[command.user_id].faction == FactionType.ENEMY:
                 if self._phase != RoundPhaseType.ENEMY_PRE_ACTION:
@@ -72,6 +73,7 @@ class RoundManager:
                         "커맨드를 입력할 수 있는 타이밍이 아닙니다."
                     )
 
-                process_enemy_command_on_pre_action(
+                enemy_pre_command_result = process_enemy_command_on_pre_action(
                     self._context, command, self._enemy_command_parts
                 )
+                self._context.results.extend(enemy_pre_command_result.part_results)
