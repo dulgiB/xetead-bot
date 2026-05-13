@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import BuffApplyTiming, BuffCountDeductCondition
-from battle.objects.models import CharacterId, DamageData, HealData, ValueWithModifiers
+from battle.objects.models import CharacterId, ValueWithModifiers
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -86,34 +86,18 @@ def process_buff_add(
     context: "BattlefieldContext",
     buff_add_list: list[BuffAddData],
     phase: RoundPhaseType,
-    *,
-    remaining_parts_dict: Optional[
-        dict[CharacterId, list[DamageData | HealData | BuffAddData]]
-    ],
-    user_id: Optional[CharacterId],
 ) -> None:
-    if phase == RoundPhaseType.ALLY_ACTION or phase == RoundPhaseType.ENEMY_POST_ACTION:
+    if phase == RoundPhaseType.ALLY_ACTION:
         for data in buff_add_list:
             context.buff_container.add(data)
-    elif (
-        phase == RoundPhaseType.ENEMY_PRE_ACTION
-        and remaining_parts_dict is not None
-        and user_id is not None
-    ):
-        pre_buffs = [
-            buff
-            for buff in buff_add_list
-            if buff.add_timing == RoundPhaseType.ENEMY_PRE_ACTION
-        ]
-        for data in pre_buffs:
-            context.buff_container.add(data)
-        post_buffs = [
-            buff
-            for buff in buff_add_list
-            if buff.add_timing == RoundPhaseType.ENEMY_POST_ACTION
-        ]
-        for data in post_buffs:
-            remaining_parts_dict[user_id].append(data)
+    elif phase == RoundPhaseType.ENEMY_PRE_ACTION:
+        for data in buff_add_list:
+            if data.add_timing == RoundPhaseType.ENEMY_PRE_ACTION:
+                context.buff_container.add(data)
+    elif phase == RoundPhaseType.ENEMY_POST_ACTION:
+        for data in buff_add_list:
+            if data.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
+                context.buff_container.add(data)
     else:
         raise ValueError(f"Cannot add buffs at this phase: {phase}")
 
