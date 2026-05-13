@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="RuffModuleSettingsStorage">
+    <option name="moduleSettings">
+      <map>
+        <entry key="xetead-bot">
+          <value>
+            <RuffModuleSettingsData>
+              <option name="enabled" value="true" />
+              <option name="pathToExecutable" value="\\wsl.localhost\Ubuntu-22.04\home\joowon\xetead-bot\.venv\bin\ruff" />
+              <option name="sdkName" value="uv WSL (Ubuntu-22.04): (/home/joowon/xetead-bot/.venv/bin/python3.13)" />
+            </RuffModuleSettingsData>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
