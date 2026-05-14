@@ -72,6 +72,9 @@ class ValueSourceType(str, Enum):
     TARGET_CURR_HP = "상대의 현재 체력"
     TARGET_CURR_POSITION = "상대의 현재 위치"
 
+    GIVEN_DAMAGE = "해당 공격으로 입힌 대미지"
+
+
 class ValueType(str, Enum):
     INTEGER = "정수"
     PERCENT = "퍼센트"

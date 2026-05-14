@@ -65,15 +65,34 @@ class BaseValueIndicator:
         if self.value_source == ValueSourceType.FIXED and self.value is not None:
             return self.value
 
-        elif (
-            self.value_source == ValueSourceType.STAT_ATK_ROLL
-            and calculator is not None
-        ):
+        # calculator가 None인 경우는 AdminCommand 한정. AdminCommand는 고정 대미지만 사용한다.
+        assert calculator is not None
+
+        if self.value_source == ValueSourceType.STAT_ATK_ROLL:
             result = nd6(
                 calculator.context.milestone_n,
                 calculator.buffed_stats_by_character[user_id][CombatStatType.ATK],
             )
             return result
+
+        elif self.value_source == ValueSourceType.STAT_ATK:
+            return calculator.context.characters[user_id].status[CombatStatType.ATK]
+        elif self.value_source == ValueSourceType.STAT_RANGE:
+            return calculator.context.characters[user_id].status[CombatStatType.RANGE]
+        elif self.value_source == ValueSourceType.STAT_MAX_HP:
+            return calculator.context.characters[user_id].status[CombatStatType.MAX_HP]
+        elif self.value_source == ValueSourceType.STAT_COST_PER_TURN:
+            return calculator.context.characters[user_id].status[
+                CombatStatType.COST_PER_TURN
+            ]
+        elif self.value_source == ValueSourceType.SELF_CURR_HP:
+            return calculator.context.characters[user_id].status.curr_hp
+        elif self.value_source == ValueSourceType.SELF_CURR_POSITION:
+            return calculator.context.find_character_position(user_id).value
+        elif self.value_source == ValueSourceType.TARGET_CURR_HP:
+            return calculator.context.characters[target_id].status.curr_hp
+        elif self.value_source == ValueSourceType.TARGET_CURR_POSITION:
+            return calculator.context.find_character_position(target_id).value
         else:
             raise ValueError(self.value_source)
 
@@ -83,7 +102,6 @@ class ValueWithModifiers:
     base_value: BaseValueIndicator
     int_modifiers: list[IntValueModifier]
     float_modifiers: list[FloatValueModifier]
-
     roll_result: Optional[DiceRollResult] = None
 
     def __init__(
