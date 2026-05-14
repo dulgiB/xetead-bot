@@ -11,7 +11,10 @@ from battle.objects.define import (
 )
 
 if TYPE_CHECKING:
-    from battle.core.commands.models import CommandPartCalculator
+    from battle.core.command_calculator import (
+        CalculatorMutableData,
+        CommandPartCalculator,
+    )
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,7 @@ class BaseValueIndicator:
         user_id: CharacterId,
         target_id: CharacterId,
         calculator: Optional["CommandPartCalculator"],
+        effect_seq_number: int,
     ) -> int | DiceRollResult:
         if self.value_source == ValueSourceType.FIXED and self.value is not None:
             return self.value
@@ -93,6 +97,23 @@ class BaseValueIndicator:
             return calculator.context.characters[target_id].status.curr_hp
         elif self.value_source == ValueSourceType.TARGET_CURR_POSITION:
             return calculator.context.find_character_position(target_id).value
+
+        elif self.value_source == ValueSourceType.GIVEN_DAMAGE:
+            prev_effects: list[CalculatorMutableData] = calculator.data_by_effect[
+                :effect_seq_number
+            ]
+            prev_damage_data_list = sum(
+                (effect.damage_data_list for effect in prev_effects), []
+            )
+            total = sum(
+                data.result_value
+                for data in prev_damage_data_list
+                if data.result_value is not None
+            )
+            if self.coefficient is not None:
+                return math.floor(total * self.coefficient.value)
+            return total
+
         else:
             raise ValueError(self.value_source)
 
@@ -116,6 +137,7 @@ class ValueWithModifiers:
         if (
             isinstance(self.base_value, BaseValueIndicator)
             and self.base_value.coefficient is not None
+            and self.base_value.value_source != ValueSourceType.GIVEN_DAMAGE
         ):
             self.float_modifiers.append(self.base_value.coefficient)
 
@@ -132,11 +154,14 @@ class ValueWithModifiers:
         calculator: Optional["CommandPartCalculator"],
         user: CharacterId,
         target: CharacterId,
+        effect_seq_number: int,
     ) -> int:
         if isinstance(self.base_value, int):
             base_value = self.base_value
         elif isinstance(self.base_value, BaseValueIndicator):
-            base_value = self.base_value.get_value(user, target, calculator)
+            base_value = self.base_value.get_value(
+                user, target, calculator, effect_seq_number
+            )
         else:
             raise TypeError(type(self.base_value))
 
