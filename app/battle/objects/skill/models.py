@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Literal, Optional, Type
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
+    MAX_EFFECT_COUNT,
     ValueSourceType,
     ValueType,
 )
@@ -62,7 +63,7 @@ class SkillData:
         skill_effects: list[SkillEffectBase] = []
         skill_effect_module = importlib.import_module("battle.objects.skill.effects")
 
-        for i in range(3):
+        for i in range(MAX_EFFECT_COUNT):
             if effect_name := data.get(f"effect_{i}"):
                 effect: Type[SkillEffectBase] = getattr(
                     skill_effect_module, effect_name

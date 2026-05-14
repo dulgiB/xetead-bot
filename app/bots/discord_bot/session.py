@@ -85,9 +85,11 @@ class BattleSession:
             is_magic_attacker=rec.data.is_magic_attacker,
             max_cost=rec.data.max_cost,
             passive_buff_id=passive_id or "",
-            skill_1_id=skill1_id or "",
-            skill_2_id=skill2_id or "",
-            skill_3_id=skill3_id or "",
+            skill_id_list=[
+                skill1_id or "",
+                skill2_id or "",
+                skill3_id or "",
+            ],
         )
         self.context.remove_character(CharacterId(name))
         self.context.add_character(new_data, rec.faction, rec.column)

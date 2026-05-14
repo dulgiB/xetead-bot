@@ -165,9 +165,7 @@ async def cmd_캐릭터(
         is_magic_attacker=is_magic,
         max_cost=3,
         passive_buff_id="",
-        skill_1_id="",
-        skill_2_id="",
-        skill_3_id="",
+        skill_id_list=[],
     )
 
     try:
@@ -234,9 +232,7 @@ async def cmd_적군(
         is_magic_attacker=is_magic,
         max_cost=3,
         passive_buff_id="",
-        skill_1_id="",
-        skill_2_id="",
-        skill_3_id="",
+        skill_id_list=[],
     )
 
     try:

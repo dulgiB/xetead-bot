@@ -17,6 +17,7 @@ from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
+    MAX_SKILL_SLOT_COUNT,
     BattlefieldColumnIndex,
     CombatStatType,
     FactionType,
@@ -111,18 +112,15 @@ class BattlefieldContext:
     ):
         char_id = CharacterId(data.name)
         skills = []
-        if data.skill_1_id:
-            skills.append(
-                self._skill_dictionary[data.skill_1_id].to_skill_instance(self, char_id)
-            )
-        if data.skill_2_id:
-            skills.append(
-                self._skill_dictionary[data.skill_2_id].to_skill_instance(self, char_id)
-            )
-        if data.skill_3_id:
-            skills.append(
-                self._skill_dictionary[data.skill_3_id].to_skill_instance(self, char_id)
-            )
+        for i in range(MAX_SKILL_SLOT_COUNT):
+            if len(data.skill_id_list) <= i:
+                break
+            if data.skill_id_list[i]:
+                skills.append(
+                    self._skill_dictionary[data.skill_id_list[i]].to_skill_instance(
+                        self, char_id
+                    )
+                )
 
         character = CombatCharacter(
             self,

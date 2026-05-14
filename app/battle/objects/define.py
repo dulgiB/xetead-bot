@@ -1,6 +1,10 @@
 from enum import Enum
 
 CHARACTER_PER_COLUMN = 3
+MAX_SKILL_SLOT_COUNT = 3
+
+# 스킬 또는 아이템 효과의 최대 개수
+MAX_EFFECT_COUNT = 3
 
 
 class BattlefieldColumnIndex(Enum):

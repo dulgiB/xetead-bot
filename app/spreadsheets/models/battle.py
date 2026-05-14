@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from battle.objects.define import MagicResistanceType
+from battle.objects.define import MAX_SKILL_SLOT_COUNT, MagicResistanceType
 
 
 @dataclass(frozen=True)
@@ -15,9 +15,7 @@ class CharacterDataFromSpreadsheet:
     is_magic_attacker: bool
     max_cost: int
     passive_buff_id: str
-    skill_1_id: str
-    skill_2_id: str
-    skill_3_id: str
+    skill_id_list: list[str]
 
     @classmethod
     def from_dict(
@@ -34,7 +32,5 @@ class CharacterDataFromSpreadsheet:
             is_magic_attacker=raw["is_magic"],
             max_cost=raw["max_cost"],
             passive_buff_id=raw["passive_buff_id"],
-            skill_1_id=raw["skill_1_id"],
-            skill_2_id=raw["skill_2_id"],
-            skill_3_id=raw["skill_3_id"],
+            skill_id_list=[raw.get(f"skill_{i + 1}_id", "") or "" for i in range(MAX_SKILL_SLOT_COUNT)],
         )

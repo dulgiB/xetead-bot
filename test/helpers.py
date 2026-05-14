@@ -30,7 +30,9 @@ def get_test_preset(
         is_magic_attacker=is_magic_attacker,
         max_cost=max_cost,
         passive_buff_id=passive_buff_id if passive_buff_id else "",
-        skill_1_id=skill_1_id if skill_1_id else "",
-        skill_2_id=skill_2_id if skill_2_id else "",
-        skill_3_id=skill_3_id if skill_3_id else "",
+        skill_id_list=[
+            skill_1_id if skill_1_id else "",
+            skill_2_id if skill_2_id else "",
+            skill_3_id if skill_3_id else "",
+        ],
     )
