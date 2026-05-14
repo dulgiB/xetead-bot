@@ -1,42 +1,18 @@
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import CommandPartCalculator
-from battle.objects.buff.buff_base import BuffBase
-from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming
-from battle.objects.models import CharacterId
+from battle.objects.buff.buffs._buff_no_data_base import BuffNoDataBase, NoDataEvent
+
+if TYPE_CHECKING:
+    from battle.core.commands.models import CommandPartCalculator
 
 
 @dataclass(frozen=True)
-class NoDamageEvent(BuffEvent):
-    @property
-    def priority(self) -> BuffEventCalculatePriority:
-        return BuffEventCalculatePriority.POST
-
-    def apply(
-        self,
-        holder: CharacterId,
-        attacker_or_target: CharacterId,
-        context: BattlefieldContext,
-        calculator: CommandPartCalculator,
-    ) -> None:
-        data_to_remove = []
-
-        for damage_data in calculator.damage_data_list:
-            if damage_data.base.target_id == holder:
-                data_to_remove.append(damage_data)
-
-        for damage_data in data_to_remove:
-            calculator.damage_data_list.remove(damage_data)
+class NoDamageEvent(NoDataEvent):
+    def _get_data_list(self, calculator: "CommandPartCalculator") -> list:
+        return calculator.damage_data_list
 
 
-class BuffNoDamage(BuffBase):
-    @property
-    def timing(self) -> BuffApplyTiming:
-        return BuffApplyTiming.ON_ACTION
-
+class BuffNoDamage(BuffNoDataBase):
     def create_event(self) -> NoDamageEvent:
-        return NoDamageEvent(
-            condition=self.condition,
-        )
+        return NoDamageEvent(condition=self.condition)
