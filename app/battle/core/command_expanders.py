@@ -17,6 +17,7 @@ from battle.core.commands.models import (
     DamageData,
     MoveData,
 )
+from battle.exceptions import CommandValidationError, error_invalid_command_format
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,
@@ -197,6 +198,6 @@ def expand_character_command(
                         )
 
         else:
-            raise ValueError(part)
+            raise CommandValidationError(error_invalid_command_format())
 
     return parts_list

@@ -107,7 +107,7 @@ def _apply_buff_events(
     context: "BattlefieldContext",
     char_id: CharacterId,
     deduct_condition: Optional[BuffCountDeductCondition],
-    attacker_or_target: CharacterId = None,
+    attacker_or_target: Optional[CharacterId] = None,
 ) -> None:
     buffs = context.buff_container.get_buffs_by(char_id, BuffApplyTiming.ON_ACTION)
     events = [buff.create_event() for buff in buffs]

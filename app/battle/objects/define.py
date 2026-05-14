@@ -21,22 +21,18 @@ class BattlefieldColumnIndex(Enum):
 
     @classmethod
     def from_str(cls, input_str: str):
-        if input_str == "1열" or input_str == "1":
-            return BattlefieldColumnIndex.COL1
-        elif input_str == "2열" or input_str == "2":
-            return BattlefieldColumnIndex.COL2
-        elif input_str == "3열" or input_str == "3":
-            return BattlefieldColumnIndex.COL3
-        elif input_str == "4열" or input_str == "4":
-            return BattlefieldColumnIndex.COL4
-        elif input_str == "5열" or input_str == "5":
-            return BattlefieldColumnIndex.COL5
-        elif input_str == "6열" or input_str == "6":
-            return BattlefieldColumnIndex.COL6
-        elif input_str == "7열" or input_str == "7":
-            return BattlefieldColumnIndex.COL7
-        else:
-            raise ValueError(input_str)
+        mapping: dict[str, "BattlefieldColumnIndex"] = {
+            "1열": cls.COL1, "1": cls.COL1,
+            "2열": cls.COL2, "2": cls.COL2,
+            "3열": cls.COL3, "3": cls.COL3,
+            "4열": cls.COL4, "4": cls.COL4,
+            "5열": cls.COL5, "5": cls.COL5,
+            "6열": cls.COL6, "6": cls.COL6,
+            "7열": cls.COL7, "7": cls.COL7,
+        }
+        if input_str in mapping:
+            return mapping[input_str]
+        raise ValueError(input_str)
 
 
 class FactionType(str, Enum):
