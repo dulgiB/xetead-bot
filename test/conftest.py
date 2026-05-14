@@ -7,7 +7,7 @@ import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.models import BuffData
-from battle.objects.define import ValueSourceType, ValueType
+from battle.objects.define import SkillTargetOverrideType, ValueSourceType, ValueType
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
     SkillEffectDamage,
@@ -119,4 +119,35 @@ def context_with_atk_buff_skill(
     return BattlefieldContext(
         buff_dict={"공격력 증가": buff_atk_data},
         skill_dict={"공격 보조": skill_add_atk_buff},
+    )
+
+
+@pytest.fixture
+def skill_vampiric_attack() -> SkillData:
+    """적에게 고정 40 대미지를 입히고, 입힌 대미지의 50%를 자신이 회복하는 스킬."""
+    return SkillData(
+        id="흡혈",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=2,
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 40, ValueType.INTEGER, None, None),
+            SkillEffectHeal(
+                ValueSourceType.GIVEN_DAMAGE,
+                50,
+                ValueType.PERCENT,
+                None,
+                None,
+                SkillTargetOverrideType.SELF,
+            ),
+        ],
+        description="",
+    )
+
+
+@pytest.fixture
+def context_with_vampiric_skill(skill_vampiric_attack) -> BattlefieldContext:
+    return BattlefieldContext(
+        buff_dict={},
+        skill_dict={"흡혈": skill_vampiric_attack},
     )

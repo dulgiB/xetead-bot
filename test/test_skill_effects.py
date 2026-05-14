@@ -171,3 +171,90 @@ def test_buff_duration_decrements_on_round_end(buff_skill_setup):
     buffs_after = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
     if buffs_after:
         assert buffs_after[0].duration.remaining_turns == turns_before - 1
+
+
+# ── GIVEN_DAMAGE 흡혈 스킬 ────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def vampiric_skill_setup(context_with_vampiric_skill):
+    """아군 1(HP=70)이 흡혈 스킬을 보유하고, 적군 1(HP=100)과 대치하는 설정."""
+    ctx = context_with_vampiric_skill
+    manager = RoundManager(ctx)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
+    )
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="흡혈", initial_hp=70),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    return ctx, manager
+
+
+def test_vampiric_skill_reduces_target_hp(vampiric_skill_setup):
+    """흡혈 스킬이 적에게 고정 40 대미지를 입혀야 한다."""
+    ctx, manager = vampiric_skill_setup
+    enemy_id = CharacterId("적군 1")
+
+    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/흡혈/적군 1]")
+    manager.process_command(cmd)
+
+    assert ctx.characters[enemy_id].status.curr_hp == 60  # 100 - 40
+
+
+def test_vampiric_skill_heals_self_for_half_damage(vampiric_skill_setup):
+    """흡혈 스킬로 40 대미지를 입힌 후 시전자가 20(= 40 × 50%)을 회복해야 한다."""
+    ctx, manager = vampiric_skill_setup
+    user_id = CharacterId("아군 1")
+
+    cmd = parse_character_command(user_id, "[스킬/흡혈/적군 1]")
+    manager.process_command(cmd)
+
+    assert ctx.characters[user_id].status.curr_hp == 90  # 70 + 20
+
+
+def test_vampiric_skill_heal_does_not_exceed_max_hp(context_with_vampiric_skill):
+    """회복량이 남은 HP 부족분보다 커도 최대 HP를 초과하지 않아야 한다."""
+    ctx = context_with_vampiric_skill
+    manager = RoundManager(ctx)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
+    )
+    # HP 85에서 회복 20을 받으면 105가 되지만 최대 HP(100)로 제한된다
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="흡혈", initial_hp=85),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    user_id = CharacterId("아군 1")
+
+    cmd = parse_character_command(user_id, "[스킬/흡혈/적군 1]")
+    manager.process_command(cmd)
+
+    assert ctx.characters[user_id].status.curr_hp == 100
+
+
+def test_vampiric_skill_heals_self_not_target(vampiric_skill_setup):
+    """회복 효과가 적군이 아닌 시전자(아군 1)에게 적용되어야 한다."""
+    ctx, manager = vampiric_skill_setup
+    user_id = CharacterId("아군 1")
+    enemy_id = CharacterId("적군 1")
+
+    initial_enemy_hp = ctx.characters[enemy_id].status.curr_hp  # 100
+
+    cmd = parse_character_command(user_id, "[스킬/흡혈/적군 1]")
+    manager.process_command(cmd)
+
+    # 적의 HP는 대미지만큼 감소하고 회복은 없어야 한다
+    assert ctx.characters[enemy_id].status.curr_hp == initial_enemy_hp - 40
