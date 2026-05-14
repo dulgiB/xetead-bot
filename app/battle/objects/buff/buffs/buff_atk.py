@@ -1,14 +1,13 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from battle.core.commands.models import CommandPartCalculator
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming, CombatStatType, ValueType
 from battle.objects.models import CharacterId, IntValueModifier
 
 if TYPE_CHECKING:
-    from battle.core.battlefield_context import BattlefieldContext
+    from battle.core.command_calculator import CommandPartCalculator
 
 
 @dataclass(frozen=True)
@@ -23,8 +22,8 @@ class AtkModEvent(BuffEvent):
         self,
         holder: CharacterId,
         attacker_or_target: CharacterId,
-        context: "BattlefieldContext",
-        calculator: CommandPartCalculator,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
     ) -> None:
         calculator.buffed_stats_by_character[holder].stat_bonuses[
             CombatStatType.ATK

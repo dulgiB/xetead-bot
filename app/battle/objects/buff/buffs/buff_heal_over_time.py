@@ -1,15 +1,14 @@
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import (
-    CommandPartCalculator,
-    HealCalculateData,
-    HealData,
-)
+from battle.core.commands.models import HealCalculateData, HealData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming, ValueSourceType
 from battle.objects.models import BaseValueIndicator, CharacterId
+
+if TYPE_CHECKING:
+    from battle.core.command_calculator import CommandPartCalculator
 
 
 @dataclass(frozen=True)
@@ -24,10 +23,10 @@ class HealOverTimeEvent(BuffEvent):
         self,
         holder: CharacterId,
         attacker_or_target: CharacterId,
-        context: BattlefieldContext,
-        calculator: CommandPartCalculator,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
     ) -> None:
-        calculator.heal_data_list.append(
+        calculator.data_by_effect[effect_seq_number].heal_data_list.append(
             HealCalculateData(
                 HealData(
                     healer_id=attacker_or_target,

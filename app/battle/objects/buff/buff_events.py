@@ -37,8 +37,8 @@ class BuffEvent(abc.ABC):
         self,
         holder: CharacterId,
         attacker_or_target: CharacterId,
-        context: "BattlefieldContext",
         calculator: "CommandPartCalculator",
+        effect_seq_number: int,
     ) -> None:
         pass
 
