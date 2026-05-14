@@ -109,3 +109,7 @@ class BuffApplyTiming(str, Enum):
 class BuffCountDeductCondition(str, Enum):
     ON_ATTACK = "공격 시"
     ON_HIT = "피격 시"
+
+
+class SkillTargetOverrideType(str, Enum):
+    SELF = "자신"

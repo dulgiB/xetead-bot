@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 class SkillEffectAddBuff(SkillEffectBase):
-    def expand(
+    def _expand(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 class SkillEffectMove(SkillEffectBase):
-    def expand(
+    def _expand(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,

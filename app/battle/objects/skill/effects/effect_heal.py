@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class SkillEffectHeal(SkillEffectBase):
-    def expand(
+    def _expand(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,

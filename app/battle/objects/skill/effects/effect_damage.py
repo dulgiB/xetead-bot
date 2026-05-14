@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 class SkillEffectDamage(SkillEffectBase):
-    def expand(
+    def _expand(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,
@@ -59,7 +59,7 @@ class SkillEffectDamage(SkillEffectBase):
 class SkillEffectDamageReverse(SkillEffectDamage):
     """시전자의 공격 속성과 반대 속성으로 대미지를 입히는 스킬 효과."""
 
-    def expand(
+    def _expand(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,
@@ -70,7 +70,7 @@ class SkillEffectDamageReverse(SkillEffectDamage):
         list[HealData],
         list[BuffAddData],
     ]:
-        _, damage_list, _, _ = super().expand(context, holder, targets)
+        _, damage_list, _, _ = super()._expand(context, holder, targets)
         reversed_damage_list = [
             DamageData(
                 attacker_id=d.attacker_id,

@@ -7,6 +7,7 @@ from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     MAX_EFFECT_COUNT,
+    SkillTargetOverrideType,
     ValueSourceType,
     ValueType,
 )
@@ -27,9 +28,10 @@ class SkillEffectBase(abc.ABC):
     buff_add_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
     ]
+    target_override: Optional[SkillTargetOverrideType] = None
 
     @abc.abstractmethod
-    def expand(
+    def _expand(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,
@@ -41,6 +43,25 @@ class SkillEffectBase(abc.ABC):
         list[BuffAddData],
     ]:
         pass
+
+    def expand(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        targets: list[CharacterId],
+    ) -> tuple[
+        list[MoveData],
+        list[DamageData],
+        list[HealData],
+        list[BuffAddData],
+    ]:
+        if self.target_override is None:
+            return self._expand(context, holder, targets)
+
+        if self.target_override == SkillTargetOverrideType.SELF:
+            return self._expand(context, holder, [holder])
+
+        raise ValueError(self.target_override)
 
 
 @dataclass(frozen=True)
@@ -85,6 +106,11 @@ class SkillData:
                     if data[f"buff_add_timing_{i}"]
                     else None
                 )
+                target_override = (
+                    SkillTargetOverrideType(data[f"target_override_{i}"])
+                    if data[f"target_override_{i}"]
+                    else None
+                )
 
                 skill_effects.append(
                     effect(
@@ -93,6 +119,7 @@ class SkillData:
                         value_type=value_type,
                         buff_id=buff_name,
                         buff_add_timing=buff_add_timing,
+                        target_override=target_override,
                     )
                 )
 
