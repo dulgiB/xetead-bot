@@ -152,19 +152,21 @@ class BattlefieldContext:
         self.position_map[faction][column_idx][maybe_empty_slot] = char_id
         self.characters[char_id] = character
 
+    def _remove_from_position_map(self, char_id: CharacterId) -> None:
+        char = self.characters[char_id]
+        char_pos = self.find_character_position(char_id)
+        for slot_idx, cid in self.position_map[char.faction][char_pos].items():
+            if cid == char_id:
+                self.position_map[char.faction][char_pos].pop(slot_idx)
+                return
+        raise CommandValidationError(error_target_does_not_exist(char_id))
+
     def remove_character(self, char_id: CharacterId) -> "CombatCharacter":
-        if char_id not in self.characters.keys():
+        if char_id not in self.characters:
             raise CommandValidationError(error_target_does_not_exist(char_id))
 
-        char_pos = self.find_character_position(char_id)
-        char = self.characters.pop(char_id)
-
-        for slot_idx, character in self.position_map[char.faction][char_pos].items():
-            if character == char.id:
-                self.position_map[char.faction][char_pos].pop(slot_idx)
-                break
-
-        return char
+        self._remove_from_position_map(char_id)
+        return self.characters.pop(char_id)
 
     def try_find_empty_slot(
         self, faction: FactionType, column: BattlefieldColumnIndex
@@ -189,7 +191,6 @@ class BattlefieldContext:
         self, char_id: CharacterId, to_position: BattlefieldColumnIndex
     ):
         char = self.characters[char_id]
-        char_pos = self.find_character_position(char_id)
         empty_slot = self.try_find_empty_slot(char.faction, to_position)
 
         # is_valid에서 사전 검증되었으므로 None 케이스는 발생하지 않는다.
@@ -198,10 +199,7 @@ class BattlefieldContext:
         if empty_slot is None:
             raise CommandValidationError(error_too_many_characters(to_position))
 
-        for slot_idx, character in self.position_map[char.faction][char_pos].items():
-            if character == char.id:
-                self.position_map[char.faction][char_pos].pop(slot_idx)
-                break
+        self._remove_from_position_map(char_id)
         self.position_map[char.faction][to_position][empty_slot] = char_id
 
     def apply_damage(
