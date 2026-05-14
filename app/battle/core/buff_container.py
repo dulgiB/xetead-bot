@@ -48,11 +48,11 @@ class BuffContainer:
                 if buff.applied_to == char_id and timing == buff.timing
             ]
 
-    def on_round_start(self):
+    def _apply_round_events(self, timing: BuffApplyTiming) -> None:
         event_pairs = [
             (buff.create_event(), buff.given_by, buff.applied_to)
             for buff in self._buffs
-            if buff.timing == BuffApplyTiming.ON_ROUND_START
+            if buff.timing == timing
         ]
         event_pairs.sort(key=lambda x: x[0].priority.value)
 
@@ -64,26 +64,14 @@ class BuffContainer:
         process_move(buff_calculator, self._context)
         process_damage(buff_calculator, self._context)
         process_heal(buff_calculator, self._context)
+
+    def on_round_start(self):
+        self._apply_round_events(BuffApplyTiming.ON_ROUND_START)
 
     def on_round_end(self) -> list[BuffUid]:
-        event_pairs = [
-            (buff.create_event(), buff.given_by, buff.applied_to)
-            for buff in self._buffs
-            if buff.timing == BuffApplyTiming.ON_ROUND_END
-        ]
-        event_pairs.sort(key=lambda x: x[0].priority.value)
-
-        buff_calculator = CommandPartCalculator.create_empty(self._context)
-        for event, given_by, applied_to in event_pairs:
-            if event.is_applied(self._context, applied_to, given_by):
-                event.apply(applied_to, given_by, self._context, buff_calculator)
-
-        process_move(buff_calculator, self._context)
-        process_damage(buff_calculator, self._context)
-        process_heal(buff_calculator, self._context)
+        self._apply_round_events(BuffApplyTiming.ON_ROUND_END)
 
         buffs_to_remove: list[BuffBase] = []
-
         for buff in self._buffs:
             buff.duration.deduct_turn()
             if buff.duration.finished:
