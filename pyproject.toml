@@ -10,7 +10,7 @@ dependencies = [
     "optional>=0.0.1",
     "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
-    "regex>=2026.4.4",
+    "regex>=2026.5.9",
     "ruff>=0.15.12",
 ]
 
