@@ -22,13 +22,20 @@ class BattlefieldColumnIndex(Enum):
     @classmethod
     def from_str(cls, input_str: str):
         mapping: dict[str, "BattlefieldColumnIndex"] = {
-            "1열": cls.COL1, "1": cls.COL1,
-            "2열": cls.COL2, "2": cls.COL2,
-            "3열": cls.COL3, "3": cls.COL3,
-            "4열": cls.COL4, "4": cls.COL4,
-            "5열": cls.COL5, "5": cls.COL5,
-            "6열": cls.COL6, "6": cls.COL6,
-            "7열": cls.COL7, "7": cls.COL7,
+            "1열": cls.COL1,
+            "1": cls.COL1,
+            "2열": cls.COL2,
+            "2": cls.COL2,
+            "3열": cls.COL3,
+            "3": cls.COL3,
+            "4열": cls.COL4,
+            "4": cls.COL4,
+            "5열": cls.COL5,
+            "5": cls.COL5,
+            "6열": cls.COL6,
+            "6": cls.COL6,
+            "7열": cls.COL7,
+            "7": cls.COL7,
         }
         if input_str in mapping:
             return mapping[input_str]
