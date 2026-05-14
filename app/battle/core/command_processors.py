@@ -3,17 +3,11 @@ from typing import TYPE_CHECKING, Optional
 from utils.battle_helpers import is_reachable
 
 from battle.core.battlefield_context import BattlefieldContext
+from battle.core.command_calculator import CommandPartCalculator
 from battle.core.command_expanders import expand_character_command
-from battle.core.command_process_helpers import (
-    process_buff_add,
-    process_damage,
-    process_heal,
-    process_move,
-)
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
     CharacterCommand,
-    CommandPartCalculator,
     CommandPartData,
     CommandPartProcessResult,
     CommandProcessResult,
@@ -42,32 +36,34 @@ def process_admin_command(
         round_manager.to_phase(expanded_command.admin_target_phase)
         return
 
-    for move_data in expanded_command.move_list:
-        round_manager._context.move_character_to(
-            move_data.character_id, move_data.to_position
-        )
+    for i in range(len(expanded_command.data_per_effect)):
+        data = expanded_command.data_per_effect[i]
+        for move_data in data.move_list:
+            round_manager._context.move_character_to(
+                move_data.character_id, move_data.to_position
+            )
+        for damage_data in data.damage_list:
+            round_manager._context.apply_damage(
+                damage_data.attacker_id,
+                damage_data.target_id,
+                ValueWithModifiers(damage_data.value, []),
+                None,
+                i,
+            )
+        for heal_data in data.heal_list:
+            round_manager._context.apply_heal(
+                heal_data.healer_id,
+                heal_data.target_id,
+                ValueWithModifiers(heal_data.value, []),
+                None,
+                i,
+            )
 
-    for damage_data in expanded_command.damage_list:
-        round_manager._context.apply_damage(
-            damage_data.attacker_id,
-            damage_data.target_id,
-            ValueWithModifiers(damage_data.value, []),
-            None,
-        )
+        for buff_add_event in data.buff_add_list:
+            round_manager._context.buff_container.add(buff_add_event)
 
-    for heal_data in expanded_command.heal_list:
-        round_manager._context.apply_heal(
-            heal_data.healer_id,
-            heal_data.target_id,
-            ValueWithModifiers(heal_data.value, []),
-            None,
-        )
-
-    for buff_add_event in expanded_command.buff_add_list:
-        round_manager._context.buff_container.add(buff_add_event)
-
-    for buff_to_remove in expanded_command.admin_buff_remove_list:
-        round_manager._context.buff_container.remove(buff_to_remove)
+        for buff_to_remove in data.admin_buff_remove_list:
+            round_manager._context.buff_container.remove(buff_to_remove)
 
 
 def process_ally_command(
@@ -86,16 +82,7 @@ def process_ally_command(
             and part_data.original_part is not None
         )
         calculator = CommandPartCalculator(part_data, context)
-
-        process_move(calculator, context)
-        process_damage(calculator, context)
-        process_heal(calculator, context)
-        process_buff_add(
-            context,
-            part_data.buff_add_list,
-            RoundPhaseType.ALLY_ACTION,
-        )
-
+        calculator.process(RoundPhaseType.ALLY_ACTION)
         results_per_part.append(CommandPartProcessResult(expanded_part=part_data))
 
     # 코스트 차감 - 검증 통과 후 실제 처리 시점에 차감
@@ -122,13 +109,7 @@ def process_enemy_command_on_pre_action(
             and part_data.original_part is not None
         )
         calculator = CommandPartCalculator(part_data, context)
-
-        process_move(calculator, context)
-        process_buff_add(
-            context,
-            part_data.buff_add_list,
-            RoundPhaseType.ENEMY_PRE_ACTION,
-        )
+        calculator.process(RoundPhaseType.ENEMY_PRE_ACTION)
 
     # 원본 커맨드를 저장 — POST 페이즈에서 도발 등 버프를 반영해 재전개
     remaining_commands_dict.setdefault(command.user_id, []).append(command)
@@ -158,19 +139,10 @@ def try_process_enemy_command_on_post_action(
             # 이동은 PRE에서 이미 처리했으므로 제외
             post_part = CommandPartData(
                 part_data.original_part,
-                move_list=[],
-                damage_list=part_data.damage_list,
-                heal_list=part_data.heal_list,
-                buff_add_list=part_data.buff_add_list,
+                data_per_effect=part_data.data_per_effect,
             )
             calculator = CommandPartCalculator(post_part, context)
-            process_damage(calculator, context)
-            process_heal(calculator, context)
-            process_buff_add(
-                context,
-                post_part.buff_add_list,
-                RoundPhaseType.ENEMY_POST_ACTION,
-            )
+            calculator.process(RoundPhaseType.ENEMY_POST_ACTION)
             results.append(CommandPartProcessResult(post_part))
     return results
 
@@ -219,25 +191,31 @@ def try_expansion_if_valid(
 
     expanded_command_data_list = expand_character_command(command, context)
     for command_data in expanded_command_data_list:
-        # 4. 대미지/힐 대상 존재 및 사거리 확인
-        for damage_data in command_data.damage_list:
-            target_id = damage_data.target_id
-            if target_id not in context.characters:
-                raise CommandValidationError(error_target_does_not_exist(target_id))
+        for sub_data in command_data.data_per_effect:
+            if sub_data is None:
+                continue
 
-            target_pos = context.find_character_position(target_id)
-            if not is_reachable(user_pos, target_pos, attack_range):
-                raise CommandValidationError(error_attack_position_too_far(target_pos))
+            # 4. 대미지/힐 대상 존재 및 사거리 확인
+            for damage_data in sub_data.damage_list:
+                target_id = damage_data.target_id
+                if target_id not in context.characters:
+                    raise CommandValidationError(error_target_does_not_exist(target_id))
 
-        for heal_data in command_data.heal_list:
-            target_id = heal_data.target_id
-            if target_id not in context.characters:
-                raise CommandValidationError(error_target_does_not_exist(target_id))
+                target_pos = context.find_character_position(target_id)
+                if not is_reachable(user_pos, target_pos, attack_range):
+                    raise CommandValidationError(
+                        error_attack_position_too_far(target_pos)
+                    )
 
-        # 5. 이동 목적지 검증
-        for move_data in command_data.move_list:
-            to_pos = move_data.to_position
-            if context.try_find_empty_slot(user.faction, to_pos) is None:
-                raise CommandValidationError(error_too_many_characters(to_pos))
+            for heal_data in sub_data.heal_list:
+                target_id = heal_data.target_id
+                if target_id not in context.characters:
+                    raise CommandValidationError(error_target_does_not_exist(target_id))
+
+            # 5. 이동 목적지 검증
+            for move_data in sub_data.move_list:
+                to_pos = move_data.to_position
+                if context.try_find_empty_slot(user.faction, to_pos) is None:
+                    raise CommandValidationError(error_too_many_characters(to_pos))
 
     return expanded_command_data_list, needed_cost

@@ -1,11 +1,6 @@
 from typing import TYPE_CHECKING, Optional
 
-from battle.core.command_process_helpers import (
-    process_damage,
-    process_heal,
-    process_move,
-)
-from battle.core.commands.models import CommandPartCalculator
+from battle.core.command_calculator import CommandPartCalculator
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -56,14 +51,11 @@ class BuffContainer:
         ]
         event_pairs.sort(key=lambda x: x[0].priority.value)
 
-        buff_calculator = CommandPartCalculator.create_empty(self._context)
+        buff_calculator = CommandPartCalculator.create_empty_for_buff(self._context)
         for event, given_by, applied_to in event_pairs:
             if event.is_applied(self._context, applied_to, given_by):
-                event.apply(applied_to, given_by, self._context, buff_calculator)
-
-        process_move(buff_calculator, self._context)
-        process_damage(buff_calculator, self._context)
-        process_heal(buff_calculator, self._context)
+                event.apply(applied_to, given_by, buff_calculator, 0)
+        buff_calculator.process(None)
 
     def on_round_start(self):
         self._apply_round_events(BuffApplyTiming.ON_ROUND_START)

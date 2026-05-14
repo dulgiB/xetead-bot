@@ -5,7 +5,8 @@ from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 from utils.logging import print_apply_damage, print_apply_heal
 
 from battle.core.buff_container import BuffContainer
-from battle.core.commands.models import CommandPartCalculator, CommandPartProcessResult
+from battle.core.command_calculator import CommandPartCalculator
+from battle.core.commands.models import CommandPartProcessResult
 from battle.exceptions import (
     CommandValidationError,
     error_target_does_not_exist,

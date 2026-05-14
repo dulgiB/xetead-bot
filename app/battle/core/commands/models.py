@@ -3,8 +3,7 @@ from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.character.buffed_stats import BuffedStats
-from battle.objects.define import ActionType, BattlefieldColumnIndex, CombatStatType
+from battle.objects.define import MAX_EFFECT_COUNT, ActionType, BattlefieldColumnIndex
 from battle.objects.models import (
     BuffUid,
     CharacterId,
@@ -13,10 +12,6 @@ from battle.objects.models import (
     MoveData,
     ValueModifierBase,
 )
-
-if TYPE_CHECKING:
-    from battle.core.battlefield_context import BattlefieldContext
-
 
 # user input -> parse() -> list[CommandBase] -> expand_xxx_command() ->
 # list[CommandData] -> process_xxx_command() -> list[CommandProcessResult]
@@ -43,61 +38,67 @@ class CommandPart:
 
 
 @dataclass(frozen=True)
+class CommandPartDataPerEffect:
+    move_list: list[MoveData] = field(default_factory=list)
+    damage_list: list[DamageData] = field(default_factory=list)
+    heal_list: list[HealData] = field(default_factory=list)
+    buff_add_list: list[BuffAddData] = field(default_factory=list)
+
+
+@dataclass
 class CommandPartData:
     original_part: Optional[CommandPart]
 
     _: KW_ONLY
-    move_list: list[MoveData]
-    damage_list: list[DamageData]
-    heal_list: list[HealData]
-    buff_add_list: list[BuffAddData]
+    data_per_effect: tuple[Optional[CommandPartDataPerEffect], ...] = field(
+        default_factory=lambda: tuple(None for _ in range(MAX_EFFECT_COUNT))
+    )
 
     admin_target_phase: Optional[RoundPhaseType] = None
     admin_buff_remove_list: list[BuffUid] = field(default_factory=list)
+
+    def __post_init__(self):
+        assert len(self.data_per_effect) <= MAX_EFFECT_COUNT
+
+        if len(self.data_per_effect) < MAX_EFFECT_COUNT:
+            padded_data = [data for data in self.data_per_effect]
+            while len(padded_data) != MAX_EFFECT_COUNT:
+                padded_data.append(None)
+            self.data_per_effect = tuple(padded_data)
+
+    def create_new_except_move(self) -> "CommandPartData":
+        new_data_per_effect_list: list[Optional[CommandPartDataPerEffect]] = []
+
+        for data in self.data_per_effect:
+            if data is None:
+                continue
+
+            new_data_per_effect_list.append(
+                CommandPartDataPerEffect(
+                    move_list=[],
+                    damage_list=data.damage_list,
+                    heal_list=data.heal_list,
+                    buff_add_list=data.buff_add_list,
+                )
+            )
+        return CommandPartData(
+            original_part=self.original_part,
+            data_per_effect=tuple(new_data_per_effect_list),
+        )
 
 
 @dataclass
 class DamageCalculateData:
     base: DamageData
     modifiers: list[ValueModifierBase]
+    result_value: Optional[int] = None
 
 
 @dataclass
 class HealCalculateData:
     base: HealData
     modifiers: list[ValueModifierBase]
-
-
-class CommandPartCalculator:
-    def __init__(self, data: CommandPartData, context: "BattlefieldContext"):
-        self.move_list: list[MoveData] = data.move_list
-        self.context = context
-        self.buffed_stats_by_character: dict[CharacterId, BuffedStats] = {
-            char_id: BuffedStats(
-                character.status, {stat: [] for stat in CombatStatType}
-            )
-            for char_id, character in context.characters.items()
-        }
-
-        self.damage_data_list: list[DamageCalculateData] = [
-            DamageCalculateData(damage_data, []) for damage_data in data.damage_list
-        ]
-        self.heal_data_list: list[HealCalculateData] = [
-            HealCalculateData(heal_data, []) for heal_data in data.heal_list
-        ]
-
-    @classmethod
-    def create_empty(cls, context: "BattlefieldContext"):
-        return cls(
-            CommandPartData(
-                original_part=None,
-                move_list=[],
-                damage_list=[],
-                heal_list=[],
-                buff_add_list=[],
-            ),
-            context,
-        )
+    result_value: Optional[int] = None
 
 
 @dataclass(frozen=True)
