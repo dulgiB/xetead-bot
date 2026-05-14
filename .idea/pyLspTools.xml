@@ -7,7 +7,6 @@
           <value>
             <RuffModuleSettingsData>
               <option name="enabled" value="true" />
-              <option name="pathToExecutable" value="\\wsl.localhost\Ubuntu-22.04\home\joowon\xetead-bot\.venv\bin\ruff" />
               <option name="sdkName" value="uv (xetead-bot)" />
             </RuffModuleSettingsData>
           </value>

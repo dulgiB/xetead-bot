@@ -10,7 +10,6 @@ dependencies = [
     "pytest>=9.0.3",
     "python-dotenv>=1.2.2",
     "regex>=2026.5.9",
-    "ruff>=0.15.12",
 ]
 
 [tool.setuptools.packages.find]
