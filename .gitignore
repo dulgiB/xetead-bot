@@ -161,4 +161,7 @@ cython_debug/
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
-app/.config/service_account.json
+
+
+# local Claude config
+.claude/settings.local.json
