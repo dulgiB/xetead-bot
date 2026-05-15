@@ -6,17 +6,17 @@ from html.parser import HTMLParser
 from typing import Optional
 
 import gspread
-from dotenv import load_dotenv
-from mastodon import Mastodon, StreamListener
-
+from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.models import BuffData
 from battle.objects.skill.models import SkillData
-from battle.core.commands.define import RoundPhaseType
+from dotenv import load_dotenv
+from mastodon import Mastodon, StreamListener
+from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+
 from bots.mastodon_bot.commands.admin import AdminCommandResult, handle_admin_command
 from bots.mastodon_bot.commands.character import handle_character_command
 from bots.mastodon_bot.load_data import load_all_data
 from bots.mastodon_bot.session import BattleSession
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -76,11 +76,13 @@ class BotState:
     name_dict: dict[str, CharacterDataFromSpreadsheet]  # name → data
     spreadsheet: gspread.Spreadsheet
     session: Optional[BattleSession] = None
-    preparation_status_id: Optional[int] = None   # [전투 준비] 안내 게시물 ID
-    active_phase_post_id: Optional[int] = None    # 현재 페이즈 공지 게시물 ID
+    preparation_status_id: Optional[int] = None  # [전투 준비] 안내 게시물 ID
+    active_phase_post_id: Optional[int] = None  # 현재 페이즈 공지 게시물 ID
     battle_key: Optional[str] = None
-    pending_participants: list[str] = field(default_factory=list)   # mastodon_ids
-    pending_placements: list[tuple] = field(default_factory=list)   # (name, faction, column)
+    pending_participants: list[str] = field(default_factory=list)  # mastodon_ids
+    pending_placements: list[tuple] = field(
+        default_factory=list
+    )  # (name, faction, column)
 
 
 class MastodonBotListener(StreamListener):
@@ -104,11 +106,15 @@ class MastodonBotListener(StreamListener):
             if not command_text:
                 return
 
-            self._dispatch(acct, status_id, in_reply_to_id, command_text, status["visibility"])
+            self.__dispatch(
+                acct, status_id, in_reply_to_id, command_text, status["visibility"]
+            )
         except Exception:
-            logger.exception("멘션 처리 중 오류 (acct=%s, status_id=%s)", acct, status_id)
+            logger.exception(
+                "멘션 처리 중 오류 (acct=%s, status_id=%s)", acct, status_id
+            )
 
-    def _dispatch(
+    def __dispatch(
         self,
         acct: str,
         status_id: int,
