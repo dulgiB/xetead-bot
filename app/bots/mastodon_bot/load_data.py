@@ -39,7 +39,28 @@ def load_all_data() -> tuple[
         r["id"]: SkillData.from_dict(r) for r in skill_raw
     }
 
-    char_raw = db.worksheet("캐릭터").get_all_records(value_render_option=unformatted)
+    char_dict, name_dict = load_char_data(db)
+
+    return buff_dict, skill_dict, char_dict, name_dict, db
+
+
+def load_char_data(
+    spreadsheet: gspread.Spreadsheet,
+) -> tuple[
+    dict[str, CharacterDataFromSpreadsheet],
+    dict[str, CharacterDataFromSpreadsheet],
+]:
+    """
+    스프레드시트에서 캐릭터 데이터만 로드한다. BattlefieldContext 생성 직전에 호출해
+    최신 데이터를 반영한다.
+    반환값: (char_dict, name_dict)
+      - char_dict: mastodon_id → CharacterDataFromSpreadsheet  (mastodon_id 있는 것만)
+      - name_dict: name → CharacterDataFromSpreadsheet         (전체)
+    """
+    unformatted = ValueRenderOption.unformatted
+    char_raw = spreadsheet.worksheet("캐릭터").get_all_records(
+        value_render_option=unformatted
+    )
     char_dict: dict[str, CharacterDataFromSpreadsheet] = {
         r["mastodon_id"]: CharacterDataFromSpreadsheet.from_dict(r)
         for r in char_raw
@@ -50,5 +71,4 @@ def load_all_data() -> tuple[
         for r in char_raw
         if r.get("name")
     }
-
-    return buff_dict, skill_dict, char_dict, name_dict, db
+    return char_dict, name_dict

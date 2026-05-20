@@ -88,11 +88,13 @@ def handle_admin_command(text: str, state: "BotState") -> AdminCommandResult:
 
 
 def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
+    from bots.mastodon_bot.load_data import load_char_data
     from bots.mastodon_bot.session import BattleSession
 
     if state.session is not None:
         return AdminCommandResult("이미 진행 중인 세션이 있습니다.")
 
+    state.char_dict, state.name_dict = load_char_data(state.spreadsheet)
     state.session = BattleSession(state.buff_dict, state.skill_dict)
     reply = (
         "전투 준비 세션이 생성되었습니다.\n"
