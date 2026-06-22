@@ -1,7 +1,7 @@
 from typing import Optional
 
 from battle.objects.define import MagicResistanceType
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 
 def get_test_preset(
@@ -18,8 +18,8 @@ def get_test_preset(
     skill_1_id: Optional[str] = None,
     skill_2_id: Optional[str] = None,
     skill_3_id: Optional[str] = None,
-) -> CharacterDataFromSpreadsheet:
-    return CharacterDataFromSpreadsheet(
+) -> CombatCharacterDataFromSpreadsheet:
+    return CombatCharacterDataFromSpreadsheet(
         name=character_name,
         mastodon_id="",
         curr_hp=max_hp if initial_hp is None else initial_hp,

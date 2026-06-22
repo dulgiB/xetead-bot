@@ -5,14 +5,14 @@ import gspread
 from battle.objects.buff.models import BuffData
 from battle.objects.skill.models import SkillData
 from gspread.utils import ValueRenderOption
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 
 def load_all_data() -> tuple[
     dict[str, BuffData],
     dict[str, SkillData],
-    dict[str, CharacterDataFromSpreadsheet],
-    dict[str, CharacterDataFromSpreadsheet],
+    dict[str, CombatCharacterDataFromSpreadsheet],
+    dict[str, CombatCharacterDataFromSpreadsheet],
     gspread.Spreadsheet,
 ]:
     """
@@ -46,8 +46,8 @@ def load_all_data() -> tuple[
 def load_char_data(
     spreadsheet: gspread.Spreadsheet,
 ) -> tuple[
-    dict[str, CharacterDataFromSpreadsheet],
-    dict[str, CharacterDataFromSpreadsheet],
+    dict[str, CombatCharacterDataFromSpreadsheet],
+    dict[str, CombatCharacterDataFromSpreadsheet],
 ]:
     """
     스프레드시트에서 캐릭터 데이터만 로드한다. BattlefieldContext 생성 직전에 호출해
@@ -60,13 +60,13 @@ def load_char_data(
     char_raw = spreadsheet.worksheet("캐릭터").get_all_records(
         value_render_option=unformatted
     )
-    char_dict: dict[str, CharacterDataFromSpreadsheet] = {
-        r["mastodon_id"]: CharacterDataFromSpreadsheet.from_dict(r)
+    char_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {
+        r["mastodon_id"]: CombatCharacterDataFromSpreadsheet.from_dict(r)
         for r in char_raw
         if r.get("mastodon_id")
     }
-    name_dict: dict[str, CharacterDataFromSpreadsheet] = {
-        r["name"]: CharacterDataFromSpreadsheet.from_dict(r)
+    name_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {
+        r["name"]: CombatCharacterDataFromSpreadsheet.from_dict(r)
         for r in char_raw
         if r.get("name")
     }

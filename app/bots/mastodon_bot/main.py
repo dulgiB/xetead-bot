@@ -11,7 +11,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.skill.models import SkillData
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 from bots.mastodon_bot.commands.admin import AdminCommandResult, handle_admin_command
 from bots.mastodon_bot.commands.character import handle_character_command
@@ -72,8 +72,8 @@ def _truncate(text: str) -> str:
 class BotState:
     buff_dict: dict[str, BuffData]
     skill_dict: dict[str, SkillData]
-    char_dict: dict[str, CharacterDataFromSpreadsheet]  # mastodon_id → data
-    name_dict: dict[str, CharacterDataFromSpreadsheet]  # name → data
+    char_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # mastodon_id → data
+    name_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # name → data
     spreadsheet: gspread.Spreadsheet
     session: Optional[BattleSession] = None
     preparation_status_id: Optional[int] = None  # [전투 준비] 안내 게시물 ID

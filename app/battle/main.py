@@ -4,7 +4,7 @@ import os
 import gspread
 from dotenv import load_dotenv
 from gspread.utils import ValueRenderOption
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.objects.buff.models import BuffData
@@ -48,8 +48,8 @@ if __name__ == "__main__":
     character_raw_data_list = character_data_worksheet.get_all_records(
         value_render_option=ValueRenderOption.unformatted
     )
-    character_data_dict: dict[str, CharacterDataFromSpreadsheet] = {
-        character_raw_data["name"]: CharacterDataFromSpreadsheet.from_dict(
+    character_data_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {
+        character_raw_data["name"]: CombatCharacterDataFromSpreadsheet.from_dict(
             character_raw_data
         )
         for character_raw_data in character_raw_data_list

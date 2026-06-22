@@ -1,6 +1,6 @@
 import dataclasses
 
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.objects.character.combat_character import CombatCharacter
@@ -40,7 +40,7 @@ class PracticeBattlefieldContext(BattlefieldContext):
 
     def add_character(  # type: ignore[override]
         self,
-        data: CharacterDataFromSpreadsheet,
+        data: CombatCharacterDataFromSpreadsheet,
         side: SideType,
         column_idx: BattlefieldColumnIndex,
     ) -> None:
