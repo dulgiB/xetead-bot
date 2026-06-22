@@ -2,7 +2,7 @@
 
 ## 프로젝트 개요
 
-TRPG 캠페인의 전투를 자동 정산하는 Discord 봇. 전투 로직(`app/battle/`)과 봇 인터페이스(`app/bots/discord_bot/`)가 분리되어 있다.
+TRPG 캠페인의 전투를 자동 정산하는 Mastodon 봇. 전투 로직(`app/battle/`)과 봇 인터페이스(`app/bot/`)가 분리되어 있다.
 
 데이터(스킬, 버프, 캐릭터)는 Google Spreadsheet에서 로드하며, 클래스 이름을 문자열로 저장하고 `importlib`로 동적 dispatch한다.
 
@@ -18,7 +18,7 @@ app/
       round_manager.py          # 라운드 페이즈 관리 및 커맨드 라우팅
       command_expanders.py      # CommandPart → CommandPartData 전개
       command_processors.py     # 전개 전 검증 + 실제 효과 적용
-      command_process_helpers.py# 이동/대미지/힐/버프 개별 처리 + 버프 이벤트 적용
+      command_calculator.py     # 이동/대미지/힐/버프 개별 처리 + 버프 이벤트 적용
       buff_container.py         # 버프 생명주기 (추가/제거/라운드 훅)
       commands/
         define.py               # RoundPhaseType enum
@@ -41,7 +41,16 @@ app/
         combat_stats.py         # CombatStats
       models.py                 # CharacterId, DamageData, HealData, ValueWithModifiers 등
       define.py                 # 주요 enum (ActionType, BuffApplyTiming, CombatStatType 등)
-  bots/discord_bot/             # Discord 슬래시 커맨드 봇
+  bot/                          # Mastodon 봇 인터페이스
+    main.py                     # 봇 진입점 (MastodonBotListener)
+    commands/
+      admin.py                  # Admin 커맨드 핸들러
+      character.py              # 캐릭터 전투 커맨드 핸들러
+      noncombat.py              # 비전투 커맨드 핸들러 (판정, 의뢰, 상시조사)
+    session.py                  # BattleSession
+    practice_state.py           # PracticeBattleState (대련/상시전투)
+    noncombat_state.py          # NonCombatState
+    load_data.py                # 스프레드시트 데이터 로딩
 ```
 
 ---
@@ -141,11 +150,7 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 
 ## 환경 변수
 
-| 변수                               | 용도                |
-|----------------------------------|-------------------|
-| `DISCORD_BOT_TOKEN`              | Discord 봇 토큰      |
-| `GOOGLE_SPREADSHEET_CREDENTIALS` | 서비스 계정 JSON (문자열) |
-| `DB_SPREADSHEET_KEY`             | 스프레드시트 ID         |
+→ [README.md#실행](README.md#실행) 참조.
 
 ---
 
