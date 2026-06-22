@@ -1,3 +1,4 @@
+import datetime
 import random
 import re
 from dataclasses import dataclass
@@ -13,10 +14,12 @@ from battle.objects.define import (
 )
 from battle.objects.models import CharacterId
 
+from bots.mastodon_bot.battle_persistence import mark_battle_finished, save_battle_state
 from bots.mastodon_bot.load_data import load_char_data
+from bots.mastodon_bot.session import BattleSession
+
 if TYPE_CHECKING:
     from bots.mastodon_bot.main import BotState
-    from bots.mastodon_bot.session import BattleSession
 
 _RE_BATTLE_PREP = re.compile(r"\[전투\s*준비]")
 _RE_MANUAL_PLACE = re.compile(r"\[배치\s*/\s*([^/\]]+?)\s*/\s*([^/\]]+)]")
@@ -89,9 +92,6 @@ def handle_admin_command(text: str, state: "BotState") -> AdminCommandResult:
 
 
 def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
-    from bots.mastodon_bot.load_data import load_char_data
-    from bots.mastodon_bot.session import BattleSession
-
     if state.session is not None:
         return AdminCommandResult("◊ 이미 진행 중인 전투가 있습니다.")
 
@@ -133,8 +133,6 @@ def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str
 
 
 def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
-    import datetime
-
     if state.session is None:
         return AdminCommandResult(
             "◊ 진행 중인 전투가 없습니다. 먼저 [전투 준비]를 입력하세요."
@@ -174,8 +172,6 @@ def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
     state.battle_key = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
     # 4. 스프레드시트 저장
-    from bots.mastodon_bot.battle_persistence import save_battle_state
-
     try:
         save_battle_state(state.spreadsheet, state)
     except Exception as e:
@@ -210,8 +206,6 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
 
     # 스프레드시트 저장 (커맨드 수신 없는 페이즈에서도)
     errors: list[str] = []
-    from bots.mastodon_bot.battle_persistence import save_battle_state
-
     try:
         save_battle_state(state.spreadsheet, state)
     except Exception as e:
@@ -242,8 +236,6 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
     new_phase = state.session.advance_phase()  # → ENEMY_PRE_ACTION
 
     errors: list[str] = []
-    from bots.mastodon_bot.battle_persistence import save_battle_state
-
     try:
         save_battle_state(state.spreadsheet, state)
     except Exception as e:
@@ -267,8 +259,6 @@ def _cmd_end(state: "BotState") -> str:
         return "◊ 진행 중인 전투가 없습니다."
 
     errors: list[str] = []
-    from bots.mastodon_bot.battle_persistence import mark_battle_finished
-
     try:
         if state.battle_key:
             mark_battle_finished(state.spreadsheet, state.battle_key)

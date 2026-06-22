@@ -2,6 +2,7 @@ import json
 from typing import TYPE_CHECKING
 
 import gspread
+from battle.objects.define import FactionType
 
 if TYPE_CHECKING:
     from bots.mastodon_bot.main import BotState
@@ -30,8 +31,6 @@ def _build_characters_json(state: "BotState") -> str:
     ctx = state.session.context
     rows = []
     for char_id, char in ctx.characters.items():
-        from battle.objects.define import FactionType
-
         faction = char.faction.value
         position = int(str(ctx.find_character_position(char_id)))
         rows.append(

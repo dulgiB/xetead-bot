@@ -9,7 +9,9 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class NoHealEvent(NoDataEvent):
-    def _get_data_list(self, calculator: "CommandPartCalculator", effect_seq_number: int) -> list:
+    def _get_data_list(
+        self, calculator: "CommandPartCalculator", effect_seq_number: int
+    ) -> list:
         return calculator.data_by_effect[effect_seq_number].heal_data_list
 
 

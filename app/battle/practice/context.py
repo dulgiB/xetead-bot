@@ -3,10 +3,10 @@ import dataclasses
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 from battle.core.battlefield_context import BattlefieldContext
+from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
-from battle.objects.buff.models import BuffData
 from battle.objects.skill.models import SkillData
 from battle.practice.define import SideType
 
@@ -30,7 +30,9 @@ class PracticeBattlefieldContext(BattlefieldContext):
     - 아군/적군 구분 대신 SIDE_1/SIDE_2를 사용한다 (내부적으로는 ALLY/ENEMY에 매핑).
     """
 
-    def __init__(self, buff_dict: dict[str, BuffData], skill_dict: dict[str, SkillData]):
+    def __init__(
+        self, buff_dict: dict[str, BuffData], skill_dict: dict[str, SkillData]
+    ):
         # 대련에는 milestone_n이 의미 없으므로 고정
         super().__init__(buff_dict, skill_dict, milestone_n=1)
 
@@ -45,7 +47,9 @@ class PracticeBattlefieldContext(BattlefieldContext):
         column_idx: BattlefieldColumnIndex,
     ) -> None:
         practice_hp = data.max_hp // 2
-        practice_data = dataclasses.replace(data, max_hp=practice_hp, curr_hp=practice_hp)
+        practice_data = dataclasses.replace(
+            data, max_hp=practice_hp, curr_hp=practice_hp
+        )
         super().add_character(practice_data, _SIDE_TO_FACTION[side], column_idx)
 
     def get_side(self, char_id: CharacterId) -> SideType:
