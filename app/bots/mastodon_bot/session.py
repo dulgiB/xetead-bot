@@ -6,7 +6,7 @@ from battle.core.round_manager import RoundManager
 from battle.objects.buff.models import BuffData
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
 from battle.objects.skill.models import SkillData
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 _PHASE_ORDER: list[RoundPhaseType] = [
     RoundPhaseType.ENEMY_PRE_ACTION,
@@ -34,7 +34,7 @@ class BattleSession:
 
     def add_character(
         self,
-        data: CharacterDataFromSpreadsheet,
+        data: CombatCharacterDataFromSpreadsheet,
         faction: FactionType,
         column: BattlefieldColumnIndex,
     ) -> None:

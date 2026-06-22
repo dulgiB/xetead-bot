@@ -12,7 +12,7 @@ from battle.objects.models import CharacterId
 from discord import app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 from bots.discord_bot.consts import (
     CLEANUP_INTERVAL_MINUTES,
@@ -154,7 +154,7 @@ async def cmd_캐릭터(
         await interaction.response.send_message(f"❌ {e}", ephemeral=True)
         return
 
-    data = CharacterDataFromSpreadsheet(
+    data = CombatCharacterDataFromSpreadsheet(
         name=이름,
         mastodon_id="",
         curr_hp=체력,
@@ -221,7 +221,7 @@ async def cmd_적군(
         await interaction.response.send_message(f"❌ {e}", ephemeral=True)
         return
 
-    data = CharacterDataFromSpreadsheet(
+    data = CombatCharacterDataFromSpreadsheet(
         name=이름,
         mastodon_id="",
         curr_hp=체력,

@@ -4,7 +4,7 @@ from battle.objects.define import MAX_SKILL_SLOT_COUNT, MagicResistanceType
 
 
 @dataclass(frozen=True)
-class CharacterDataFromSpreadsheet:
+class CombatCharacterDataFromSpreadsheet:
     name: str
     mastodon_id: str
     curr_hp: int
@@ -20,7 +20,7 @@ class CharacterDataFromSpreadsheet:
     @classmethod
     def from_dict(
         cls, raw: dict[str, str | int | bool]
-    ) -> "CharacterDataFromSpreadsheet":
+    ) -> "CombatCharacterDataFromSpreadsheet":
         return cls(
             name=raw["name"],
             mastodon_id=raw["mastodon_id"],

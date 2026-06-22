@@ -1,7 +1,7 @@
 import copy
 from typing import Optional
 
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from utils.logging import print_apply_damage, print_apply_heal
 
 from battle.core.buff_container import BuffContainer
@@ -107,7 +107,7 @@ class BattlefieldContext:
 
     def add_character(
         self,
-        data: CharacterDataFromSpreadsheet,
+        data: CombatCharacterDataFromSpreadsheet,
         faction: FactionType,
         column_idx: BattlefieldColumnIndex,
     ):

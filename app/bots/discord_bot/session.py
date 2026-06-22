@@ -8,7 +8,7 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.round_manager import RoundManager
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 from bots.discord_bot.consts import PHASE_ORDER, SESSION_TIMEOUT_SECONDS
 
@@ -17,7 +17,7 @@ from bots.discord_bot.consts import PHASE_ORDER, SESSION_TIMEOUT_SECONDS
 class _CharRecord:
     """스킬 재지정을 위해 원본 데이터를 보관."""
 
-    data: CharacterDataFromSpreadsheet
+    data: CombatCharacterDataFromSpreadsheet
     faction: FactionType
     column: BattlefieldColumnIndex
 
@@ -53,7 +53,7 @@ class BattleSession:
 
     def add_character(
         self,
-        data: CharacterDataFromSpreadsheet,
+        data: CombatCharacterDataFromSpreadsheet,
         faction: FactionType,
         col: BattlefieldColumnIndex,
     ) -> None:
@@ -74,7 +74,7 @@ class BattleSession:
     ) -> None:
         """캐릭터를 제거 후 스킬이 반영된 버전으로 재추가한다."""
         rec = self._records[name]
-        new_data = CharacterDataFromSpreadsheet(
+        new_data = CombatCharacterDataFromSpreadsheet(
             name=rec.data.name,
             mastodon_id=rec.data.mastodon_id,
             curr_hp=rec.data.curr_hp,

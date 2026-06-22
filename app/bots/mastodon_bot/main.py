@@ -11,11 +11,25 @@ from battle.objects.buff.models import BuffData
 from battle.objects.skill.models import SkillData
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
-from spreadsheets.models.battle import CharacterDataFromSpreadsheet
+from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
+from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 
 from bots.mastodon_bot.commands.admin import AdminCommandResult, handle_admin_command
 from bots.mastodon_bot.commands.character import handle_character_command
+from bots.mastodon_bot.commands.noncombat import (
+    finalize_daily_quest_mid,
+    finalize_investigation_menu_post,
+    finalize_investigation_overview_post,
+    handle_daily_quest_roll,
+    handle_daily_quest_start,
+    handle_investigation_accept,
+    handle_investigation_start,
+    handle_investigation_venue_choice,
+    handle_roll,
+    parse_stat_name,
+)
 from bots.mastodon_bot.load_data import load_all_data
+from bots.mastodon_bot.noncombat_state import NonCombatState
 from bots.mastodon_bot.session import BattleSession
 
 load_dotenv()
@@ -72,8 +86,11 @@ def _truncate(text: str) -> str:
 class BotState:
     buff_dict: dict[str, BuffData]
     skill_dict: dict[str, SkillData]
-    char_dict: dict[str, CharacterDataFromSpreadsheet]  # mastodon_id → data
-    name_dict: dict[str, CharacterDataFromSpreadsheet]  # name → data
+    char_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # mastodon_id → data
+    name_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # name → data
+    noncombat_char_dict: dict[
+        str, NoncombatCharacterDataFromSpreadsheet
+    ]  # mastodon_id → data
     spreadsheet: gspread.Spreadsheet
     session: Optional[BattleSession] = None
     preparation_status_id: Optional[int] = None  # [전투 준비] 안내 게시물 ID
@@ -83,6 +100,7 @@ class BotState:
     pending_placements: list[tuple] = field(
         default_factory=list
     )  # (name, faction, column)
+    noncombat: NonCombatState = field(default_factory=NonCombatState)
 
 
 class MastodonBotListener(StreamListener):
@@ -171,24 +189,83 @@ class MastodonBotListener(StreamListener):
             self._reply(status_id, acct, visibility, response)
             return
 
+        nc = state.noncombat
+
+        # 4. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글)
+        if (
+            in_reply_to_id is not None
+            and in_reply_to_id in nc.get_daily_quest_post_ids()
+        ):
+            stat_name = parse_stat_name(text)
+            if stat_name:
+                response = handle_daily_quest_roll(acct, stat_name, state)
+                self._reply(status_id, acct, visibility, response)
+            return
+
+        # 5. 상시조사 메뉴 답글 (봇이 4개 선택지를 보낸 포스트에 대한 답글)
+        if (
+            in_reply_to_id is not None
+            and in_reply_to_id in nc.get_investigation_menu_post_ids()
+        ):
+            menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
+            if menu_acct == acct:
+                venue_name = text.strip().strip("[]")
+                response = handle_investigation_venue_choice(acct, venue_name, state)
+                post = self._reply(status_id, acct, visibility, response)
+                finalize_investigation_overview_post(acct, post["id"], state)
+            return
+
+        # 6. 상시조사 수락 답글 (의뢰 개요 포스트에 대한 [수락] 답글)
+        if (
+            in_reply_to_id is not None
+            and in_reply_to_id in nc.get_investigation_overview_post_ids()
+            and "[수락]" in text
+        ):
+            response = handle_investigation_accept(acct, state, in_reply_to_id)
+            self._reply(status_id, acct, visibility, response)
+            return
+
+        # 7. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능)
+        stat_name = parse_stat_name(text)
+        if stat_name:
+            response = handle_roll(acct, stat_name, state)
+            self._reply(status_id, acct, visibility, response)
+            return
+
+        # 8. [의뢰] — 일일 의뢰 시작
+        if "[의뢰]" in text:
+            response = handle_daily_quest_start(acct, state)
+            post = self._reply(status_id, acct, visibility, response)
+            finalize_daily_quest_mid(acct, post["id"], state)
+            return
+
+        # 9. [상시조사] — 상시조사 메뉴
+        if "[상시조사]" in text:
+            response = handle_investigation_start(acct, state)
+            post = self._reply(status_id, acct, visibility, response)
+            finalize_investigation_menu_post(acct, post["id"], state)
+            return
+
     def _reply(
         self, in_reply_to_id: int, acct: str, visibility: str, text: str
     ) -> dict:
-        post_visibility = "unlisted" if visibility == "public" else visibility
         return self._mastodon.status_post(
             f"@{acct} {_truncate(text)}",
             in_reply_to_id=in_reply_to_id,
-            visibility=post_visibility,
+            visibility=visibility,
         )
 
 
 def main() -> None:
-    buff_dict, skill_dict, char_dict, name_dict, spreadsheet = load_all_data()
+    buff_dict, skill_dict, char_dict, name_dict, noncombat_char_dict, spreadsheet = (
+        load_all_data()
+    )
     state = BotState(
         buff_dict=buff_dict,
         skill_dict=skill_dict,
         char_dict=char_dict,
         name_dict=name_dict,
+        noncombat_char_dict=noncombat_char_dict,
         spreadsheet=spreadsheet,
     )
 
