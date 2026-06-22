@@ -13,6 +13,7 @@ from battle.objects.define import (
 )
 from battle.objects.models import CharacterId
 
+from bots.mastodon_bot.load_data import load_char_data
 if TYPE_CHECKING:
     from bots.mastodon_bot.main import BotState
     from bots.mastodon_bot.session import BattleSession
@@ -94,7 +95,9 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
     if state.session is not None:
         return AdminCommandResult("◊ 이미 진행 중인 전투가 있습니다.")
 
-    state.char_dict, state.name_dict = load_char_data(state.spreadsheet)
+    state.char_dict, state.name_dict, state.noncombat_char_dict = load_char_data(
+        state.spreadsheet
+    )
     state.session = BattleSession(state.buff_dict, state.skill_dict)
     reply = "◊ 전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨주세요."
     return AdminCommandResult(reply, set_preparation_post=True)
