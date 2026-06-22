@@ -106,11 +106,15 @@ class MastodonBotListener(StreamListener):
             if not command_text:
                 return
 
-            self._dispatch(acct, status_id, in_reply_to_id, command_text, status["visibility"])
+            self.__dispatch(
+                acct, status_id, in_reply_to_id, command_text, status["visibility"]
+            )
         except Exception:
-            logger.exception("멘션 처리 중 오류 (acct=%s, status_id=%s)", acct, status_id)
+            logger.exception(
+                "멘션 처리 중 오류 (acct=%s, status_id=%s)", acct, status_id
+            )
 
-    def _dispatch(
+    def __dispatch(
         self,
         acct: str,
         status_id: int,
