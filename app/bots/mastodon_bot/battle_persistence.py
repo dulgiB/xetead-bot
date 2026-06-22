@@ -7,7 +7,14 @@ if TYPE_CHECKING:
     from bots.mastodon_bot.main import BotState
 
 _SHEET_NAME = "전투 진행"
-_HEADERS = ["battle_key", "milestone_n", "round", "phase", "finished", "characters_json"]
+_HEADERS = [
+    "battle_key",
+    "milestone_n",
+    "round",
+    "phase",
+    "finished",
+    "characters_json",
+]
 
 
 def _get_or_create_worksheet(spreadsheet: gspread.Spreadsheet) -> gspread.Worksheet:
@@ -24,15 +31,18 @@ def _build_characters_json(state: "BotState") -> str:
     rows = []
     for char_id, char in ctx.characters.items():
         from battle.objects.define import FactionType
+
         faction = char.faction.value
         position = int(str(ctx.find_character_position(char_id)))
-        rows.append({
-            "name": char_id.name,
-            "faction": faction,
-            "position": position,
-            "curr_hp": char.status.curr_hp,
-            "remaining_cost": char.status.remaining_cost,
-        })
+        rows.append(
+            {
+                "name": char_id.name,
+                "faction": faction,
+                "position": position,
+                "curr_hp": char.status.curr_hp,
+                "remaining_cost": char.status.remaining_cost,
+            }
+        )
     return json.dumps(rows, ensure_ascii=False)
 
 

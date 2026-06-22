@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
-from battle.core.commands.parser import parse_character_command
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.models import CharacterId
 
