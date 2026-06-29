@@ -47,6 +47,7 @@ ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
 
 _RE_MENTION = re.compile(r"@\S+")
 _RE_DECLARATION = re.compile(r"\[([12])팀\s*/\s*([1-7])열?]")
+_RE_INVESTIGATION_DECLARATION = re.compile(r"\[아군\s*/\s*([1-7])열?]")
 _MAX_POST_LENGTH = 500
 
 # 커맨드를 수신하는 페이즈 (active_phase_post_id 설정 대상)
@@ -157,49 +158,66 @@ class MastodonBotListener(StreamListener):
     ) -> None:
         state = self._state
 
-        # 1. admin 직접 멘션 → admin 커맨드
-        if acct == ADMIN_MASTODON_ID:
+        # 1. admin 직접 멘션 또는 [상시전투] self-mention bypass → admin 커맨드
+        is_admin = acct == ADMIN_MASTODON_ID
+        is_investigation_self_mention = (
+            acct == self._bot_acct and "[상시전투]" in text
+        )
+        if is_admin or is_investigation_self_mention:
             result: AdminCommandResult = handle_admin_command(
                 text, state, mentions=mentions or []
             )
 
-            # admin 답글 전송
-            reply_status = self._reply(status_id, acct, visibility, result.reply_text)
-
-            # [전투 준비] 답글 자체를 참전 신청 스레드로 사용
-            if result.set_preparation_post:
-                state.preparation_status_id = reply_status["id"]
-
-            # 대련/상시전투 준비 게시물 (reply 자체)
-            if result.set_practice_prep_post and state.practice is not None:
-                state.practice.prep_post_id = reply_status["id"]
-
-            # 퍼블릭 게시물 게시 (페이즈 게시물)
-            if result.game_post_text is not None:
-                new_post = self._mastodon.status_post(
-                    _truncate(result.game_post_text),
-                    visibility="public",
+            if not result.reply_text:
+                # reply_text가 비어 있으면 game_post_text를 단일 답글로 전송
+                if result.game_post_text is not None:
+                    post = self._reply(
+                        status_id, acct, visibility, result.game_post_text
+                    )
+                    new_post_id = post["id"]
+                    if result.set_practice_prep_from_game_post and state.practice is not None:
+                        state.practice.prep_post_id = new_post_id
+                    if result.set_practice_active_post and state.practice is not None:
+                        state.practice.active_post_id = new_post_id
+                    if state.session is not None and state.session.started:
+                        state.active_phase_post_id = (
+                            new_post_id
+                            if state.session.current_phase in _COMMAND_PHASES
+                            else None
+                        )
+            else:
+                # reply_text가 있는 경우: 답글 전송
+                reply_status = self._reply(
+                    status_id, acct, visibility, result.reply_text
                 )
-                new_post_id = new_post["id"]
 
-                # 대련 준비 게시물 (game post)
-                if result.set_practice_prep_from_game_post and state.practice is not None:
-                    state.practice.prep_post_id = new_post_id
+                if result.set_preparation_post:
+                    state.preparation_status_id = reply_status["id"]
 
-                # 대련/상시전투 진행 중 active post
-                if result.set_practice_active_post and state.practice is not None:
-                    state.practice.active_post_id = new_post_id
+                # 퍼블릭 게시물 게시 (페이즈 게시물)
+                if result.game_post_text is not None:
+                    new_post = self._mastodon.status_post(
+                        _truncate(result.game_post_text),
+                        visibility="public",
+                    )
+                    new_post_id = new_post["id"]
 
-                # 커맨드를 수신하는 페이즈만 active_phase_post_id 설정
-                if state.session is not None and state.session.started:
-                    if state.session.current_phase in _COMMAND_PHASES:
-                        state.active_phase_post_id = new_post_id
-                    else:
-                        state.active_phase_post_id = None
+                    if result.set_practice_prep_from_game_post and state.practice is not None:
+                        state.practice.prep_post_id = new_post_id
+
+                    if result.set_practice_active_post and state.practice is not None:
+                        state.practice.active_post_id = new_post_id
+
+                    if state.session is not None and state.session.started:
+                        state.active_phase_post_id = (
+                            new_post_id
+                            if state.session.current_phase in _COMMAND_PHASES
+                            else None
+                        )
 
             return
 
-        # 2. 대련/상시전투 준비 게시물 답글
+        # 2. 대련/상시전투 준비 게시물 답글 (포지션 선언)
         if (
             state.practice is not None
             and state.practice.prep_post_id != 0
@@ -207,14 +225,25 @@ class MastodonBotListener(StreamListener):
         ):
             ps = state.practice
             if ps.is_investigation:
-                # 상시전투: 참여 신청
-                if acct in state.char_dict and acct not in ps.pending_participants:
-                    ps.pending_participants.append(acct)
-                    logger.info(
-                        "상시전투 참전 신청: %s (%s)", acct, state.char_dict[acct].name
-                    )
+                # 상시전투: [아군/N열] 포지션 선언
+                m = _RE_INVESTIGATION_DECLARATION.search(text)
+                if m and acct in ps.expected_accts:
+                    col_n = int(m.group(1))
+                    try:
+                        column = BattlefieldColumnIndex.from_str(f"{col_n}열")
+                        ps.declared[acct] = (SideType.SIDE_1, column)
+                        logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
+                        if ps.all_declared():
+                            game_post_text = _start_investigation_battle(state)
+                            new_post = self._mastodon.status_post(
+                                _truncate(game_post_text), visibility="public"
+                            )
+                            if state.practice is not None:
+                                state.practice.active_post_id = new_post["id"]
+                    except ValueError:
+                        pass
             else:
-                # 대련: [○팀/○열] 포지션 선언
+                # 대련: [N팀/N열] 포지션 선언
                 m = _RE_DECLARATION.search(text)
                 if m and acct in ps.expected_accts:
                     side_n = int(m.group(1))
@@ -337,6 +366,38 @@ class MastodonBotListener(StreamListener):
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
         )
+
+
+def _start_investigation_battle(state: "BotState") -> str:
+    """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
+    ps = state.practice
+    errors: list[str] = []
+
+    for acct, (side, column) in ps.declared.items():
+        data = state.char_dict.get(acct)
+        if data is None:
+            errors.append(f"{acct}의 캐릭터를 찾을 수 없습니다.")
+            continue
+        try:
+            ps.context.add_character(data, side, column)
+        except CommandValidationError as e:
+            errors.append(str(e))
+
+    total = len(ps.context.characters)
+    ps.round_limit = max(3, 1 + total)
+    ps.start_round()
+
+    mover_label = ps.side_label(ps.first_mover)
+    game_post = (
+        f"◊ 상시전투 시작\n"
+        f"라운드 상한: {ps.round_limit}라운드\n\n"
+        f"[{ps.round_n}라운드] 선공: {mover_label}\n"
+        f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+        f"{ps.context}"
+    )
+    if errors:
+        game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
+    return game_post
 
 
 def _start_practice_battle(state: "BotState") -> str:
