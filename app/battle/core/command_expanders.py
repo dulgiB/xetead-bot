@@ -201,6 +201,7 @@ def expand_character_command(
                         damage_list=damage_list,
                         heal_list=heal_list,
                         buff_add_list=buff_add_list,
+                        apply_timing=skill_effect.apply_timing,
                     )
                 )
 
