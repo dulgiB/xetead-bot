@@ -13,9 +13,13 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId
+from battle.practice.context import PracticeBattlefieldContext
+from battle.practice.define import SideType
+from battle.practice.round_manager import PracticeRoundManager
 
 from bot.battle_persistence import mark_battle_finished, save_battle_state
 from bot.load_data import load_char_data
+from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 
 if TYPE_CHECKING:
@@ -23,11 +27,14 @@ if TYPE_CHECKING:
 
 _RE_BATTLE_PREP = re.compile(r"\[전투\s*준비]")
 _RE_MANUAL_PLACE = re.compile(r"\[배치\s*/\s*([^/\]]+?)\s*/\s*([^/\]]+)]")
-_RE_BATTLE_START = re.compile(r"\[전투\s*시작]")
+_RE_BATTLE_START = re.compile(r"\[전투\s*개시]")
 _RE_PHASE = re.compile(r"\[페이즈]")
 _RE_CONTINUE = re.compile(r"\[전투\s*속행]")
 _RE_STATUS = re.compile(r"\[현황]")
 _RE_END = re.compile(r"\[전투\s*종료]")
+_RE_INVESTIGATION_BATTLE_PREP = re.compile(r"\[상시전투]")
+_RE_INVESTIGATION_BATTLE_START = re.compile(r"\[상시전투\s*개시]")
+_RE_PRACTICE_PREP = re.compile(r"\[대련]")
 _RE_PROXY = re.compile(r"^([^\[\]]+?)\s+(\[.+])$", re.DOTALL)
 
 _VALID_COLUMNS = [
@@ -47,9 +54,17 @@ class AdminCommandResult:
     game_post_text: Optional[str] = None
     # True이면 reply 자체의 status_id를 preparation_status_id로 저장한다
     set_preparation_post: bool = False
+    # True이면 reply 자체의 status_id를 practice.prep_post_id로 저장한다
+    set_practice_prep_post: bool = False
+    # True이면 game_post_text의 post_id를 practice.prep_post_id로 저장한다
+    set_practice_prep_from_game_post: bool = False
+    # True이면 game_post_text의 post_id를 practice.active_post_id로 저장한다
+    set_practice_active_post: bool = False
 
 
-def handle_admin_command(text: str, state: "BotState") -> AdminCommandResult:
+def handle_admin_command(
+    text: str, state: "BotState", mentions: list[str] | None = None
+) -> AdminCommandResult:
     """
     어드민 커맨드 텍스트를 파싱해 처리하고 AdminCommandResult를 반환한다.
     game_post_text가 None이 아니면 호출측에서 퍼블릭 게시물로 게시한다.
@@ -78,6 +93,15 @@ def handle_admin_command(text: str, state: "BotState") -> AdminCommandResult:
     if _RE_END.search(text):
         return AdminCommandResult(_cmd_end(state))
 
+    if _RE_INVESTIGATION_BATTLE_START.search(text):
+        return _cmd_investigation_battle_start(state)
+
+    if _RE_INVESTIGATION_BATTLE_PREP.search(text):
+        return _cmd_investigation_battle_prep(state)
+
+    if _RE_PRACTICE_PREP.search(text):
+        return _cmd_practice_prep(mentions or [], state)
+
     if m := _RE_PROXY.match(text):
         char_name = m.group(1).strip()
         cmd_str = m.group(2).strip()
@@ -104,6 +128,29 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
 
 
 def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str:
+    # 상시전투 준비 중이면 적군 배치로 처리
+    ps = state.practice
+    if ps is not None and ps.is_investigation and ps.round_n == 0:
+        if name not in state.name_dict:
+            return f"◊ 지정된 캐릭터({name})를 찾을 수 없습니다."
+        parts = faction_col_str.split()
+        if len(parts) < 2:
+            return (
+                "◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다."
+            )
+        faction_str, col_str = parts[0], parts[1]
+        try:
+            FactionType(faction_str)  # 유효성 검사만
+        except ValueError:
+            return f"◊ 진영({faction_str})을 인식할 수 없습니다. '아군' 또는 '적군'이어야 합니다."
+        try:
+            column = BattlefieldColumnIndex.from_str(col_str)
+        except ValueError:
+            return f"◊ 열({col_str})을 인식할 수 없습니다."
+        # 상시전투에서는 진영 값 무관하게 적군(SIDE_2)으로 등록
+        ps.pending_placements.append((name, column))
+        return f"◊ {name}(적군 {column}열)을 배치 대기 목록에 추가했습니다."
+
     if state.session is None:
         return "◊ 진행 중인 세션이 없습니다. 먼저 [전투 준비]를 입력하세요."
     if state.session.started:
@@ -278,7 +325,51 @@ def _cmd_end(state: "BotState") -> str:
     return result
 
 
+def _cmd_practice_prep(
+    expected_accts: list[str], state: "BotState"
+) -> AdminCommandResult:
+    if state.practice is not None:
+        return AdminCommandResult("◊ 이미 진행 중인 대련/상시전투가 있습니다.")
+
+    state.char_dict, state.name_dict, state.noncombat_char_dict = load_char_data(
+        state.spreadsheet
+    )
+    context = PracticeBattlefieldContext(state.buff_dict, state.skill_dict)
+    manager = PracticeRoundManager(context)
+    state.practice = PracticeBattleState(
+        context=context,
+        manager=manager,
+        expected_accts=list(expected_accts),
+    )
+
+    participant_text = (
+        " ".join(f"@{a}" for a in expected_accts) if expected_accts else "(없음)"
+    )
+    game_post = (
+        f"◊ 대련 준비\n참여 대상: {participant_text}\n\n"
+        "이 게시물에 답글로 포지션을 선언해 주세요.\n"
+        "예: [1팀/3열] 또는 [2팀/5열]"
+    )
+    reply = "◊ 대련 세션이 생성되었습니다. 포지션 선언 대기 중입니다."
+    return AdminCommandResult(reply, game_post, set_practice_prep_from_game_post=True)
+
+
 def _cmd_proxy(char_name: str, cmd_str: str, state: "BotState") -> str:
+    # 상시전투 중 프록시 (적군 커맨드 대행)
+    ps = state.practice
+    if ps is not None and ps.active_post_id is not None:
+        char_id = CharacterId(char_name)
+        if char_id not in ps.context.characters:
+            return f"◊ 지정한 캐릭터({char_name})는 대련/상시전투에 참여하고 있지 않습니다."
+        try:
+            command = parse_character_command(char_id, cmd_str)
+            if command is None:
+                return "◊ 커맨드 형식을 인식할 수 없습니다."
+            ps.manager.process_command(command)
+            return str(ps.context)
+        except CommandValidationError as e:
+            return f"◊ {e}"
+
     if state.session is None or not state.session.started:
         return "◊ 진행 중인 전투가 없습니다."
 
@@ -388,3 +479,130 @@ def _format_hp_changes(
                 f"  {char_id.name}: +{-diff} HP ({prev_hp} → {char.status.curr_hp})"
             )
     return lines
+
+
+# ---------------------------------------------------------------------------
+# 상시전투 핸들러
+# ---------------------------------------------------------------------------
+
+
+def _cmd_investigation_battle_prep(state: "BotState") -> AdminCommandResult:
+    if state.practice is not None:
+        return AdminCommandResult("◊ 이미 진행 중인 대련/상시전투가 있습니다.")
+
+    state.char_dict, state.name_dict, state.noncombat_char_dict = load_char_data(
+        state.spreadsheet
+    )
+    context = PracticeBattlefieldContext(state.buff_dict, state.skill_dict)
+    manager = PracticeRoundManager(context)
+    state.practice = PracticeBattleState(
+        context=context,
+        manager=manager,
+        is_investigation=True,
+    )
+    reply = "◊ 상시전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨 주세요."
+    return AdminCommandResult(reply, set_practice_prep_post=True)
+
+
+def _cmd_investigation_battle_start(state: "BotState") -> AdminCommandResult:
+    ps = state.practice
+    if ps is None or not ps.is_investigation:
+        return AdminCommandResult(
+            "◊ 진행 중인 상시전투 준비 세션이 없습니다. 먼저 [상시전투]를 입력하세요."
+        )
+    if ps.round_n > 0:
+        return AdminCommandResult("◊ 상시전투가 이미 시작되었습니다.")
+
+    # 수동 배치 (enemies via pending_placements)
+    errors: list[str] = []
+    for name, column in ps.pending_placements:
+        data = state.name_dict.get(name)
+        if data is None:
+            errors.append(f"캐릭터({name})를 찾을 수 없습니다.")
+            continue
+        try:
+            ps.context.add_character(data, SideType.SIDE_2, column)
+        except CommandValidationError as e:
+            errors.append(str(e))
+    ps.pending_placements.clear()
+
+    # 아군 랜덤 배치
+    ally_data_list = [
+        state.char_dict[acct]
+        for acct in ps.pending_participants
+        if acct in state.char_dict
+    ]
+    _assign_random_positions_practice(ps.context, ally_data_list, SideType.SIDE_1)
+    ps.pending_participants.clear()
+
+    total = len(ps.context.characters)
+    ps.round_limit = max(3, 1 + total)
+
+    ps.start_round()
+
+    mover_label = ps.side_label(ps.first_mover)
+    game_post = (
+        f"◊ 상시전투 시작\n"
+        f"라운드 상한: {ps.round_limit}라운드\n\n"
+        f"[{ps.round_n}라운드] 선공: {mover_label}\n"
+        f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+        f"{ps.context}"
+    )
+
+    reply_parts = ["◊ 상시전투 시작"]
+    if errors:
+        reply_parts.append("⚠️ 오류:\n" + "\n".join(errors))
+    return AdminCommandResult(
+        "\n".join(reply_parts), game_post, set_practice_active_post=True
+    )
+
+
+def add_investigation_enemy_placement(
+    name: str, col_str: str, state: "BotState"
+) -> str:
+    """[배치] 커맨드로 상시전투 적군을 등록한다."""
+    ps = state.practice
+    if ps is None or not ps.is_investigation:
+        return "◊ 진행 중인 상시전투 준비 세션이 없습니다."
+    if ps.round_n > 0:
+        return "◊ 전투가 이미 시작되어 배치할 수 없습니다."
+    try:
+        column = BattlefieldColumnIndex.from_str(col_str)
+    except ValueError:
+        return f"◊ 열 값({col_str})을 인식할 수 없습니다."
+    ps.pending_placements.append((name, column))
+    return f"◊ {name}(적군 {column}열)을 배치 대기 목록에 추가했습니다."
+
+
+def _assign_random_positions_practice(
+    context: PracticeBattlefieldContext,
+    data_list: list,
+    side: SideType,
+) -> None:
+    """연습 전투용 무작위 배치 헬퍼."""
+    from battle.objects.define import FactionType
+
+    faction = FactionType.ALLY if side == SideType.SIDE_1 else FactionType.ENEMY
+    remaining = list(data_list)
+    random.shuffle(remaining)
+    counts = {col: len(context.position_map[faction][col]) for col in _VALID_COLUMNS}
+
+    while remaining:
+        min_count = min(counts.values())
+        eligible = [
+            col
+            for col in _VALID_COLUMNS
+            if counts[col] == min_count and counts[col] < CHARACTER_PER_COLUMN
+        ]
+        if not eligible:
+            break
+        random.shuffle(eligible)
+        for col in eligible:
+            if not remaining:
+                break
+            data = remaining.pop()
+            try:
+                context.add_character(data, side, col)
+                counts[col] += 1
+            except CommandValidationError:
+                pass

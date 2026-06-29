@@ -7,8 +7,13 @@ from typing import Optional
 
 import gspread
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.parser import parse_character_command
+from battle.exceptions import CommandValidationError
 from battle.objects.buff.models import BuffData
+from battle.objects.define import BattlefieldColumnIndex
+from battle.objects.models import CharacterId
 from battle.objects.skill.models import SkillData
+from battle.practice.define import PracticeRoundPhase, SideType
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -30,6 +35,7 @@ from bot.commands.noncombat import (
 )
 from bot.load_data import load_all_data
 from bot.noncombat_state import NonCombatState
+from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 
 load_dotenv()
@@ -40,6 +46,7 @@ logger = logging.getLogger(__name__)
 ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
 
 _RE_MENTION = re.compile(r"@\S+")
+_RE_DECLARATION = re.compile(r"\[([12])팀\s*/\s*([1-7])열?]")
 _MAX_POST_LENGTH = 500
 
 # 커맨드를 수신하는 페이즈 (active_phase_post_id 설정 대상)
@@ -100,14 +107,16 @@ class BotState:
     pending_placements: list[tuple] = field(
         default_factory=list
     )  # (name, faction, column)
+    practice: Optional[PracticeBattleState] = None
     noncombat: NonCombatState = field(default_factory=NonCombatState)
 
 
 class MastodonBotListener(StreamListener):
-    def __init__(self, mastodon: Mastodon, state: BotState) -> None:
+    def __init__(self, mastodon: Mastodon, state: BotState, bot_acct: str) -> None:
         super().__init__()
         self._mastodon = mastodon
         self._state = state
+        self._bot_acct = bot_acct
 
     def on_notification(self, notification: dict) -> None:
         if notification["type"] != "mention":
@@ -124,8 +133,13 @@ class MastodonBotListener(StreamListener):
             if not command_text:
                 return
 
+            mentions = [
+                m["acct"]
+                for m in status.get("mentions", [])
+                if m["acct"] != self._bot_acct
+            ]
             self.__dispatch(
-                acct, status_id, in_reply_to_id, command_text, status["visibility"]
+                acct, status_id, in_reply_to_id, command_text, status["visibility"], mentions
             )
         except Exception:
             logger.exception(
@@ -139,12 +153,15 @@ class MastodonBotListener(StreamListener):
         in_reply_to_id: Optional[int],
         text: str,
         visibility: str,
+        mentions: list[str] | None = None,
     ) -> None:
         state = self._state
 
         # 1. admin 직접 멘션 → admin 커맨드
         if acct == ADMIN_MASTODON_ID:
-            result: AdminCommandResult = handle_admin_command(text, state)
+            result: AdminCommandResult = handle_admin_command(
+                text, state, mentions=mentions or []
+            )
 
             # admin 답글 전송
             reply_status = self._reply(status_id, acct, visibility, result.reply_text)
@@ -153,6 +170,10 @@ class MastodonBotListener(StreamListener):
             if result.set_preparation_post:
                 state.preparation_status_id = reply_status["id"]
 
+            # 대련/상시전투 준비 게시물 (reply 자체)
+            if result.set_practice_prep_post and state.practice is not None:
+                state.practice.prep_post_id = reply_status["id"]
+
             # 퍼블릭 게시물 게시 (페이즈 게시물)
             if result.game_post_text is not None:
                 new_post = self._mastodon.status_post(
@@ -160,6 +181,14 @@ class MastodonBotListener(StreamListener):
                     visibility="public",
                 )
                 new_post_id = new_post["id"]
+
+                # 대련 준비 게시물 (game post)
+                if result.set_practice_prep_from_game_post and state.practice is not None:
+                    state.practice.prep_post_id = new_post_id
+
+                # 대련/상시전투 진행 중 active post
+                if result.set_practice_active_post and state.practice is not None:
+                    state.practice.active_post_id = new_post_id
 
                 # 커맨드를 수신하는 페이즈만 active_phase_post_id 설정
                 if state.session is not None and state.session.started:
@@ -170,7 +199,61 @@ class MastodonBotListener(StreamListener):
 
             return
 
-        # 2. 전투 준비 참전 신청 (bot 준비 게시물에 대한 답글)
+        # 2. 대련/상시전투 준비 게시물 답글
+        if (
+            state.practice is not None
+            and state.practice.prep_post_id != 0
+            and in_reply_to_id == state.practice.prep_post_id
+        ):
+            ps = state.practice
+            if ps.is_investigation:
+                # 상시전투: 참여 신청
+                if acct in state.char_dict and acct not in ps.pending_participants:
+                    ps.pending_participants.append(acct)
+                    logger.info(
+                        "상시전투 참전 신청: %s (%s)", acct, state.char_dict[acct].name
+                    )
+            else:
+                # 대련: [○팀/○열] 포지션 선언
+                m = _RE_DECLARATION.search(text)
+                if m and acct in ps.expected_accts:
+                    side_n = int(m.group(1))
+                    col_n = int(m.group(2))
+                    side = SideType.SIDE_1 if side_n == 1 else SideType.SIDE_2
+                    try:
+                        column = BattlefieldColumnIndex.from_str(f"{col_n}열")
+                        ps.declared[acct] = (side, column)
+                        logger.info(
+                            "대련 포지션 선언: %s → %s %s", acct, side.value, column
+                        )
+                        if ps.all_declared() and ps.teams_valid():
+                            game_post_text = _start_practice_battle(state)
+                            new_post = self._mastodon.status_post(
+                                _truncate(game_post_text), visibility="public"
+                            )
+                            if state.practice is not None:
+                                state.practice.active_post_id = new_post["id"]
+                    except ValueError:
+                        pass
+            return
+
+        # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)
+        if (
+            state.practice is not None
+            and state.practice.active_post_id is not None
+            and in_reply_to_id == state.practice.active_post_id
+        ):
+            reply, game_post = _handle_practice_command(acct, text, state)
+            self._reply(status_id, acct, visibility, reply)
+            if game_post is not None:
+                new_post = self._mastodon.status_post(
+                    _truncate(game_post), visibility="public"
+                )
+                if state.practice is not None:
+                    state.practice.active_post_id = new_post["id"]
+            return
+
+        # 4. 전투 준비 참전 신청 (bot 준비 게시물에 대한 답글)
         if (
             state.preparation_status_id is not None
             and in_reply_to_id == state.preparation_status_id
@@ -180,7 +263,7 @@ class MastodonBotListener(StreamListener):
                 logger.info("참전 신청: %s (%s)", acct, state.char_dict[acct].name)
             return
 
-        # 3. 전투 중 캐릭터 커맨드 (active_phase_post_id에 대한 답글)
+        # 5. 전투 중 캐릭터 커맨드 (active_phase_post_id에 대한 답글)
         if (
             state.active_phase_post_id is not None
             and in_reply_to_id == state.active_phase_post_id
@@ -191,7 +274,7 @@ class MastodonBotListener(StreamListener):
 
         nc = state.noncombat
 
-        # 4. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글)
+        # 6. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글)
         if (
             in_reply_to_id is not None
             and in_reply_to_id in nc.get_daily_quest_post_ids()
@@ -202,7 +285,7 @@ class MastodonBotListener(StreamListener):
                 self._reply(status_id, acct, visibility, response)
             return
 
-        # 5. 상시조사 메뉴 답글 (봇이 4개 선택지를 보낸 포스트에 대한 답글)
+        # 7. 상시조사 메뉴 답글 (봇이 4개 선택지를 보낸 포스트에 대한 답글)
         if (
             in_reply_to_id is not None
             and in_reply_to_id in nc.get_investigation_menu_post_ids()
@@ -215,7 +298,7 @@ class MastodonBotListener(StreamListener):
                 finalize_investigation_overview_post(acct, post["id"], state)
             return
 
-        # 6. 상시조사 수락 답글 (의뢰 개요 포스트에 대한 [수락] 답글)
+        # 8. 상시조사 수락 답글 (의뢰 개요 포스트에 대한 [수락] 답글)
         if (
             in_reply_to_id is not None
             and in_reply_to_id in nc.get_investigation_overview_post_ids()
@@ -225,21 +308,21 @@ class MastodonBotListener(StreamListener):
             self._reply(status_id, acct, visibility, response)
             return
 
-        # 7. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능)
+        # 9. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능)
         stat_name = parse_stat_name(text)
         if stat_name:
             response = handle_roll(acct, stat_name, state)
             self._reply(status_id, acct, visibility, response)
             return
 
-        # 8. [의뢰] — 일일 의뢰 시작
+        # 10. [의뢰] — 일일 의뢰 시작
         if "[의뢰]" in text:
             response = handle_daily_quest_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
             finalize_daily_quest_mid(acct, post["id"], state)
             return
 
-        # 9. [상시조사] — 상시조사 메뉴
+        # 11. [상시조사] — 상시조사 메뉴
         if "[상시조사]" in text:
             response = handle_investigation_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
@@ -254,6 +337,118 @@ class MastodonBotListener(StreamListener):
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
         )
+
+
+def _start_practice_battle(state: "BotState") -> str:
+    """대련 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을 반환한다."""
+    ps = state.practice
+    errors: list[str] = []
+
+    for acct, (side, column) in ps.declared.items():
+        data = state.char_dict.get(acct)
+        if data is None:
+            errors.append(f"{acct}의 캐릭터를 찾을 수 없습니다.")
+            continue
+        try:
+            ps.context.add_character(data, side, column)
+        except CommandValidationError as e:
+            errors.append(str(e))
+
+    total = len(ps.context.characters)
+    ps.round_limit = max(3, 1 + total)
+    ps.start_round()
+
+    mover_label = ps.side_label(ps.first_mover)
+    game_post = (
+        f"◊ 대련 시작\n"
+        f"라운드 상한: {ps.round_limit}라운드\n\n"
+        f"[{ps.round_n}라운드] 선공: {mover_label}\n"
+        f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+        f"{ps.context}"
+    )
+    if errors:
+        game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
+    return game_post
+
+
+def _handle_practice_command(
+    acct: str, text: str, state: "BotState"
+) -> tuple[str, Optional[str]]:
+    """
+    대련/상시전투 중 캐릭터 커맨드를 처리한다.
+    반환값: (reply_text, game_post_text_or_None)
+    """
+    ps = state.practice
+    if ps is None:
+        return "◊ 진행 중인 대련/상시전투가 없습니다.", None
+
+    if acct not in state.char_dict:
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+
+    char_data = state.char_dict[acct]
+    char_id = CharacterId(char_data.name)
+
+    if char_id not in ps.context.characters:
+        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", None
+
+    current_phase = ps.phase
+    if current_phase is None:
+        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", None
+
+    try:
+        command = parse_character_command(char_id, text)
+        if command is None:
+            return "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]", None
+        ps.manager.process_command(command)
+    except CommandValidationError as e:
+        return f"◊ {e}", None
+
+    hp1 = ps.total_hp_by_side(SideType.SIDE_1)
+    hp2 = ps.total_hp_by_side(SideType.SIDE_2)
+    battle_mode = "상시전투" if ps.is_investigation else "대련"
+
+    if current_phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
+        if hp1 == 0 or hp2 == 0:
+            ps.end_round()
+            winner_label = ps.side_label(ps.winner())
+            game_post = (
+                f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
+                f"승자: {winner_label}\n\n"
+                f"{ps.context}"
+            )
+            state.practice = None
+            return "◊ 전투가 종료되었습니다.", game_post
+
+        ps.advance_to_second_mover()
+        second_label = ps.side_label(ps.second_mover)
+        game_post = (
+            f"◊ [{ps.round_n}라운드] 후공: {second_label}\n"
+            f"후공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+            f"{ps.context}"
+        )
+        return "◊ 커맨드 처리 완료", game_post
+
+    # SECOND_MOVER_ACTION
+    ps.end_round()
+
+    if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
+        winner_label = ps.side_label(ps.winner())
+        game_post = (
+            f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
+            f"승자: {winner_label}\n\n"
+            f"{ps.context}"
+        )
+        state.practice = None
+        return "◊ 전투가 종료되었습니다.", game_post
+
+    ps.start_round()
+    mover_label = ps.side_label(ps.first_mover)
+    game_post = (
+        f"◊ [{ps.round_n}라운드] 선공: {mover_label}\n"
+        f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+        f"{ps.context}"
+    )
+    return "◊ 커맨드 처리 완료", game_post
 
 
 def main() -> None:
@@ -278,7 +473,7 @@ def main() -> None:
     logger.info("봇 시작: @%s", me["acct"])
     logger.info("등록된 캐릭터: %d명", len(char_dict))
 
-    mastodon.stream_user(MastodonBotListener(mastodon, state))
+    mastodon.stream_user(MastodonBotListener(mastodon, state, me["acct"]))
 
 
 if __name__ == "__main__":
