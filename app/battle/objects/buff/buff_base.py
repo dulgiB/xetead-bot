@@ -52,7 +52,7 @@ class BuffDurationCounter:
         if self.is_passive:
             return False
         elif self.remaining_turns is not None and self.remaining_count is not None:
-            return self.remaining_turns == 0 and self.remaining_count == 0
+            return self.remaining_turns == 0 or self.remaining_count == 0
         elif self.remaining_turns is not None:
             return self.remaining_turns == 0
         elif self.remaining_count is not None:
@@ -90,6 +90,11 @@ class BuffBase(abc.ABC):
 
     def __hash__(self):
         return hash(self.uid)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BuffBase):
+            return NotImplemented
+        return self.uid == other.uid
 
     def get_target_override(self) -> Optional[CharacterId]:
         return None

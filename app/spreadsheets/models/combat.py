@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from battle.objects.define import MAX_SKILL_SLOT_COUNT, MagicResistanceType
 
@@ -7,7 +8,7 @@ from battle.objects.define import MAX_SKILL_SLOT_COUNT, MagicResistanceType
 class CombatCharacterDataFromSpreadsheet:
     name: str
     mastodon_id: str
-    curr_hp: int
+    curr_hp: Optional[int]
     max_hp: int
     atk: int
     attack_range: int
@@ -24,7 +25,7 @@ class CombatCharacterDataFromSpreadsheet:
         return cls(
             name=raw["name"],
             mastodon_id=raw["mastodon_id"],
-            curr_hp=raw["curr_hp"],
+            curr_hp=int(raw["curr_hp"]) if raw["curr_hp"] else None,
             max_hp=raw["max_hp"],
             atk=raw["atk"],
             attack_range=raw["attack_range"],

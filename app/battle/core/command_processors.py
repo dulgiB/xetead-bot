@@ -136,11 +136,7 @@ def try_process_enemy_command_on_post_action(
     for command in remaining_commands:
         expanded_parts = expand_character_command(command, context)
         for part_data in expanded_parts:
-            # 이동은 PRE에서 이미 처리했으므로 제외
-            post_part = CommandPartData(
-                part_data.original_part,
-                data_per_effect=part_data.data_per_effect,
-            )
+            post_part = part_data.create_new_except_move()
             calculator = CommandPartCalculator(post_part, context)
             calculator.process(RoundPhaseType.ENEMY_POST_ACTION)
             results.append(CommandPartProcessResult(post_part))
@@ -155,9 +151,8 @@ def try_expansion_if_valid(
     검증 항목:
       1. 커맨드 사용자가 전장에 존재하는지
       2. 코스트가 충분한지
-      3. 공격/스킬 대상이 전장에 존재하는지
-      4. 이동 목적지에 자리가 남아있는지
-      5. 공격 대상이 사거리 내인지
+      3. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
+      4. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
     """
 
     # 1. 사용자 존재 확인
@@ -195,7 +190,15 @@ def try_expansion_if_valid(
             if sub_data is None:
                 continue
 
-            # 4. 대미지/힐 대상 존재 및 사거리 확인
+            # 3. 이동 목적지 검증 — damage 검증보다 먼저 수행해 user_pos를 갱신한다.
+            for move_data in sub_data.move_list:
+                to_pos = move_data.to_position
+                if context.try_find_empty_slot(user.faction, to_pos) is None:
+                    raise CommandValidationError(error_too_many_characters(to_pos))
+                if move_data.character_id == command.user_id:
+                    user_pos = to_pos
+
+            # 4. 대미지/힐 대상 존재 및 사거리 확인 (이동 후 위치 기준)
             for damage_data in sub_data.damage_list:
                 target_id = damage_data.target_id
                 if target_id not in context.characters:
@@ -211,11 +214,5 @@ def try_expansion_if_valid(
                 target_id = heal_data.target_id
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
-
-            # 5. 이동 목적지 검증
-            for move_data in sub_data.move_list:
-                to_pos = move_data.to_position
-                if context.try_find_empty_slot(user.faction, to_pos) is None:
-                    raise CommandValidationError(error_too_many_characters(to_pos))
 
     return expanded_command_data_list, needed_cost

@@ -134,7 +134,7 @@ class BattlefieldContext:
                 data.m_res,
                 data.is_magic_attacker,
                 data.max_cost,
-                data.curr_hp if data.curr_hp else None,
+                data.curr_hp,
             ),
             skills=skills,
         )
@@ -163,6 +163,9 @@ class BattlefieldContext:
     def remove_character(self, char_id: CharacterId) -> "CombatCharacter":
         if char_id not in self.characters:
             raise CommandValidationError(error_target_does_not_exist(char_id))
+
+        for buff in self.buff_container.get_buffs_by(char_id, None):
+            self.buff_container.remove(buff.uid)
 
         self._remove_from_position_map(char_id)
         return self.characters.pop(char_id)
