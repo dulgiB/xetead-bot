@@ -658,7 +658,7 @@ class TestBuffDuration:
         buff = make_buff_data(
             "테스트 버프",
             "BuffAtk",
-            duration_turn_value=0,
+            duration_turn_value=None,
             duration_count_value=3,
             duration_count_deduct_condition=BuffCountDeductCondition.ON_HIT,
             value_type=ValueType.INTEGER,
