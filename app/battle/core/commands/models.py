@@ -1,5 +1,5 @@
 from dataclasses import KW_ONLY, dataclass, field
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData
@@ -43,6 +43,10 @@ class CommandPartDataPerEffect:
     damage_list: list[DamageData] = field(default_factory=list)
     heal_list: list[HealData] = field(default_factory=list)
     buff_add_list: list[BuffAddData] = field(default_factory=list)
+    # 에너미 스킬 전용: None이면 페이즈별 기본값(이동→PRE, 대미지/힐→POST) 사용.
+    apply_timing: Optional[
+        Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
+    ] = None
 
 
 @dataclass
@@ -73,14 +77,18 @@ class CommandPartData:
             if data is None:
                 continue
 
-            new_data_per_effect_list.append(
-                CommandPartDataPerEffect(
-                    move_list=[],
-                    damage_list=data.damage_list,
-                    heal_list=data.heal_list,
-                    buff_add_list=data.buff_add_list,
+            if data.apply_timing is not None:
+                # 에너미 스킬: apply_timing이 명시된 effect는 process()가 페이즈를 보고 처리 여부를 결정하므로 그대로 보존
+                new_data_per_effect_list.append(data)
+            else:
+                new_data_per_effect_list.append(
+                    CommandPartDataPerEffect(
+                        move_list=[],
+                        damage_list=data.damage_list,
+                        heal_list=data.heal_list,
+                        buff_add_list=data.buff_add_list,
+                    )
                 )
-            )
         return CommandPartData(
             original_part=self.original_part,
             data_per_effect=tuple(new_data_per_effect_list),

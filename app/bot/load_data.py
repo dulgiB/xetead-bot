@@ -45,10 +45,19 @@ def load_all_data() -> tuple[
     buff_raw = db.worksheet("버프").get_all_records(value_render_option=_UNFORMATTED)
     buff_dict: dict[str, BuffData] = {r["id"]: BuffData.from_dict(r) for r in buff_raw}
 
-    skill_raw = db.worksheet("스킬").get_all_records(value_render_option=_UNFORMATTED)
+    char_skill_raw = db.worksheet("스킬_캐릭터").get_all_records(
+        value_render_option=_UNFORMATTED
+    )
     skill_dict: dict[str, SkillData] = {
-        r["id"]: SkillData.from_dict(r) for r in skill_raw
+        r["id"]: SkillData.from_dict(r) for r in char_skill_raw
     }
+    try:
+        enemy_skill_raw = db.worksheet("스킬_에너미").get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+        skill_dict.update({r["id"]: SkillData.from_dict(r) for r in enemy_skill_raw})
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning("'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다.")
 
     char_dict, name_dict, noncombat_char_dict = load_char_data(db)
 

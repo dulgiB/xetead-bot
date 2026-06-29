@@ -34,6 +34,7 @@ class CalculatorMutableData:
         damage_list: list[DamageData],
         heal_list: list[HealData],
         buff_add_list: list[BuffAddData],
+        apply_timing: Optional[RoundPhaseType] = None,
     ):
         self.move_list: list[MoveData] = move_list
         self.damage_data_list: list[DamageCalculateData] = [
@@ -43,6 +44,7 @@ class CalculatorMutableData:
             HealCalculateData(heal_data, []) for heal_data in heal_list
         ]
         self.buff_add_data_list: list[BuffAddData] = buff_add_list
+        self.apply_timing: Optional[RoundPhaseType] = apply_timing
 
 
 class CommandPartCalculator:
@@ -61,6 +63,7 @@ class CommandPartCalculator:
                 data_per_effect.damage_list,
                 data_per_effect.heal_list,
                 data_per_effect.buff_add_list,
+                data_per_effect.apply_timing,
             )
             for data_per_effect in data.data_per_effect
             if data_per_effect is not None
@@ -86,8 +89,18 @@ class CommandPartCalculator:
     ):
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
             for i in range(len(self.data_by_effect)):
-                self._process_move(i)
-                self._process_buff_add(i, phase)
+                timing = self.data_by_effect[i].apply_timing
+                if timing is None:
+                    # 아군 스킬 동작: 이동과 PRE 타이밍 버프만 처리
+                    self._process_move(i)
+                    self._process_buff_add(i, phase)
+                elif timing == RoundPhaseType.ENEMY_PRE_ACTION:
+                    # 에너미 스킬 PRE effect: 전체 처리
+                    self._process_move(i)
+                    self._process_damage(i)
+                    self._process_heal(i)
+                    self._process_all_buff_add(i)
+                # ENEMY_POST_ACTION effect는 이 페이즈에서 처리하지 않음
 
         elif phase == RoundPhaseType.ALLY_ACTION:
             for i in range(len(self.data_by_effect)):
@@ -98,9 +111,19 @@ class CommandPartCalculator:
 
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
             for i in range(len(self.data_by_effect)):
-                self._process_damage(i)
-                self._process_heal(i)
-                self._process_buff_add(i, phase)
+                timing = self.data_by_effect[i].apply_timing
+                if timing is None:
+                    # 아군 스킬 동작: 대미지/힐과 POST 타이밍 버프만 처리 (이동은 PRE에서 완료)
+                    self._process_damage(i)
+                    self._process_heal(i)
+                    self._process_buff_add(i, phase)
+                elif timing == RoundPhaseType.ENEMY_POST_ACTION:
+                    # 에너미 스킬 POST effect: 전체 처리
+                    self._process_move(i)
+                    self._process_damage(i)
+                    self._process_heal(i)
+                    self._process_all_buff_add(i)
+                # ENEMY_PRE_ACTION effect는 이미 PRE에서 처리했으므로 건너뜀
 
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             pass
@@ -196,6 +219,14 @@ class CommandPartCalculator:
                     self.context.buff_container.add(data)
         else:
             raise ValueError(f"Cannot add buffs at this phase: {phase}")
+
+    def _process_all_buff_add(
+        self: "CommandPartCalculator",
+        effect_seq_number: int,
+    ) -> None:
+        """apply_timing이 명시된 에너미 스킬 effect용: buff_add_timing에 무관하게 모두 추가."""
+        for data in self.data_by_effect[effect_seq_number].buff_add_data_list:
+            self.context.buff_container.add(data)
 
     def _apply_buff_events(
         self: "CommandPartCalculator",

@@ -29,14 +29,14 @@ if __name__ == "__main__":
         for buff_raw_data in buff_raw_data_list
     }
 
-    skill_data_worksheet = db_spreadsheet.worksheet("스킬")
-    skill_raw_data_list = skill_data_worksheet.get_all_records(
-        value_render_option=ValueRenderOption.unformatted
-    )
-    skill_data_dict: dict[str, SkillData] = {
-        skill_raw_data["id"]: SkillData.from_dict(skill_raw_data)
-        for skill_raw_data in skill_raw_data_list
-    }
+    skill_data_dict: dict[str, SkillData] = {}
+    for sheet_name in ("스킬_캐릭터", "스킬_에너미"):
+        try:
+            ws = db_spreadsheet.worksheet(sheet_name)
+            for row in ws.get_all_records(value_render_option=ValueRenderOption.unformatted):
+                skill_data_dict[row["id"]] = SkillData.from_dict(row)
+        except Exception:
+            pass
 
     context = BattlefieldContext(buff_data_dict, skill_data_dict)
 

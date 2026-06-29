@@ -29,6 +29,10 @@ class SkillEffectBase(abc.ABC):
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
     ]
     target_override: Optional[SkillTargetOverrideType] = None
+    # 에너미 스킬 전용: 이 effect가 어느 페이즈에 적용되는지 명시. None이면 아군 스킬 동작(페이즈별 기본값 사용).
+    apply_timing: Optional[
+        Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
+    ] = None
 
     @abc.abstractmethod
     def _expand(
@@ -108,8 +112,12 @@ class SkillData:
                 )
                 target_override = (
                     SkillTargetOverrideType(data[f"target_override_{i}"])
-                    if data[f"target_override_{i}"]
+                    if data.get(f"target_override_{i}")
                     else None
+                )
+                apply_timing_raw = data.get(f"effect_apply_timing_{i}")
+                apply_timing = (
+                    RoundPhaseType(apply_timing_raw) if apply_timing_raw else None
                 )
 
                 skill_effects.append(
@@ -120,6 +128,7 @@ class SkillData:
                         buff_id=buff_name,
                         buff_add_timing=buff_add_timing,
                         target_override=target_override,
+                        apply_timing=apply_timing,
                     )
                 )
 
