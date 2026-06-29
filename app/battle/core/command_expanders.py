@@ -179,7 +179,7 @@ def expand_character_command(
                     break
 
             if skill_used is None:
-                break
+                raise CommandValidationError(error_skill_not_registered(part.skill_id))
 
             if (
                 taunted_target is not None
