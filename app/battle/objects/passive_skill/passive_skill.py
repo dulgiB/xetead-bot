@@ -50,6 +50,16 @@ def _resolve_targets(
             if char.faction == holder_char.faction
         ]
 
+    if target_type == PassiveSkillTargetType.LOWEST_HP_ALLY:
+        allies = [
+            char_id
+            for char_id, char in context.characters.items()
+            if char.faction == holder_char.faction
+        ]
+        if not allies:
+            return []
+        return [min(allies, key=lambda cid: context.characters[cid].status.curr_hp)]
+
     return []
 
 

@@ -5,7 +5,7 @@ from typing import Optional, Type
 
 from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.buff.conditions import Condition
-from battle.objects.define import ValueSourceType
+from battle.objects.define import ValueSourceType, ValueType
 from battle.objects.skill.define import SkillValueType
 from battle.objects.skill.models import SkillEffectBase
 
@@ -20,6 +20,7 @@ class PassiveSkillTargetType(str, Enum):
     SAME_COLUMN_ALLIES = "같은 열 아군"
     ALL_ALLIES = "전체 아군"
     ATTACKER_OR_TARGET = "공격자_또는_대상"
+    LOWEST_HP_ALLY = "체력 최저 아군"
 
 
 @dataclass(frozen=True)
