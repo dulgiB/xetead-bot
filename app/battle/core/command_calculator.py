@@ -140,6 +140,8 @@ class CommandPartCalculator:
             self.context.move_character_to(
                 move_data.character_id, move_data.to_position
             )
+            if not move_data.is_forced:
+                self.context.buff_container.on_voluntary_move(move_data.character_id)
 
     def _process_damage(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         for damage_calc in list(

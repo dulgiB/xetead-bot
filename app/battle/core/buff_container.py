@@ -61,6 +61,33 @@ class BuffContainer:
                 event.apply(applied_to, given_by, buff_calculator, 0)
         buff_calculator.process(None)
 
+    def on_voluntary_move(self, moved_char_id: CharacterId) -> None:
+        """자발적 이동 시 ON_ENEMY_MOVE 타이밍 패시브를 발동한다. 강제 이동은 제외된다."""
+        moved_char = self._context.characters.get(moved_char_id)
+        if moved_char is None:
+            return
+
+        event_pairs = []
+        for buff in self._buffs:
+            if buff.timing != BuffApplyTiming.ON_ENEMY_MOVE:
+                continue
+            holder_char = self._context.characters.get(buff.applied_to)
+            if holder_char is None:
+                continue
+            if holder_char.faction == moved_char.faction:
+                continue
+            event_pairs.append((buff.create_event(), buff.applied_to))
+
+        if not event_pairs:
+            return
+
+        event_pairs.sort(key=lambda x: x[0].priority.value)
+        buff_calculator = CommandPartCalculator.create_empty_for_buff(self._context)
+        for event, holder in event_pairs:
+            if event.is_applied(self._context, holder, moved_char_id):
+                event.apply(holder, moved_char_id, buff_calculator, 0)
+        buff_calculator.process(None)
+
     def on_round_start(self):
         self._apply_round_events(BuffApplyTiming.ON_ROUND_START)
 

@@ -75,6 +75,9 @@ class ValueSourceType(str, Enum):
     GIVEN_DAMAGE = "해당 공격으로 입힌 대미지"
     GIVEN_HEAL = "해당 행동으로 부여한 회복량"
 
+    TOWARD_HOLDER = "공격자 방향으로"
+    AWAY_FROM_HOLDER = "공격자 반대 방향으로"
+
 
 class ValueType(str, Enum):
     INTEGER = "정수"
