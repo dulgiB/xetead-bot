@@ -12,7 +12,6 @@ from battle.exceptions import (
     error_target_does_not_exist,
     error_too_many_characters,
 )
-from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
@@ -145,9 +144,14 @@ class BattlefieldContext:
             skills=skills,
         )
 
-        if data.passive_buff_id:
-            passive_buff_add_data = BuffAddData(char_id, char_id, data.passive_buff_id)
-            self.buff_container.add(passive_buff_add_data)
+        if (
+            data.passive_skill_id
+            and data.passive_skill_id in self._passive_skill_dictionary
+        ):
+            wrapper = PassiveSkillWrapperBuff.create(
+                char_id, self._passive_skill_dictionary[data.passive_skill_id]
+            )
+            self.buff_container.add_passive_wrapper(wrapper)
 
         maybe_empty_slot = self.try_find_empty_slot(faction, column_idx)
 
