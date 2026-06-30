@@ -75,6 +75,9 @@ class ValueSourceType(str, Enum):
     GIVEN_DAMAGE = "해당 공격으로 입힌 대미지"
     GIVEN_HEAL = "해당 행동으로 부여한 회복량"
 
+    TOWARD_HOLDER = "공격자 방향으로"
+    AWAY_FROM_HOLDER = "공격자 반대 방향으로"
+
 
 class ValueType(str, Enum):
     INTEGER = "정수"
@@ -104,7 +107,9 @@ class ActionType(str, Enum):
 class BuffApplyTiming(str, Enum):
     ON_ROUND_START = "라운드 시작 시"
     ON_ACTION = "행동 시"
+    ON_ENEMY_POST_ACTION = "적 후행 시"
     ON_ROUND_END = "라운드 종료 시"
+    ON_ENEMY_MOVE = "적 이동 시"
 
 
 class BuffCountDeductCondition(str, Enum):

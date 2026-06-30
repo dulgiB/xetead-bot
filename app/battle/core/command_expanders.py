@@ -46,7 +46,11 @@ def expand_admin_command(
             data_per_effect=(
                 CommandPartDataPerEffect(
                     move_list=[
-                        MoveData(character_id=target, to_position=command.to_position)
+                        MoveData(
+                            character_id=target,
+                            to_position=command.to_position,
+                            is_forced=True,
+                        )
                         for target in command.targets
                     ]
                 ),

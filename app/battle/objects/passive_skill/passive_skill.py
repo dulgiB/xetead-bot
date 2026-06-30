@@ -50,6 +50,16 @@ def _resolve_targets(
             if char.faction == holder_char.faction
         ]
 
+    if target_type == PassiveSkillTargetType.LOWEST_HP_ALLY:
+        allies = [
+            char_id
+            for char_id, char in context.characters.items()
+            if char.faction == holder_char.faction
+        ]
+        if not allies:
+            return []
+        return [min(allies, key=lambda cid: context.characters[cid].status.curr_hp)]
+
     return []
 
 
@@ -68,8 +78,14 @@ class PassiveSkillWrapperEvent(BuffEvent):
         calculator: "CommandPartCalculator",
         effect_seq_number: int,
     ) -> None:
-        # GIVEN_DAMAGE/GIVEN_HEAL 소스 패시브는 해당 타입이 미처리 상태(result_value=None)일 때만 발동.
-        # 이미 damage/heal이 모두 처리된 후 _apply_buff_events가 재호출될 때 이중 발동을 방지한다.
+        if self.passive_data.buff_mod_event is not None:
+            # Buff modifier 경로: 기존 계산에 수정자를 직접 주입
+            self.passive_data.buff_mod_event.apply(
+                holder, attacker_or_target, calculator, effect_seq_number
+            )
+            return
+
+        # SkillEffect 경로: GIVEN_DAMAGE/GIVEN_HEAL 이중 발동 방지
         effect_source = self.passive_data.effect.value_source
         effect_data = calculator.data_by_effect[effect_seq_number]
         if effect_source == ValueSourceType.GIVEN_DAMAGE:
@@ -125,6 +141,8 @@ class PassiveSkillWrapperBuff(BuffBase):
     def timing(self) -> BuffApplyTiming:
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_START:
             return BuffApplyTiming.ON_ROUND_START
+        if self._passive_data.trigger == PassiveSkillTrigger.ON_ENEMY_MOVE:
+            return BuffApplyTiming.ON_ENEMY_MOVE
         return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> PassiveSkillWrapperEvent:

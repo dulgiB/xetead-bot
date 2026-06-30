@@ -218,6 +218,7 @@ class ValueWithModifiers:
 class MoveData:
     character_id: CharacterId
     to_position: BattlefieldColumnIndex
+    is_forced: bool = False
 
 
 @dataclass(frozen=True)
