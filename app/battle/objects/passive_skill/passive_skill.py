@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.models import DamageCalculateData, HealCalculateData
 from battle.objects.buff.buff_base import BuffBase, BuffDurationCounter
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming
+from battle.objects.define import BuffApplyTiming, ValueSourceType
 from battle.objects.models import BuffUid, CharacterId
 from battle.objects.passive_skill.models import (
     PassiveSkillData,
@@ -68,6 +68,17 @@ class PassiveSkillWrapperEvent(BuffEvent):
         calculator: "CommandPartCalculator",
         effect_seq_number: int,
     ) -> None:
+        # GIVEN_DAMAGE/GIVEN_HEAL 소스 패시브는 해당 타입이 미처리 상태(result_value=None)일 때만 발동.
+        # 이미 damage/heal이 모두 처리된 후 _apply_buff_events가 재호출될 때 이중 발동을 방지한다.
+        effect_source = self.passive_data.effect.value_source
+        effect_data = calculator.data_by_effect[effect_seq_number]
+        if effect_source == ValueSourceType.GIVEN_DAMAGE:
+            if not any(d.result_value is None for d in effect_data.damage_data_list):
+                return
+        elif effect_source == ValueSourceType.GIVEN_HEAL:
+            if not any(h.result_value is None for h in effect_data.heal_data_list):
+                return
+
         targets = _resolve_targets(
             calculator.context,
             holder,
