@@ -24,6 +24,8 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId, ValueWithModifiers
+from battle.objects.passive_skill.models import PassiveSkillData
+from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import SkillData
 
 
@@ -32,11 +34,15 @@ class BattlefieldContext:
         self,
         buff_dict: dict[str, BuffData],
         skill_dict: dict[str, SkillData],
+        passive_skill_dict: "dict[str, PassiveSkillData] | None" = None,
         *,
         milestone_n: int = 1,
     ):
         self._buff_dictionary: dict[str, BuffData] = buff_dict
         self._skill_dictionary: dict[str, SkillData] = skill_dict
+        self._passive_skill_dictionary: dict[str, PassiveSkillData] = (
+            passive_skill_dict or {}
+        )
         self.milestone_n: int = milestone_n
 
         self.characters: dict[CharacterId, CombatCharacter] = {}

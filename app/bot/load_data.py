@@ -4,6 +4,7 @@ import os
 
 import gspread
 from battle.objects.buff.models import BuffData
+from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
 from gspread.utils import ValueRenderOption
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -22,16 +23,18 @@ _UNFORMATTED = ValueRenderOption.unformatted
 def load_all_data() -> tuple[
     dict[str, BuffData],
     dict[str, SkillData],
+    dict[str, PassiveSkillData],
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, NoncombatCharacterDataFromSpreadsheet],
     gspread.Spreadsheet,
 ]:
     """
-    스프레드시트에서 버프·스킬·캐릭터 데이터를 로드한다.
-    반환값: (buff_dict, skill_dict, char_dict, name_dict, noncombat_char_dict, spreadsheet)
+    스프레드시트에서 버프·스킬·패시브 스킬·캐릭터 데이터를 로드한다.
+    반환값: (buff_dict, skill_dict, passive_skill_dict, char_dict, name_dict, noncombat_char_dict, spreadsheet)
       - buff_dict:           버프 id → BuffData
       - skill_dict:          스킬 id → SkillData
+      - passive_skill_dict:  패시브 스킬 id → PassiveSkillData
       - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
       - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체)
       - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
@@ -59,9 +62,22 @@ def load_all_data() -> tuple[
     except gspread.exceptions.WorksheetNotFound:
         logger.warning("'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다.")
 
+    passive_skill_dict: dict[str, PassiveSkillData] = {}
+    try:
+        passive_skill_raw = db.worksheet("패시브 스킬").get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+        passive_skill_dict = {
+            r["id"]: PassiveSkillData.from_dict(r)
+            for r in passive_skill_raw
+            if r.get("id")
+        }
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning("'패시브 스킬' 시트를 찾을 수 없습니다. 패시브 스킬 없이 로드합니다.")
+
     char_dict, name_dict, noncombat_char_dict = load_char_data(db)
 
-    return buff_dict, skill_dict, char_dict, name_dict, noncombat_char_dict, db
+    return buff_dict, skill_dict, passive_skill_dict, char_dict, name_dict, noncombat_char_dict, db
 
 
 def load_char_data(

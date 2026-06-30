@@ -15,7 +15,7 @@ class CombatCharacterDataFromSpreadsheet:
     m_res: MagicResistanceType
     is_magic_attacker: bool
     max_cost: int
-    passive_buff_id: str
+    passive_skill_id: str
     skill_id_list: list[str]
 
     @classmethod
@@ -32,7 +32,7 @@ class CombatCharacterDataFromSpreadsheet:
             m_res=MagicResistanceType(raw["m_res"]),
             is_magic_attacker=raw["is_magic"],
             max_cost=raw["max_cost"],
-            passive_buff_id=raw["passive_buff_id"],
+            passive_skill_id=raw.get("passive_skill_id", "") or "",
             skill_id_list=[
                 raw.get(f"skill_{i + 1}_id", "") or ""
                 for i in range(MAX_SKILL_SLOT_COUNT)
