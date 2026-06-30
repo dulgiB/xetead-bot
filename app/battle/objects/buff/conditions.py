@@ -159,6 +159,19 @@ class TargetAttackedHolderLastRoundCondition(Condition):
 
 
 @dataclass(frozen=True)
+class HolderDidNotMoveThisTurnCondition(Condition):
+    """이번 라운드에 holder가 이동 커맨드를 사용하지 않았을 때 True."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        return holder not in context.moved_this_round
+
+
+@dataclass(frozen=True)
 class SameTargetAsLastRoundCondition(Condition):
     """직전 라운드에도 holder가 attacker_or_target을 공격했을 때 True."""
 

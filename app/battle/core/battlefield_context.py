@@ -65,6 +65,7 @@ class BattlefieldContext:
 
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
+        self.moved_this_round: set[CharacterId] = set()
 
     def __str__(self):
         enemy_str = []
@@ -109,6 +110,7 @@ class BattlefieldContext:
             if index != BattlefieldColumnIndex.NONE
         }
         self.prev_round_results = []
+        self.moved_this_round = set()
 
     def add_character(
         self,
@@ -213,6 +215,7 @@ class BattlefieldContext:
 
         self._remove_from_position_map(char_id)
         self.position_map[char.faction][to_position][empty_slot] = char_id
+        self.moved_this_round.add(char_id)
 
     def apply_damage(
         self,
@@ -249,6 +252,7 @@ class BattlefieldContext:
         return final_value
 
     def on_start_round(self):
+        self.moved_this_round = set()
         self.buff_container.on_round_start()
         for character in self.characters.values():
             character.status.remaining_cost = character.status[
