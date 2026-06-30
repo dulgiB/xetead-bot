@@ -14,7 +14,7 @@ def get_test_preset(
     m_res: MagicResistanceType = MagicResistanceType.NORMAL,
     is_magic_attacker: bool = False,
     max_cost: int = 3,
-    passive_buff_id: Optional[str] = None,
+    passive_skill_id: Optional[str] = None,
     skill_1_id: Optional[str] = None,
     skill_2_id: Optional[str] = None,
     skill_3_id: Optional[str] = None,
@@ -29,7 +29,7 @@ def get_test_preset(
         m_res=m_res,
         is_magic_attacker=is_magic_attacker,
         max_cost=max_cost,
-        passive_buff_id=passive_buff_id if passive_buff_id else "",
+        passive_skill_id=passive_skill_id if passive_skill_id else "",
         skill_id_list=[
             skill_1_id if skill_1_id else "",
             skill_2_id if skill_2_id else "",
