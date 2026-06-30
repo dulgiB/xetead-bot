@@ -77,6 +77,39 @@ class SelfHpBelowCondition(Condition):
         return (char.status.curr_hp / max_hp * 100) < self.value
 
 
+@dataclass(frozen=True)
+class HolderHasBuffCondition(Condition):
+    """holder에게 패시브가 아닌 버프가 1개 이상 있을 때 True."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        return any(
+            not buff.duration.is_passive and not buff.is_debuff
+            for buff in context.buff_container.get_buffs_by(holder, None)
+        )
+
+
+@dataclass(frozen=True)
+class TargetHasDebuffCondition(Condition):
+    """attacker_or_target에게 패시브가 아닌 디버프가 1개 이상 있을 때 True."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if attacker_or_target is None:
+            return False
+        return any(
+            not buff.duration.is_passive and buff.is_debuff
+            for buff in context.buff_container.get_buffs_by(attacker_or_target, None)
+        )
+
 
 @dataclass(frozen=True)
 class AllyInSameColumnCondition(Condition):

@@ -87,6 +87,7 @@ class BuffBase(abc.ABC):
             data.duration_count_deduct_condition,
         )
         self.condition = data.condition
+        self.is_debuff = data.is_debuff
 
     def __hash__(self):
         return hash(self.uid)
