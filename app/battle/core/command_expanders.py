@@ -18,7 +18,11 @@ from battle.core.commands.models import (
     DamageData,
     MoveData,
 )
-from battle.exceptions import CommandValidationError, error_invalid_command_format
+from battle.exceptions import (
+    CommandValidationError,
+    error_invalid_command_format,
+    error_skill_not_registered,
+)
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,

@@ -1,3 +1,5 @@
+from typing import Optional
+
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
@@ -5,6 +7,7 @@ from battle.core.commands.models import CharacterCommand
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.models import BuffData
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
+from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
@@ -21,8 +24,9 @@ class BattleSession:
         self,
         buff_dict: dict[str, BuffData],
         skill_dict: dict[str, SkillData],
+        passive_skill_dict: Optional[dict[str, PassiveSkillData]] = None,
     ) -> None:
-        self.context = BattlefieldContext(buff_dict, skill_dict)
+        self.context = BattlefieldContext(buff_dict, skill_dict, passive_skill_dict)
         self.manager = RoundManager(self.context)
         self.started: bool = False
         self._phase_idx: int = 0
