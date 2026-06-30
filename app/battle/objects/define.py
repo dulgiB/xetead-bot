@@ -73,6 +73,7 @@ class ValueSourceType(str, Enum):
     TARGET_CURR_POSITION = "상대의 현재 위치"
 
     GIVEN_DAMAGE = "해당 공격으로 입힌 대미지"
+    GIVEN_HEAL = "해당 행동으로 부여한 회복량"
 
 
 class ValueType(str, Enum):
