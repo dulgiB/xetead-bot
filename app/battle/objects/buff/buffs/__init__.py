@@ -1,5 +1,6 @@
 from .buff_atk import BuffAtk  # noqa: F401
 from .buff_bonus_damage_on_hit import BuffBonusDamageOnHit  # noqa: F401
+from .buff_conditional_damage import BuffConditionalDamage  # noqa: F401
 from .buff_damage_over_time import BuffDamageOverTime  # noqa: F401
 from .buff_given_damage import BuffGivenDamage  # noqa: F401
 from .buff_given_heal import BuffGivenHeal  # noqa: F401

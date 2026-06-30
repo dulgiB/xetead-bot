@@ -88,6 +88,9 @@ class BuffContainer:
                 event.apply(holder, moved_char_id, buff_calculator, 0)
         buff_calculator.process(None)
 
+    def on_enemy_post_action(self) -> None:
+        self._apply_round_events(BuffApplyTiming.ON_ENEMY_POST_ACTION)
+
     def on_round_start(self):
         self._apply_round_events(BuffApplyTiming.ON_ROUND_START)
 

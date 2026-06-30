@@ -30,6 +30,7 @@ class RoundManager:
             pass
 
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
+            self._context.buff_container.on_enemy_post_action()
             for user_id, remaining_commands in self._enemy_command_list.items():
                 post_results = try_process_enemy_command_on_post_action(
                     self._context, user_id, remaining_commands
