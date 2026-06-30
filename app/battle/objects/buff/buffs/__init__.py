@@ -8,4 +8,5 @@ from .buff_heal_over_time import BuffHealOverTime  # noqa: F401
 from .buff_no_damage import BuffNoDamage  # noqa: F401
 from .buff_no_heal import BuffNoHeal  # noqa: F401
 from .buff_received_damage import BuffReceivedDamage  # noqa: F401
+from .buff_sacrifice import BuffSacrifice  # noqa: F401
 from .buff_taunt import BuffTaunt  # noqa: F401

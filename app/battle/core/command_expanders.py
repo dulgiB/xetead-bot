@@ -1,5 +1,3 @@
-from typing import Optional
-
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import (
     ADMIN_ID,
@@ -26,10 +24,9 @@ from battle.exceptions import (
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,
-    BuffApplyTiming,
     ValueSourceType,
 )
-from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
+from battle.objects.models import BaseValueIndicator, BuffUid, HealData
 
 
 def expand_admin_command(
@@ -125,21 +122,13 @@ def expand_admin_command(
         raise TypeError(command)
 
 
-def _get_taunt_override(
-    user_id: CharacterId, context: BattlefieldContext
-) -> Optional[CharacterId]:
-    for buff in context.buff_container.get_buffs_by(user_id, BuffApplyTiming.ON_ACTION):
-        override = buff.get_target_override()
-        if override is not None:
-            return override
-    return None
-
-
 def expand_character_command(
-    command: CharacterCommand, context: BattlefieldContext
+    command: CharacterCommand,
+    context: BattlefieldContext,
 ) -> list[CommandPartData]:
+    # 도발/희생 방어에 의한 대상 치환은 대미지 처리 시점(CommandPartCalculator)에서
+    # 일괄 수행한다. 여기서는 원래 지정 대상으로 전개만 한다.
     parts_list: list[CommandPartData] = []
-    taunted_target = _get_taunt_override(command.user_id, context)
 
     for part in command.parts:
         if part.type_ == ActionType.MOVE and part.targets is not None:
@@ -155,9 +144,6 @@ def expand_character_command(
             )
 
         elif part.type_ == ActionType.ATTACK and part.targets is not None:
-            effective_target = (
-                taunted_target if taunted_target is not None else part.targets[0]
-            )
             is_magic_attack = context.characters[
                 command.user_id
             ].status.is_magic_attacker
@@ -169,7 +155,7 @@ def expand_character_command(
                             damage_list=[
                                 DamageData(
                                     command.user_id,
-                                    effective_target,
+                                    part.targets[0],
                                     BaseValueIndicator(ValueSourceType.STAT_ATK_ROLL),
                                     is_magic_attack,
                                 )
@@ -189,13 +175,7 @@ def expand_character_command(
             if skill_used is None:
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
 
-            if (
-                taunted_target is not None
-                and not skill_used.target_rule.ignores_input_targets
-            ):
-                target_characters = [taunted_target]
-            else:
-                target_characters = skill_used.target_rule.get_targets(part.targets)
+            target_characters = skill_used.target_rule.get_targets(part.targets)
 
             data_per_effect_list: list[CommandPartDataPerEffect] = []
 

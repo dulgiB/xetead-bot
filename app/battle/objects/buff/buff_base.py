@@ -100,6 +100,9 @@ class BuffBase(abc.ABC):
     def get_target_override(self) -> Optional[CharacterId]:
         return None
 
+    def get_sacrifice_override(self) -> Optional[CharacterId]:
+        return None
+
     @property
     @abc.abstractmethod
     def timing(self) -> BuffApplyTiming:
