@@ -141,6 +141,8 @@ class PassiveSkillWrapperBuff(BuffBase):
     def timing(self) -> BuffApplyTiming:
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_START:
             return BuffApplyTiming.ON_ROUND_START
+        if self._passive_data.trigger == PassiveSkillTrigger.ON_ENEMY_MOVE:
+            return BuffApplyTiming.ON_ENEMY_MOVE
         return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> PassiveSkillWrapperEvent:
