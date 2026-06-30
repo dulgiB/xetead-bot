@@ -99,15 +99,23 @@ class BaseValueIndicator:
             return calculator.context.find_character_position(target_id).value
 
         elif self.value_source == ValueSourceType.GIVEN_DAMAGE:
-            prev_effects: list[CalculatorMutableData] = calculator.data_by_effect[
-                :effect_seq_number
-            ]
-            prev_damage_data_list = sum(
-                (effect.damage_data_list for effect in prev_effects), []
-            )
+            # 현재 effect 포함, 이미 result_value가 설정된 damage 합산
             total = sum(
                 data.result_value
-                for data in prev_damage_data_list
+                for effect in calculator.data_by_effect[: effect_seq_number + 1]
+                for data in effect.damage_data_list
+                if data.result_value is not None
+            )
+            if self.coefficient is not None:
+                return math.floor(total * self.coefficient.value)
+            return total
+
+        elif self.value_source == ValueSourceType.GIVEN_HEAL:
+            # 현재 effect 포함, 이미 result_value가 설정된 heal 합산
+            total = sum(
+                data.result_value
+                for effect in calculator.data_by_effect[: effect_seq_number + 1]
+                for data in effect.heal_data_list
                 if data.result_value is not None
             )
             if self.coefficient is not None:
@@ -137,7 +145,8 @@ class ValueWithModifiers:
         if (
             isinstance(self.base_value, BaseValueIndicator)
             and self.base_value.coefficient is not None
-            and self.base_value.value_source != ValueSourceType.GIVEN_DAMAGE
+            and self.base_value.value_source
+            not in (ValueSourceType.GIVEN_DAMAGE, ValueSourceType.GIVEN_HEAL)
         ):
             self.float_modifiers.append(self.base_value.coefficient)
 
