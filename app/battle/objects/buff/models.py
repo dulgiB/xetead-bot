@@ -28,6 +28,9 @@ class BuffData:
     condition_: Optional[str]
     condition_value: Optional[int]
 
+    # 디버프 여부 — TargetHasDebuffCondition에서 사용
+    is_debuff: bool
+
     description: str
 
     @classmethod
@@ -52,6 +55,7 @@ class BuffData:
             condition_value=data["condition_value"]
             if data["condition_value"]
             else None,
+            is_debuff=bool(data.get("is_debuff", False)),
             description=data["description"],
         )
 

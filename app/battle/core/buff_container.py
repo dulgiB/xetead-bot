@@ -24,6 +24,10 @@ class BuffContainer:
             buff_data.to_buff_instance(add_event.given_by, add_event.applied_to)
         )
 
+    def add_passive_wrapper(self, buff: "BuffBase") -> None:
+        """PassiveSkillWrapperBuff 등록 전용. BuffData 없이 직접 생성된 인스턴스를 추가한다."""
+        self._buffs.add(buff)
+
     def remove(self, buff_uid: BuffUid) -> None:
         for buff in self._buffs:
             if buff.uid == buff_uid:

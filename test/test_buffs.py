@@ -31,10 +31,13 @@ from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
 
 
-def make_context(*buff_datas: BuffData, skill_dict: dict = None) -> BattlefieldContext:
+def make_context(
+    *buff_datas: BuffData, skill_dict: dict = None, passive_skill_dict: dict = None
+) -> BattlefieldContext:
     return BattlefieldContext(
         buff_dict={b.id: b for b in buff_datas},
         skill_dict=skill_dict or {},
+        passive_skill_dict=passive_skill_dict,
     )
 
 
@@ -49,6 +52,7 @@ def make_buff_data(
     value: int = 0,
     condition_: str | None = None,
     condition_value: int | None = None,
+    is_debuff: bool = False,
 ) -> BuffData:
     return BuffData(
         id=buff_id,
@@ -61,6 +65,7 @@ def make_buff_data(
         value=value,
         condition_=condition_,
         condition_value=condition_value,
+        is_debuff=is_debuff,
     )
 
 
@@ -739,27 +744,197 @@ class TestBuffDuration:
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
         assert len(buffs) == 0
 
-    def test_passive_buff_never_removed(self):
-        buff = make_buff_data(
-            "패시브",
-            "BuffAtk",
-            duration_turn_value=None,
-            duration_count_value=None,
-            value_type=ValueType.INTEGER,
-            value=1,
+    def test_passive_skill_wrapper_never_removed(self):
+        from battle.objects.define import ValueSourceType
+        from battle.objects.passive_skill.models import (
+            PassiveSkillData,
+            PassiveSkillTargetType,
+            PassiveSkillTrigger,
         )
-        ctx = make_context(buff)
+        from battle.objects.skill.effects import SkillEffectHeal
+
+        passive = PassiveSkillData(
+            id="패시브",
+            trigger=PassiveSkillTrigger.ON_ACTION,
+            target_type=PassiveSkillTargetType.SELF,
+            effect=SkillEffectHeal(
+                ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None
+            ),
+            condition_class_name=None,
+            condition_value=None,
+            description="",
+        )
+        ctx = make_context(passive_skill_dict={"패시브": passive})
         ctx.add_character(
-            get_test_preset("대상", passive_buff_id="패시브"),
+            get_test_preset("대상", passive_skill_id="패시브"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
 
-        # 여러 라운드 종료
         for _ in range(5):
             ctx.on_finish_round()
 
-        buffs = ctx.buff_container.get_buffs_by(
-            CharacterId("대상"), BuffApplyTiming.ON_ACTION
+        buffs = ctx.buff_container.get_buffs_by(CharacterId("대상"), None)
+        assert any(b.id == "패시브" for b in buffs)
+
+
+class TestPassiveSkillSelfHealOnGivenDamage:
+    @pytest.fixture
+    def ctx(self):
+        from battle.objects.define import ValueSourceType
+        from battle.objects.passive_skill.models import (
+            PassiveSkillData,
+            PassiveSkillTargetType,
+            PassiveSkillTrigger,
         )
-        assert len(buffs) > 0
+        from battle.objects.skill.effects import SkillEffectDamage, SkillEffectHeal
+
+        lifesteal_passive = PassiveSkillData(
+            id="생명력 흡수",
+            trigger=PassiveSkillTrigger.ON_ACTION,
+            target_type=PassiveSkillTargetType.SELF,
+            effect=SkillEffectHeal(ValueSourceType.GIVEN_DAMAGE, 50, None, None, None),
+            condition_class_name=None,
+            condition_value=None,
+            description="",
+        )
+        attack_skill = SkillData(
+            id="고정 공격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=1,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None
+                )
+            ],
+            description="",
+        )
+        return make_context(
+            skill_dict={"고정 공격": attack_skill},
+            passive_skill_dict={"생명력 흡수": lifesteal_passive},
+        )
+
+    def test_self_heal_after_attack(self, ctx):
+        """고정 20 대미지 공격 후 50% = 10만큼 자신이 회복된다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset(
+                "공격수",
+                initial_hp=50,
+                max_hp=100,
+                skill_1_id="고정 공격",
+                passive_skill_id="생명력 흡수",
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+
+        attacker_id = CharacterId("공격수")
+        hp_before = ctx.characters[attacker_id].status.curr_hp
+
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/고정 공격/적군]")
+        )
+
+        # 고정 20 대미지의 50% = 10 자기 회복
+        assert ctx.characters[attacker_id].status.curr_hp == hp_before + 10
+
+
+class TestPassiveSkillSelfHealOnGivenHeal:
+    """ON_ACTION 패시브 스킬 + SkillEffectHeal(GIVEN_HEAL) + HealedNonSelfCondition: 공명 효과."""
+
+    @pytest.fixture
+    def ctx(self):
+        from battle.objects.define import ValueSourceType
+        from battle.objects.passive_skill.models import (
+            PassiveSkillData,
+            PassiveSkillTargetType,
+            PassiveSkillTrigger,
+        )
+        from battle.objects.skill.effects import SkillEffectHeal
+
+        resonance_passive = PassiveSkillData(
+            id="공명",
+            trigger=PassiveSkillTrigger.ON_ACTION,
+            target_type=PassiveSkillTargetType.SELF,
+            effect=SkillEffectHeal(ValueSourceType.GIVEN_HEAL, 50, None, None, None),
+            condition_class_name="HealedNonSelfCondition",
+            condition_value=None,
+            description="",
+        )
+        heal_skill = SkillData(
+            id="회복 스킬",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=1,
+            effects=[
+                SkillEffectHeal(
+                    ValueSourceType.FIXED, 40, ValueType.INTEGER, None, None
+                )
+            ],
+            description="",
+        )
+        return make_context(
+            skill_dict={"회복 스킬": heal_skill},
+            passive_skill_dict={"공명": resonance_passive},
+        )
+
+    def test_self_heal_triggers_when_healing_other(self, ctx):
+        """공명 패시브 보유자가 타인을 회복하면 자신도 회복량의 50%를 회복한다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset(
+                "힐러",
+                initial_hp=50,
+                max_hp=100,
+                skill_1_id="회복 스킬",
+                passive_skill_id="공명",
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("환자", initial_hp=10, max_hp=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+
+        healer_id = CharacterId("힐러")
+        healer_hp_before = ctx.characters[healer_id].status.curr_hp
+
+        manager.process_command(
+            parse_character_command(healer_id, "[스킬/회복 스킬/환자]")
+        )
+
+        # 힐러 자신도 40 * 0.5 = 20 회복해야 한다
+        assert ctx.characters[healer_id].status.curr_hp == healer_hp_before + 20
+
+    def test_no_self_heal_when_healing_self(self, ctx):
+        """공명 패시브 보유자가 자기 자신을 회복할 때는 추가 회복이 발생하지 않는다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset(
+                "힐러",
+                initial_hp=20,
+                max_hp=100,
+                skill_1_id="회복 스킬",
+                passive_skill_id="공명",
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+
+        healer_id = CharacterId("힐러")
+
+        manager.process_command(
+            parse_character_command(healer_id, "[스킬/회복 스킬/힐러]")
+        )
+
+        # 자기 자신을 회복할 때는 추가 회복이 없으므로 정확히 40만 회복
+        assert ctx.characters[healer_id].status.curr_hp == 60

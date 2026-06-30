@@ -39,6 +39,7 @@ def buff_atk_data() -> BuffData:
         value=1,
         condition_=None,
         condition_value=None,
+        is_debuff=False,
         description="",
     )
 

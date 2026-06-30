@@ -12,7 +12,6 @@ from battle.exceptions import (
     error_target_does_not_exist,
     error_too_many_characters,
 )
-from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
@@ -24,6 +23,8 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId, ValueWithModifiers
+from battle.objects.passive_skill.models import PassiveSkillData
+from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import SkillData
 
 
@@ -32,11 +33,15 @@ class BattlefieldContext:
         self,
         buff_dict: dict[str, BuffData],
         skill_dict: dict[str, SkillData],
+        passive_skill_dict: "dict[str, PassiveSkillData] | None" = None,
         *,
         milestone_n: int = 1,
     ):
         self._buff_dictionary: dict[str, BuffData] = buff_dict
         self._skill_dictionary: dict[str, SkillData] = skill_dict
+        self._passive_skill_dictionary: dict[str, PassiveSkillData] = (
+            passive_skill_dict or {}
+        )
         self.milestone_n: int = milestone_n
 
         self.characters: dict[CharacterId, CombatCharacter] = {}
@@ -60,6 +65,7 @@ class BattlefieldContext:
 
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
+        self.moved_this_round: set[CharacterId] = set()
 
     def __str__(self):
         enemy_str = []
@@ -104,6 +110,7 @@ class BattlefieldContext:
             if index != BattlefieldColumnIndex.NONE
         }
         self.prev_round_results = []
+        self.moved_this_round = set()
 
     def add_character(
         self,
@@ -139,9 +146,14 @@ class BattlefieldContext:
             skills=skills,
         )
 
-        if data.passive_buff_id:
-            passive_buff_add_data = BuffAddData(char_id, char_id, data.passive_buff_id)
-            self.buff_container.add(passive_buff_add_data)
+        if (
+            data.passive_skill_id
+            and data.passive_skill_id in self._passive_skill_dictionary
+        ):
+            wrapper = PassiveSkillWrapperBuff.create(
+                char_id, self._passive_skill_dictionary[data.passive_skill_id]
+            )
+            self.buff_container.add_passive_wrapper(wrapper)
 
         maybe_empty_slot = self.try_find_empty_slot(faction, column_idx)
 
@@ -203,6 +215,7 @@ class BattlefieldContext:
 
         self._remove_from_position_map(char_id)
         self.position_map[char.faction][to_position][empty_slot] = char_id
+        self.moved_this_round.add(char_id)
 
     def apply_damage(
         self,
@@ -239,6 +252,7 @@ class BattlefieldContext:
         return final_value
 
     def on_start_round(self):
+        self.moved_this_round = set()
         self.buff_container.on_round_start()
         for character in self.characters.values():
             character.status.remaining_cost = character.status[
