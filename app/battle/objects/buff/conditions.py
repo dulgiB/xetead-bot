@@ -233,3 +233,24 @@ class EnemyInRangeCountCondition(Condition):
             )
         )
         return enemy_count >= self.value
+
+
+@dataclass(frozen=True)
+class TargetIsInRangeCondition(Condition):
+    """attacker_or_target이 holder의 사거리 내에 있을 때 True. ON_ENEMY_MOVE 견제 패시브 등에 사용."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if attacker_or_target is None:
+            return False
+        holder_char = context.characters.get(holder)
+        if holder_char is None:
+            return False
+        holder_pos = context.find_character_position(holder)
+        target_pos = context.find_character_position(attacker_or_target)
+        holder_range = holder_char.status[CombatStatType.RANGE]
+        return is_reachable(holder_pos, target_pos, holder_range)
