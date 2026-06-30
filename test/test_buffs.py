@@ -20,11 +20,13 @@ from battle.objects.define import (
     BuffApplyTiming,
     BuffCountDeductCondition,
     FactionType,
+    ValueSourceType,
     ValueType,
 )
 from battle.objects.models import CharacterId
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
+    SkillEffectDamage,
     SkillEffectHeal,
 )
 from battle.objects.skill.models import SkillData
@@ -593,6 +595,84 @@ class TestBuffTaunt:
 
         assert ctx.characters[CharacterId("공격수")].status.curr_hp == hp_dealer_before
         assert ctx.characters[CharacterId("도발자")].status.curr_hp < hp_taunter_before
+
+    def test_taunt_redirects_skill_damage_and_attached_debuff(self):
+        """도발받은 적이 대미지+디버프 스킬을 쓰면, 대미지뿐 아니라 딸린 디버프도
+        도발자에게 함께 적용되어야 한다."""
+        taunt_buff = make_buff_data("도발", "BuffTaunt")
+        debuff = make_buff_data("디버프", "BuffNoDamage")
+        taunt_skill = make_buff_skill("도발 스킬", "도발")
+        # 적군 스킬: 대미지(POST) + 디버프(POST)
+        enemy_skill = SkillData(
+            id="저주 일격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=2,
+            effects=[
+                SkillEffectDamage(
+                    value_source=ValueSourceType.FIXED,
+                    value=10,
+                    value_type=ValueType.INTEGER,
+                    buff_id=None,
+                    buff_add_timing=None,
+                ),
+                SkillEffectAddBuff(
+                    value_source=None,
+                    value=None,
+                    value_type=None,
+                    buff_id="디버프",
+                    buff_add_timing=RoundPhaseType.ENEMY_POST_ACTION,
+                ),
+            ],
+            description="",
+        )
+        ctx = make_context(
+            taunt_buff,
+            debuff,
+            skill_dict={"도발 스킬": taunt_skill, "저주 일격": enemy_skill},
+        )
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("도발자", skill_1_id="도발 스킬"),
+            FactionType.ALLY, BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군", skill_1_id="저주 일격"),
+            FactionType.ENEMY, BattlefieldColumnIndex(1),
+        )
+
+        # 적이 공격수에게 저주 일격 선언
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[스킬/저주 일격/공격수]")
+        )
+        # 아군 페이즈: 도발자가 적을 도발
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자"), "[스킬/도발 스킬/적군]")
+        )
+
+        hp_dealer_before = ctx.characters[CharacterId("공격수")].status.curr_hp
+        hp_taunter_before = ctx.characters[CharacterId("도발자")].status.curr_hp
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # 대미지: 공격수 무사, 도발자 피격
+        assert ctx.characters[CharacterId("공격수")].status.curr_hp == hp_dealer_before
+        assert ctx.characters[CharacterId("도발자")].status.curr_hp < hp_taunter_before
+
+        # 디버프도 도발자에게만 적용되고 공격수에게는 적용되지 않아야 한다.
+        dealer_buffs = ctx.buff_container.get_buffs_by(
+            CharacterId("공격수"), BuffApplyTiming.ON_ACTION
+        )
+        taunter_buffs = ctx.buff_container.get_buffs_by(
+            CharacterId("도발자"), BuffApplyTiming.ON_ACTION
+        )
+        assert not any(b.id == "디버프" for b in dealer_buffs)
+        assert any(b.id == "디버프" for b in taunter_buffs)
 
 
 class TestBuffDuration:
