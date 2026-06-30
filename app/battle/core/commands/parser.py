@@ -13,8 +13,8 @@ kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{Ha
 
 command_base_format = regex.compile(r".*\[\s*(?P<command>.+)\s*].*")
 
-# 이동 :: 이동/1
-command_format_move = regex.compile(r"^\s*이동\s*/\s*(?P<pos>[1-7])\s*$")
+# 이동 :: 이동/1 또는 이동/1열
+command_format_move = regex.compile(r"^\s*이동\s*/\s*(?P<pos>[1-7]열?)\s*$")
 
 # 기본 공격 :: 공격/대상
 command_format_attack = regex.compile(
