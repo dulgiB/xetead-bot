@@ -28,8 +28,8 @@ def _get_part_cost(
         return 1
     elif part.type_ == ActionType.SKILL and part.skill_id is not None:
         return context.get_skill_data_by_id(part.skill_id).cost
-    elif part.type_ == ActionType.USE_ITEM:
-        return 1
+    elif part.type_ == ActionType.USE_ITEM and part.item_id is not None:
+        return context.get_item_data_by_id(part.item_id).cost
     elif part.type_ == ActionType.ADMIN:
         return 0
     else:

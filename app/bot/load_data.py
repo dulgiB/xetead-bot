@@ -4,9 +4,11 @@ import os
 
 import gspread
 from battle.objects.buff.models import BuffData
+from battle.objects.item.models import ItemData
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
 from gspread.utils import ValueRenderOption
+from spreadsheets.inventory import Inventory
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from spreadsheets.models.quest import (
@@ -24,17 +26,22 @@ def load_all_data() -> tuple[
     dict[str, BuffData],
     dict[str, SkillData],
     dict[str, PassiveSkillData],
+    dict[str, ItemData],
+    Inventory,
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, NoncombatCharacterDataFromSpreadsheet],
     gspread.Spreadsheet,
 ]:
     """
-    스프레드시트에서 버프·스킬·패시브 스킬·캐릭터 데이터를 로드한다.
-    반환값: (buff_dict, skill_dict, passive_skill_dict, char_dict, name_dict, noncombat_char_dict, spreadsheet)
+    스프레드시트에서 버프·스킬·패시브 스킬·아이템·인벤토리·캐릭터 데이터를 로드한다.
+    반환값: (buff_dict, skill_dict, passive_skill_dict, item_dict, inventory,
+             char_dict, name_dict, noncombat_char_dict, spreadsheet)
       - buff_dict:           버프 id → BuffData
       - skill_dict:          스킬 id → SkillData
       - passive_skill_dict:  패시브 스킬 id → PassiveSkillData
+      - item_dict:           아이템 id → ItemData
+      - inventory:           (캐릭터 이름, 아이템 이름) → 보유 개수 (시트 write-back 포함)
       - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
       - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체)
       - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
@@ -75,9 +82,53 @@ def load_all_data() -> tuple[
     except gspread.exceptions.WorksheetNotFound:
         logger.warning("'패시브 스킬' 시트를 찾을 수 없습니다. 패시브 스킬 없이 로드합니다.")
 
+    item_dict = load_item_data(db)
+    inventory = load_inventory(db)
+
     char_dict, name_dict, noncombat_char_dict = load_char_data(db)
 
-    return buff_dict, skill_dict, passive_skill_dict, char_dict, name_dict, noncombat_char_dict, db
+    return (
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        inventory,
+        char_dict,
+        name_dict,
+        noncombat_char_dict,
+        db,
+    )
+
+
+def load_item_data(spreadsheet: gspread.Spreadsheet) -> dict[str, ItemData]:
+    """'아이템' 시트를 읽어 아이템 id → ItemData dict를 반환한다."""
+    try:
+        item_raw = spreadsheet.worksheet("아이템").get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning("'아이템' 시트를 찾을 수 없습니다. 아이템 없이 로드합니다.")
+        return {}
+
+    return {r["id"]: ItemData.from_dict(r) for r in item_raw if r.get("id")}
+
+
+def load_inventory(spreadsheet: gspread.Spreadsheet) -> Inventory:
+    """'인벤토리' 시트를 읽어 (캐릭터 이름, 아이템 이름) → 개수 Inventory를 반환한다."""
+    try:
+        inventory_raw = spreadsheet.worksheet("인벤토리").get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning("'인벤토리' 시트를 찾을 수 없습니다. 인벤토리 없이 로드합니다.")
+        return Inventory({}, spreadsheet)
+
+    counts: dict[tuple[str, str], int] = {
+        (r["character_name"], r["item_id"]): int(r["count"] or 0)
+        for r in inventory_raw
+        if r.get("character_name") and r.get("item_id")
+    }
+    return Inventory(counts, spreadsheet)
 
 
 def load_char_data(

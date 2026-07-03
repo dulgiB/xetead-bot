@@ -15,6 +15,9 @@ from battle.core.commands.models import (
 from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
+    error_item_does_not_exist,
+    error_item_not_usable_here,
+    error_no_item_in_inventory,
     error_no_remaining_cost,
     error_skill_not_registered,
     error_target_does_not_exist,
@@ -88,6 +91,11 @@ def process_ally_command(
     # 코스트 차감 - 검증 통과 후 실제 처리 시점에 차감
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
+
+    # 아이템 소비 - 검증·처리 완료 후 보유 개수 차감 (시트에도 즉시 반영)
+    for part in command.parts:
+        if part.type_ == ActionType.USE_ITEM and part.item_id is not None:
+            context.inventory.consume(command.user_id.name, part.item_id)
 
     return CommandProcessResult(original_command=command, part_results=results_per_part)
 
@@ -163,7 +171,7 @@ def try_expansion_if_valid(
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
 
-    # 2. 스킬 존재 여부 및 대상 수 확인
+    # 2. 스킬/아이템 존재 여부 및 대상 수 확인
     for part in command.parts:
         if part.type_ == ActionType.SKILL and part.skill_id is not None:
             skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
@@ -176,6 +184,19 @@ def try_expansion_if_valid(
                     )
                 )
 
+        elif part.type_ == ActionType.USE_ITEM and part.item_id is not None:
+            # 대련 등 아이템을 사용할 수 없는 전장인지 확인
+            if not context.allow_item_usage:
+                raise CommandValidationError(error_item_not_usable_here())
+            # "아이템" 시트에 등록된 아이템인지 확인
+            if not context.has_item(part.item_id):
+                raise CommandValidationError(error_item_does_not_exist(part.item_id))
+            # 인벤토리에 보유하고 있는지 확인
+            if context.inventory.get_count(command.user_id.name, part.item_id) <= 0:
+                raise CommandValidationError(
+                    error_no_item_in_inventory(part.item_id)
+                )
+
     # 3. 코스트 확인
     # 커맨드 전체의 코스트를 한꺼번에 산출한다. (되는 데까지 처리해주지 않고 전체 코스트가 부족하다면 아예 미처리)
     needed_cost = get_total_cost(command.parts, command.user_id, context)
@@ -186,6 +207,17 @@ def try_expansion_if_valid(
 
     expanded_command_data_list = expand_character_command(command, context)
     for command_data in expanded_command_data_list:
+        # 아이템은 고유 사거리를 사용하고, 그 외(공격/스킬)는 캐릭터의 사거리 스탯을 사용한다.
+        part = command_data.original_part
+        if (
+            part is not None
+            and part.type_ == ActionType.USE_ITEM
+            and part.item_id is not None
+        ):
+            effective_range = context.get_item_data_by_id(part.item_id).attack_range
+        else:
+            effective_range = attack_range
+
         for sub_data in command_data.data_per_effect:
             if sub_data is None:
                 continue
@@ -205,7 +237,7 @@ def try_expansion_if_valid(
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
                 target_pos = context.find_character_position(target_id)
-                if not is_reachable(user_pos, target_pos, attack_range):
+                if not is_reachable(user_pos, target_pos, effective_range):
                     raise CommandValidationError(
                         error_attack_position_too_far(target_pos)
                     )

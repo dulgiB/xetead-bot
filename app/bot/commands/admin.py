@@ -116,7 +116,13 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
     state.char_dict, state.name_dict, state.noncombat_char_dict = load_char_data(
         state.spreadsheet
     )
-    state.session = BattleSession(state.buff_dict, state.skill_dict, state.passive_skill_dict)
+    state.session = BattleSession(
+        state.buff_dict,
+        state.skill_dict,
+        state.passive_skill_dict,
+        state.item_dict,
+        state.inventory,
+    )
     reply = "◊ 전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨주세요."
     return AdminCommandResult(reply, set_preparation_post=True)
 

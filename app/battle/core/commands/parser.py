@@ -111,7 +111,15 @@ def parse_character_command(
                     d = match.capturesdict()
                     item_name = d["item_name"][0].strip()
                     if d["targets"]:
-                        targets = d["targets"][0].split("/")
+                        # 스킬과 동일하게 열(column) 또는 캐릭터 이름으로 변환한다.
+                        targets = []
+                        for target in d["targets"][0].split("/"):
+                            try:
+                                targets.append(
+                                    BattlefieldColumnIndex.from_str(target.strip())
+                                )
+                            except ValueError:
+                                targets.append(CharacterId(target.strip()))
                     else:
                         # 대상을 명시하지 않으면 자신에게 사용한 것으로 간주
                         targets = [user_id]

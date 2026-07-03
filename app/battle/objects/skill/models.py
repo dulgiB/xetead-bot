@@ -68,6 +68,57 @@ class SkillEffectBase(abc.ABC):
         raise ValueError(self.target_override)
 
 
+def parse_skill_effect(
+    data: dict[str, str | int], index: int
+) -> Optional[SkillEffectBase]:
+    """스프레드시트 행에서 index번째 효과(effect_{index} 등)를 파싱한다.
+
+    스킬(effect_0~2)과 아이템(effect_0) 양쪽에서 재사용된다.
+    effect_{index} 컬럼이 비어 있으면 None을 반환한다.
+    """
+    effect_name = data.get(f"effect_{index}")
+    if not effect_name:
+        return None
+
+    skill_effect_module = importlib.import_module("battle.objects.skill.effects")
+    effect: Type[SkillEffectBase] = getattr(skill_effect_module, effect_name)
+
+    value_source = (
+        ValueSourceType(data[f"value_source_{index}"])
+        if data[f"value_source_{index}"]
+        else None
+    )
+    value = data[f"value_{index}"] if data[f"value_{index}"] else None
+    value_type = (
+        SkillValueType(data[f"value_type_{index}"])
+        if data[f"value_type_{index}"]
+        else None
+    )
+    buff_name = data[f"buff_name_{index}"] if data[f"buff_name_{index}"] else None
+    buff_add_timing = (
+        RoundPhaseType(data[f"buff_add_timing_{index}"])
+        if data[f"buff_add_timing_{index}"]
+        else None
+    )
+    target_override = (
+        SkillTargetOverrideType(data[f"target_override_{index}"])
+        if data.get(f"target_override_{index}")
+        else None
+    )
+    apply_timing_raw = data.get(f"effect_apply_timing_{index}")
+    apply_timing = RoundPhaseType(apply_timing_raw) if apply_timing_raw else None
+
+    return effect(
+        value_source=value_source,
+        value=value,
+        value_type=value_type,
+        buff_id=buff_name,
+        buff_add_timing=buff_add_timing,
+        target_override=target_override,
+        apply_timing=apply_timing,
+    )
+
+
 @dataclass(frozen=True)
 class Skill:
     target_rule: SkillTargetRule
@@ -86,51 +137,10 @@ class SkillData:
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "SkillData":
         skill_effects: list[SkillEffectBase] = []
-        skill_effect_module = importlib.import_module("battle.objects.skill.effects")
 
         for i in range(MAX_EFFECT_COUNT):
-            if effect_name := data.get(f"effect_{i}"):
-                effect: Type[SkillEffectBase] = getattr(
-                    skill_effect_module, effect_name
-                )
-                value_source = (
-                    ValueSourceType(data[f"value_source_{i}"])
-                    if data[f"value_source_{i}"]
-                    else None
-                )
-                value = data[f"value_{i}"] if data[f"value_{i}"] else None
-                value_type = (
-                    SkillValueType(data[f"value_type_{i}"])
-                    if data[f"value_type_{i}"]
-                    else None
-                )
-                buff_name = data[f"buff_name_{i}"] if data[f"buff_name_{i}"] else None
-                buff_add_timing = (
-                    RoundPhaseType(data[f"buff_add_timing_{i}"])
-                    if data[f"buff_add_timing_{i}"]
-                    else None
-                )
-                target_override = (
-                    SkillTargetOverrideType(data[f"target_override_{i}"])
-                    if data.get(f"target_override_{i}")
-                    else None
-                )
-                apply_timing_raw = data.get(f"effect_apply_timing_{i}")
-                apply_timing = (
-                    RoundPhaseType(apply_timing_raw) if apply_timing_raw else None
-                )
-
-                skill_effects.append(
-                    effect(
-                        value_source=value_source,
-                        value=value,
-                        value_type=value_type,
-                        buff_id=buff_name,
-                        buff_add_timing=buff_add_timing,
-                        target_override=target_override,
-                        apply_timing=apply_timing,
-                    )
-                )
+            if (effect := parse_skill_effect(data, i)) is not None:
+                skill_effects.append(effect)
 
         return SkillData(
             id=data["id"],

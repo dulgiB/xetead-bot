@@ -22,10 +22,12 @@ from battle.objects.define import (
     CombatStatType,
     FactionType,
 )
+from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import SkillData
+from spreadsheets.inventory import Inventory
 
 
 class BattlefieldContext:
@@ -34,6 +36,8 @@ class BattlefieldContext:
         buff_dict: dict[str, BuffData],
         skill_dict: dict[str, SkillData],
         passive_skill_dict: "dict[str, PassiveSkillData] | None" = None,
+        item_dict: "dict[str, ItemData] | None" = None,
+        inventory: "Inventory | None" = None,
         *,
         milestone_n: int = 1,
     ):
@@ -42,6 +46,8 @@ class BattlefieldContext:
         self._passive_skill_dictionary: dict[str, PassiveSkillData] = (
             passive_skill_dict or {}
         )
+        self._item_dictionary: dict[str, ItemData] = item_dict or {}
+        self.inventory: Inventory = inventory or Inventory({})
         self.milestone_n: int = milestone_n
 
         self.characters: dict[CharacterId, CombatCharacter] = {}
@@ -269,3 +275,14 @@ class BattlefieldContext:
 
     def get_skill_data_by_id(self, skill_id: str) -> SkillData:
         return self._skill_dictionary[skill_id]
+
+    @property
+    def allow_item_usage(self) -> bool:
+        """이 전장에서 아이템 커맨드를 사용할 수 있는지 여부."""
+        return True
+
+    def has_item(self, item_id: str) -> bool:
+        return item_id in self._item_dictionary
+
+    def get_item_data_by_id(self, item_id: str) -> ItemData:
+        return self._item_dictionary[item_id]

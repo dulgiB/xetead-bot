@@ -7,8 +7,10 @@ from battle.core.commands.models import CharacterCommand
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.models import BuffData
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
+from battle.objects.item.models import ItemData
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
+from spreadsheets.inventory import Inventory
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 _PHASE_ORDER: list[RoundPhaseType] = [
@@ -25,8 +27,12 @@ class BattleSession:
         buff_dict: dict[str, BuffData],
         skill_dict: dict[str, SkillData],
         passive_skill_dict: Optional[dict[str, PassiveSkillData]] = None,
+        item_dict: Optional[dict[str, ItemData]] = None,
+        inventory: Optional[Inventory] = None,
     ) -> None:
-        self.context = BattlefieldContext(buff_dict, skill_dict, passive_skill_dict)
+        self.context = BattlefieldContext(
+            buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
+        )
         self.manager = RoundManager(self.context)
         self.started: bool = False
         self._phase_idx: int = 0
