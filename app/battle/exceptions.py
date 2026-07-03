@@ -35,3 +35,15 @@ def error_too_many_targets(skill_id: str, max_count: int, actual_count: int) -> 
 
 def error_invalid_command_format() -> str:
     return "커맨드가 잘못되었습니다. 형식을 다시 확인해 주세요."
+
+
+def error_item_does_not_exist(item_id: str) -> str:
+    return f"지정한 아이템({item_id})이 등록되어 있지 않아 사용할 수 없습니다."
+
+
+def error_no_item_in_inventory(item_id: str) -> str:
+    return f"지정한 아이템({item_id})을 보유하고 있지 않아 사용할 수 없습니다."
+
+
+def error_item_not_usable_here() -> str:
+    return "이 전투에서는 아이템을 사용할 수 없습니다."

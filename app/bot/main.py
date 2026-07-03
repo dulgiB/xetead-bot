@@ -11,12 +11,14 @@ from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.buff.models import BuffData
 from battle.objects.define import BattlefieldColumnIndex
+from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
 from battle.practice.define import PracticeRoundPhase, SideType
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
+from spreadsheets.inventory import Inventory
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 
@@ -96,6 +98,8 @@ class BotState:
     buff_dict: dict[str, BuffData]
     skill_dict: dict[str, SkillData]
     passive_skill_dict: dict[str, PassiveSkillData]
+    item_dict: dict[str, ItemData]
+    inventory: Inventory
     char_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # mastodon_id → data
     name_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # name → data
     noncombat_char_dict: dict[
@@ -515,13 +519,23 @@ def _handle_practice_command(
 
 
 def main() -> None:
-    buff_dict, skill_dict, passive_skill_dict, char_dict, name_dict, noncombat_char_dict, spreadsheet = (
-        load_all_data()
-    )
+    (
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        inventory,
+        char_dict,
+        name_dict,
+        noncombat_char_dict,
+        spreadsheet,
+    ) = load_all_data()
     state = BotState(
         buff_dict=buff_dict,
         skill_dict=skill_dict,
         passive_skill_dict=passive_skill_dict,
+        item_dict=item_dict,
+        inventory=inventory,
         char_dict=char_dict,
         name_dict=name_dict,
         noncombat_char_dict=noncombat_char_dict,

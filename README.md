@@ -47,6 +47,38 @@ PYTHONPATH=app python app/bot/main.py
 | `gold`                                                                           | 보유 골드                             |
 | `daily_quest_date`                                                               | 마지막 일일 의뢰 날짜 (`YYYY-MM-DD`)       |
 
+### 아이템 시트
+
+독립적인 코스트와 사거리를 가진 소비형 슬롯. 효과·대상 규칙은 스킬 시스템을 그대로 재사용하며, 효과는 **1개**(`effect_0`)만 가진다.
+
+| 컬럼                                                                | 설명                                                                                    |
+|-------------------------------------------------------------------|---------------------------------------------------------------------------------------|
+| `id`                                                              | 아이템 이름 (= ID, 고유)                                                                     |
+| `target_rule`                                                     | 대상 규칙 클래스명 (`SkillTargetRuleSelf` / `SkillTargetRuleNamed` / `SkillTargetRuleColumn`) |
+| `cost`                                                            | 코스트                                                                                   |
+| `range`                                                           | 사거리 (아이템 고유 — 캐릭터 사거리와 무관)                                                            |
+| `effect_0`                                                        | 효과 클래스명 (스킬 효과 재사용: `SkillEffectDamage`, `SkillEffectHeal`, `SkillEffectAddBuff` 등)   |
+| `value_source_0`, `value_0`, `value_type_0`                       | 효과 수치 정의 (대미지/회복 계산 참조)                                                               |
+| `buff_name_0`                                                     | 버프 부여 효과일 때 버프 ID                                                                     |
+| `buff_add_timing_0`, `target_override_0`, `effect_apply_timing_0` | 선택 옵션 (스킬 `effect_0` 컬럼과 동일 구조)                                                       |
+
+- `target_count` 컬럼은 없다. 대상 수 상한 검증 없이 `target_rule`에 위임한다.
+- 커맨드 형식은 [아이템](#아이템) 참조.
+
+### 인벤토리 시트
+
+캐릭터별 아이템 보유 현황. `(character_name, item_id)`가 key인 dict처럼 취급한다.
+
+| 컬럼               | 설명     |
+|------------------|--------|
+| `character_name` | 캐릭터 이름 |
+| `item_id`        | 아이템 이름 |
+| `count`          | 보유 개수  |
+
+- 아이템 사용이 확정되면 `count`가 **즉시 1 차감되어 시트에 기록**된다.
+- 보유 개수가 0이거나 인벤토리에 없는 아이템은 사용할 수 없다.
+- **대련·상시전투에서는 아이템을 사용할 수 없다.**
+
 ### 일일 의뢰 시트
 
 | 컬럼            | 설명                          |

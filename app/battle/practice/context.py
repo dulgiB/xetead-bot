@@ -33,8 +33,13 @@ class PracticeBattlefieldContext(BattlefieldContext):
     def __init__(
         self, buff_dict: dict[str, BuffData], skill_dict: dict[str, SkillData]
     ):
-        # 대련에는 milestone_n이 의미 없으므로 고정
+        # 대련에는 milestone_n이 의미 없으므로 고정. 아이템/인벤토리는 미지원.
         super().__init__(buff_dict, skill_dict, milestone_n=1)
+
+    @property
+    def allow_item_usage(self) -> bool:
+        # 대련/상시전투에서는 아이템 커맨드를 사용할 수 없다.
+        return False
 
     # ------------------------------------------------------------------
     # 공개 API (SideType 기반)

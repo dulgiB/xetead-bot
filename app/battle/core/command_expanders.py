@@ -199,6 +199,40 @@ def expand_character_command(
                 )
             )
 
+        elif part.type_ == ActionType.USE_ITEM and part.item_id is not None:
+            item_used = context.get_item_data_by_id(part.item_id).to_item_instance(
+                context, command.user_id
+            )
+
+            if (
+                taunted_target is not None
+                and not item_used.target_rule.ignores_input_targets
+            ):
+                target_characters = [taunted_target]
+            else:
+                target_characters = item_used.target_rule.get_targets(part.targets)
+
+            move_list, damage_list, heal_list, buff_add_list = (
+                item_used.data.effect.expand(
+                    context, command.user_id, target_characters
+                )
+            )
+
+            parts_list.append(
+                CommandPartData(
+                    original_part=part,
+                    data_per_effect=(
+                        CommandPartDataPerEffect(
+                            move_list=move_list,
+                            damage_list=damage_list,
+                            heal_list=heal_list,
+                            buff_add_list=buff_add_list,
+                            apply_timing=item_used.data.effect.apply_timing,
+                        ),
+                    ),
+                )
+            )
+
         else:
             raise CommandValidationError(error_invalid_command_format())
 
