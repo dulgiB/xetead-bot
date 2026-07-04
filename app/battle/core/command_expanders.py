@@ -204,13 +204,7 @@ def expand_character_command(
                 context, command.user_id
             )
 
-            if (
-                taunted_target is not None
-                and not item_used.target_rule.ignores_input_targets
-            ):
-                target_characters = [taunted_target]
-            else:
-                target_characters = item_used.target_rule.get_targets(part.targets)
+            target_characters = item_used.target_rule.get_targets(part.targets)
 
             move_list, damage_list, heal_list, buff_add_list = (
                 item_used.data.effect.expand(
