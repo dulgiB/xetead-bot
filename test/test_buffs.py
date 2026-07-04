@@ -192,6 +192,76 @@ class TestBuffAtk:
         damage_with_buff = hp_after_no_buff - hp_after_buff
         assert damage_with_buff > damage_no_buff
 
+    def test_atk_buff_reflected_in_bonus_damage_on_hit(self):
+        """BuffBonusDamageOnHit는 STAT_ATK를 참조하므로, 공격자의 BuffAtk가
+        반영된 값으로 추가 대미지가 계산되어야 한다."""
+        atk_buff = make_buff_data(
+            "공격력 증가", "BuffAtk", value_type=ValueType.INTEGER, value=50
+        )
+        retaliate_buff = make_buff_data(
+            "반격",
+            "BuffBonusDamageOnHit",
+            duration_turn_value=None,
+            value_type=ValueType.INTEGER,
+            value=20,  # coefficient = 0.2 → 최종 대미지 * 1.2
+        )
+        atk_buff_skill = make_buff_skill("버프 스킬", "공격력 증가")
+        weak_attack = SkillData(
+            id="약공격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+            ],
+            description="",
+        )
+        ctx = make_context(
+            atk_buff,
+            retaliate_buff,
+            skill_dict={"버프 스킬": atk_buff_skill, "약공격": weak_attack},
+        )
+        manager = setup_ally_phase(ctx)
+
+        attacker_id = CharacterId("공격수")
+        target_id = CharacterId("대상")
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="버프 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수", atk=5, skill_1_id="약공격"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        ctx.buff_container.add(
+            BuffAddData(given_by=target_id, applied_to=target_id, buff_id="반격")
+        )
+
+        # ATK 버프 없이 공격 (ATK=5 → 보너스 대미지 floor(5*1.2)=6, 고정 5 + 6 = 11)
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/약공격/대상]")
+        )
+        hp_after_no_buff = ctx.characters[target_id].status.curr_hp
+        assert hp_after_no_buff == 89
+
+        # 대상 원상 복구 후, 공격수에게 ATK 버프 부여
+        # → ATK 55 → 보너스 대미지 floor(55*1.2)=66, 고정 5 + 66 = 71
+        ctx.characters[target_id].status.curr_hp = 100
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/공격수]")
+        )
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/약공격/대상]")
+        )
+        hp_after_buff = ctx.characters[target_id].status.curr_hp
+        assert hp_after_buff == 29
+
 
 class TestBuffGivenDamage:
     """BuffGivenDamage: 공격 시 해당 캐릭터가 주는 대미지에 수정자를 적용한다."""
