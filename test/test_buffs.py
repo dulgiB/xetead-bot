@@ -625,6 +625,27 @@ class TestBuffDamageOverTime:
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ROUND_END)
         assert len(buffs) == 0
 
+    def test_dot_rejects_percent_value_type(self):
+        """value_type=PERCENT는 '고정 대미지'라는 버프 취지와 맞지 않으므로
+        조용히 정수로 취급되지 않고 명시적으로 에러를 발생시켜야 한다."""
+        buff = make_buff_data(
+            "독", "BuffDamageOverTime", value=10, value_type=ValueType.PERCENT
+        )
+        ctx = make_context(buff)
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("대상"),
+                applied_to=CharacterId("대상"),
+                buff_id="독",
+            )
+        )
+
+        with pytest.raises(ValueError):
+            ctx.on_finish_round()
+
 
 class TestBuffHealOverTime:
     """BuffHealOverTime: 라운드 종료 시 고정 회복량을 회복한다."""
