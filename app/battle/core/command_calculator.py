@@ -241,11 +241,25 @@ class CommandPartCalculator:
             return protector
         return None
 
+    @staticmethod
+    def _is_live_damage_calc(
+        context: "BattlefieldContext", damage_calc: "DamageCalculateData"
+    ) -> bool:
+        return (
+            damage_calc.base.attacker_id in context.characters
+            and damage_calc.base.target_id in context.characters
+        )
+
     def _process_damage(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         # 대상 치환(도발/희생 방어)은 process() 시작 시 _prepare_redirects에서 일괄 수행됨.
-        for damage_calc in list(
-            self.data_by_effect[effect_seq_number].damage_data_list
-        ):
+        # 리다이렉트로도 구제되지 않은, 이미 사망한 공격자/대상에 대한 항목은 건너뛴다.
+        # apply()가 무효화(BuffNoDamage 등)로 리스트 자체를 변경할 수 있으므로
+        # 두 번째 순회는 최신 리스트를 다시 읽는다.
+        for damage_calc in [
+            damage_calc
+            for damage_calc in self.data_by_effect[effect_seq_number].damage_data_list
+            if self._is_live_damage_calc(self.context, damage_calc)
+        ]:
             self._apply_buff_events(
                 effect_seq_number,
                 damage_calc.base.attacker_id,
@@ -258,7 +272,11 @@ class CommandPartCalculator:
                 BuffCountDeductCondition.ON_HIT,  # noqa: F821
                 damage_calc.base.attacker_id,
             )
-        for damage_calc in self.data_by_effect[effect_seq_number].damage_data_list:
+        for damage_calc in list(
+            self.data_by_effect[effect_seq_number].damage_data_list
+        ):
+            if not self._is_live_damage_calc(self.context, damage_calc):
+                continue
             attacker = self.context.characters[damage_calc.base.attacker_id]
             target = self.context.characters[damage_calc.base.target_id]
 
@@ -278,21 +296,38 @@ class CommandPartCalculator:
                 effect_seq_number,
             )
 
+    @staticmethod
+    def _is_live_heal_calc(
+        context: "BattlefieldContext", heal_calc: "HealCalculateData"
+    ) -> bool:
+        return (
+            heal_calc.base.healer_id in context.characters
+            and heal_calc.base.target_id in context.characters
+        )
+
     def _process_heal(self: "CommandPartCalculator", effect_seq_number: int) -> None:
+        # 이미 사망한 시전자/대상에 대한 항목은 건너뛴다. apply()가 무효화(BuffNoHeal 등)로
+        # 리스트 자체를 변경할 수 있으므로 두 번째 순회는 최신 리스트를 다시 읽는다.
+        for heal_calc in [
+            heal_calc
+            for heal_calc in self.data_by_effect[effect_seq_number].heal_data_list
+            if self._is_live_heal_calc(self.context, heal_calc)
+        ]:
+            self._apply_buff_events(
+                effect_seq_number,
+                heal_calc.base.healer_id,
+                None,
+                heal_calc.base.target_id,
+            )
+            self._apply_buff_events(
+                effect_seq_number,
+                heal_calc.base.target_id,
+                None,
+                heal_calc.base.healer_id,
+            )
         for heal_calc in list(self.data_by_effect[effect_seq_number].heal_data_list):
-            self._apply_buff_events(
-                effect_seq_number,
-                heal_calc.base.healer_id,
-                None,
-                heal_calc.base.target_id,
-            )
-            self._apply_buff_events(
-                effect_seq_number,
-                heal_calc.base.target_id,
-                None,
-                heal_calc.base.healer_id,
-            )
-        for heal_calc in self.data_by_effect[effect_seq_number].heal_data_list:
+            if not self._is_live_heal_calc(self.context, heal_calc):
+                continue
             heal_calc.result_value = self.context.apply_heal(
                 heal_calc.base.healer_id,
                 heal_calc.base.target_id,

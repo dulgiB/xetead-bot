@@ -131,3 +131,34 @@ def test_debuff_expires_after_one_round(stationary_debuff_data, marking_skill):
         ally_id, BuffApplyTiming.ON_ENEMY_POST_ACTION
     )
     assert len(remaining) == 0
+
+
+def test_target_removed_before_post_action_does_not_crash():
+    """PRE에서 지목된 대상이 ALLY_ACTION 중 제거(사망)되어도 POST_ACTION 처리는
+    KeyError 없이 안전하게 넘어가야 한다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    manager = RoundManager(ctx)  # 시작 시 ENEMY_PRE_ACTION
+
+    ally_id = CharacterId("아군 1")
+    enemy_id = CharacterId("적군 1")
+
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+
+    # PRE: 적군이 아군 1을 공격 선언 (대미지/힐은 POST에서 재전개되어 처리됨)
+    cmd = parse_character_command(enemy_id, "[공격/아군 1]")
+    manager.process_command(cmd)
+
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+
+    # ALLY_ACTION 중 아군 1이 사망 처리되어 전장에서 제거됨
+    ctx.remove_character(ally_id)
+
+    # POST_ACTION: 이미 사라진 대상에 대한 재전개가 KeyError 없이 처리되어야 한다
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+    assert ally_id not in ctx.characters
