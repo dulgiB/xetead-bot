@@ -3,6 +3,9 @@ import os
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 
 from battle.objects.define import BattlefieldColumnIndex, FactionType  # noqa: E402
+from battle.objects.models import CharacterId  # noqa: E402
+from battle.practice.define import SideType  # noqa: E402
+from bot.commands import admin as admin_module  # noqa: E402
 from bot.commands.admin import _cmd_battle_start  # noqa: E402
 from bot.main import BotState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
@@ -56,3 +59,24 @@ def test_battle_starts_when_at_least_one_placement_succeeds():
     assert state.session.started is True
     assert len(state.session.context.characters) == 1
     assert "전투 시작" in result.reply_text
+
+
+def test_investigation_battle_inline_placement_respects_faction_token(monkeypatch):
+    """[상시전투]와 함께 입력된 [배치/이름/아군 3열]은 '아군' 토큰대로
+    SIDE_1(아군)에 배치되어야 하며, 무조건 적(SIDE_2)으로 배치되면 안 된다."""
+    state = _make_state()
+    state.name_dict = {"동료": get_test_preset("동료")}
+    monkeypatch.setattr(
+        admin_module,
+        "load_char_data",
+        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+
+    result = admin_module._cmd_investigation_battle(
+        "[상시전투][배치/동료/아군 3열]", [], state
+    )
+
+    assert not result.reply_text or "오류" not in (result.game_post_text or "")
+    char_id = CharacterId("동료")
+    assert char_id in state.practice.context.characters
+    assert state.practice.context.get_side(char_id) == SideType.SIDE_1
