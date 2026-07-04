@@ -255,17 +255,29 @@ class CommandPartCalculator:
         # 리다이렉트로도 구제되지 않은, 이미 사망한 공격자/대상에 대한 항목은 건너뛴다.
         # apply()가 무효화(BuffNoDamage 등)로 리스트 자체를 변경할 수 있으므로
         # 두 번째 순회는 최신 리스트를 다시 읽는다.
-        for damage_calc in [
+        live_damage_calcs = [
             damage_calc
             for damage_calc in self.data_by_effect[effect_seq_number].damage_data_list
             if self._is_live_damage_calc(self.context, damage_calc)
-        ]:
+        ]
+
+        # 공격자 측 ON_ATTACK 버프는 광역 효과라도 행동(effect) 1회당 한 번만
+        # 적용/차감한다. GivenDamageModEvent 등은 자신이 attacker의 모든 대미지
+        # 항목을 내부에서 순회하므로, 여러 번 호출하면 대상 수만큼 중복 적용된다.
+        seen_attackers: set[CharacterId] = set()
+        for damage_calc in live_damage_calcs:
+            attacker_id = damage_calc.base.attacker_id
+            if attacker_id in seen_attackers:
+                continue
+            seen_attackers.add(attacker_id)
             self._apply_buff_events(
                 effect_seq_number,
-                damage_calc.base.attacker_id,
+                attacker_id,
                 BuffCountDeductCondition.ON_ATTACK,
                 damage_calc.base.target_id,
             )
+
+        for damage_calc in live_damage_calcs:
             self._apply_buff_events(
                 effect_seq_number,
                 damage_calc.base.target_id,

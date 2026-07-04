@@ -13,6 +13,7 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
@@ -243,6 +244,65 @@ class TestBuffGivenDamage:
         damage_with_buff = hp_after_no_buff - hp_after_buff
 
         assert damage_with_buff > damage_no_buff
+
+    def test_given_damage_buff_applied_once_per_aoe_action(self):
+        """광역 스킬로 여러 대상을 동시에 타격해도, 공격자 측 버프는 대상 하나당이
+        아니라 행동 1회당 한 번만 적용/차감되어야 한다."""
+        buff = make_buff_data(
+            "대미지 증가",
+            "BuffGivenDamage",
+            duration_turn_value=None,
+            duration_count_value=3,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_ATTACK,
+            value_type=ValueType.INTEGER,
+            value=10,
+        )
+        aoe_skill = SkillData(
+            id="광역기",
+            target_rule="SkillTargetRuleColumn",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                )
+            ],
+            description="",
+        )
+        ctx = make_context(buff, skill_dict={"광역기": aoe_skill})
+        manager = setup_ally_phase(ctx)
+
+        attacker_id = CharacterId("공격수")
+        ctx.add_character(
+            get_test_preset("공격수", skill_1_id="광역기"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군2"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=attacker_id, applied_to=attacker_id, buff_id="대미지 증가"
+            )
+        )
+
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/광역기/1열]")
+        )
+
+        # 고정 5 대미지 + 버프 고정 +10 = 15. 대상 수만큼 중복 적용되면 25가 된다.
+        assert ctx.characters[CharacterId("적군1")].status.curr_hp == 100 - 15
+        assert ctx.characters[CharacterId("적군2")].status.curr_hp == 100 - 15
+
+        buffs = ctx.buff_container.get_buffs_by(attacker_id, BuffApplyTiming.ON_ACTION)
+        assert len(buffs) == 1
+        # 대상이 둘이어도 행동은 1회이므로 count는 1만 소모되어야 한다.
+        assert buffs[0].duration.remaining_count == 2
 
 
 class TestBuffReceivedDamage:
