@@ -191,6 +191,12 @@ def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
     state.pending_placements.clear()
     state.pending_participants.clear()
 
+    if not state.session.context.characters:
+        reply_parts = ["◊ 배치에 모두 실패하여 전투를 시작하지 못했습니다."]
+        if errors:
+            reply_parts.append("⚠️ 오류:\n" + "\n".join(errors))
+        return AdminCommandResult("\n".join(reply_parts))
+
     # 3. 전투 시작
     state.session.start()
     state.battle_key = datetime.datetime.now(datetime.timezone.utc).isoformat()
