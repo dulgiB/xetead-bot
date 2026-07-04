@@ -2,12 +2,17 @@ import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 
+import itertools
+
 from battle.objects.define import BattlefieldColumnIndex, FactionType  # noqa: E402
 from battle.objects.models import CharacterId  # noqa: E402
+from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import SideType  # noqa: E402
+from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
 from bot.commands import admin as admin_module  # noqa: E402
 from bot.commands.admin import _cmd_battle_start  # noqa: E402
-from bot.main import BotState  # noqa: E402
+from bot.main import BotState, MastodonBotListener  # noqa: E402
+from bot.practice_state import PracticeBattleState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
 
@@ -80,3 +85,60 @@ def test_investigation_battle_inline_placement_respects_faction_token(monkeypatc
     char_id = CharacterId("동료")
     assert char_id in state.practice.context.characters
     assert state.practice.context.get_side(char_id) == SideType.SIDE_1
+
+
+class _FakeMastodon:
+    def __init__(self):
+        self._next_id = itertools.count(9000)
+
+    def status_post(self, *args, **kwargs):
+        return {"id": next(self._next_id)}
+
+
+def _make_notification(acct: str, status_id: int, in_reply_to_id: int, text: str) -> dict:
+    return {
+        "type": "mention",
+        "account": {"acct": acct},
+        "status": {
+            "id": status_id,
+            "content": f"<p>@bot {text}</p>",
+            "visibility": "public",
+            "in_reply_to_id": in_reply_to_id,
+            "mentions": [{"acct": "bot"}],
+        },
+    }
+
+
+def test_replying_again_to_stale_prep_post_does_not_restart_battle():
+    """포지션 선언이 완료되어 전투가 시작된 뒤, 같은 참가자가 실수로 원본
+    준비 게시물에 다시 답글을 달아도 전투가 재시작되면 안 된다."""
+    state = _make_state()
+    state.char_dict = {"user1": get_test_preset("동료")}
+
+    context = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    manager = PracticeRoundManager(context)
+    state.practice = PracticeBattleState(
+        context=context,
+        manager=manager,
+        is_investigation=True,
+        expected_accts=["user1"],
+        prep_post_id=1000,
+    )
+
+    listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification("user1", 1, 1000, "[아군/1열]")
+    )
+
+    assert state.practice.prep_post_id == 0
+    assert len(state.practice.context.characters) == 1
+    round_n_after_start = state.practice.round_n
+
+    # 같은 참가자가 이미 소모된 원본 준비 게시물(1000)에 다시 답글
+    listener.on_notification(
+        _make_notification("user1", 2, 1000, "[아군/2열]")
+    )
+
+    assert len(state.practice.context.characters) == 1
+    assert state.practice.round_n == round_n_after_start
