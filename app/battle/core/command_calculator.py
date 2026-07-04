@@ -7,7 +7,7 @@ from battle.core.commands.models import (
     DamageCalculateData,
     HealCalculateData,
 )
-from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.buff_base import BuffAddData, BuffBase
 from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.define import (
     BuffApplyTiming,
@@ -374,14 +374,18 @@ class CommandPartCalculator:
         buffs = self.context.buff_container.get_buffs_by(
             char_id, BuffApplyTiming.ON_ACTION
         )
-        events = [buff.create_event() for buff in buffs]
-        events.sort(key=lambda e: e.priority.value)
-        for event in events:
+        buff_events = [(buff, buff.create_event()) for buff in buffs]
+        buff_events.sort(key=lambda pair: pair[1].priority.value)
+
+        # 조건이 실제로 충족되어 발동한 버프만 지속 횟수를 소모한다.
+        applied_buffs: list[BuffBase] = []
+        for buff, event in buff_events:
             if event.is_applied(self.context, char_id, attacker_or_target):
                 event.apply(char_id, attacker_or_target, self, effect_seq_number)
+                applied_buffs.append(buff)
 
         if deduct_condition is not None:
-            for buff in buffs:
+            for buff in applied_buffs:
                 buff.duration.deduct_count(deduct_condition)
                 if buff.duration.finished:
                     self.context.buff_container.remove(buff.uid)

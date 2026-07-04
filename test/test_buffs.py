@@ -824,6 +824,70 @@ class TestBuffDuration:
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
         assert len(buffs) == 0
 
+    def test_count_duration_not_deducted_when_condition_not_met(self):
+        """버프의 발동 조건이 충족되지 않았다면, 피격/공격이 있었더라도
+        remaining_count가 소모되면 안 된다."""
+        buff = make_buff_data(
+            "테스트 버프",
+            "BuffReceivedDamage",
+            duration_turn_value=None,
+            duration_count_value=3,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_HIT,
+            value_type=ValueType.INTEGER,
+            value=-10,
+            condition_="SelfHpBelowCondition",
+            condition_value=30,
+        )
+        skill = make_buff_skill("버프 스킬", "테스트 버프")
+        weak_attack = SkillData(
+            id="약공격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+            ],
+            description="",
+        )
+        ctx = make_context(
+            buff, skill_dict={"버프 스킬": skill, "약공격": weak_attack}
+        )
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="버프 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군", skill_1_id="약공격"),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[스킬/약공격/대상]")
+        )
+
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+        )
+        target_id = CharacterId("대상")
+        buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
+        assert buffs[0].duration.remaining_count == 3
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # 5 데미지만 받아 HP 비율(30%)을 밑돌지 않으므로 조건 미충족 → 대미지 감소도,
+        # count 소모도 일어나지 않아야 한다.
+        assert ctx.characters[target_id].status.curr_hp == 95
+        buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
+        assert buffs[0].duration.remaining_count == 3
+
     def test_passive_skill_wrapper_never_removed(self):
         from battle.objects.define import ValueSourceType
         from battle.objects.passive_skill.models import (
