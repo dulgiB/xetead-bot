@@ -126,16 +126,18 @@ class MastodonBotListener(StreamListener):
         self._bot_acct = bot_acct
 
     def on_notification(self, notification: dict) -> None:
-        if notification["type"] != "mention":
-            return
-
-        account = notification["account"]
-        status = notification["status"]
-        acct: str = account["acct"]
-        status_id: int = status["id"]
-        in_reply_to_id: Optional[int] = status.get("in_reply_to_id")
-
+        acct: Optional[str] = None
+        status_id: Optional[int] = None
         try:
+            if notification["type"] != "mention":
+                return
+
+            account = notification["account"]
+            status = notification["status"]
+            acct = account["acct"]
+            status_id = status["id"]
+            in_reply_to_id: Optional[int] = status.get("in_reply_to_id")
+
             command_text = _extract_command(status["content"])
             if not command_text:
                 return
