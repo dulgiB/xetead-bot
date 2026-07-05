@@ -226,6 +226,9 @@ def handle_investigation_venue_choice(
 
     quest_id = nc.investigation_venue_to_quest.get(venue_name)
     if quest_id is None:
+        # 이 답글은 유효한 의뢰 개요가 아니므로, 이전에 선택했던 의뢰가 남아 있다면
+        # 지워 [수락] 시 엉뚱한(예전) 의뢰가 수주되는 것을 방지한다.
+        nc.investigation_acct_to_quest_id.pop(acct, None)
         if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
             return "자유롭게 일대를 돌아다니며 정보를 수집할 수 있습니다."
         return f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
@@ -233,15 +236,18 @@ def handle_investigation_venue_choice(
     try:
         general_quests = load_general_quests(state.spreadsheet)
     except Exception as e:
+        nc.investigation_acct_to_quest_id.pop(acct, None)
         return f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
 
     quest_dict = {q.id: q for q in general_quests}
     quest = quest_dict.get(quest_id)
     if quest is None:
+        nc.investigation_acct_to_quest_id.pop(acct, None)
         return "◊ 의뢰 정보를 찾을 수 없습니다."
 
     existing = nc.quest_status.get(quest_id)
     if existing and existing.participants:
+        nc.investigation_acct_to_quest_id.pop(acct, None)
         desc = nc.investigation_venue_to_desc.get(venue_name, "")
         lines = [f"[{venue_name}]에서는 이미 누군가가 의뢰를 수주했습니다."]
         if desc:
