@@ -85,15 +85,16 @@ class PassiveSkillWrapperEvent(BuffEvent):
             )
             return
 
-        # SkillEffect 경로: GIVEN_DAMAGE/GIVEN_HEAL 이중 발동 방지
+        # SkillEffect 경로: GIVEN_DAMAGE/GIVEN_HEAL 이중 발동 방지.
+        # holder가 같은 effect 안에서 공격자이자 대상(자기 포함 광역기 등)이면
+        # _apply_buff_events가 이 이벤트를 두 번(공격자 측, 대상 측) 호출할 수
+        # 있으므로, (effect_seq_number, holder) 조합당 1회만 발동하도록 기록한다.
         effect_source = self.passive_data.effect.value_source
-        effect_data = calculator.data_by_effect[effect_seq_number]
-        if effect_source == ValueSourceType.GIVEN_DAMAGE:
-            if not any(d.result_value is None for d in effect_data.damage_data_list):
+        if effect_source in (ValueSourceType.GIVEN_DAMAGE, ValueSourceType.GIVEN_HEAL):
+            key = (effect_seq_number, holder)
+            if key in calculator._fired_given_value_passives:
                 return
-        elif effect_source == ValueSourceType.GIVEN_HEAL:
-            if not any(h.result_value is None for h in effect_data.heal_data_list):
-                return
+            calculator._fired_given_value_passives.add(key)
 
         targets = _resolve_targets(
             calculator.context,

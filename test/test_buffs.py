@@ -1140,6 +1140,70 @@ class TestPassiveSkillSelfHealOnGivenDamage:
         # 고정 20 대미지의 50% = 10 자기 회복
         assert ctx.characters[attacker_id].status.curr_hp == hp_before + 10
 
+    def test_self_heal_not_double_fired_when_holder_is_also_a_target(self):
+        """공격자가 같은 효과 안에서 자기 자신도 대상으로 포함하는 광역/다중
+        대상 공격을 사용하면, 공격자 측(ON_ATTACK)과 대상 측(ON_HIT) 양쪽에서
+        같은 패시브가 두 번 발동해서는 안 된다."""
+        from battle.objects.passive_skill.models import (
+            PassiveSkillData,
+            PassiveSkillTargetType,
+            PassiveSkillTrigger,
+        )
+
+        self_included_attack = SkillData(
+            id="자해 포함 공격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=2,
+            cost=1,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None
+                )
+            ],
+            description="",
+        )
+        lifesteal_passive = PassiveSkillData(
+            id="생명력 흡수",
+            trigger=PassiveSkillTrigger.ON_ACTION,
+            target_type=PassiveSkillTargetType.SELF,
+            effect=SkillEffectHeal(ValueSourceType.GIVEN_DAMAGE, 50, None, None, None),
+            condition_class_name=None,
+            condition_value=None,
+            description="",
+        )
+        ctx = make_context(
+            skill_dict={"자해 포함 공격": self_included_attack},
+            passive_skill_dict={"생명력 흡수": lifesteal_passive},
+        )
+        manager = setup_ally_phase(ctx)
+
+        attacker_id = CharacterId("공격수")
+        ctx.add_character(
+            get_test_preset(
+                "공격수",
+                initial_hp=50,
+                max_hp=100,
+                skill_1_id="자해 포함 공격",
+                passive_skill_id="생명력 흡수",
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=200), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        hp_before = ctx.characters[attacker_id].status.curr_hp
+
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/자해 포함 공격/공격수/적군]")
+        )
+
+        # 자신+적군에게 각각 고정 20 대미지 → 자기 피해 20, 총 given damage 40의
+        # 50% = 20만큼 자기 회복. 패시브가 중복 발동되면 40이 회복되어 순변화가
+        # +20이 아니라 +40이 된다.
+        assert ctx.characters[attacker_id].status.curr_hp == hp_before - 20 + 20
+
 
 class TestPassiveSkillSelfHealOnGivenHeal:
     """ON_ACTION 패시브 스킬 + SkillEffectHeal(GIVEN_HEAL) + HealedNonSelfCondition: 공명 효과."""

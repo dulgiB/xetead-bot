@@ -73,6 +73,10 @@ class CommandPartCalculator:
         # 같은 커맨드(스킬)의 buff_add 등 부가 효과도 이 매핑을 따라 함께 이동한다.
         self._redirect_map: dict[CharacterId, CharacterId] = {}
 
+        # (effect_seq_number, holder) 조합당 1회만 발동해야 하는 패시브
+        # 스킬(GIVEN_DAMAGE/GIVEN_HEAL 기반)의 발동 여부 기록.
+        self._fired_given_value_passives: set[tuple[int, CharacterId]] = set()
+
     @classmethod
     def create_empty_for_buff(
         cls, context: "BattlefieldContext"
