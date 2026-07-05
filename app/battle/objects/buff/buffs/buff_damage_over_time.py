@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from battle.core.commands.models import DamageCalculateData, DamageData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming, ValueSourceType
+from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
 from battle.objects.models import BaseValueIndicator, CharacterId
 
 if TYPE_CHECKING:
@@ -39,9 +39,13 @@ class DamageOverTimeEvent(BuffEvent):
 
 
 class BuffDamageOverTime(BuffBase):
+    """매 라운드 종료 시 고정 대미지를 입힌다. value_type은 반드시 정수여야 한다."""
+
     @property
     def timing(self) -> BuffApplyTiming:
         return BuffApplyTiming.ON_ROUND_END
 
     def create_event(self) -> DamageOverTimeEvent:
+        if self.value_type is not None and self.value_type != ValueType.INTEGER:
+            raise ValueError(self.value_type)
         return DamageOverTimeEvent(condition=self.condition, value=self.value)

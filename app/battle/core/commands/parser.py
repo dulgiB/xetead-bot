@@ -61,34 +61,23 @@ def parse_character_command(
                 elif match := command_format_skill.match(command):
                     d = match.capturesdict()
                     skill_name = d["skill_name"][0].strip()
-                    targets_split = d["targets"][0].split("/")
-                    character_targets: list[CharacterId] = []
-                    column_targets: list[BattlefieldColumnIndex] = []
-                    for target in targets_split:
+                    # 아이템과 동일하게 열(column) 또는 캐릭터 이름으로 변환한다.
+                    targets: list[CharacterId | BattlefieldColumnIndex] = []
+                    for target in d["targets"][0].split("/"):
                         try:
-                            column_parse = BattlefieldColumnIndex.from_str(
-                                target.strip()
+                            targets.append(
+                                BattlefieldColumnIndex.from_str(target.strip())
                             )
-                            column_targets.append(column_parse)
                         except ValueError:
-                            character_targets.append(CharacterId(target.strip()))
+                            targets.append(CharacterId(target.strip()))
 
-                    if character_targets:
-                        parts.append(
-                            CommandPart(
-                                type_=ActionType.SKILL,
-                                skill_id=skill_name,
-                                targets=character_targets,
-                            )
+                    parts.append(
+                        CommandPart(
+                            type_=ActionType.SKILL,
+                            skill_id=skill_name,
+                            targets=targets,
                         )
-                    elif column_targets:
-                        parts.append(
-                            CommandPart(
-                                type_=ActionType.SKILL,
-                                skill_id=skill_name,
-                                targets=column_targets,
-                            )
-                        )
+                    )
 
                 elif match := command_format_skill_no_target.match(command):
                     d = match.capturesdict()

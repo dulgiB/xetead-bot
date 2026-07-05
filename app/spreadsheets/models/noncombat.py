@@ -15,6 +15,7 @@ NON_COMBAT_STATS: list[str] = [e.value for e in NoncombatStatType]
 
 @dataclass(frozen=True)
 class NoncombatCharacterDataFromSpreadsheet:
+    name: str = ""
     # 비전투 스탯 (0–5)
     stat_physical: int = 0
     stat_knowledge: int = 0
@@ -28,6 +29,7 @@ class NoncombatCharacterDataFromSpreadsheet:
     @classmethod
     def from_dict(cls, raw: dict[str, str | int | bool]):
         return cls(
+            name=str(raw.get("name", "") or ""),
             stat_physical=int(raw.get("stat_physical", 0) or 0),
             stat_knowledge=int(raw.get("stat_knowledge", 0) or 0),
             stat_human=int(raw.get("stat_human", 0) or 0),

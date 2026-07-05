@@ -13,6 +13,7 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
@@ -191,6 +192,76 @@ class TestBuffAtk:
         damage_with_buff = hp_after_no_buff - hp_after_buff
         assert damage_with_buff > damage_no_buff
 
+    def test_atk_buff_reflected_in_bonus_damage_on_hit(self):
+        """BuffBonusDamageOnHit는 STAT_ATK를 참조하므로, 공격자의 BuffAtk가
+        반영된 값으로 추가 대미지가 계산되어야 한다."""
+        atk_buff = make_buff_data(
+            "공격력 증가", "BuffAtk", value_type=ValueType.INTEGER, value=50
+        )
+        retaliate_buff = make_buff_data(
+            "반격",
+            "BuffBonusDamageOnHit",
+            duration_turn_value=None,
+            value_type=ValueType.INTEGER,
+            value=20,  # coefficient = 0.2 → 최종 대미지 * 1.2
+        )
+        atk_buff_skill = make_buff_skill("버프 스킬", "공격력 증가")
+        weak_attack = SkillData(
+            id="약공격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+            ],
+            description="",
+        )
+        ctx = make_context(
+            atk_buff,
+            retaliate_buff,
+            skill_dict={"버프 스킬": atk_buff_skill, "약공격": weak_attack},
+        )
+        manager = setup_ally_phase(ctx)
+
+        attacker_id = CharacterId("공격수")
+        target_id = CharacterId("대상")
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="버프 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수", atk=5, skill_1_id="약공격"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        ctx.buff_container.add(
+            BuffAddData(given_by=target_id, applied_to=target_id, buff_id="반격")
+        )
+
+        # ATK 버프 없이 공격 (ATK=5 → 보너스 대미지 floor(5*1.2)=6, 고정 5 + 6 = 11)
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/약공격/대상]")
+        )
+        hp_after_no_buff = ctx.characters[target_id].status.curr_hp
+        assert hp_after_no_buff == 89
+
+        # 대상 원상 복구 후, 공격수에게 ATK 버프 부여
+        # → ATK 55 → 보너스 대미지 floor(55*1.2)=66, 고정 5 + 66 = 71
+        ctx.characters[target_id].status.curr_hp = 100
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/공격수]")
+        )
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/약공격/대상]")
+        )
+        hp_after_buff = ctx.characters[target_id].status.curr_hp
+        assert hp_after_buff == 29
+
 
 class TestBuffGivenDamage:
     """BuffGivenDamage: 공격 시 해당 캐릭터가 주는 대미지에 수정자를 적용한다."""
@@ -243,6 +314,65 @@ class TestBuffGivenDamage:
         damage_with_buff = hp_after_no_buff - hp_after_buff
 
         assert damage_with_buff > damage_no_buff
+
+    def test_given_damage_buff_applied_once_per_aoe_action(self):
+        """광역 스킬로 여러 대상을 동시에 타격해도, 공격자 측 버프는 대상 하나당이
+        아니라 행동 1회당 한 번만 적용/차감되어야 한다."""
+        buff = make_buff_data(
+            "대미지 증가",
+            "BuffGivenDamage",
+            duration_turn_value=None,
+            duration_count_value=3,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_ATTACK,
+            value_type=ValueType.INTEGER,
+            value=10,
+        )
+        aoe_skill = SkillData(
+            id="광역기",
+            target_rule="SkillTargetRuleColumn",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                )
+            ],
+            description="",
+        )
+        ctx = make_context(buff, skill_dict={"광역기": aoe_skill})
+        manager = setup_ally_phase(ctx)
+
+        attacker_id = CharacterId("공격수")
+        ctx.add_character(
+            get_test_preset("공격수", skill_1_id="광역기"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군2"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=attacker_id, applied_to=attacker_id, buff_id="대미지 증가"
+            )
+        )
+
+        manager.process_command(
+            parse_character_command(attacker_id, "[스킬/광역기/1열]")
+        )
+
+        # 고정 5 대미지 + 버프 고정 +10 = 15. 대상 수만큼 중복 적용되면 25가 된다.
+        assert ctx.characters[CharacterId("적군1")].status.curr_hp == 100 - 15
+        assert ctx.characters[CharacterId("적군2")].status.curr_hp == 100 - 15
+
+        buffs = ctx.buff_container.get_buffs_by(attacker_id, BuffApplyTiming.ON_ACTION)
+        assert len(buffs) == 1
+        # 대상이 둘이어도 행동은 1회이므로 count는 1만 소모되어야 한다.
+        assert buffs[0].duration.remaining_count == 2
 
 
 class TestBuffReceivedDamage:
@@ -494,6 +624,27 @@ class TestBuffDamageOverTime:
 
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ROUND_END)
         assert len(buffs) == 0
+
+    def test_dot_rejects_percent_value_type(self):
+        """value_type=PERCENT는 '고정 대미지'라는 버프 취지와 맞지 않으므로
+        조용히 정수로 취급되지 않고 명시적으로 에러를 발생시켜야 한다."""
+        buff = make_buff_data(
+            "독", "BuffDamageOverTime", value=10, value_type=ValueType.PERCENT
+        )
+        ctx = make_context(buff)
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("대상"),
+                applied_to=CharacterId("대상"),
+                buff_id="독",
+            )
+        )
+
+        with pytest.raises(ValueError):
+            ctx.on_finish_round()
 
 
 class TestBuffHealOverTime:
@@ -823,6 +974,70 @@ class TestBuffDuration:
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
         assert len(buffs) == 0
+
+    def test_count_duration_not_deducted_when_condition_not_met(self):
+        """버프의 발동 조건이 충족되지 않았다면, 피격/공격이 있었더라도
+        remaining_count가 소모되면 안 된다."""
+        buff = make_buff_data(
+            "테스트 버프",
+            "BuffReceivedDamage",
+            duration_turn_value=None,
+            duration_count_value=3,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_HIT,
+            value_type=ValueType.INTEGER,
+            value=-10,
+            condition_="SelfHpBelowCondition",
+            condition_value=30,
+        )
+        skill = make_buff_skill("버프 스킬", "테스트 버프")
+        weak_attack = SkillData(
+            id="약공격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+            ],
+            description="",
+        )
+        ctx = make_context(
+            buff, skill_dict={"버프 스킬": skill, "약공격": weak_attack}
+        )
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="버프 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군", skill_1_id="약공격"),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[스킬/약공격/대상]")
+        )
+
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+        )
+        target_id = CharacterId("대상")
+        buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
+        assert buffs[0].duration.remaining_count == 3
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # 5 데미지만 받아 HP 비율(30%)을 밑돌지 않으므로 조건 미충족 → 대미지 감소도,
+        # count 소모도 일어나지 않아야 한다.
+        assert ctx.characters[target_id].status.curr_hp == 95
+        buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
+        assert buffs[0].duration.remaining_count == 3
 
     def test_passive_skill_wrapper_never_removed(self):
         from battle.objects.define import ValueSourceType

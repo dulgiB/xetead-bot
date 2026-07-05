@@ -14,3 +14,9 @@ class BuffedStats:
 
     def __getitem__(self, stat_type: CombatStatType) -> list[int | IntValueModifier]:
         return [self.base_stats[stat_type]] + self.stat_bonuses[stat_type]
+
+    def total(self, stat_type: CombatStatType) -> int:
+        return sum(
+            value if isinstance(value, int) else value.value
+            for value in self[stat_type]
+        )

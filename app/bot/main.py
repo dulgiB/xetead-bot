@@ -241,6 +241,7 @@ class MastodonBotListener(StreamListener):
                         logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
                         if ps.all_declared():
                             game_post_text = _start_investigation_battle(state)
+                            ps.prep_post_id = 0
                             new_post = self._mastodon.status_post(
                                 _truncate(game_post_text), visibility="public"
                             )
@@ -263,6 +264,7 @@ class MastodonBotListener(StreamListener):
                         )
                         if ps.all_declared() and ps.teams_valid():
                             game_post_text = _start_practice_battle(state)
+                            ps.prep_post_id = 0
                             new_post = self._mastodon.status_post(
                                 _truncate(game_post_text), visibility="public"
                             )

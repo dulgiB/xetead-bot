@@ -80,7 +80,9 @@ class BaseValueIndicator:
             return result
 
         elif self.value_source == ValueSourceType.STAT_ATK:
-            return calculator.context.characters[user_id].status[CombatStatType.ATK]
+            return calculator.buffed_stats_by_character[user_id].total(
+                CombatStatType.ATK
+            )
         elif self.value_source == ValueSourceType.STAT_RANGE:
             return calculator.context.characters[user_id].status[CombatStatType.RANGE]
         elif self.value_source == ValueSourceType.STAT_MAX_HP:

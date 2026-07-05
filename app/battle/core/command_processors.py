@@ -41,6 +41,8 @@ def process_admin_command(
 
     for i in range(len(expanded_command.data_per_effect)):
         data = expanded_command.data_per_effect[i]
+        if data is None:
+            continue
         for move_data in data.move_list:
             round_manager._context.move_character_to(
                 move_data.character_id, move_data.to_position
@@ -65,8 +67,8 @@ def process_admin_command(
         for buff_add_event in data.buff_add_list:
             round_manager._context.buff_container.add(buff_add_event)
 
-        for buff_to_remove in data.admin_buff_remove_list:
-            round_manager._context.buff_container.remove(buff_to_remove)
+    for buff_to_remove in expanded_command.admin_buff_remove_list:
+        round_manager._context.buff_container.remove(buff_to_remove)
 
 
 def process_ally_command(

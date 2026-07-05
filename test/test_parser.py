@@ -118,6 +118,20 @@ def setup_character(empty_context):
                 ],
             ),
         ),
+        # 스킬2 + 캐릭터 이름과 열이 섞인 대상 — 둘 다 순서대로 보존되어야 한다
+        (
+            "[스킬/스킬2/대상1/2열]",
+            CharacterCommand(
+                user_id=_USER,
+                parts=[
+                    CommandPart(
+                        type_=ActionType.SKILL,
+                        skill_id="스킬2",
+                        targets=[CharacterId("대상1"), BattlefieldColumnIndex(1)],
+                    )
+                ],
+            ),
+        ),
     ],
 )
 def test_parse_smoke(input_str: str, expected: CharacterCommand | None, empty_context):

@@ -138,6 +138,7 @@ def handle_daily_quest_roll(acct: str, stat_name: str, state: "BotState") -> str
     today = date.today().isoformat()
 
     errors: list[str] = []
+    save_succeeded = True
     try:
         update_character_gold_and_quest_date(
             state.spreadsheet, char_data.name, new_gold, today
@@ -145,15 +146,18 @@ def handle_daily_quest_roll(acct: str, stat_name: str, state: "BotState") -> str
         updated = replace(char_data, gold=new_gold, daily_quest_date=today)
         state.noncombat_char_dict[acct] = updated
     except Exception as e:
+        save_succeeded = False
         errors.append(f"스프레드시트 저장 실패: {e}")
 
-    del state.noncombat.daily_quest_mid[acct]
+    # 저장에 실패하면 mid 상태를 남겨 두어 같은 게시물에 재시도할 수 있게 한다.
+    if save_succeeded:
+        del state.noncombat.daily_quest_mid[acct]
 
-    result = (
-        f"[{stat_name}] {dice}+{stat_val} → 「{total}」\n"
-        f"{judgment}\n"
-        "의뢰를 완수했다. 사례로 1G를 획득했다."
-    )
+    result = f"[{stat_name}] {dice}+{stat_val} → 「{total}」\n{judgment}\n"
+    if save_succeeded:
+        result += "의뢰를 완수했다. 사례로 1G를 획득했다."
+    else:
+        result += "의뢰 결과 저장에 실패했습니다. 이 답글에 다시 답글로 재시도해 주세요."
     if errors:
         result += "\n◊ " + "; ".join(errors)
     return result

@@ -25,7 +25,9 @@ class CombatCharacterDataFromSpreadsheet:
         return cls(
             name=raw["name"],
             mastodon_id=raw["mastodon_id"],
-            curr_hp=int(raw["curr_hp"]) if raw["curr_hp"] else None,
+            curr_hp=(
+                int(raw["curr_hp"]) if raw["curr_hp"] not in (None, "") else None
+            ),
             max_hp=raw["max_hp"],
             atk=raw["atk"],
             attack_range=raw["attack_range"],

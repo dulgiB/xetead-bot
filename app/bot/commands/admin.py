@@ -191,6 +191,12 @@ def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
     state.pending_placements.clear()
     state.pending_participants.clear()
 
+    if not state.session.context.characters:
+        reply_parts = ["◊ 배치에 모두 실패하여 전투를 시작하지 못했습니다."]
+        if errors:
+            reply_parts.append("⚠️ 오류:\n" + "\n".join(errors))
+        return AdminCommandResult("\n".join(reply_parts))
+
     # 3. 전투 시작
     state.session.start()
     state.battle_key = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -483,19 +489,26 @@ def _cmd_investigation_battle(
 
     errors: list[str] = []
 
-    # 같은 메시지에 포함된 [배치/이름/진영 열]을 파싱해 적군으로 즉시 등록
+    # 같은 메시지에 포함된 [배치/이름/진영 열]을 파싱해 즉시 등록
     for m in _RE_MANUAL_PLACE.finditer(text):
         name = m.group(1).strip()
         faction_col_str = m.group(2).strip()
         parts = faction_col_str.split()
-        col_str = parts[-1] if parts else faction_col_str
+        if len(parts) < 2:
+            errors.append(
+                f"◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다. (예시: [배치/늑대/적군 3열])"
+            )
+            continue
+        faction_str, col_str = parts[0], parts[1]
         data = state.name_dict.get(name)
         if data is None:
             errors.append(f"캐릭터({name})를 찾을 수 없습니다.")
             continue
         try:
+            faction = FactionType(faction_str)
+            side = SideType.SIDE_1 if faction == FactionType.ALLY else SideType.SIDE_2
             column = BattlefieldColumnIndex.from_str(col_str)
-            context.add_character(data, SideType.SIDE_2, column)
+            context.add_character(data, side, column)
         except (ValueError, CommandValidationError) as e:
             errors.append(str(e))
 
