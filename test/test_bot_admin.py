@@ -142,3 +142,12 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle():
 
     assert len(state.practice.context.characters) == 1
     assert state.practice.round_n == round_n_after_start
+
+
+def test_malformed_notification_does_not_raise():
+    """형식이 예상과 다른(status가 없는 등) 알림이 와도 예외가 밖으로
+    전파되면 안 된다 — 스트리밍 리스너 전체가 죽는 것을 방지한다."""
+    state = _make_state()
+    listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
+
+    listener.on_notification({"type": "mention", "account": {"acct": "user1"}})
