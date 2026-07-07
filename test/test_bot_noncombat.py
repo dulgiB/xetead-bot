@@ -17,11 +17,6 @@ from spreadsheets.models.quest import QuestData  # noqa: E402
 
 def _make_state(acct: str) -> BotState:
     state = BotState(
-        buff_dict={},
-        skill_dict={},
-        passive_skill_dict={},
-        item_dict={},
-        inventory=None,
         char_dict={acct: get_test_preset("동료")},
         name_dict={},
         noncombat_char_dict={

@@ -22,7 +22,9 @@ logger = logging.getLogger(__name__)
 _UNFORMATTED = ValueRenderOption.unformatted
 
 
-def load_all_data() -> tuple[
+def load_battle_data(
+    spreadsheet: gspread.Spreadsheet,
+) -> tuple[
     dict[str, BuffData],
     dict[str, SkillData],
     dict[str, PassiveSkillData],
@@ -31,12 +33,12 @@ def load_all_data() -> tuple[
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, NoncombatCharacterDataFromSpreadsheet],
-    gspread.Spreadsheet,
 ]:
     """
     스프레드시트에서 버프·스킬·패시브 스킬·아이템·인벤토리·캐릭터 데이터를 로드한다.
+    전투 세션(본 전투/대련/상시전투)을 새로 시작할 때마다 호출해 최신 데이터를 반영한다.
     반환값: (buff_dict, skill_dict, passive_skill_dict, item_dict, inventory,
-             char_dict, name_dict, noncombat_char_dict, spreadsheet)
+             char_dict, name_dict, noncombat_char_dict)
       - buff_dict:           버프 id → BuffData
       - skill_dict:          스킬 id → SkillData
       - passive_skill_dict:  패시브 스킬 id → PassiveSkillData
@@ -45,12 +47,8 @@ def load_all_data() -> tuple[
       - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
       - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체)
       - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
-      - spreadsheet: gspread.Spreadsheet (상태 저장 및 동적 로드용)
     """
-    gc = gspread.service_account_from_dict(
-        json.loads(os.environ["GOOGLE_SPREADSHEET_CREDENTIALS"])
-    )
-    db = gc.open_by_key(os.environ["DB_SPREADSHEET_KEY"])
+    db = spreadsheet
 
     buff_raw = db.worksheet("버프").get_all_records(value_render_option=_UNFORMATTED)
     buff_dict: dict[str, BuffData] = {r["id"]: BuffData.from_dict(r) for r in buff_raw}
@@ -96,8 +94,31 @@ def load_all_data() -> tuple[
         char_dict,
         name_dict,
         noncombat_char_dict,
-        db,
     )
+
+
+def load_all_data() -> tuple[
+    dict[str, BuffData],
+    dict[str, SkillData],
+    dict[str, PassiveSkillData],
+    dict[str, ItemData],
+    Inventory,
+    dict[str, CombatCharacterDataFromSpreadsheet],
+    dict[str, CombatCharacterDataFromSpreadsheet],
+    dict[str, NoncombatCharacterDataFromSpreadsheet],
+    gspread.Spreadsheet,
+]:
+    """
+    봇 시작 시 1회 호출한다. gspread 연결을 새로 맺고 `load_battle_data()`로 위임한 뒤
+    spreadsheet 핸들을 덧붙여 반환한다. 전투 세션 시작 시점의 재로드는
+    `load_battle_data(state.spreadsheet)`를 직접 사용한다 (연결 재인증 불필요).
+    """
+    gc = gspread.service_account_from_dict(
+        json.loads(os.environ["GOOGLE_SPREADSHEET_CREDENTIALS"])
+    )
+    db = gc.open_by_key(os.environ["DB_SPREADSHEET_KEY"])
+
+    return (*load_battle_data(db), db)
 
 
 def load_item_data(spreadsheet: gspread.Spreadsheet) -> dict[str, ItemData]:

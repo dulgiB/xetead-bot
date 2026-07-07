@@ -18,7 +18,7 @@ from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
 
 from bot.battle_persistence import mark_battle_finished, save_battle_state
-from bot.load_data import load_char_data
+from bot.load_data import load_battle_data
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 
@@ -113,15 +113,22 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
     if state.session is not None:
         return AdminCommandResult("◊ 이미 진행 중인 전투가 있습니다.")
 
-    state.char_dict, state.name_dict, state.noncombat_char_dict = load_char_data(
-        state.spreadsheet
-    )
+    (
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        inventory,
+        state.char_dict,
+        state.name_dict,
+        state.noncombat_char_dict,
+    ) = load_battle_data(state.spreadsheet)
     state.session = BattleSession(
-        state.buff_dict,
-        state.skill_dict,
-        state.passive_skill_dict,
-        state.item_dict,
-        state.inventory,
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        inventory,
     )
     reply = "◊ 전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨주세요."
     return AdminCommandResult(reply, set_preparation_post=True)
@@ -314,10 +321,17 @@ def _cmd_practice_prep(
     if state.practice is not None:
         return AdminCommandResult("◊ 이미 진행 중인 대련/상시전투가 있습니다.")
 
-    state.char_dict, state.name_dict, state.noncombat_char_dict = load_char_data(
-        state.spreadsheet
-    )
-    context = PracticeBattlefieldContext(state.buff_dict, state.skill_dict)
+    (
+        buff_dict,
+        skill_dict,
+        _passive_skill_dict,
+        _item_dict,
+        _inventory,
+        state.char_dict,
+        state.name_dict,
+        state.noncombat_char_dict,
+    ) = load_battle_data(state.spreadsheet)
+    context = PracticeBattlefieldContext(buff_dict, skill_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,
@@ -475,10 +489,17 @@ def _cmd_investigation_battle(
     if state.practice is not None:
         return AdminCommandResult("◊ 이미 진행 중인 대련/상시전투가 있습니다.")
 
-    state.char_dict, state.name_dict, state.noncombat_char_dict = load_char_data(
-        state.spreadsheet
-    )
-    context = PracticeBattlefieldContext(state.buff_dict, state.skill_dict)
+    (
+        buff_dict,
+        skill_dict,
+        _passive_skill_dict,
+        _item_dict,
+        _inventory,
+        state.char_dict,
+        state.name_dict,
+        state.noncombat_char_dict,
+    ) = load_battle_data(state.spreadsheet)
+    context = PracticeBattlefieldContext(buff_dict, skill_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,

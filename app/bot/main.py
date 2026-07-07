@@ -9,16 +9,11 @@ import gspread
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
-from battle.objects.buff.models import BuffData
 from battle.objects.define import BattlefieldColumnIndex
-from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
-from battle.objects.passive_skill.models import PassiveSkillData
-from battle.objects.skill.models import SkillData
 from battle.practice.define import PracticeRoundPhase, SideType
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
-from spreadsheets.inventory import Inventory
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 
@@ -95,11 +90,6 @@ def _truncate(text: str) -> str:
 
 @dataclass
 class BotState:
-    buff_dict: dict[str, BuffData]
-    skill_dict: dict[str, SkillData]
-    passive_skill_dict: dict[str, PassiveSkillData]
-    item_dict: dict[str, ItemData]
-    inventory: Inventory
     char_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # mastodon_id → data
     name_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # name → data
     noncombat_char_dict: dict[
@@ -523,23 +513,20 @@ def _handle_practice_command(
 
 
 def main() -> None:
+    # 버프/스킬/패시브/아이템/인벤토리는 여기서 로드해도 바로 stale해지므로 쓰지 않는다.
+    # 전투 세션(본 전투/대련/상시전투) 시작 시점에 load_battle_data()로 다시 로드한다.
     (
-        buff_dict,
-        skill_dict,
-        passive_skill_dict,
-        item_dict,
-        inventory,
+        _buff_dict,
+        _skill_dict,
+        _passive_skill_dict,
+        _item_dict,
+        _inventory,
         char_dict,
         name_dict,
         noncombat_char_dict,
         spreadsheet,
     ) = load_all_data()
     state = BotState(
-        buff_dict=buff_dict,
-        skill_dict=skill_dict,
-        passive_skill_dict=passive_skill_dict,
-        item_dict=item_dict,
-        inventory=inventory,
         char_dict=char_dict,
         name_dict=name_dict,
         noncombat_char_dict=noncombat_char_dict,
