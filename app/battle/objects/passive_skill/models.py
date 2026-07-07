@@ -14,6 +14,7 @@ class PassiveSkillTrigger(str, Enum):
     ROUND_START = "라운드 시작"
     ON_ACTION = "행동 시"
     ON_ENEMY_MOVE = "적 이동 시"
+    ENEMY_POST_ACTION = "적 후행 시"
 
 
 class PassiveSkillTargetType(str, Enum):
