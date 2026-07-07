@@ -21,7 +21,7 @@ class PassiveSkillTargetType(str, Enum):
     SELF = "자신"
     SAME_COLUMN_ALLIES = "같은 열 아군"
     ALL_ALLIES = "전체 아군"
-    ATTACKER_OR_TARGET = "공격자_또는_대상"
+    ATTACKER_OR_TARGET = "공격자 또는 대상"
     LOWEST_HP_ALLY = "체력 최저 아군"
 
 
