@@ -68,5 +68,5 @@ class BuffBonusDamageOnHit(BuffBase):
         return BonusDamageOnHitEvent(
             condition=self.condition,
             source_name=self.id,
-            coefficient=self.value / 100,
+            coefficient=self.value,
         )

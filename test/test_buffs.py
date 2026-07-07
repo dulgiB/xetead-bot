@@ -203,7 +203,7 @@ class TestBuffAtk:
             "BuffBonusDamageOnHit",
             duration_turn_value=None,
             value_type=ValueType.INTEGER,
-            value=20,  # coefficient = 0.2 → 최종 대미지 * 1.2
+            value=20,  # 계수 20% → 보너스 대미지 = ATK × 0.2
         )
         atk_buff_skill = make_buff_skill("버프 스킬", "공격력 증가")
         weak_attack = SkillData(
@@ -243,15 +243,15 @@ class TestBuffAtk:
             BuffAddData(given_by=target_id, applied_to=target_id, buff_id="반격")
         )
 
-        # ATK 버프 없이 공격 (ATK=5 → 보너스 대미지 floor(5*1.2)=6, 고정 5 + 6 = 11)
+        # ATK 버프 없이 공격 (ATK=5 → 보너스 대미지 floor(5*0.2)=1, 고정 5 + 1 = 6)
         manager.process_command(
             parse_character_command(attacker_id, "[스킬/약공격/대상]")
         )
         hp_after_no_buff = ctx.characters[target_id].status.curr_hp
-        assert hp_after_no_buff == 89
+        assert hp_after_no_buff == 94
 
         # 대상 원상 복구 후, 공격수에게 ATK 버프 부여
-        # → ATK 55 → 보너스 대미지 floor(55*1.2)=66, 고정 5 + 66 = 71
+        # → ATK 55 → 보너스 대미지 floor(55*0.2)=11, 고정 5 + 11 = 16
         ctx.characters[target_id].status.curr_hp = 100
         manager.process_command(
             parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/공격수]")
@@ -260,7 +260,7 @@ class TestBuffAtk:
             parse_character_command(attacker_id, "[스킬/약공격/대상]")
         )
         hp_after_buff = ctx.characters[target_id].status.curr_hp
-        assert hp_after_buff == 29
+        assert hp_after_buff == 84
 
 
 class TestBuffGivenDamage:
@@ -283,7 +283,9 @@ class TestBuffGivenDamage:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("공격수", atk=1),
+            # ATK를 키워 +50% 버프(×1.5)가 1d6 변동을 항상 압도하도록 한다.
+            # (최소 버프딜 floor(21*1.5)=31 > 최대 무버프딜 26, 최대딜 39 < 100HP로 비살상)
+            get_test_preset("공격수", atk=20),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
