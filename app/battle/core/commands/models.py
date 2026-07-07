@@ -100,6 +100,8 @@ class DamageCalculateData:
     base: DamageData
     modifiers: list[ValueModifierBase]
     result_value: Optional[int] = None
+    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.__str__). 로그 기록용.
+    roll_display: Optional[str] = None
 
 
 @dataclass
@@ -107,11 +109,23 @@ class HealCalculateData:
     base: HealData
     modifiers: list[ValueModifierBase]
     result_value: Optional[int] = None
+    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.__str__). 로그 기록용.
+    roll_display: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class BattleLogEntry:
+    """로그_전투 시트 한 행에 대응하는 정산 결과 (대상 1명당 1개)."""
+
+    target_name: str
+    result: str
+    roll_display: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class CommandPartProcessResult:
     expanded_part: CommandPartData
+    log_entries: list[BattleLogEntry] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

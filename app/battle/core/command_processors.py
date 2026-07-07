@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Optional
 from utils.battle_helpers import is_reachable
 
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.command_calculator import CommandPartCalculator
+from battle.core.command_calculator import CommandPartCalculator, build_log_entries
 from battle.core.command_expanders import expand_character_command
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
@@ -88,7 +88,12 @@ def process_ally_command(
         )
         calculator = CommandPartCalculator(part_data, context)
         calculator.process(RoundPhaseType.ALLY_ACTION)
-        results_per_part.append(CommandPartProcessResult(expanded_part=part_data))
+        results_per_part.append(
+            CommandPartProcessResult(
+                expanded_part=part_data,
+                log_entries=build_log_entries(calculator),
+            )
+        )
 
     # 코스트 차감 - 검증 통과 후 실제 처리 시점에 차감
     user = context.characters[command.user_id]
@@ -113,6 +118,7 @@ def process_enemy_command_on_pre_action(
     if not maybe_expanded_parts:
         return CommandProcessResult(original_command=command, part_results=[])
 
+    results_per_part: list[CommandPartProcessResult] = []
     for part_data in maybe_expanded_parts:
         assert (
             isinstance(part_data, CommandPartData)
@@ -120,6 +126,12 @@ def process_enemy_command_on_pre_action(
         )
         calculator = CommandPartCalculator(part_data, context)
         calculator.process(RoundPhaseType.ENEMY_PRE_ACTION)
+        results_per_part.append(
+            CommandPartProcessResult(
+                expanded_part=part_data,
+                log_entries=build_log_entries(calculator),
+            )
+        )
 
     # 원본 커맨드를 저장 — POST 페이즈에서 도발 등 버프를 반영해 재전개
     remaining_commands_dict.setdefault(command.user_id, []).append(command)
@@ -128,7 +140,7 @@ def process_enemy_command_on_pre_action(
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
 
-    return CommandProcessResult(original_command=command, part_results=[])
+    return CommandProcessResult(original_command=command, part_results=results_per_part)
 
 
 # Post-action에서는 에너미가 살아있을 경우 저장된 원본 커맨드를 재전개해 대미지/힐/POST 버프를 처리.
@@ -149,7 +161,12 @@ def try_process_enemy_command_on_post_action(
             post_part = part_data.create_new_except_move()
             calculator = CommandPartCalculator(post_part, context)
             calculator.process(RoundPhaseType.ENEMY_POST_ACTION)
-            results.append(CommandPartProcessResult(post_part))
+            results.append(
+                CommandPartProcessResult(
+                    expanded_part=post_part,
+                    log_entries=build_log_entries(calculator),
+                )
+            )
     return results
 
 

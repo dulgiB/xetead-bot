@@ -1,6 +1,6 @@
-import datetime
 import random
 import re
+import traceback
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
@@ -17,8 +17,13 @@ from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
 
-from bot.battle_persistence import mark_battle_finished, save_battle_state
 from bot.load_data import load_battle_data
+from bot.log_sheets import (
+    BattleCommandLog,
+    build_field_characters,
+    upsert_field_row,
+    write_back_changed_hp,
+)
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 
@@ -57,6 +62,8 @@ class AdminCommandResult:
     set_practice_prep_from_game_post: bool = False
     # True이면 game_post_text의 post_id를 practice.active_post_id로 저장한다
     set_practice_active_post: bool = False
+    # 프록시 커맨드(_cmd_proxy)로 캐릭터 커맨드가 정산된 경우 로그_전투 기록용 자료
+    battle_log: Optional[BattleCommandLog] = None
 
 
 def handle_admin_command(
@@ -99,7 +106,8 @@ def handle_admin_command(
     if m := _RE_PROXY.match(text):
         char_name = m.group(1).strip()
         cmd_str = m.group(2).strip()
-        return AdminCommandResult(_cmd_proxy(char_name, cmd_str, state))
+        reply_text, battle_log = _cmd_proxy(char_name, cmd_str, state)
+        return AdminCommandResult(reply_text, battle_log=battle_log)
 
     return AdminCommandResult("◊ 알 수 없는 관리자 커맨드입니다.")
 
@@ -206,11 +214,19 @@ def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
 
     # 3. 전투 시작
     state.session.start()
-    state.battle_key = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    # 4. 스프레드시트 저장
+    # 4. 필드 시트 저장
     try:
-        save_battle_state(state.spreadsheet, state)
+        upsert_field_row(
+            state.spreadsheet,
+            str(state.preparation_status_id),
+            is_main=True,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            characters=build_field_characters(
+                state.session.context, include_hp=False
+            ),
+        )
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
 
@@ -241,10 +257,19 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
 
     new_phase = state.session.advance_phase()
 
-    # 스프레드시트 저장 (커맨드 수신 없는 페이즈에서도)
+    # 필드 시트 저장 (커맨드 수신 없는 페이즈에서도)
     errors: list[str] = []
     try:
-        save_battle_state(state.spreadsheet, state)
+        upsert_field_row(
+            state.spreadsheet,
+            str(state.preparation_status_id),
+            is_main=True,
+            round_n=state.session.round_n,
+            phase=new_phase.value,
+            characters=build_field_characters(
+                state.session.context, include_hp=False
+            ),
+        )
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
 
@@ -274,7 +299,16 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
 
     errors: list[str] = []
     try:
-        save_battle_state(state.spreadsheet, state)
+        upsert_field_row(
+            state.spreadsheet,
+            str(state.preparation_status_id),
+            is_main=True,
+            round_n=state.session.round_n,
+            phase=new_phase.value,
+            characters=build_field_characters(
+                state.session.context, include_hp=False
+            ),
+        )
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
 
@@ -297,13 +331,21 @@ def _cmd_end(state: "BotState") -> str:
 
     errors: list[str] = []
     try:
-        if state.battle_key:
-            mark_battle_finished(state.spreadsheet, state.battle_key)
+        upsert_field_row(
+            state.spreadsheet,
+            str(state.preparation_status_id),
+            is_main=True,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            characters=build_field_characters(
+                state.session.context, include_hp=False
+            ),
+            ended=True,
+        )
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
 
     state.session = None
-    state.battle_key = None
     state.preparation_status_id = None
     state.active_phase_post_id = None
     state.pending_participants.clear()
@@ -350,37 +392,95 @@ def _cmd_practice_prep(
     return AdminCommandResult("", game_post, set_practice_prep_from_game_post=True)
 
 
-def _cmd_proxy(char_name: str, cmd_str: str, state: "BotState") -> str:
+def _cmd_proxy(
+    char_name: str, cmd_str: str, state: "BotState"
+) -> tuple[str, Optional[BattleCommandLog]]:
     # 상시전투 중 프록시 (적군 커맨드 대행)
     ps = state.practice
     if ps is not None and ps.active_post_id is not None:
         char_id = CharacterId(char_name)
         if char_id not in ps.context.characters:
-            return f"◊ 지정한 캐릭터({char_name})는 대련/상시전투에 참여하고 있지 않습니다."
+            return (
+                f"◊ 지정한 캐릭터({char_name})는 대련/상시전투에 참여하고 있지 않습니다.",
+                None,
+            )
+
+        field_id = str(ps.prep_post_id)
+        round_n = ps.round_n
+        phase = ps.phase.value if ps.phase is not None else ""
+
         try:
             command = parse_character_command(char_id, cmd_str)
             if command is None:
-                return "◊ 커맨드 형식을 인식할 수 없습니다."
-            ps.manager.process_command(command)
-            return str(ps.context)
+                return "◊ 커맨드 형식을 인식할 수 없습니다.", None
+            result = ps.manager.process_command(command)
+            entries = [
+                entry
+                for part_result in result.part_results
+                for entry in part_result.log_entries
+            ]
+            battle_log = BattleCommandLog(
+                field_id=field_id,
+                round_n=round_n,
+                phase=phase,
+                command_text=cmd_str,
+                is_main=False,
+                entries=entries,
+            )
+            return str(ps.context), battle_log
         except CommandValidationError as e:
-            return f"◊ {e}"
+            battle_log = BattleCommandLog(
+                field_id=field_id,
+                round_n=round_n,
+                phase=phase,
+                command_text=cmd_str,
+                is_main=False,
+                error_trace=traceback.format_exc(),
+            )
+            return f"◊ {e}", battle_log
 
     if state.session is None or not state.session.started:
-        return "◊ 진행 중인 전투가 없습니다."
+        return "◊ 진행 중인 전투가 없습니다.", None
 
     char_id = CharacterId(char_name)
     if char_id not in state.session.context.characters:
-        return f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다."
+        return f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다.", None
+
+    field_id = str(state.preparation_status_id)
+    round_n = state.session.round_n
+    phase = state.session.current_phase
 
     try:
         command = parse_character_command(char_id, cmd_str)
         if command is None:
-            return "◊ 커맨드 형식을 인식할 수 없습니다."
+            return "◊ 커맨드 형식을 인식할 수 없습니다.", None
+
+        before = len(state.session.context.results)
         state.session.process_command(command)
-        return str(state.session.context)
+        entries = [
+            entry
+            for result in state.session.context.results[before:]
+            for entry in result.log_entries
+        ]
+        write_back_changed_hp(state.spreadsheet, state.session.context, entries)
+
+        battle_log = BattleCommandLog(
+            field_id=field_id,
+            round_n=round_n,
+            phase=phase.value,
+            command_text=cmd_str,
+            entries=entries,
+        )
+        return str(state.session.context), battle_log
     except CommandValidationError as e:
-        return f"◊ {e}"
+        battle_log = BattleCommandLog(
+            field_id=field_id,
+            round_n=round_n,
+            phase=phase.value,
+            command_text=cmd_str,
+            error_trace=traceback.format_exc(),
+        )
+        return f"◊ {e}", battle_log
 
 
 # ---------------------------------------------------------------------------

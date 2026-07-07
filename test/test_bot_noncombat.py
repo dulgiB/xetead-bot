@@ -184,11 +184,13 @@ def test_use_item_heals_self_and_consumes_inventory(monkeypatch, potion_item):
         lambda spreadsheet, name, hp: recorded_hp.__setitem__(name, hp),
     )
 
-    reply = handle_use_item(acct, "포션", None, 1, state)
+    reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
     assert "회복" in reply
     assert recorded_hp == {"동료": 70}
     assert inventory.get_count("동료", "포션") == 0
+    assert log_info is not None
+    assert log_info.error_trace is None
 
 
 def test_use_item_rejects_unsupported_effect_type(monkeypatch, bomb_item):
@@ -204,9 +206,10 @@ def test_use_item_rejects_unsupported_effect_type(monkeypatch, bomb_item):
         lambda spreadsheet: Inventory({("동료", "폭탄"): 1}),
     )
 
-    reply = handle_use_item(acct, "폭탄", None, 1, state)
+    reply, log_info = handle_use_item(acct, "폭탄", None, 1, state)
 
     assert "지원하지 않는 효과" in reply
+    assert log_info is not None
 
 
 def test_use_item_rejects_when_not_usable_outside_battle(monkeypatch, potion_item):
@@ -226,9 +229,10 @@ def test_use_item_rejects_when_not_usable_outside_battle(monkeypatch, potion_ite
         lambda spreadsheet: Inventory({("동료", "포션"): 1}),
     )
 
-    reply = handle_use_item(acct, "포션", None, 1, state)
+    reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
     assert "사용할 수 없습니다" in reply
+    assert log_info is not None
 
 
 def test_use_item_rejects_when_insufficient_inventory(monkeypatch, potion_item):
@@ -241,7 +245,7 @@ def test_use_item_rejects_when_insufficient_inventory(monkeypatch, potion_item):
         noncombat_module, "load_inventory", lambda spreadsheet: Inventory({})
     )
 
-    reply = handle_use_item(acct, "포션", None, 1, state)
+    reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
     assert "보유 수량이 부족" in reply
 
@@ -259,7 +263,7 @@ def test_transfer_item_moves_between_characters(monkeypatch, potion_item):
         noncombat_module, "load_inventory", lambda spreadsheet: inventory
     )
 
-    reply = handle_transfer_item(acct, "포션", "동료2", 2, state)
+    reply, log_info = handle_transfer_item(acct, "포션", "동료2", 2, state)
 
     assert "양도 완료" in reply
     assert inventory.get_count("동료", "포션") == 1
@@ -270,6 +274,6 @@ def test_transfer_item_requires_target(monkeypatch, potion_item):
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
 
-    reply = handle_transfer_item(acct, "포션", None, 1, state)
+    reply, log_info = handle_transfer_item(acct, "포션", None, 1, state)
 
     assert "대상을 지정" in reply

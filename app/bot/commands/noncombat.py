@@ -19,6 +19,7 @@ from bot.load_data import (
     update_character_curr_hp,
     update_character_gold_and_quest_date,
 )
+from bot.log_sheets import NoncombatLogInfo
 from bot.noncombat_state import (
     DailyQuestMidState,
     InvestigationQuestStatus,
@@ -113,14 +114,16 @@ def handle_use_item(
     target_name: Optional[str],
     count: int,
     state: "BotState",
-) -> str:
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[사용/아이템(/대상)(/개수)] → 비전투 상황에서 즉시 아이템 효과를 적용한다.
 
     현재는 회복(Heal) 효과만 지원한다.
     """
+    command_text = f"[사용/{item_name}" + (f"/{target_name}" if target_name else "") + f"/{count}개]"
+
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다."
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
     user_name = char_data.name
     target_char_name = target_name or user_name
@@ -129,27 +132,34 @@ def handle_use_item(
         item_dict = load_item_data(state.spreadsheet)
         inventory = load_inventory(state.spreadsheet)
     except Exception as e:
-        return f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     item = item_dict.get(item_name)
     if item is None:
-        return f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
     if not item.usable_outside_battle:
-        return f"◊ '{item_name}'은(는) 비전투 상황에서 사용할 수 없습니다."
+        msg = f"◊ '{item_name}'은(는) 비전투 상황에서 사용할 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
     if not isinstance(item.effect, SkillEffectHeal):
-        return f"◊ '{item_name}'은(는) 비전투 상황에서 지원하지 않는 효과입니다. (회복 아이템만 사용 가능)"
+        msg = f"◊ '{item_name}'은(는) 비전투 상황에서 지원하지 않는 효과입니다. (회복 아이템만 사용 가능)"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     owned = inventory.get_count(user_name, item_name)
     if owned < count:
-        return f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        msg = f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     target_data = state.name_dict.get(target_char_name)
     if target_data is None:
-        return f"◊ 대상 캐릭터('{target_char_name}')를 찾을 수 없습니다."
+        msg = f"◊ 대상 캐릭터('{target_char_name}')를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     heal_amount = _compute_heal_amount(item.effect, target_data.max_hp, count)
     if heal_amount is None:
-        return f"◊ '{item_name}'의 회복 방식은 비전투 상황에서 지원하지 않습니다."
+        msg = f"◊ '{item_name}'의 회복 방식은 비전투 상황에서 지원하지 않습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     prev_hp = target_data.curr_hp or 0
     new_hp = min(target_data.max_hp, prev_hp + heal_amount)
@@ -158,11 +168,15 @@ def handle_use_item(
         update_character_curr_hp(state.spreadsheet, target_char_name, new_hp)
         inventory.consume(user_name, item_name, count)
     except Exception as e:
-        return f"◊ 아이템 사용 처리 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 아이템 사용 처리 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=str(e))
 
-    return (
-        f"◊ '{item_name}' 사용: {target_char_name}의 체력을 {heal_amount} 회복했습니다."
-        f" ({prev_hp} → {new_hp})"
+    result_text = f"{target_char_name}의 체력을 {heal_amount} 회복했습니다. ({prev_hp} → {new_hp})"
+    reply = f"◊ '{item_name}' 사용: {result_text}"
+    return reply, NoncombatLogInfo(
+        command_text=command_text,
+        dice_roll=f"{item.effect.value_source.value}×{count}",
+        result=result_text,
     )
 
 
@@ -172,40 +186,50 @@ def handle_transfer_item(
     target_name: Optional[str],
     count: int,
     state: "BotState",
-) -> str:
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[양도/아이템/대상(/개수)] → 대상에게 아이템을 양도하고 인벤토리를 갱신한다."""
+    command_text = f"[양도/{item_name}/{target_name}/{count}개]"
+
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다."
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
     user_name = char_data.name
 
     if not target_name:
-        return "◊ 양도할 대상을 지정해 주세요. 예: [양도/포션/동료]"
+        msg = "◊ 양도할 대상을 지정해 주세요. 예: [양도/포션/동료]"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     if target_name not in state.name_dict:
-        return f"◊ 대상 캐릭터('{target_name}')를 찾을 수 없습니다."
+        msg = f"◊ 대상 캐릭터('{target_name}')를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
         item_dict = load_item_data(state.spreadsheet)
         inventory = load_inventory(state.spreadsheet)
     except Exception as e:
-        return f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     if item_name not in item_dict:
-        return f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     owned = inventory.get_count(user_name, item_name)
     if owned < count:
-        return f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        msg = f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
         inventory.consume(user_name, item_name, count)
         inventory.grant(target_name, item_name, count)
     except Exception as e:
-        return f"◊ 아이템 양도 처리 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 아이템 양도 처리 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=str(e))
 
-    return f"◊ 양도 완료: {user_name} → {target_name}에게 '{item_name}' {count}개 양도"
+    result_text = f"{user_name} → {target_name}에게 '{item_name}' {count}개 양도"
+    reply = f"◊ 양도 완료: {result_text}"
+    return reply, NoncombatLogInfo(command_text=command_text, result=result_text)
 
 
 # ---------------------------------------------------------------------------

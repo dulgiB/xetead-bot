@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
+    BattleLogEntry,
     CommandPartData,
     DamageCalculateData,
     HealCalculateData,
@@ -320,13 +321,17 @@ class CommandPartCalculator:
             if is_magic_attack:
                 damage_calc.modifiers.append(target.status.m_res)
 
+            damage_value = ValueWithModifiers(
+                damage_calc.base.value, damage_calc.modifiers
+            )
             damage_calc.result_value = self.context.apply_damage(
                 damage_calc.base.attacker_id,
                 damage_calc.base.target_id,
-                ValueWithModifiers(damage_calc.base.value, damage_calc.modifiers),
+                damage_value,
                 self,
                 effect_seq_number,
             )
+            damage_calc.roll_display = str(damage_value)
 
     @staticmethod
     def _is_live_heal_calc(
@@ -360,13 +365,15 @@ class CommandPartCalculator:
         for heal_calc in list(self.data_by_effect[effect_seq_number].heal_data_list):
             if not self._is_live_heal_calc(self.context, heal_calc):
                 continue
+            heal_value = ValueWithModifiers(heal_calc.base.value, heal_calc.modifiers)
             heal_calc.result_value = self.context.apply_heal(
                 heal_calc.base.healer_id,
                 heal_calc.base.target_id,
-                ValueWithModifiers(heal_calc.base.value, heal_calc.modifiers),
+                heal_value,
                 self,
                 effect_seq_number,
             )
+            heal_calc.roll_display = str(heal_value)
 
     def _process_buff_add(
         self: "CommandPartCalculator",
@@ -421,3 +428,49 @@ class CommandPartCalculator:
                 buff.duration.deduct_count(deduct_condition)
                 if buff.duration.finished:
                     self.context.buff_container.remove(buff.uid)
+
+
+def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntry]:
+    """process() 완료 후 calculator.data_by_effect를 순회해 대상별 로그 엔트리를 만든다.
+
+    로그_전투 시트에 대상 1명당 1행으로 기록하기 위한 자료다.
+    """
+    entries: list[BattleLogEntry] = []
+    for effect_data in calculator.data_by_effect:
+        # result_value가 None이면 이번 페이즈에서 아직 적용되지 않았거나(예: PRE 단계의
+        # POST용 대미지/힐) 대상이 이미 사망해 건너뛴 항목이므로 로그에 남기지 않는다.
+        for damage_calc in effect_data.damage_data_list:
+            if damage_calc.result_value is None:
+                continue
+            entries.append(
+                BattleLogEntry(
+                    target_name=damage_calc.base.target_id.name,
+                    result=f"대미지 {damage_calc.result_value}",
+                    roll_display=damage_calc.roll_display,
+                )
+            )
+        for heal_calc in effect_data.heal_data_list:
+            if heal_calc.result_value is None:
+                continue
+            entries.append(
+                BattleLogEntry(
+                    target_name=heal_calc.base.target_id.name,
+                    result=f"회복 {heal_calc.result_value}",
+                    roll_display=heal_calc.roll_display,
+                )
+            )
+        for move_data in effect_data.move_list:
+            entries.append(
+                BattleLogEntry(
+                    target_name=move_data.character_id.name,
+                    result=f"{move_data.to_position}열로 이동",
+                )
+            )
+        for buff_add in effect_data.buff_add_data_list:
+            entries.append(
+                BattleLogEntry(
+                    target_name=buff_add.applied_to.name,
+                    result=f"[{buff_add.buff_id}] 부여",
+                )
+            )
+    return entries

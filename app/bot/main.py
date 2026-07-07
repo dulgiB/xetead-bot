@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import traceback
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Optional
@@ -35,6 +36,7 @@ from bot.commands.noncombat import (
     parse_transfer_item_args,
     parse_use_item_args,
 )
+from bot import log_sheets
 from bot.load_data import load_all_data
 from bot.noncombat_state import NonCombatState
 from bot.practice_state import PracticeBattleState
@@ -92,6 +94,77 @@ def _truncate(text: str) -> str:
     return text[: _MAX_POST_LENGTH - 1] + "…"
 
 
+def _persist_battle_log(
+    state: "BotState",
+    battle_log: Optional[log_sheets.BattleCommandLog],
+    reply_ref: str,
+) -> None:
+    """커맨드 정산 결과를 로그_전투에 기록하고, 필드 시트 스냅샷도 함께 갱신한다.
+
+    스프레드시트 기록 실패가 전투 진행 자체를 막지 않도록 예외를 흡수한다.
+    """
+    if battle_log is None:
+        return
+
+    try:
+        log_sheets.append_battle_log(
+            state.spreadsheet,
+            battle_log.field_id,
+            battle_log.round_n,
+            battle_log.phase,
+            battle_log.command_text,
+            battle_log.entries,
+            reply_ref=reply_ref,
+            error_trace=battle_log.error_trace,
+        )
+
+        if battle_log.is_main and state.session is not None:
+            log_sheets.upsert_field_row(
+                state.spreadsheet,
+                battle_log.field_id,
+                is_main=True,
+                round_n=state.session.round_n,
+                phase=state.session.current_phase.value,
+                characters=log_sheets.build_field_characters(
+                    state.session.context, include_hp=False
+                ),
+            )
+        elif not battle_log.is_main and state.practice is not None:
+            phase = state.practice.phase
+            log_sheets.upsert_field_row(
+                state.spreadsheet,
+                battle_log.field_id,
+                is_main=False,
+                round_n=state.practice.round_n,
+                phase=phase.value if phase is not None else "",
+                characters=log_sheets.build_field_characters(
+                    state.practice.context, include_hp=True
+                ),
+            )
+    except Exception:
+        logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
+
+
+def _persist_noncombat_log(
+    state: "BotState",
+    log_info: Optional[log_sheets.NoncombatLogInfo],
+    reply_ref: str,
+) -> None:
+    if log_info is None:
+        return
+    try:
+        log_sheets.append_noncombat_log(
+            state.spreadsheet,
+            log_info.command_text,
+            dice_roll=log_info.dice_roll,
+            result=log_info.result,
+            error_trace=log_info.error_trace,
+            reply_ref=reply_ref,
+        )
+    except Exception:
+        logger.exception("비전투 로그 기록 실패")
+
+
 @dataclass
 class BotState:
     char_dict: dict[str, CombatCharacterDataFromSpreadsheet]  # mastodon_id → data
@@ -103,7 +176,6 @@ class BotState:
     session: Optional[BattleSession] = None
     preparation_status_id: Optional[int] = None  # [전투 준비] 안내 게시물 ID
     active_phase_post_id: Optional[int] = None  # 현재 페이즈 공지 게시물 ID
-    battle_key: Optional[str] = None
     pending_participants: list[str] = field(default_factory=list)  # mastodon_ids
     pending_placements: list[tuple] = field(
         default_factory=list
@@ -192,6 +264,9 @@ class MastodonBotListener(StreamListener):
                 reply_status = self._reply(
                     status_id, acct, visibility, result.reply_text
                 )
+                _persist_battle_log(
+                    state, result.battle_log, str(reply_status["id"])
+                )
 
                 if result.set_preparation_post:
                     state.preparation_status_id = reply_status["id"]
@@ -276,8 +351,11 @@ class MastodonBotListener(StreamListener):
             and state.practice.active_post_id is not None
             and in_reply_to_id == state.practice.active_post_id
         ):
-            reply, game_post = _handle_practice_command(acct, text, state)
-            self._reply(status_id, acct, visibility, reply)
+            reply, game_post, battle_log = _handle_practice_command(
+                acct, text, state
+            )
+            reply_status = self._reply(status_id, acct, visibility, reply)
+            _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
                 new_post = self._mastodon.status_post(
                     _truncate(game_post), visibility="public"
@@ -301,8 +379,9 @@ class MastodonBotListener(StreamListener):
             state.active_phase_post_id is not None
             and in_reply_to_id == state.active_phase_post_id
         ):
-            response = handle_character_command(acct, text, state)
-            self._reply(status_id, acct, visibility, response)
+            response, battle_log = handle_character_command(acct, text, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_battle_log(state, battle_log, str(reply_status["id"]))
             return
 
         nc = state.noncombat
@@ -366,16 +445,22 @@ class MastodonBotListener(StreamListener):
         use_item_args = parse_use_item_args(text)
         if use_item_args:
             item_name, target_name, count = use_item_args
-            response = handle_use_item(acct, item_name, target_name, count, state)
-            self._reply(status_id, acct, visibility, response)
+            response, log_info = handle_use_item(
+                acct, item_name, target_name, count, state
+            )
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
         # 13. [양도/아이템/대상(/개수)] — 비전투 아이템 양도
         transfer_item_args = parse_transfer_item_args(text)
         if transfer_item_args:
             item_name, target_name, count = transfer_item_args
-            response = handle_transfer_item(acct, item_name, target_name, count, state)
-            self._reply(status_id, acct, visibility, response)
+            response, log_info = handle_transfer_item(
+                acct, item_name, target_name, count, state
+            )
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
     def _reply(
@@ -454,35 +539,63 @@ def _start_practice_battle(state: "BotState") -> str:
 
 def _handle_practice_command(
     acct: str, text: str, state: "BotState"
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
     """
     대련/상시전투 중 캐릭터 커맨드를 처리한다.
-    반환값: (reply_text, game_post_text_or_None)
+    반환값: (reply_text, game_post_text_or_None, battle_log_or_None)
     """
     ps = state.practice
     if ps is None:
-        return "◊ 진행 중인 대련/상시전투가 없습니다.", None
+        return "◊ 진행 중인 대련/상시전투가 없습니다.", None, None
 
     if acct not in state.char_dict:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None, None
 
     char_data = state.char_dict[acct]
     char_id = CharacterId(char_data.name)
 
     if char_id not in ps.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", None
+        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", None, None
 
     current_phase = ps.phase
     if current_phase is None:
-        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", None
+        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", None, None
+
+    field_id = str(ps.prep_post_id)
+    round_n = ps.round_n
 
     try:
         command = parse_character_command(char_id, text)
         if command is None:
-            return "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]", None
-        ps.manager.process_command(command)
+            return (
+                "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]",
+                None,
+                None,
+            )
+        result = ps.manager.process_command(command)
+        entries = [
+            entry
+            for part_result in result.part_results
+            for entry in part_result.log_entries
+        ]
+        battle_log = log_sheets.BattleCommandLog(
+            field_id=field_id,
+            round_n=round_n,
+            phase=current_phase.value,
+            command_text=text,
+            is_main=False,
+            entries=entries,
+        )
     except CommandValidationError as e:
-        return f"◊ {e}", None
+        battle_log = log_sheets.BattleCommandLog(
+            field_id=field_id,
+            round_n=round_n,
+            phase=current_phase.value,
+            command_text=text,
+            is_main=False,
+            error_trace=traceback.format_exc(),
+        )
+        return f"◊ {e}", None, battle_log
 
     hp1 = ps.total_hp_by_side(SideType.SIDE_1)
     hp2 = ps.total_hp_by_side(SideType.SIDE_2)
@@ -498,7 +611,7 @@ def _handle_practice_command(
                 f"{ps.context}"
             )
             state.practice = None
-            return "◊ 전투가 종료되었습니다.", game_post
+            return "◊ 전투가 종료되었습니다.", game_post, battle_log
 
         ps.advance_to_second_mover()
         second_label = ps.side_label(ps.second_mover)
@@ -507,7 +620,7 @@ def _handle_practice_command(
             f"후공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
             f"{ps.context}"
         )
-        return "◊ 커맨드 처리 완료", game_post
+        return "◊ 커맨드 처리 완료", game_post, battle_log
 
     # SECOND_MOVER_ACTION
     ps.end_round()
@@ -520,7 +633,7 @@ def _handle_practice_command(
             f"{ps.context}"
         )
         state.practice = None
-        return "◊ 전투가 종료되었습니다.", game_post
+        return "◊ 전투가 종료되었습니다.", game_post, battle_log
 
     ps.start_round()
     mover_label = ps.side_label(ps.first_mover)
@@ -529,7 +642,7 @@ def _handle_practice_command(
         f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
         f"{ps.context}"
     )
-    return "◊ 커맨드 처리 완료", game_post
+    return "◊ 커맨드 처리 완료", game_post, battle_log
 
 
 def main() -> None:
