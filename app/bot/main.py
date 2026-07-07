@@ -29,7 +29,11 @@ from bot.commands.noncombat import (
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
+    handle_transfer_item,
+    handle_use_item,
     parse_stat_name,
+    parse_transfer_item_args,
+    parse_use_item_args,
 )
 from bot.load_data import load_all_data
 from bot.noncombat_state import NonCombatState
@@ -356,6 +360,22 @@ class MastodonBotListener(StreamListener):
             response = handle_investigation_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
             finalize_investigation_menu_post(acct, post["id"], state)
+            return
+
+        # 12. [사용/아이템(/대상)(/개수)] — 비전투 아이템 사용
+        use_item_args = parse_use_item_args(text)
+        if use_item_args:
+            item_name, target_name, count = use_item_args
+            response = handle_use_item(acct, item_name, target_name, count, state)
+            self._reply(status_id, acct, visibility, response)
+            return
+
+        # 13. [양도/아이템/대상(/개수)] — 비전투 아이템 양도
+        transfer_item_args = parse_transfer_item_args(text)
+        if transfer_item_args:
+            item_name, target_name, count = transfer_item_args
+            response = handle_transfer_item(acct, item_name, target_name, count, state)
+            self._reply(status_id, acct, visibility, response)
             return
 
     def _reply(

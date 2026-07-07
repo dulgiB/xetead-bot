@@ -269,3 +269,26 @@ def update_character_gold_and_quest_date(
             return
 
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
+
+
+def update_character_curr_hp(
+    spreadsheet: gspread.Spreadsheet,
+    char_name: str,
+    new_curr_hp: int,
+) -> None:
+    """캐릭터 시트에서 해당 캐릭터 행을 찾아 curr_hp를 갱신한다."""
+    ws = spreadsheet.worksheet("캐릭터")
+    records = ws.get_all_records()
+    header = ws.row_values(1)
+
+    try:
+        hp_col = header.index("curr_hp") + 1
+    except ValueError as e:
+        raise RuntimeError(f"캐릭터 시트에 필수 컬럼이 없습니다: {e}") from e
+
+    for idx, row in enumerate(records, start=2):
+        if row.get("name") == char_name:
+            ws.update_cell(idx, hp_col, new_curr_hp)
+            return
+
+    raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")

@@ -35,7 +35,21 @@ class Inventory:
         self._counts[(char_name, item_id)] = new_count
         self._write_back(char_name, item_id, new_count)
 
-    def _write_back(self, char_name: str, item_id: str, new_count: int) -> None:
+    def grant(self, char_name: str, item_id: str, amount: int = 1) -> None:
+        """아이템을 amount만큼 지급한다 (양도 수령 등). 메모리 개수를 늘린 뒤
+        시트에 반영한다. 기존에 보유 이력이 없는 캐릭터·아이템 조합이면
+        인벤토리 시트에 새 행을 추가한다."""
+        new_count = self.get_count(char_name, item_id) + amount
+        self._counts[(char_name, item_id)] = new_count
+        self._write_back(char_name, item_id, new_count, create_if_missing=True)
+
+    def _write_back(
+        self,
+        char_name: str,
+        item_id: str,
+        new_count: int,
+        create_if_missing: bool = False,
+    ) -> None:
         if self._spreadsheet is None:
             return
 
@@ -51,6 +65,12 @@ class Inventory:
                 ):
                     ws.update_cell(idx, count_col, new_count)
                     return
+
+            if create_if_missing:
+                ws.append_row(
+                    [char_name, item_id, new_count], value_input_option="USER_ENTERED"
+                )
+                return
 
             logger.warning(
                 "'%s' 시트에서 (%s, %s) 행을 찾지 못해 개수를 기록하지 못했습니다.",

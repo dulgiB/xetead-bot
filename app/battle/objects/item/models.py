@@ -30,6 +30,7 @@ class ItemData:
     attack_range: int
     effect: SkillEffectBase
     description: str = ""
+    usable_outside_battle: bool = False
 
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "ItemData":
@@ -44,6 +45,7 @@ class ItemData:
             attack_range=data["range"],
             effect=effect,
             description=data.get("description", "") or "",
+            usable_outside_battle=bool(data.get("usable_outside_battle", False)),
         )
 
     def to_item_instance(
