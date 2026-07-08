@@ -160,8 +160,9 @@ def load_char_data(
     dict[str, NoncombatCharacterDataFromSpreadsheet],
 ]:
     """
-    스프레드시트에서 캐릭터 데이터만 로드한다. BattlefieldContext 생성 직전에 호출해
-    최신 데이터를 반영한다.
+    스프레드시트에서 캐릭터 데이터만 로드한다. 캐릭터 관련 커맨드가 들어올 때마다
+    호출해 최신 데이터를 반영한다. 파싱에 실패하는 행(수정 중이라 일시적으로
+    형식이 깨진 행 등)은 조용히 건너뛴다.
     반환값: (char_dict, name_dict, noncombat_char_dict)
       - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
       - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체)
@@ -170,21 +171,32 @@ def load_char_data(
     char_raw = spreadsheet.worksheet("캐릭터").get_all_records(
         value_render_option=_UNFORMATTED
     )
-    char_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {
-        r["mastodon_id"]: CombatCharacterDataFromSpreadsheet.from_dict(r)
-        for r in char_raw
-        if r.get("mastodon_id")
-    }
-    name_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {
-        r["name"]: CombatCharacterDataFromSpreadsheet.from_dict(r)
-        for r in char_raw
-        if r.get("name")
-    }
-    noncombat_char_dict: dict[str, NoncombatCharacterDataFromSpreadsheet] = {
-        r["mastodon_id"]: NoncombatCharacterDataFromSpreadsheet.from_dict(r)
-        for r in char_raw
-        if r.get("mastodon_id")
-    }
+    char_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {}
+    name_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {}
+    noncombat_char_dict: dict[str, NoncombatCharacterDataFromSpreadsheet] = {}
+
+    for r in char_raw:
+        name = r.get("name")
+        mastodon_id = r.get("mastodon_id")
+        if not name and not mastodon_id:
+            continue
+        try:
+            combat_data = CombatCharacterDataFromSpreadsheet.from_dict(r)
+            noncombat_data = NoncombatCharacterDataFromSpreadsheet.from_dict(r)
+        except Exception:
+            logger.warning(
+                "'캐릭터' 시트 행을 읽는 중 오류가 발생해 건너뜁니다: name=%s, mastodon_id=%s",
+                name,
+                mastodon_id,
+                exc_info=True,
+            )
+            continue
+        if mastodon_id:
+            char_dict[mastodon_id] = combat_data
+            noncombat_char_dict[mastodon_id] = noncombat_data
+        if name:
+            name_dict[name] = combat_data
+
     return char_dict, name_dict, noncombat_char_dict
 
 

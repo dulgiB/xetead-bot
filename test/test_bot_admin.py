@@ -9,6 +9,7 @@ from battle.objects.models import CharacterId  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import SideType  # noqa: E402
 from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
+from bot import main as main_module  # noqa: E402
 from bot.commands import admin as admin_module  # noqa: E402
 from bot.commands.admin import _cmd_battle_start  # noqa: E402
 from bot.main import BotState, MastodonBotListener  # noqa: E402
@@ -113,11 +114,16 @@ def _make_notification(acct: str, status_id: int, in_reply_to_id: int, text: str
     }
 
 
-def test_replying_again_to_stale_prep_post_does_not_restart_battle():
+def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
     """포지션 선언이 완료되어 전투가 시작된 뒤, 같은 참가자가 실수로 원본
     준비 게시물에 다시 답글을 달아도 전투가 재시작되면 안 된다."""
     state = _make_state()
     state.char_dict = {"user1": get_test_preset("동료")}
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
 
     context = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
     manager = PracticeRoundManager(context)
