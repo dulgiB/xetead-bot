@@ -16,6 +16,7 @@ from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
+from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.load_data import load_battle_data
 from bot.log_sheets import (
@@ -30,15 +31,17 @@ from bot.session import BattleSession
 if TYPE_CHECKING:
     from bot.main import BotState
 
-_RE_BATTLE_PREP = re.compile(r"\[전투\s*준비]")
-_RE_MANUAL_PLACE = re.compile(r"\[배치\s*/\s*([^/\]]+?)\s*/\s*([^/\]]+)]")
-_RE_BATTLE_START = re.compile(r"\[전투\s*개시]")
-_RE_PHASE = re.compile(r"\[페이즈]")
-_RE_CONTINUE = re.compile(r"\[전투\s*속행]")
-_RE_STATUS = re.compile(r"\[현황]")
-_RE_END = re.compile(r"\[전투\s*종료]")
-_RE_INVESTIGATION_BATTLE = re.compile(r"\[상시전투]")
-_RE_PRACTICE_PREP = re.compile(r"\[대련]")
+_RE_BATTLE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('전투준비')}]")
+_RE_MANUAL_PLACE = re.compile(
+    rf"\[{whitespace_tolerant_literal('배치')}\s*/\s*([^/\]]+?)\s*/\s*([^/\]]+)]"
+)
+_RE_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투개시')}]")
+_RE_PHASE = re.compile(rf"\[{whitespace_tolerant_literal('페이즈')}]")
+_RE_CONTINUE = re.compile(rf"\[{whitespace_tolerant_literal('전투속행')}]")
+_RE_STATUS = re.compile(rf"\[{whitespace_tolerant_literal('현황')}]")
+_RE_END = re.compile(rf"\[{whitespace_tolerant_literal('전투종료')}]")
+_RE_INVESTIGATION_BATTLE = re.compile(rf"\[{whitespace_tolerant_literal('상시전투')}]")
+_RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
 _RE_PROXY = re.compile(r"^([^\[\]]+?)\s+(\[.+])$", re.DOTALL)
 
 _VALID_COLUMNS = [
@@ -147,6 +150,7 @@ def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str
         return "◊ 진행 중인 전투가 없습니다. 먼저 [전투 준비]를 입력하세요."
     if state.session.started:
         return "◊ 전투가 이미 시작되어 캐릭터를 배치할 수 없습니다."
+    name = resolve_matching_key(name, state.name_dict.keys())
     if name not in state.name_dict:
         return f"◊ 지정된 캐릭터({name})를 찾을 수 없습니다."
 
@@ -398,7 +402,7 @@ def _cmd_proxy(
     # 상시전투 중 프록시 (적군 커맨드 대행)
     ps = state.practice
     if ps is not None and ps.active_post_id is not None:
-        char_id = CharacterId(char_name)
+        char_id = ps.context.resolve_character_id(CharacterId(char_name))
         if char_id not in ps.context.characters:
             return (
                 f"◊ 지정한 캐릭터({char_name})는 대련/상시전투에 참여하고 있지 않습니다.",
@@ -442,7 +446,7 @@ def _cmd_proxy(
     if state.session is None or not state.session.started:
         return "◊ 진행 중인 전투가 없습니다.", None
 
-    char_id = CharacterId(char_name)
+    char_id = state.session.context.resolve_character_id(CharacterId(char_name))
     if char_id not in state.session.context.characters:
         return f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다.", None
 
@@ -621,6 +625,7 @@ def _cmd_investigation_battle(
             )
             continue
         faction_str, col_str = parts[0], parts[1]
+        name = resolve_matching_key(name, state.name_dict.keys())
         data = state.name_dict.get(name)
         if data is None:
             errors.append(f"캐릭터({name})를 찾을 수 없습니다.")

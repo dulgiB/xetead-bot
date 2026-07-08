@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
 from utils.battle_helpers import is_reachable
@@ -189,6 +190,30 @@ def try_expansion_if_valid(
     user = context.characters[command.user_id]
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
+
+    # 1.5. 캐릭터/스킬/아이템 이름 공백 무시 매칭 — 사용자가 입력한 공백이
+    # 등록된 표기와 다르더라도(예: "변칙공격" vs "변칙 공격") 등록된 표기로
+    # 치환해 이후 검증·전개가 정확한 값으로 이루어지도록 한다.
+    command.parts[:] = [
+        replace(
+            part,
+            skill_id=(
+                context.resolve_skill_id(command.user_id, part.skill_id)
+                if part.type_ == ActionType.SKILL and part.skill_id is not None
+                else part.skill_id
+            ),
+            item_id=(
+                context.resolve_item_id(part.item_id)
+                if part.type_ == ActionType.USE_ITEM and part.item_id is not None
+                else part.item_id
+            ),
+            targets=[
+                context.resolve_character_id(t) if isinstance(t, CharacterId) else t
+                for t in part.targets
+            ],
+        )
+        for part in command.parts
+    ]
 
     # 2. 스킬/아이템 존재 여부 및 대상 수 확인
     for part in command.parts:

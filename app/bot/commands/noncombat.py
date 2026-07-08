@@ -8,6 +8,7 @@ from battle.objects.define import ValueSourceType
 from battle.objects.skill.effects import SkillEffectHeal
 from spreadsheets.models.noncombat import NON_COMBAT_STATS, NoncombatStatType
 from spreadsheets.models.quest import DailyQuestSuccessType
+from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.load_data import (
     load_daily_quest_result_messages,
@@ -28,9 +29,11 @@ from bot.noncombat_state import (
 if TYPE_CHECKING:
     from bot.main import BotState
 
-_RE_ROLL = re.compile(r"\[판정\s*/\s*([^]]+)]")
-_RE_USE_ITEM = re.compile(r"\[사용\s*/\s*([^\]]+)]")
-_RE_TRANSFER_ITEM = re.compile(r"\[양도\s*/\s*([^\]]+)]")
+_RE_ROLL = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*/\s*([^]]+)]")
+_RE_USE_ITEM = re.compile(rf"\[{whitespace_tolerant_literal('사용')}\s*/\s*([^\]]+)]")
+_RE_TRANSFER_ITEM = re.compile(
+    rf"\[{whitespace_tolerant_literal('양도')}\s*/\s*([^\]]+)]"
+)
 
 FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
 
@@ -135,6 +138,7 @@ def handle_use_item(
         msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
+    item_name = resolve_matching_key(item_name, item_dict.keys())
     item = item_dict.get(item_name)
     if item is None:
         msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
@@ -151,6 +155,7 @@ def handle_use_item(
         msg = f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
+    target_char_name = resolve_matching_key(target_char_name, state.name_dict.keys())
     target_data = state.name_dict.get(target_char_name)
     if target_data is None:
         msg = f"◊ 대상 캐릭터('{target_char_name}')를 찾을 수 없습니다."
@@ -200,6 +205,7 @@ def handle_transfer_item(
         msg = "◊ 양도할 대상을 지정해 주세요. 예: [양도/포션/동료]"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
+    target_name = resolve_matching_key(target_name, state.name_dict.keys())
     if target_name not in state.name_dict:
         msg = f"◊ 대상 캐릭터('{target_name}')를 찾을 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -211,6 +217,7 @@ def handle_transfer_item(
         msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
+    item_name = resolve_matching_key(item_name, item_dict.keys())
     if item_name not in item_dict:
         msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -401,6 +408,7 @@ def handle_investigation_venue_choice(
     """장소 선택 → 일반 의뢰 시트를 읽어 개요 반환."""
     nc = state.noncombat
 
+    venue_name = resolve_matching_key(venue_name, nc.investigation_venue_to_quest.keys())
     quest_id = nc.investigation_venue_to_quest.get(venue_name)
     if quest_id is None:
         # 이 답글은 유효한 의뢰 개요가 아니므로, 이전에 선택했던 의뢰가 남아 있다면

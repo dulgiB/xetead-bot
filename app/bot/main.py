@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
+from utils.name_matching import whitespace_tolerant_literal
 
 from bot.commands.admin import AdminCommandResult, handle_admin_command
 from bot.commands.character import handle_character_command
@@ -50,8 +51,18 @@ logger = logging.getLogger(__name__)
 ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
 
 _RE_MENTION = re.compile(r"@\S+")
-_RE_DECLARATION = re.compile(r"\[([12])팀\s*/\s*([1-7])열?]")
-_RE_INVESTIGATION_DECLARATION = re.compile(r"\[아군\s*/\s*([1-7])열?]")
+_RE_DECLARATION = re.compile(
+    rf"\[([12]){whitespace_tolerant_literal('팀')}\s*/\s*([1-7])열?]"
+)
+_RE_INVESTIGATION_DECLARATION = re.compile(
+    rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([1-7])열?]"
+)
+_RE_INVESTIGATION_BATTLE_SELF = re.compile(
+    rf"\[{whitespace_tolerant_literal('상시전투')}]"
+)
+_RE_ACCEPT = re.compile(rf"\[{whitespace_tolerant_literal('수락')}]")
+_RE_DAILY_QUEST_START = re.compile(rf"\[{whitespace_tolerant_literal('의뢰')}]")
+_RE_INVESTIGATION_START = re.compile(rf"\[{whitespace_tolerant_literal('상시조사')}]")
 _MAX_POST_LENGTH = 500
 
 # 커맨드를 수신하는 페이즈 (active_phase_post_id 설정 대상)
@@ -234,8 +245,8 @@ class MastodonBotListener(StreamListener):
 
         # 1. admin 직접 멘션 또는 [상시전투] self-mention bypass → admin 커맨드
         is_admin = acct == ADMIN_MASTODON_ID
-        is_investigation_self_mention = (
-            acct == self._bot_acct and "[상시전투]" in text
+        is_investigation_self_mention = acct == self._bot_acct and bool(
+            _RE_INVESTIGATION_BATTLE_SELF.search(text)
         )
         if is_admin or is_investigation_self_mention:
             result: AdminCommandResult = handle_admin_command(
@@ -414,7 +425,7 @@ class MastodonBotListener(StreamListener):
         if (
             in_reply_to_id is not None
             and in_reply_to_id in nc.get_investigation_overview_post_ids()
-            and "[수락]" in text
+            and _RE_ACCEPT.search(text)
         ):
             response = handle_investigation_accept(acct, state, in_reply_to_id)
             self._reply(status_id, acct, visibility, response)
@@ -428,14 +439,14 @@ class MastodonBotListener(StreamListener):
             return
 
         # 10. [의뢰] — 일일 의뢰 시작
-        if "[의뢰]" in text:
+        if _RE_DAILY_QUEST_START.search(text):
             response = handle_daily_quest_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
             finalize_daily_quest_mid(acct, post["id"], state)
             return
 
         # 11. [상시조사] — 상시조사 메뉴
-        if "[상시조사]" in text:
+        if _RE_INVESTIGATION_START.search(text):
             response = handle_investigation_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
             finalize_investigation_menu_post(acct, post["id"], state)
