@@ -3,6 +3,7 @@ from typing import Optional
 
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from utils.logging import print_apply_damage, print_apply_heal
+from utils.name_matching import resolve_matching_key
 
 from battle.core.buff_container import BuffContainer
 from battle.core.command_calculator import CommandPartCalculator
@@ -196,6 +197,26 @@ class BattlefieldContext:
                 return i
         return None
 
+    def resolve_character_id(self, raw: CharacterId) -> CharacterId:
+        """공백 차이를 무시하고 전장에 등록된 캐릭터를 찾는다.
+
+        일치하는 항목이 없으면 raw를 그대로 반환한다 (호출측의 기존
+        '존재하지 않음' 처리 경로를 그대로 타도록 하기 위함).
+        """
+        if raw in self.characters:
+            return raw
+        matched_name = resolve_matching_key(
+            raw.name, (cid.name for cid in self.characters)
+        )
+        return CharacterId(matched_name)
+
+    def resolve_skill_id(self, user_id: CharacterId, raw_skill_id: str) -> str:
+        """공백 차이를 무시하고 해당 캐릭터가 보유한 스킬 id를 찾는다."""
+        user = self.characters.get(user_id)
+        if user is None:
+            return raw_skill_id
+        return resolve_matching_key(raw_skill_id, (s.data.id for s in user.skills))
+
     def find_character_position(self, char_id: CharacterId) -> BattlefieldColumnIndex:
         if char_id not in self.characters.keys():
             raise CommandValidationError(error_target_does_not_exist(char_id))
@@ -286,3 +307,11 @@ class BattlefieldContext:
 
     def get_item_data_by_id(self, item_id: str) -> ItemData:
         return self._item_dictionary[item_id]
+
+    def resolve_item_id(self, raw_item_id: str) -> str:
+        """공백 차이를 무시하고 등록된 아이템 id를 찾는다.
+
+        일치하는 항목이 없으면 raw_item_id를 그대로 반환한다 (호출측의
+        기존 '존재하지 않음' 처리 경로를 그대로 타도록 하기 위함).
+        """
+        return resolve_matching_key(raw_item_id, self._item_dictionary.keys())

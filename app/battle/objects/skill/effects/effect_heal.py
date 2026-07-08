@@ -35,9 +35,7 @@ class SkillEffectHeal(SkillEffectBase):
         else:
             heal_value = BaseValueIndicator(
                 value_source=self.value_source,
-                coefficient=FloatValueModifier(
-                    source_name="계수", value=self.value / 100
-                ),
+                coefficient=FloatValueModifier(source_name="계수", value=self.value),
             )
         return (
             [],

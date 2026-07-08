@@ -4,16 +4,23 @@ from dataclasses import replace
 from datetime import date
 from typing import TYPE_CHECKING, Optional
 
+from battle.objects.define import ValueSourceType
+from battle.objects.skill.effects import SkillEffectHeal
 from spreadsheets.models.noncombat import NON_COMBAT_STATS, NoncombatStatType
 from spreadsheets.models.quest import DailyQuestSuccessType
+from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.load_data import (
     load_daily_quest_result_messages,
     load_daily_quests,
     load_general_quests,
+    load_inventory,
+    load_item_data,
     load_location_and_investigation,
+    update_character_curr_hp,
     update_character_gold_and_quest_date,
 )
+from bot.log_sheets import NoncombatLogInfo
 from bot.noncombat_state import (
     DailyQuestMidState,
     InvestigationQuestStatus,
@@ -22,7 +29,11 @@ from bot.noncombat_state import (
 if TYPE_CHECKING:
     from bot.main import BotState
 
-_RE_ROLL = re.compile(r"\[판정\s*/\s*([^]]+)]")
+_RE_ROLL = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*/\s*([^]]+)]")
+_RE_USE_ITEM = re.compile(rf"\[{whitespace_tolerant_literal('사용')}\s*/\s*([^\]]+)]")
+_RE_TRANSFER_ITEM = re.compile(
+    rf"\[{whitespace_tolerant_literal('양도')}\s*/\s*([^\]]+)]"
+)
 
 FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
 
@@ -31,6 +42,37 @@ def parse_stat_name(text: str) -> Optional[str]:
     """텍스트에서 [판정/스탯] 패턴을 찾아 스탯 이름을 반환한다."""
     m = _RE_ROLL.search(text)
     return m.group(1).strip() if m else None
+
+
+def parse_use_item_args(text: str) -> Optional[tuple[str, Optional[str], int]]:
+    """텍스트에서 [사용/아이템(/대상)(/개수)] 패턴을 찾아 (아이템명, 대상 또는 None, 개수)를 반환한다."""
+    m = _RE_USE_ITEM.search(text)
+    if not m:
+        return None
+    return _parse_item_args(m.group(1))
+
+
+def parse_transfer_item_args(text: str) -> Optional[tuple[str, Optional[str], int]]:
+    """텍스트에서 [양도/아이템/대상(/개수)] 패턴을 찾아 (아이템명, 대상 또는 None, 개수)를 반환한다."""
+    m = _RE_TRANSFER_ITEM.search(text)
+    if not m:
+        return None
+    return _parse_item_args(m.group(1))
+
+
+def _parse_item_args(raw: str) -> tuple[str, Optional[str], int]:
+    """'아이템명(/대상)(/개수)' 형태를 파싱한다. 대상·개수는 순서 무관하게 인식한다."""
+    tokens = [t.strip() for t in raw.split("/") if t.strip()]
+    item_name = tokens[0] if tokens else ""
+    target: Optional[str] = None
+    count = 1
+    for token in tokens[1:]:
+        count_match = re.fullmatch(r"(\d+)\s*개?", token)
+        if count_match:
+            count = int(count_match.group(1))
+        else:
+            target = token
+    return item_name, target, count
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +95,148 @@ def handle_roll(acct: str, stat_name: str, state: "BotState") -> str:
     stat_val = char_data.get_noncombat_stat(stat_type)
     dice = random.randint(1, 6)
     return f"[{stat_name}] {dice}+{stat_val} → 「{dice + stat_val}」"
+
+
+# ---------------------------------------------------------------------------
+# 비전투 아이템 사용/양도
+# ---------------------------------------------------------------------------
+
+
+def _compute_heal_amount(effect: SkillEffectHeal, target_max_hp: int, count: int) -> Optional[int]:
+    """비전투에서 지원하는 value_source(고정값/최대 체력 %)에 한해 회복량을 계산한다."""
+    if effect.value_source == ValueSourceType.FIXED:
+        return (effect.value or 0) * count
+    if effect.value_source == ValueSourceType.STAT_MAX_HP:
+        return (target_max_hp * (effect.value or 0) // 100) * count
+    return None
+
+
+def handle_use_item(
+    acct: str,
+    item_name: str,
+    target_name: Optional[str],
+    count: int,
+    state: "BotState",
+) -> tuple[str, Optional[NoncombatLogInfo]]:
+    """[사용/아이템(/대상)(/개수)] → 비전투 상황에서 즉시 아이템 효과를 적용한다.
+
+    현재는 회복(Heal) 효과만 지원한다.
+    """
+    command_text = f"[사용/{item_name}" + (f"/{target_name}" if target_name else "") + f"/{count}개]"
+
+    char_data = state.noncombat_char_dict.get(acct)
+    if char_data is None:
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+
+    user_name = char_data.name
+    target_char_name = target_name or user_name
+
+    try:
+        item_dict = load_item_data(state.spreadsheet)
+        inventory = load_inventory(state.spreadsheet)
+    except Exception as e:
+        msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    item_name = resolve_matching_key(item_name, item_dict.keys())
+    item = item_dict.get(item_name)
+    if item is None:
+        msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+    if not item.usable_outside_battle:
+        msg = f"◊ '{item_name}'은(는) 비전투 상황에서 사용할 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+    if not isinstance(item.effect, SkillEffectHeal):
+        msg = f"◊ '{item_name}'은(는) 비전투 상황에서 지원하지 않는 효과입니다. (회복 아이템만 사용 가능)"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    owned = inventory.get_count(user_name, item_name)
+    if owned < count:
+        msg = f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    target_char_name = resolve_matching_key(target_char_name, state.name_dict.keys())
+    target_data = state.name_dict.get(target_char_name)
+    if target_data is None:
+        msg = f"◊ 대상 캐릭터('{target_char_name}')를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    heal_amount = _compute_heal_amount(item.effect, target_data.max_hp, count)
+    if heal_amount is None:
+        msg = f"◊ '{item_name}'의 회복 방식은 비전투 상황에서 지원하지 않습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    prev_hp = target_data.curr_hp or 0
+    new_hp = min(target_data.max_hp, prev_hp + heal_amount)
+
+    try:
+        update_character_curr_hp(state.spreadsheet, target_char_name, new_hp)
+        inventory.consume(user_name, item_name, count)
+    except Exception as e:
+        msg = f"◊ 아이템 사용 처리 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=str(e))
+
+    result_text = f"{target_char_name}의 체력을 {heal_amount} 회복했습니다. ({prev_hp} → {new_hp})"
+    reply = f"◊ '{item_name}' 사용: {result_text}"
+    return reply, NoncombatLogInfo(
+        command_text=command_text,
+        dice_roll=f"{item.effect.value_source.value}×{count}",
+        result=result_text,
+    )
+
+
+def handle_transfer_item(
+    acct: str,
+    item_name: str,
+    target_name: Optional[str],
+    count: int,
+    state: "BotState",
+) -> tuple[str, Optional[NoncombatLogInfo]]:
+    """[양도/아이템/대상(/개수)] → 대상에게 아이템을 양도하고 인벤토리를 갱신한다."""
+    command_text = f"[양도/{item_name}/{target_name}/{count}개]"
+
+    char_data = state.noncombat_char_dict.get(acct)
+    if char_data is None:
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+
+    user_name = char_data.name
+
+    if not target_name:
+        msg = "◊ 양도할 대상을 지정해 주세요. 예: [양도/포션/동료]"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    target_name = resolve_matching_key(target_name, state.name_dict.keys())
+    if target_name not in state.name_dict:
+        msg = f"◊ 대상 캐릭터('{target_name}')를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    try:
+        item_dict = load_item_data(state.spreadsheet)
+        inventory = load_inventory(state.spreadsheet)
+    except Exception as e:
+        msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    item_name = resolve_matching_key(item_name, item_dict.keys())
+    if item_name not in item_dict:
+        msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    owned = inventory.get_count(user_name, item_name)
+    if owned < count:
+        msg = f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    try:
+        inventory.consume(user_name, item_name, count)
+        inventory.grant(target_name, item_name, count)
+    except Exception as e:
+        msg = f"◊ 아이템 양도 처리 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=str(e))
+
+    result_text = f"{user_name} → {target_name}에게 '{item_name}' {count}개 양도"
+    reply = f"◊ 양도 완료: {result_text}"
+    return reply, NoncombatLogInfo(command_text=command_text, result=result_text)
 
 
 # ---------------------------------------------------------------------------
@@ -224,6 +408,7 @@ def handle_investigation_venue_choice(
     """장소 선택 → 일반 의뢰 시트를 읽어 개요 반환."""
     nc = state.noncombat
 
+    venue_name = resolve_matching_key(venue_name, nc.investigation_venue_to_quest.keys())
     quest_id = nc.investigation_venue_to_quest.get(venue_name)
     if quest_id is None:
         # 이 답글은 유효한 의뢰 개요가 아니므로, 이전에 선택했던 의뢰가 남아 있다면

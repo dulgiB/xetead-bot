@@ -407,3 +407,99 @@ def test_target_in_range_condition_triggers_when_in_range():
     manager.process_command(cmd)
 
     assert ctx.characters[enemy_id].status.curr_hp == initial_hp - 10
+
+
+# ── 수호 본능 (ENEMY_POST_ACTION 트리거) ──────────────────────────────────────
+
+
+def _guard_buff_data() -> "BuffData":
+    from battle.objects.buff.models import BuffData
+
+    return BuffData(
+        id="수호",
+        buff_class_name="BuffReceivedDamage",
+        duration_turn_value=1,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.PERCENT,
+        value=-10,  # 받는 대미지 −10%
+        condition_=None,
+        condition_value=None,
+        is_debuff=False,
+        description="",
+    )
+
+
+def _make_guardian_passive(guardian_id: CharacterId) -> PassiveSkillWrapperBuff:
+    from battle.objects.skill.effects import SkillEffectAddBuff
+
+    passive_data = PassiveSkillData(
+        id="수호 본능",
+        trigger=PassiveSkillTrigger.ENEMY_POST_ACTION,
+        target_type=PassiveSkillTargetType.SAME_COLUMN_ALLIES,
+        effect=SkillEffectAddBuff(
+            value_source=None,
+            value=None,
+            value_type=None,
+            buff_id="수호",
+            buff_add_timing=None,
+        ),
+        condition_class_name=None,
+        condition_value=None,
+        description="",
+    )
+    return PassiveSkillWrapperBuff.create(guardian_id, passive_data)
+
+
+def test_guardian_evaluated_at_enemy_post_action_position():
+    """수호 본능은 ENEMY_POST_ACTION 시점의 같은 열 아군을 기준으로 경감을 적용한다.
+
+    라운드 시작 시엔 다른 열이던 아군이 ALLY_ACTION에 보호자 열로 이동하면,
+    POST 시점 위치 기준으로 보호받아야 한다.
+    """
+    fixed_attack = SkillData(
+        id="강타",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectDamage(
+                ValueSourceType.FIXED, 50, ValueType.INTEGER, None, None
+            )
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(
+        buff_dict={"수호": _guard_buff_data()},
+        skill_dict={"강타": fixed_attack},
+    )
+    manager = RoundManager(ctx)  # ENEMY_PRE_ACTION 시작
+
+    guardian_id = CharacterId("아군 1")
+    protected_id = CharacterId("아군 2")
+    enemy_id = CharacterId("적군 1")
+
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    # 피보호자는 라운드 시작 시 보호자와 다른 열(1)에 있다.
+    ctx.add_character(
+        get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(1)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1", skill_1_id="강타"),
+        FactionType.ENEMY, BattlefieldColumnIndex(1),
+    )
+    ctx.buff_container.add_passive_wrapper(_make_guardian_passive(guardian_id))
+
+    # PRE: 적이 피보호자(1열)에게 강타 선언
+    manager.process_command(parse_character_command(enemy_id, "[스킬/강타/아군 2]"))
+
+    # ALLY: 피보호자가 보호자 열(0)로 이동
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    manager.process_command(parse_character_command(protected_id, "[이동/1]"))
+    assert ctx.find_character_position(protected_id) == BattlefieldColumnIndex(0)
+
+    # POST: 같은 열 판정이 이 시점 기준이므로 −10% 경감 (50 → 45)
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+    assert ctx.characters[protected_id].status.curr_hp == 55  # 100 - 45

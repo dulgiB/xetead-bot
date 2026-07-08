@@ -383,3 +383,75 @@ def test_sacrifice_redirects_attached_debuff(sacrifice_buff_data, sacrifice_skil
     )
     assert not any(b.id == "디버프" for b in protected_buffs)
     assert any(b.id == "디버프" for b in protector_buffs)
+
+
+def test_sacrifice_reduces_redirected_damage():
+    """희생 방어의 value(퍼센트)만큼 보호자가 받는 대미지가 경감되어야 한다.
+
+    value=20 → 보호자는 원래 대미지의 80%만 수령. (고정 50 대미지 → 40)
+    """
+    reducing_sacrifice = BuffData(
+        id="희생 방어",
+        buff_class_name="BuffSacrifice",
+        duration_turn_value=None,
+        duration_count_value=1,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.PERCENT,
+        value=20,
+        condition_=None,
+        condition_value=None,
+        is_debuff=False,
+        description="",
+    )
+    fixed_attack = SkillData(
+        id="강타",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectDamage(
+                value_source=ValueSourceType.FIXED,
+                value=50,
+                value_type=ValueType.INTEGER,
+                buff_id=None,
+                buff_add_timing=None,
+            )
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(
+        buff_dict={"희생 방어": reducing_sacrifice},
+        skill_dict={"강타": fixed_attack},
+    )
+    manager = RoundManager(ctx)
+    manager.process_command(
+        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+    )
+
+    protector_id = CharacterId("아군 1")
+    protected_id = CharacterId("아군 2")
+    enemy_id = CharacterId("적군 1")
+
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1", skill_1_id="강타"),
+        FactionType.ENEMY, BattlefieldColumnIndex(0),
+    )
+
+    ctx.buff_container.add(
+        BuffAddData(given_by=protector_id, applied_to=protected_id, buff_id="희생 방어")
+    )
+
+    # 적이 피보호자에게 고정 50 대미지 → 보호자가 −20% 경감된 40 수령
+    manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+    manager.process_command(parse_character_command(enemy_id, "[스킬/강타/아군 2]"))
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+    assert ctx.characters[protected_id].status.curr_hp == 100  # 피보호자 무사
+    assert ctx.characters[protector_id].status.curr_hp == 60   # 100 - 40 (경감 적용)

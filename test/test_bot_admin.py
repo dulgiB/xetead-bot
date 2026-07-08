@@ -19,11 +19,6 @@ from helpers import get_test_preset  # noqa: E402
 
 def _make_state(**pending) -> BotState:
     state = BotState(
-        buff_dict={},
-        skill_dict={},
-        passive_skill_dict={},
-        item_dict={},
-        inventory=None,
         char_dict={},
         name_dict={"유효 캐릭터": get_test_preset("유효 캐릭터")},
         noncombat_char_dict={},
@@ -73,8 +68,17 @@ def test_investigation_battle_inline_placement_respects_faction_token(monkeypatc
     state.name_dict = {"동료": get_test_preset("동료")}
     monkeypatch.setattr(
         admin_module,
-        "load_char_data",
-        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        "load_battle_data",
+        lambda spreadsheet: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
 
     result = admin_module._cmd_investigation_battle(

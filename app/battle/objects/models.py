@@ -109,7 +109,7 @@ class BaseValueIndicator:
                 if data.result_value is not None
             )
             if self.coefficient is not None:
-                return math.floor(total * self.coefficient.value)
+                return math.floor(total * self.coefficient.value / 100)
             return total
 
         elif self.value_source == ValueSourceType.GIVEN_HEAL:
@@ -121,7 +121,7 @@ class BaseValueIndicator:
                 if data.result_value is not None
             )
             if self.coefficient is not None:
-                return math.floor(total * self.coefficient.value)
+                return math.floor(total * self.coefficient.value / 100)
             return total
 
         else:
@@ -135,6 +135,8 @@ class ValueWithModifiers:
     float_modifiers: list[FloatValueModifier]
     roll_result: Optional[DiceRollResult] = None
 
+    base_coefficient: Optional[FloatValueModifier] = None
+
     def __init__(
         self,
         base_value: BaseValueIndicator,
@@ -143,6 +145,8 @@ class ValueWithModifiers:
         self.base_value = base_value
         self.int_modifiers = []
         self.float_modifiers = []
+        # 스킬 자체의 계수(백분율). 예: 230 → ×2.3. 없으면 기본 100%(×1.0).
+        self.base_coefficient = None
 
         if (
             isinstance(self.base_value, BaseValueIndicator)
@@ -150,7 +154,7 @@ class ValueWithModifiers:
             and self.base_value.value_source
             not in (ValueSourceType.GIVEN_DAMAGE, ValueSourceType.GIVEN_HEAL)
         ):
-            self.float_modifiers.append(self.base_value.coefficient)
+            self.base_coefficient = self.base_value.coefficient
 
         for modifier in modifiers:
             if isinstance(modifier, IntValueModifier):
@@ -189,10 +193,16 @@ class ValueWithModifiers:
         )
         value += total_int_modifier_value
 
-        total_float_modifier_value = sum(
+        # 백분율 계수: 스킬 기본 계수(없으면 100%)에 버프 등 가감(퍼센트 포인트)을 더한다.
+        # 예) 계수 230 + 버프 +20 → 250% → ×2.5. 음수로 0% 미만이 되면 0으로 클램프.
+        coefficient_percent = (
+            self.base_coefficient.value if self.base_coefficient is not None else 100
+        )
+        coefficient_percent += sum(
             modifier.value for modifier in self.float_modifiers
         )
-        value = math.floor(value * (1 + total_float_modifier_value))
+        coefficient_percent = max(0, coefficient_percent)
+        value = math.floor(value * coefficient_percent / 100)
 
         return value
 
@@ -208,11 +218,17 @@ class ValueWithModifiers:
             for modifier in self.int_modifiers:
                 result_str += f"{'' if modifier.value < 0 else '+'}{modifier.value}[{modifier.source_name}]"
             result_str += ")"
-        if self.float_modifiers:
-            result_str += " * ("
+        if self.base_coefficient is not None or self.float_modifiers:
+            parts: list[str] = []
+            if self.base_coefficient is not None:
+                parts.append(
+                    f"{math.floor(self.base_coefficient.value)}%[{self.base_coefficient.source_name}]"
+                )
             for modifier in self.float_modifiers:
-                result_str += f"{'' if modifier.value < 0 else '+'}{math.floor(modifier.value * 100)}%[{modifier.source_name}]"
-            result_str += ")"
+                parts.append(
+                    f"{'' if modifier.value < 0 else '+'}{math.floor(modifier.value)}%[{modifier.source_name}]"
+                )
+            result_str += " * (" + " ".join(parts) + ")"
         return result_str
 
 

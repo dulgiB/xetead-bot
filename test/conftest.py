@@ -54,7 +54,7 @@ def skill_strong_attack() -> SkillData:
         cost=2,
         effects=[
             SkillEffectDamage(
-                ValueSourceType.STAT_ATK_ROLL, 20, ValueType.PERCENT, None, None
+                ValueSourceType.STAT_ATK_ROLL, 120, ValueType.PERCENT, None, None
             )
         ],
         description="",

@@ -5,35 +5,41 @@ from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.exceptions import CommandValidationError, error_invalid_command_format
 from battle.objects.define import ActionType, BattlefieldColumnIndex
 from battle.objects.models import CharacterId
+from utils.name_matching import whitespace_tolerant_literal
 
 # 커맨드 작성 예시
 # ex. [이동/1 - 스킬/대상A/대상B - 공격/대상A]
 
 kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{HangulJamoExtendedA}\p{HangulJamoExtendedB}"
 
+_이동 = whitespace_tolerant_literal("이동")
+_공격 = whitespace_tolerant_literal("공격")
+_스킬 = whitespace_tolerant_literal("스킬")
+_아이템 = whitespace_tolerant_literal("아이템")
+
 command_base_format = regex.compile(r".*\[\s*(?P<command>.+)\s*].*")
 
 # 이동 :: 이동/1 또는 이동/1열
-command_format_move = regex.compile(r"^\s*이동\s*/\s*(?P<pos>[1-7]열?)\s*$")
+command_format_move = regex.compile(rf"^\s*{_이동}\s*/\s*(?P<pos>[1-7]열?)\s*$")
 
 # 기본 공격 :: 공격/대상
 command_format_attack = regex.compile(
-    rf"^\s*공격\s*/\s*(?P<target>[{kr_charset}0-9A-Za-z ]+)\s*$"
+    rf"^\s*{_공격}\s*/\s*(?P<target>[{kr_charset}0-9A-Za-z ]+)\s*$"
 )
 
 # 대상이 지정된 스킬 사용 :: 스킬/스킬명/대상1/대상2/대상3
 command_format_skill = regex.compile(
-    rf"^\s*스킬\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+)\s*$"
+    rf"^\s*{_스킬}\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+)\s*$"
 )
 
 # 대상이 없는 스킬 사용 :: 스킬/스킬명
 command_format_skill_no_target = regex.compile(
-    rf"^\s*스킬\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*$"
+    rf"^\s*{_스킬}\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*$"
 )
 
 # 아이템 사용 :: 아이템/아이템 이름(/대상)
 command_format_item = regex.compile(
-    rf"^\s*아이템\s*/\s*(?P<item_name>[{kr_charset}0-9A-Za-z ]+)\s*(/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+))?\s*$"
+    rf"^\s*{_아이템}\s*/\s*(?P<item_name>[{kr_charset}0-9A-Za-z ]+)\s*(/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+))?\s*$"
 )
 
 

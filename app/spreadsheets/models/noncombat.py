@@ -25,6 +25,9 @@ class NoncombatCharacterDataFromSpreadsheet:
     # 재화
     gold: int = 0
     daily_quest_date: str = ""  # YYYY-MM-DD, 미수행이면 ""
+    # 체력 (전투용 캐릭터 시트의 curr_hp/max_hp 컬럼을 그대로 공유)
+    curr_hp: int = 0
+    max_hp: int = 0
 
     @classmethod
     def from_dict(cls, raw: dict[str, str | int | bool]):
@@ -37,6 +40,8 @@ class NoncombatCharacterDataFromSpreadsheet:
             stat_technology=int(raw.get("stat_technology", 0) or 0),
             gold=int(raw.get("gold", 0) or 0),
             daily_quest_date=str(raw.get("daily_quest_date", "") or ""),
+            curr_hp=int(raw.get("curr_hp", 0) or 0),
+            max_hp=int(raw.get("max_hp", 0) or 0),
         )
 
     def get_noncombat_stat(self, stat_type: NoncombatStatType) -> int:

@@ -35,9 +35,7 @@ class SkillEffectDamage(SkillEffectBase):
         else:
             damage_value = BaseValueIndicator(
                 value_source=self.value_source,
-                coefficient=FloatValueModifier(
-                    source_name="계수", value=self.value / 100
-                ),
+                coefficient=FloatValueModifier(source_name="계수", value=self.value),
             )
         is_magic_attack = context.characters[holder].status.is_magic_attacker
         return (

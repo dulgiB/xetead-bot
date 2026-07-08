@@ -14,13 +14,14 @@ class PassiveSkillTrigger(str, Enum):
     ROUND_START = "라운드 시작"
     ON_ACTION = "행동 시"
     ON_ENEMY_MOVE = "적 이동 시"
+    ENEMY_POST_ACTION = "적 후행 시"
 
 
 class PassiveSkillTargetType(str, Enum):
     SELF = "자신"
     SAME_COLUMN_ALLIES = "같은 열 아군"
     ALL_ALLIES = "전체 아군"
-    ATTACKER_OR_TARGET = "공격자_또는_대상"
+    ATTACKER_OR_TARGET = "공격자 또는 대상"
     LOWEST_HP_ALLY = "체력 최저 아군"
 
 
