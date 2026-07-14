@@ -198,11 +198,11 @@ class TestConsumeStackForDamage:
         return ctx, manager, caster, target
 
     def test_bonus_damage_scales_with_consumed_stack_and_taunt_applied(self):
-        """4스택 보유 → 4 소모(cap 5는 clamp) → 보너스 대미지 4*3=12,
-        기본 10 포함 총 22. 소모량 3 이상이므로 도발도 함께 부여된다."""
+        """4스택 보유(시전자 자신) → 4 소모(cap 5는 clamp) → 보너스 대미지
+        4*3=12, 기본 10 포함 총 22. 소모량 3 이상이므로 도발도 함께 부여된다."""
         ctx, manager, caster, target = self._make_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="재앙", stack_value=4)
+            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4)
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -212,17 +212,17 @@ class TestConsumeStackForDamage:
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 22
-        assert ctx.get_buff_stack(target, "재앙") == 0
+        assert ctx.get_buff_stack(caster, "재앙") == 0
         assert any(
             b.id == "도발_1" for b in ctx.buff_container.get_buffs_by(target, None)
         )
 
     def test_taunt_not_applied_when_consumed_below_threshold(self):
-        """2스택만 보유 → 2 소모(임계값 3 미만) → 보너스 대미지 2*3=6, 총 16.
-        도발은 부여되지 않아야 한다."""
+        """2스택만 보유(시전자 자신) → 2 소모(임계값 3 미만) → 보너스 대미지
+        2*3=6, 총 16. 도발은 부여되지 않아야 한다."""
         ctx, manager, caster, target = self._make_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="재앙", stack_value=2)
+            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2)
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -386,7 +386,7 @@ class TestSkillEffectHealAndFillBuffStack:
         )
 
         # space = 10-6=4 -> heal_amount = 4*5=20. 아군은 84->100(16 흡수),
-        # 초과분 4는 Catastrophe 자신에게: 90+4=94.
+        # 초과분 4는 시전자 자신에게: 90+4=94.
         manager.process_command(
             parse_character_command(caster, "[스킬/재앙 나눔/아군]")
         )

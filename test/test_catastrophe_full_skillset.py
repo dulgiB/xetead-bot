@@ -321,9 +321,13 @@ class TestPassiveSkill:
 
 
 class TestCost2Skill:
-    """코스트 2 스킬: 스택 소모 clamp + 소모량 기반 대미지 가산 +
-    조건부 도발 부여. STAT_ATK_ROLL(공격 굴림값)의 무작위성을 없애기 위해
-    milestone_n=0, 공격자 atk=0으로 설정해 effect_0(기본 대미지)을 0으로 고정한다."""
+    """코스트 2 스킬: 자신에게 쌓인 [재앙] 스택 소모 clamp + 소모량 기반
+    대미지 가산 + 조건부 도발 부여. STAT_ATK_ROLL(공격 굴림값)의 무작위성을
+    없애기 위해 milestone_n=0, 공격자 atk=0으로 설정해 effect_0(기본 대미지)을
+    0으로 고정한다.
+
+    [재앙]은 패시브 스킬을 통해 항상 시전자 자신에게 쌓이므로, 이 스킬도
+    대상이 아니라 시전자 자신의 스택을 소모한다."""
 
     def _make_ready_context(self):
         ctx = _make_context(milestone_n=0)
@@ -343,7 +347,7 @@ class TestCost2Skill:
     def test_consumes_up_to_cap_and_grants_taunt_when_threshold_met(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="재앙", stack_value=4)
+            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4)
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -354,7 +358,7 @@ class TestCost2Skill:
 
         # 기본 대미지 0(atk=0) + 소모 4스택×300% = 12.
         assert hp_before - hp_after == 12
-        assert ctx.get_buff_stack(target, "재앙") == 0
+        assert ctx.get_buff_stack(caster, "재앙") == 0
         assert any(
             b.id == "도발" for b in ctx.buff_container.get_buffs_by(target, None)
         )
@@ -362,7 +366,7 @@ class TestCost2Skill:
     def test_taunt_not_granted_below_threshold(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="재앙", stack_value=2)
+            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2)
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -380,14 +384,14 @@ class TestCost2Skill:
         """cap 5보다 적게 보유(3스택)해도 실패 없이 있는 만큼만 소모된다."""
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="재앙", stack_value=3)
+            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=3)
         )
 
         manager.process_command(
             parse_character_command(caster, "[스킬/Cost2Skill/적군]")
         )
 
-        assert ctx.get_buff_stack(target, "재앙") == 0
+        assert ctx.get_buff_stack(caster, "재앙") == 0
 
 
 class TestCost3Skill:

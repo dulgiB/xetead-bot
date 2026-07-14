@@ -16,8 +16,9 @@ if TYPE_CHECKING:
 
 
 class SkillEffectConsumeStackForDamage(SkillEffectBase):
-    """buff_id 적층형 버프의 스택을 대상별로 최대 buff_stack_cap만큼 소모(제거)
-    하면서, 동시에 그 소모량 × value%만큼 대미지를 추가로 입힌다.
+    """시전자 자신의 buff_id 적층형 버프 스택을 최대 buff_stack_cap만큼 소모
+    (제거)하면서, 동시에 그 소모량 × value%만큼 대미지를 targets에게 입힌다
+    (예: 자신에게 쌓인 스택형 디버프를 소모해 대상에게 대미지로 전가하는 스킬).
 
     제거와 대미지를 같은 effect(같은 effect_seq_number)로 함께 반환하는 이유:
     CommandPartCalculator.process()는 같은 인덱스에 대해 항상 _process_buff_remove()를
@@ -25,10 +26,10 @@ class SkillEffectConsumeStackForDamage(SkillEffectBase):
     처리되어 result_value(실제 소모량)가 기록된 뒤 같은 슬롯의 DamageData가
     CONSUMED_BUFF_STACK 값소스로 그 값을 즉시 조회할 수 있다.
 
-    스택은 targets(대미지 대상)의 것을 소모한다. 시전자 자신의 스택을 소모하며
-    다른 대상에게 대미지를 주는 패턴은 지원하지 않는다 — target_override는
-    제거 대상과 대미지 대상을 함께 옮기므로 분리가 불가능하다. 필요해지면
-    별도 필드가 추가로 필요하다.
+    스택 소모 대상은 항상 holder(시전자) 고정이다. target_override는 제거
+    대상과 대미지 대상을 함께 옮기므로(SkillEffectBase.expand() 참고), targets를
+    스택 소모에 쓰면 "대상에게 대미지, 자신의 스택 소모"라는 조합을 표현할 수
+    없다.
     """
 
     def _expand(
@@ -48,8 +49,7 @@ class SkillEffectConsumeStackForDamage(SkillEffectBase):
         cap = self.buff_stack_cap or 0
 
         buff_remove_list = [
-            BuffRemoveData(applied_to=target, buff_id=self.buff_id, requested_amount=cap)
-            for target in targets
+            BuffRemoveData(applied_to=holder, buff_id=self.buff_id, requested_amount=cap)
         ]
 
         is_magic_attack = context.characters[holder].status.is_magic_attacker
