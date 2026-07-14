@@ -46,15 +46,20 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
 ):
     acct = "user1"
     state = _make_state(acct)
+    saved_calls = []
     monkeypatch.setattr(
-        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+        noncombat_module,
+        "update_character_gold_and_quest_date",
+        lambda *a, **k: saved_calls.append(a),
     )
 
     result = handle_daily_quest_roll(acct, "육체", state)
 
     assert "사례로 1G를 획득했다" in result
     assert acct not in state.noncombat.daily_quest_mid
-    assert state.noncombat_char_dict[acct].gold == 11
+    # 캐릭터 데이터는 매 커맨드마다 새로 읽으므로, 로컬 캐시가 아니라
+    # 스프레드시트에 실제로 반영된 값(gold=11)을 검증한다.
+    assert saved_calls == [(None, "동료", 11, saved_calls[0][3])]
 
 
 def test_daily_quest_roll_reports_failure_and_keeps_mid_when_save_fails(monkeypatch):

@@ -1,6 +1,5 @@
 import random
 import re
-from dataclasses import replace
 from datetime import date
 from typing import TYPE_CHECKING, Optional
 
@@ -327,8 +326,6 @@ def handle_daily_quest_roll(acct: str, stat_name: str, state: "BotState") -> str
         update_character_gold_and_quest_date(
             state.spreadsheet, char_data.name, new_gold, today
         )
-        updated = replace(char_data, gold=new_gold, daily_quest_date=today)
-        state.noncombat_char_dict[acct] = updated
     except Exception as e:
         save_succeeded = False
         errors.append(f"스프레드시트 저장 실패: {e}")

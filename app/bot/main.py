@@ -38,7 +38,7 @@ from bot.commands.noncombat import (
     parse_use_item_args,
 )
 from bot import log_sheets
-from bot.load_data import load_all_data
+from bot.load_data import load_all_data, load_char_data
 from bot.noncombat_state import NonCombatState
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
@@ -195,6 +195,18 @@ class BotState:
     noncombat: NonCombatState = field(default_factory=NonCombatState)
 
 
+def reload_char_data(state: BotState) -> None:
+    """'캐릭터' 시트를 새로 읽어 state의 캐릭터 관련 캐시를 갱신한다.
+
+    캐릭터 명단은 세션 도중에도 바뀔 수 있으므로(참전 신청, 수정 중인 행 등),
+    캐릭터 관련 커맨드가 들어올 때마다(멘션 수신 시) 매번 새로 읽는다.
+    """
+    char_dict, name_dict, noncombat_char_dict = load_char_data(state.spreadsheet)
+    state.char_dict = char_dict
+    state.name_dict = name_dict
+    state.noncombat_char_dict = noncombat_char_dict
+
+
 class MastodonBotListener(StreamListener):
     def __init__(self, mastodon: Mastodon, state: BotState, bot_acct: str) -> None:
         super().__init__()
@@ -218,6 +230,8 @@ class MastodonBotListener(StreamListener):
             command_text = _extract_command(status["content"])
             if not command_text:
                 return
+
+            reload_char_data(self._state)
 
             mentions = [
                 m["acct"]

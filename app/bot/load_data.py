@@ -160,31 +160,77 @@ def load_char_data(
     dict[str, NoncombatCharacterDataFromSpreadsheet],
 ]:
     """
-    스프레드시트에서 캐릭터 데이터만 로드한다. BattlefieldContext 생성 직전에 호출해
-    최신 데이터를 반영한다.
+    스프레드시트에서 캐릭터·에너미 데이터를 로드한다. 캐릭터 관련 커맨드가 들어올 때마다
+    호출해 최신 데이터를 반영한다. 파싱에 실패하는 행(수정 중이라 일시적으로
+    형식이 깨진 행 등)은 조용히 건너뛴다.
+
+    "에너미" 시트는 "캐릭터" 시트와 달리 비전투 스테이터스·골드·일일 의뢰 컬럼이 없으므로
+    NoncombatCharacterDataFromSpreadsheet/noncombat_char_dict의 대상이 되지 않는다.
+    mastodon_id가 있는 에너미(계정을 가진 에너미)는 char_dict에도 등록되어 본인 계정으로
+    전투 커맨드를 입력할 수 있다.
+
     반환값: (char_dict, name_dict, noncombat_char_dict)
-      - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
-      - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체)
-      - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
+      - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만, 캐릭터+에너미)
+      - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체, 캐릭터+에너미)
+      - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만, 캐릭터만)
     """
     char_raw = spreadsheet.worksheet("캐릭터").get_all_records(
         value_render_option=_UNFORMATTED
     )
-    char_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {
-        r["mastodon_id"]: CombatCharacterDataFromSpreadsheet.from_dict(r)
-        for r in char_raw
-        if r.get("mastodon_id")
-    }
-    name_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {
-        r["name"]: CombatCharacterDataFromSpreadsheet.from_dict(r)
-        for r in char_raw
-        if r.get("name")
-    }
-    noncombat_char_dict: dict[str, NoncombatCharacterDataFromSpreadsheet] = {
-        r["mastodon_id"]: NoncombatCharacterDataFromSpreadsheet.from_dict(r)
-        for r in char_raw
-        if r.get("mastodon_id")
-    }
+    char_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {}
+    name_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {}
+    noncombat_char_dict: dict[str, NoncombatCharacterDataFromSpreadsheet] = {}
+
+    for r in char_raw:
+        name = r.get("name")
+        mastodon_id = r.get("mastodon_id")
+        if not name and not mastodon_id:
+            continue
+        try:
+            combat_data = CombatCharacterDataFromSpreadsheet.from_dict(r)
+            noncombat_data = NoncombatCharacterDataFromSpreadsheet.from_dict(r)
+        except Exception:
+            logger.warning(
+                "'캐릭터' 시트 행을 읽는 중 오류가 발생해 건너뜁니다: name=%s, mastodon_id=%s",
+                name,
+                mastodon_id,
+                exc_info=True,
+            )
+            continue
+        if mastodon_id:
+            char_dict[mastodon_id] = combat_data
+            noncombat_char_dict[mastodon_id] = noncombat_data
+        if name:
+            name_dict[name] = combat_data
+
+    try:
+        enemy_raw = spreadsheet.worksheet("에너미").get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning("'에너미' 시트를 찾을 수 없습니다. 에너미 없이 로드합니다.")
+        enemy_raw = []
+
+    for r in enemy_raw:
+        name = r.get("name")
+        mastodon_id = r.get("mastodon_id")
+        if not name and not mastodon_id:
+            continue
+        try:
+            combat_data = CombatCharacterDataFromSpreadsheet.from_dict(r)
+        except Exception:
+            logger.warning(
+                "'에너미' 시트 행을 읽는 중 오류가 발생해 건너뜁니다: name=%s, mastodon_id=%s",
+                name,
+                mastodon_id,
+                exc_info=True,
+            )
+            continue
+        if mastodon_id:
+            char_dict[mastodon_id] = combat_data
+        if name:
+            name_dict[name] = combat_data
+
     return char_dict, name_dict, noncombat_char_dict
 
 
@@ -276,19 +322,25 @@ def update_character_curr_hp(
     char_name: str,
     new_curr_hp: int,
 ) -> None:
-    """캐릭터 시트에서 해당 캐릭터 행을 찾아 curr_hp를 갱신한다."""
-    ws = spreadsheet.worksheet("캐릭터")
-    records = ws.get_all_records()
-    header = ws.row_values(1)
+    """'캐릭터' 또는 '에너미' 시트에서 해당 이름의 행을 찾아 curr_hp를 갱신한다.
 
-    try:
+    전투 중 대미지/회복은 아군·에너미 구분 없이 발생하므로 두 시트를 순서대로 찾는다.
+    """
+    for sheet_name in ("캐릭터", "에너미"):
+        try:
+            ws = spreadsheet.worksheet(sheet_name)
+        except gspread.exceptions.WorksheetNotFound:
+            continue
+
+        records = ws.get_all_records()
+        header = ws.row_values(1)
+        if "curr_hp" not in header:
+            continue
         hp_col = header.index("curr_hp") + 1
-    except ValueError as e:
-        raise RuntimeError(f"캐릭터 시트에 필수 컬럼이 없습니다: {e}") from e
 
-    for idx, row in enumerate(records, start=2):
-        if row.get("name") == char_name:
-            ws.update_cell(idx, hp_col, new_curr_hp)
-            return
+        for idx, row in enumerate(records, start=2):
+            if row.get("name") == char_name:
+                ws.update_cell(idx, hp_col, new_curr_hp)
+                return
 
-    raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
+    raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다.")
