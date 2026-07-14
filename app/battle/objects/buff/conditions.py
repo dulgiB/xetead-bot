@@ -254,3 +254,42 @@ class TargetIsInRangeCondition(Condition):
         target_pos = context.find_character_position(attacker_or_target)
         holder_range = holder_char.status[CombatStatType.RANGE]
         return is_reachable(holder_pos, target_pos, holder_range)
+
+
+@dataclass(frozen=True)
+class HolderWasAttackedCondition(Condition):
+    """holder가 이번 라운드 동안(damaged_this_round 기준) 대미지를 받았을 때 True.
+
+    "같은 열 아군 누구든" 대신 "자신이 맞았을 때만" 추가로 반응하는 조건에 쓴다.
+    """
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        return holder in context.damaged_this_round
+
+
+@dataclass(frozen=True)
+class AllyInSameColumnWasAttackedCondition(Condition):
+    """holder와 같은 열·같은 진영(자신 포함)인 캐릭터 중 이번 라운드 동안
+    (damaged_this_round 기준) 대미지를 받은 자가 1명이라도 있으면 True."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if holder not in context.characters:
+            return False
+        holder_char = context.characters[holder]
+        holder_pos = context.find_character_position(holder)
+        return any(
+            char.faction == holder_char.faction
+            and context.find_character_position(char_id) == holder_pos
+            and char_id in context.damaged_this_round
+            for char_id, char in context.characters.items()
+        )

@@ -73,6 +73,7 @@ class BattlefieldContext:
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
         self.moved_this_round: set[CharacterId] = set()
+        self.damaged_this_round: set[CharacterId] = set()
 
     def __str__(self):
         enemy_str = []
@@ -118,6 +119,7 @@ class BattlefieldContext:
         }
         self.prev_round_results = []
         self.moved_this_round = set()
+        self.damaged_this_round = set()
 
     def add_character(
         self,
@@ -280,6 +282,7 @@ class BattlefieldContext:
 
     def on_start_round(self):
         self.moved_this_round = set()
+        self.damaged_this_round = set()
         self.buff_container.on_round_start()
         for character in self.characters.values():
             character.status.remaining_cost = character.status[
@@ -291,8 +294,18 @@ class BattlefieldContext:
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
 
+    def on_battle_end(self) -> None:
+        self.buff_container.on_battle_end()
+
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]
+
+    def get_buff_instance(self, char_id: CharacterId, buff_id: str):
+        return self.buff_container.get_buff(char_id, buff_id)
+
+    def get_buff_stack(self, char_id: CharacterId, buff_id: str) -> int:
+        buff = self.buff_container.get_buff(char_id, buff_id)
+        return buff.stack_count if buff is not None else 0
 
     def get_skill_data_by_id(self, skill_id: str) -> SkillData:
         return self._skill_dictionary[skill_id]
