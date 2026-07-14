@@ -30,12 +30,20 @@ class RoundManager:
             pass
 
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
+            # 적의 지연된 공격이 실제로 적용되기 전에 발동한다. 이 시점에 실제
+            # 버프(ON_ACTION 타이밍)를 새로 부여하는 패시브는 그 버프가 뒤이어
+            # 처리되는 이 라운드의 공격에 곧바로 반영되어야 한다.
             self._context.buff_container.on_enemy_post_action()
             for user_id, remaining_commands in self._enemy_command_list.items():
                 post_results = try_process_enemy_command_on_post_action(
                     self._context, user_id, remaining_commands
                 )
                 self._context.results.extend(post_results)
+            # 적의 공격이 모두 적용된 뒤에 발동한다. damaged_this_round(이번
+            # 라운드에 누가 맞았는지)에 반응하는 패시브 전용 타이밍이라, 위
+            # on_enemy_post_action()과 달리 이 시점에만 평가돼야 하는 패시브만
+            # 선택된다(PassiveSkillWrapperBuff.timing 참고).
+            self._context.buff_container.on_enemy_post_action_resolved()
 
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             self._context.on_finish_round()

@@ -113,6 +113,10 @@ class BuffApplyTiming(str, Enum):
     ON_ROUND_START = "라운드 시작 시"
     ON_ACTION = "행동 시"
     ON_ENEMY_POST_ACTION = "적 후행 시"
+    # ON_ENEMY_POST_ACTION과 같은 스프레드시트 트리거("적 후행 시")를 쓰지만,
+    # 적의 지연된 공격이 모두 적용된 뒤(damaged_this_round가 확정된 뒤)에
+    # 평가되어야 하는 패시브 전용(PassiveSkillWrapperBuff.timing 참고).
+    ON_ENEMY_POST_ACTION_RESOLVED = "적 후행 결과 반영 후"
     ON_ROUND_END = "라운드 종료 시"
     ON_ENEMY_MOVE = "적 이동 시"
     # 자신이 공격자/피격자가 아니어도, 같은 진영·같은 열의 누군가(자신 포함)가

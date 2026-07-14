@@ -43,6 +43,15 @@ def _resolve_targets(
             and context.find_character_position(char_id) == holder_pos
         ]
 
+    if target_type == PassiveSkillTargetType.SELF_AND_SAME_COLUMN_ALLIES:
+        holder_pos = context.find_character_position(holder)
+        return [
+            char_id
+            for char_id, char in context.characters.items()
+            if char.faction == holder_char.faction
+            and context.find_character_position(char_id) == holder_pos
+        ]
+
     if target_type == PassiveSkillTargetType.ALL_ALLIES:
         return [
             char_id
@@ -156,6 +165,12 @@ class PassiveSkillWrapperBuff(BuffBase):
         if self._passive_data.trigger == PassiveSkillTrigger.ON_ENEMY_MOVE:
             return BuffApplyTiming.ON_ENEMY_MOVE
         if self._passive_data.trigger == PassiveSkillTrigger.ENEMY_POST_ACTION:
+            if any(
+                effect.condition is not None
+                and effect.condition.requires_round_resolved
+                for effect in self._passive_data.effects
+            ):
+                return BuffApplyTiming.ON_ENEMY_POST_ACTION_RESOLVED
             return BuffApplyTiming.ON_ENEMY_POST_ACTION
         if self._passive_data.trigger == PassiveSkillTrigger.ALLY_DAMAGED:
             return BuffApplyTiming.ALLY_DAMAGED

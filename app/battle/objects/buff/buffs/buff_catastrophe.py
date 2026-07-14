@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class CurseNoopEvent(BuffEvent):
+class CatastropheNoopEvent(BuffEvent):
     """[재앙]은 자연적으로 발동하는 효과가 없는 순수 카운터 버프다. 스킬 효과
     (SkillEffectConsumeStackForDamage 등)가 스택을 직접 조회·소모하므로 여기서는
     아무 일도 하지 않는다."""
@@ -31,7 +31,7 @@ class CurseNoopEvent(BuffEvent):
         pass
 
 
-class BuffCurse(BuffBase):
+class BuffCatastrophe(BuffBase):
     """[재앙]: 버프도 디버프도 아닌 순수 적층형 마커. 해제할 수 없고(패시브
     지속시간이라 라운드 종료 시 자동 제거되지 않으며, is_debuff=False라
     디버프 해제 효과의 대상이 되지 않는다), 전투가 끝나면 남은 스택 × 3만큼
@@ -42,7 +42,7 @@ class BuffCurse(BuffBase):
         return BuffApplyTiming.ON_ROUND_END
 
     def create_event(self) -> BuffEvent:
-        return CurseNoopEvent(condition=self.condition)
+        return CatastropheNoopEvent(condition=self.condition)
 
     def on_battle_end(self, context: "BattlefieldContext") -> None:
         if self.stack_count <= 0:
