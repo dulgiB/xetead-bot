@@ -3,7 +3,7 @@ import logging
 import os
 
 import gspread
-from battle.objects.buff.models import BuffData
+from battle.objects.buff.models import BuffData, PassiveBuffData
 from battle.objects.item.models import ItemData
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
@@ -67,18 +67,20 @@ def load_battle_data(
     except gspread.exceptions.WorksheetNotFound:
         logger.warning("'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다.")
 
+    passive_buff_dict = load_passive_buff_data(db)
+
     passive_skill_dict: dict[str, PassiveSkillData] = {}
     try:
-        passive_skill_raw = db.worksheet("패시브 스킬").get_all_records(
+        passive_skill_raw = db.worksheet("스킬_패시브").get_all_records(
             value_render_option=_UNFORMATTED
         )
         passive_skill_dict = {
-            r["id"]: PassiveSkillData.from_dict(r)
+            r["id"]: PassiveSkillData.from_dict(r, passive_buff_dict)
             for r in passive_skill_raw
             if r.get("id")
         }
     except gspread.exceptions.WorksheetNotFound:
-        logger.warning("'패시브 스킬' 시트를 찾을 수 없습니다. 패시브 스킬 없이 로드합니다.")
+        logger.warning("'스킬_패시브' 시트를 찾을 수 없습니다. 패시브 스킬 없이 로드합니다.")
 
     item_dict = load_item_data(db)
     inventory = load_inventory(db)
@@ -119,6 +121,27 @@ def load_all_data() -> tuple[
     db = gc.open_by_key(os.environ["DB_SPREADSHEET_KEY"])
 
     return (*load_battle_data(db), db)
+
+
+def load_passive_buff_data(
+    spreadsheet: gspread.Spreadsheet,
+) -> dict[str, PassiveBuffData]:
+    """'버프_패시브' 시트를 읽어 id → PassiveBuffData dict를 반환한다.
+
+    패시브 스킬이 기존 버프 이벤트를 그대로 재사용하는 "버프 모디파이어 경로"
+    전용 데이터로, 지속시간/적층 등이 없는 '버프' 시트의 축소판이다.
+    """
+    try:
+        passive_buff_raw = spreadsheet.worksheet("버프_패시브").get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning("'버프_패시브' 시트를 찾을 수 없습니다. 버프 모디파이어 없이 로드합니다.")
+        return {}
+
+    return {
+        r["id"]: PassiveBuffData.from_dict(r) for r in passive_buff_raw if r.get("id")
+    }
 
 
 def load_item_data(spreadsheet: gspread.Spreadsheet) -> dict[str, ItemData]:
