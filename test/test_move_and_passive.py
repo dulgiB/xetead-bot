@@ -197,11 +197,9 @@ def _make_intercept_passive(ally_id: CharacterId) -> PassiveSkillWrapperBuff:
         id="견제",
         trigger=PassiveSkillTrigger.ON_ENEMY_MOVE,
         target_type=PassiveSkillTargetType.ATTACKER_OR_TARGET,
-        effect=SkillEffectDamage(
-            ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
-        ),
-        condition_class_name=None,
-        condition_value=None,
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None)
+        ],
         description="",
     )
     return PassiveSkillWrapperBuff.create(ally_id, passive_data)
@@ -348,11 +346,16 @@ def test_target_in_range_condition_prevents_out_of_range_trigger():
         id="견제",
         trigger=PassiveSkillTrigger.ON_ENEMY_MOVE,
         target_type=PassiveSkillTargetType.ATTACKER_OR_TARGET,
-        effect=SkillEffectDamage(
-            ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
-        ),
-        condition_class_name="TargetIsInRangeCondition",
-        condition_value=None,
+        effects=[
+            SkillEffectDamage(
+                ValueSourceType.FIXED,
+                10,
+                ValueType.INTEGER,
+                None,
+                None,
+                condition_class_name="TargetIsInRangeCondition",
+            )
+        ],
         description="",
     )
     ctx.buff_container.add_passive_wrapper(
@@ -390,11 +393,16 @@ def test_target_in_range_condition_triggers_when_in_range():
         id="견제",
         trigger=PassiveSkillTrigger.ON_ENEMY_MOVE,
         target_type=PassiveSkillTargetType.ATTACKER_OR_TARGET,
-        effect=SkillEffectDamage(
-            ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
-        ),
-        condition_class_name="TargetIsInRangeCondition",
-        condition_value=None,
+        effects=[
+            SkillEffectDamage(
+                ValueSourceType.FIXED,
+                10,
+                ValueType.INTEGER,
+                None,
+                None,
+                condition_class_name="TargetIsInRangeCondition",
+            )
+        ],
         description="",
     )
     ctx.buff_container.add_passive_wrapper(
@@ -437,15 +445,15 @@ def _make_guardian_passive(guardian_id: CharacterId) -> PassiveSkillWrapperBuff:
         id="수호 본능",
         trigger=PassiveSkillTrigger.ENEMY_POST_ACTION,
         target_type=PassiveSkillTargetType.SAME_COLUMN_ALLIES,
-        effect=SkillEffectAddBuff(
-            value_source=None,
-            value=None,
-            value_type=None,
-            buff_id="수호",
-            buff_add_timing=None,
-        ),
-        condition_class_name=None,
-        condition_value=None,
+        effects=[
+            SkillEffectAddBuff(
+                value_source=None,
+                value=None,
+                value_type=None,
+                buff_id="수호",
+                buff_add_timing=None,
+            )
+        ],
         description="",
     )
     return PassiveSkillWrapperBuff.create(guardian_id, passive_data)

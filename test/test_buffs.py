@@ -1054,11 +1054,9 @@ class TestBuffDuration:
             id="패시브",
             trigger=PassiveSkillTrigger.ON_ACTION,
             target_type=PassiveSkillTargetType.SELF,
-            effect=SkillEffectHeal(
-                ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None
-            ),
-            condition_class_name=None,
-            condition_value=None,
+            effects=[
+                SkillEffectHeal(ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None)
+            ],
             description="",
         )
         ctx = make_context(passive_skill_dict={"패시브": passive})
@@ -1090,9 +1088,9 @@ class TestPassiveSkillSelfHealOnGivenDamage:
             id="생명력 흡수",
             trigger=PassiveSkillTrigger.ON_ACTION,
             target_type=PassiveSkillTargetType.SELF,
-            effect=SkillEffectHeal(ValueSourceType.GIVEN_DAMAGE, 50, None, None, None),
-            condition_class_name=None,
-            condition_value=None,
+            effects=[
+                SkillEffectHeal(ValueSourceType.GIVEN_DAMAGE, 50, None, None, None)
+            ],
             description="",
         )
         attack_skill = SkillData(
@@ -1168,9 +1166,9 @@ class TestPassiveSkillSelfHealOnGivenDamage:
             id="생명력 흡수",
             trigger=PassiveSkillTrigger.ON_ACTION,
             target_type=PassiveSkillTargetType.SELF,
-            effect=SkillEffectHeal(ValueSourceType.GIVEN_DAMAGE, 50, None, None, None),
-            condition_class_name=None,
-            condition_value=None,
+            effects=[
+                SkillEffectHeal(ValueSourceType.GIVEN_DAMAGE, 50, None, None, None)
+            ],
             description="",
         )
         ctx = make_context(
@@ -1224,9 +1222,16 @@ class TestPassiveSkillSelfHealOnGivenHeal:
             id="공명",
             trigger=PassiveSkillTrigger.ON_ACTION,
             target_type=PassiveSkillTargetType.SELF,
-            effect=SkillEffectHeal(ValueSourceType.GIVEN_HEAL, 50, None, None, None),
-            condition_class_name="HealedNonSelfCondition",
-            condition_value=None,
+            effects=[
+                SkillEffectHeal(
+                    ValueSourceType.GIVEN_HEAL,
+                    50,
+                    None,
+                    None,
+                    None,
+                    condition_class_name="HealedNonSelfCondition",
+                )
+            ],
             description="",
         )
         heal_skill = SkillData(
