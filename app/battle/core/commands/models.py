@@ -2,7 +2,7 @@ from dataclasses import KW_ONLY, dataclass, field
 from typing import TYPE_CHECKING, Literal, Optional
 
 from battle.core.commands.define import RoundPhaseType
-from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import MAX_EFFECT_COUNT, ActionType, BattlefieldColumnIndex
 from battle.objects.models import (
     BuffUid,
@@ -43,6 +43,7 @@ class CommandPartDataPerEffect:
     damage_list: list[DamageData] = field(default_factory=list)
     heal_list: list[HealData] = field(default_factory=list)
     buff_add_list: list[BuffAddData] = field(default_factory=list)
+    buff_remove_list: list[BuffRemoveData] = field(default_factory=list)
     # 에너미 스킬 전용: None이면 페이즈별 기본값(이동→PRE, 대미지/힐→POST) 사용.
     apply_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
@@ -87,6 +88,7 @@ class CommandPartData:
                         damage_list=data.damage_list,
                         heal_list=data.heal_list,
                         buff_add_list=data.buff_add_list,
+                        buff_remove_list=data.buff_remove_list,
                     )
                 )
         return CommandPartData(
@@ -111,6 +113,12 @@ class HealCalculateData:
     result_value: Optional[int] = None
     # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.__str__). 로그 기록용.
     roll_display: Optional[str] = None
+
+
+@dataclass
+class BuffRemoveCalculateData:
+    base: BuffRemoveData
+    result_value: Optional[int] = None
 
 
 @dataclass(frozen=True)

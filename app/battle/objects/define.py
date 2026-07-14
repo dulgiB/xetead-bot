@@ -6,6 +6,9 @@ MAX_SKILL_SLOT_COUNT = 3
 # 스킬 또는 아이템 효과의 최대 개수
 MAX_EFFECT_COUNT = 3
 
+# 패시브 스킬 효과의 최대 개수
+MAX_PASSIVE_EFFECT_COUNT = 2
+
 
 class BattlefieldColumnIndex(Enum):
     NONE = 7
@@ -74,6 +77,8 @@ class ValueSourceType(str, Enum):
 
     GIVEN_DAMAGE = "해당 공격으로 입힌 대미지"
     GIVEN_HEAL = "해당 행동으로 부여한 회복량"
+    CONSUMED_BUFF_STACK = "해당 행동으로 소모한 버프 스택 수"
+    INCREASED_BUFF_STACK = "해당 행동으로 증가한 버프 스택 수"
 
     TOWARD_HOLDER = "공격자 방향으로"
     AWAY_FROM_HOLDER = "공격자 반대 방향으로"
@@ -110,6 +115,9 @@ class BuffApplyTiming(str, Enum):
     ON_ENEMY_POST_ACTION = "적 후행 시"
     ON_ROUND_END = "라운드 종료 시"
     ON_ENEMY_MOVE = "적 이동 시"
+    # 자신이 공격자/피격자가 아니어도, 같은 진영·같은 열의 누군가(자신 포함)가
+    # 대미지를 입을 때마다 발동한다.
+    ALLY_DAMAGED = "아군 피격 시"
 
 
 class BuffCountDeductCondition(str, Enum):

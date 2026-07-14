@@ -124,6 +124,18 @@ class BaseValueIndicator:
                 return math.floor(total * self.coefficient.value / 100)
             return total
 
+        elif self.value_source == ValueSourceType.CONSUMED_BUFF_STACK:
+            # 현재 effect 포함, 이미 result_value가 설정된 버프 제거량 합산
+            total = sum(
+                data.result_value
+                for effect in calculator.data_by_effect[: effect_seq_number + 1]
+                for data in effect.buff_remove_data_list
+                if data.result_value is not None
+            )
+            if self.coefficient is not None:
+                return math.floor(total * self.coefficient.value / 100)
+            return total
+
         else:
             raise ValueError(self.value_source)
 
@@ -152,7 +164,11 @@ class ValueWithModifiers:
             isinstance(self.base_value, BaseValueIndicator)
             and self.base_value.coefficient is not None
             and self.base_value.value_source
-            not in (ValueSourceType.GIVEN_DAMAGE, ValueSourceType.GIVEN_HEAL)
+            not in (
+                ValueSourceType.GIVEN_DAMAGE,
+                ValueSourceType.GIVEN_HEAL,
+                ValueSourceType.CONSUMED_BUFF_STACK,
+            )
         ):
             self.base_coefficient = self.base_value.coefficient
 

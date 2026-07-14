@@ -1,12 +1,19 @@
 import abc
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.buff.models import BuffData
-from battle.objects.define import BuffApplyTiming, BuffCountDeductCondition
+from battle.objects.define import (
+    BuffApplyTiming,
+    BuffCountDeductCondition,
+    ValueSourceType,
+)
 from battle.objects.models import BuffUid, CharacterId
+
+if TYPE_CHECKING:
+    from battle.core.battlefield_context import BattlefieldContext
 
 
 @dataclass(frozen=True, eq=True)
@@ -19,6 +26,24 @@ class BuffAddData:
     add_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
     ] = None
+
+    # 적층형 버프에 한 번에 더할 스택 수 (max_stack이 없는 버프에는 영향 없음)
+    stack_value: int = 1
+
+    # 조건부 부여 게이트: gate_value_source가 설정돼 있으면 처리 시점에
+    # (CONSUMED_BUFF_STACK 등으로 계산한) 값이 gate_value 미만일 때 부여를 건너뛴다.
+    gate_value_source: Optional[ValueSourceType] = None
+    gate_value: Optional[int] = None
+
+
+@dataclass(frozen=True, eq=True)
+class BuffRemoveData:
+    """적층형 버프의 스택을 일부 제거 요청한다. 즉시 mutate하지 않고 선언적으로
+    보관되며, 실제 제거는 CommandPartCalculator.process() 시점에 이뤄진다."""
+
+    applied_to: CharacterId
+    buff_id: str
+    requested_amount: int
 
 
 class BuffDurationCounter:
@@ -66,6 +91,7 @@ class BuffBase(abc.ABC):
         given_by: CharacterId,
         applied_to: CharacterId,
         data: BuffData,
+        initial_stack: int = 1,
     ):
         self.id = data.id
         self.uid = BuffUid(
@@ -89,6 +115,10 @@ class BuffBase(abc.ABC):
         self.condition = data.condition
         self.is_debuff = data.is_debuff
 
+        # 적층(스택) 지원. max_stack이 None이면 적층 불가 버프(기존 동작과 동일).
+        self.max_stack = data.max_stack
+        self.stack_count = initial_stack
+
     def __hash__(self):
         return hash(self.uid)
 
@@ -102,6 +132,10 @@ class BuffBase(abc.ABC):
 
     def get_sacrifice_override(self) -> Optional[CharacterId]:
         return None
+
+    def on_battle_end(self, context: "BattlefieldContext") -> None:
+        """전투 종료 시점에 호출된다. 기본은 아무 동작도 하지 않는다."""
+        pass
 
     @property
     @abc.abstractmethod

@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import ValueSourceType
 from battle.objects.models import (
     BaseValueIndicator,
@@ -27,6 +27,7 @@ class SkillEffectHeal(SkillEffectBase):
         list[DamageData],
         list[HealData],
         list[BuffAddData],
+        list[BuffRemoveData],
     ]:
         assert self.value is not None and self.value_source is not None
 
@@ -44,5 +45,6 @@ class SkillEffectHeal(SkillEffectBase):
                 HealData(healer_id=holder, target_id=target, value=heal_value)
                 for target in targets
             ],
+            [],
             [],
         )

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import BattleLogEntry
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import (
@@ -334,6 +335,29 @@ def _cmd_end(state: "BotState") -> str:
         return "◊ 진행 중인 전투가 없습니다."
 
     errors: list[str] = []
+
+    # 전투 종료 시점 버프 훅([재앙] 등) 처리 후, 변경된 HP를 스프레드시트에 반영한다.
+    hp_before = {
+        char_id: char.status.curr_hp
+        for char_id, char in state.session.context.characters.items()
+    }
+    state.session.context.on_battle_end()
+    battle_end_entries = [
+        BattleLogEntry(
+            target_name=char_id.name,
+            result=f"대미지 {before - char.status.curr_hp}",
+        )
+        for char_id, char in state.session.context.characters.items()
+        if (before := hp_before[char_id]) != char.status.curr_hp
+    ]
+    if battle_end_entries:
+        try:
+            write_back_changed_hp(
+                state.spreadsheet, state.session.context, battle_end_entries
+            )
+        except Exception as e:
+            errors.append(f"전투 종료 처리 HP 반영 실패: {e}")
+
     try:
         upsert_field_row(
             state.spreadsheet,

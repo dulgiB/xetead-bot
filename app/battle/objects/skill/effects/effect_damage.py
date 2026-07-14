@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import ValueSourceType
 from battle.objects.models import (
     BaseValueIndicator,
@@ -27,6 +27,7 @@ class SkillEffectDamage(SkillEffectBase):
         list[DamageData],
         list[HealData],
         list[BuffAddData],
+        list[BuffRemoveData],
     ]:
         assert self.value is not None and self.value_source is not None
 
@@ -51,6 +52,7 @@ class SkillEffectDamage(SkillEffectBase):
             ],
             [],
             [],
+            [],
         )
 
 
@@ -67,8 +69,9 @@ class SkillEffectDamageReverse(SkillEffectDamage):
         list[DamageData],
         list[HealData],
         list[BuffAddData],
+        list[BuffRemoveData],
     ]:
-        _, damage_list, _, _ = super()._expand(context, holder, targets)
+        _, damage_list, _, _, _ = super()._expand(context, holder, targets)
         reversed_damage_list = [
             DamageData(
                 attacker_id=d.attacker_id,
@@ -78,4 +81,4 @@ class SkillEffectDamageReverse(SkillEffectDamage):
             )
             for d in damage_list
         ]
-        return [], reversed_damage_list, [], []
+        return [], reversed_damage_list, [], [], []
