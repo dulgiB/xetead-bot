@@ -159,10 +159,11 @@ class BattlefieldContext:
             data.passive_skill_id
             and data.passive_skill_id in self._passive_skill_dictionary
         ):
-            wrapper = PassiveSkillWrapperBuff.create(
+            wrappers = PassiveSkillWrapperBuff.create(
                 char_id, self._passive_skill_dictionary[data.passive_skill_id]
             )
-            self.buff_container.add_passive_wrapper(wrapper)
+            for wrapper in wrappers:
+                self.buff_container.add_passive_wrapper(wrapper)
 
         maybe_empty_slot = self.try_find_empty_slot(faction, column_idx)
 

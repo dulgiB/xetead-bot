@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 from battle.core.commands.models import DamageCalculateData, HealCalculateData
 from battle.objects.buff.buff_base import BuffBase, BuffDurationCounter
@@ -75,6 +75,10 @@ def _resolve_targets(
 @dataclass(frozen=True)
 class PassiveSkillWrapperEvent(BuffEvent):
     passive_data: PassiveSkillData
+    # buff_mod_event와 effects는 실제 공격에 반영되려면 서로 다른
+    # BuffApplyTiming(ON_ACTION vs trigger 기반)이 필요해, PassiveSkillWrapperBuff
+    # 하나가 아니라 역할별로 나뉜 버프 인스턴스 각각에 대응한다.
+    role: Literal["buff_mod", "effects"]
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -87,12 +91,12 @@ class PassiveSkillWrapperEvent(BuffEvent):
         calculator: "CommandPartCalculator",
         effect_seq_number: int,
     ) -> None:
-        if self.passive_data.buff_mod_event is not None:
-            # Buff modifier 경로: 기존 계산에 수정자를 직접 주입. effects 경로와
-            # 상호 배타적이지 않으므로 return하지 않고 계속 진행한다.
+        if self.role == "buff_mod":
+            assert self.passive_data.buff_mod_event is not None
             self.passive_data.buff_mod_event.apply(
                 holder, attacker_or_target, calculator, effect_seq_number
             )
+            return
 
         effect_data = calculator.data_by_effect[effect_seq_number]
         for i, effect in enumerate(self.passive_data.effects):
@@ -138,15 +142,38 @@ class PassiveSkillWrapperBuff(BuffBase):
     """패시브 스킬을 BuffContainer 내에서 실행하기 위한 래퍼 버프.
 
     BuffData 없이 직접 생성된다. 플레이어에게는 일반 버프처럼 표시된다.
+
+    buff_mod_event(버프 모디파이어 경로)와 effects는 실제로 적용되려면 서로
+    다른 BuffApplyTiming이 필요하다: buff_mod_event(예: BuffReceivedDamage)는
+    _apply_buff_events()가 실제 공격을 처리하는 시점(ON_ACTION)에 선택돼야만
+    damage_data_list에 수정자를 주입할 수 있는 반면, effects는 trigger가
+    선언한 타이밍(라운드 시작, 적 후행 시 등)에 반응해야 한다. 두 요구가
+    충돌할 수 있으므로(예: trigger='적 후행 시'인데 buff_mod는 ON_ACTION이
+    필요) 하나의 PassiveSkillData가 buff_mod_event와 effects를 모두 가지면
+    `create()`가 역할별로 나뉜 버프 인스턴스 여러 개를 반환한다.
     """
 
     @classmethod
     def create(
         cls, holder: CharacterId, passive_data: PassiveSkillData
+    ) -> list["PassiveSkillWrapperBuff"]:
+        wrappers: list["PassiveSkillWrapperBuff"] = []
+        if passive_data.buff_mod_event is not None:
+            wrappers.append(cls._create_one(holder, passive_data, "buff_mod"))
+        if passive_data.effects:
+            wrappers.append(cls._create_one(holder, passive_data, "effects"))
+        return wrappers
+
+    @classmethod
+    def _create_one(
+        cls,
+        holder: CharacterId,
+        passive_data: PassiveSkillData,
+        role: Literal["buff_mod", "effects"],
     ) -> "PassiveSkillWrapperBuff":
         obj: "PassiveSkillWrapperBuff" = object.__new__(cls)
         obj.id = passive_data.id
-        obj.uid = BuffUid(holder, holder, f"__passive__{passive_data.id}")
+        obj.uid = BuffUid(holder, holder, f"__passive__{passive_data.id}__{role}")
         obj.given_by = holder
         obj.applied_to = holder
         obj.value = 0
@@ -156,10 +183,16 @@ class PassiveSkillWrapperBuff(BuffBase):
         obj.condition = None
         obj.is_debuff = False
         obj._passive_data = passive_data
+        obj._role = role
         return obj
 
     @property
     def timing(self) -> BuffApplyTiming:
+        if self._role == "buff_mod":
+            # buff_mod_event(ReceivedDamageModEvent 등)는 실제 공격 처리 중
+            # _apply_buff_events()가 ON_ACTION 타이밍 버프만 조회하므로, trigger가
+            # 무엇이든 항상 ON_ACTION이어야 실제로 대미지/회복에 반영된다.
+            return BuffApplyTiming.ON_ACTION
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_START:
             return BuffApplyTiming.ON_ROUND_START
         if self._passive_data.trigger == PassiveSkillTrigger.ON_ENEMY_MOVE:
@@ -180,4 +213,5 @@ class PassiveSkillWrapperBuff(BuffBase):
         return PassiveSkillWrapperEvent(
             condition=self.condition,
             passive_data=self._passive_data,
+            role=self._role,
         )

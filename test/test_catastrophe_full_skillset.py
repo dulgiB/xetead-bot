@@ -285,50 +285,39 @@ class TestPassiveSkill:
         # 같은 열 피격(효과 0) + 자신 피격(효과 1) 둘 다 조건을 만족해 2스택.
         assert ctx.get_buff_stack(catastrophe_id, "재앙") == 2
 
-    def test_received_damage_reduction_does_not_currently_take_effect(self):
-        """알려진 한계: 받는 대미지 -5% 모디파이어는 버프 모디파이어 경로로
-        등록되지만, 이 패시브의 trigger가 '적 후행 시'(BuffApplyTiming.ON_ENEMY_POST_ACTION)라
-        라운드 경계에서 빈 계산기(CommandPartCalculator.create_empty_for_buff)를
-        대상으로만 발동한다. 실제 공격 처리 중(ON_ACTION 타이밍)에는 이 버프가
-        선택되지 않으므로 대미지 경감이 실제로 적용되지 않는다. 이 테스트는
-        버그를 재현해 현재 동작을 명시적으로 문서화한다."""
-        baseline_ctx = _make_context()
-        baseline_manager = _setup_enemy_pre_phase(baseline_ctx)
-        catastrophe_id_plain = CharacterId("Catastrophe")
-        baseline_ctx.add_character(
-            get_test_preset("Catastrophe"), FactionType.ALLY, BattlefieldColumnIndex(0)
-        )
-        baseline_ctx.add_character(
-            get_test_preset("적군", atk=5),
-            FactionType.ENEMY,
-            BattlefieldColumnIndex(0),
-        )
-        baseline_manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/Catastrophe]")
-        )
-        baseline_hp_after = baseline_ctx.characters[catastrophe_id_plain].status.curr_hp
+    def test_received_damage_reduction_applies_to_holder(self):
+        """받는 대미지 -5% 모디파이어가 실제 공격에도 적용되는지 확인한다.
+        ATK_ROLL을 결정론적으로 만들기 위해 milestone_n=0(주사위 없음),
+        공격자 atk=100으로 고정한다(대미지 = 100, -5% 적용 시 95)."""
 
-        passive_ctx = _make_context()
-        passive_manager = _setup_enemy_pre_phase(passive_ctx)
-        catastrophe_id_passive = CharacterId("Catastrophe")
-        passive_ctx.add_character(
-            get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
-            FactionType.ALLY,
-            BattlefieldColumnIndex(0),
-        )
-        passive_ctx.add_character(
-            get_test_preset("적군", atk=5),
-            FactionType.ENEMY,
-            BattlefieldColumnIndex(0),
-        )
-        passive_manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/Catastrophe]")
-        )
-        passive_hp_after = passive_ctx.characters[catastrophe_id_passive].status.curr_hp
+        def _run(passive_skill_id):
+            ctx = _make_context(milestone_n=0)
+            manager = _setup_enemy_pre_phase(ctx)
+            catastrophe_id = CharacterId("Catastrophe")
+            ctx.add_character(
+                get_test_preset(
+                    "Catastrophe", max_hp=300, passive_skill_id=passive_skill_id
+                ),
+                FactionType.ALLY,
+                BattlefieldColumnIndex(0),
+            )
+            ctx.add_character(
+                get_test_preset("적군", atk=100),
+                FactionType.ENEMY,
+                BattlefieldColumnIndex(0),
+            )
+            manager.process_command(
+                parse_character_command(CharacterId("적군"), "[공격/Catastrophe]")
+            )
+            manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+            return ctx.characters[catastrophe_id].status.curr_hp
 
-        # -5%가 실제로 적용됐다면 passive_hp_after > baseline_hp_after 여야 하지만,
-        # 현재 구조에서는 동일하다(경감이 적용되지 않음).
-        assert passive_hp_after == baseline_hp_after
+        baseline_hp_after = _run(passive_skill_id=None)
+        passive_hp_after = _run(passive_skill_id="PassiveSkill")
+
+        assert baseline_hp_after == 300 - 100
+        assert passive_hp_after == 300 - 95
+        assert passive_hp_after > baseline_hp_after
 
 
 class TestCost2Skill:

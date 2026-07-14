@@ -202,7 +202,7 @@ def _make_intercept_passive(ally_id: CharacterId) -> PassiveSkillWrapperBuff:
         ],
         description="",
     )
-    return PassiveSkillWrapperBuff.create(ally_id, passive_data)
+    return PassiveSkillWrapperBuff.create(ally_id, passive_data)[0]
 
 
 def test_voluntary_enemy_move_triggers_passive():
@@ -359,7 +359,7 @@ def test_target_in_range_condition_prevents_out_of_range_trigger():
         description="",
     )
     ctx.buff_container.add_passive_wrapper(
-        PassiveSkillWrapperBuff.create(ally_id, passive_data)
+        PassiveSkillWrapperBuff.create(ally_id, passive_data)[0]
     )
 
     initial_hp = ctx.characters[enemy_id].status.curr_hp
@@ -406,7 +406,7 @@ def test_target_in_range_condition_triggers_when_in_range():
         description="",
     )
     ctx.buff_container.add_passive_wrapper(
-        PassiveSkillWrapperBuff.create(ally_id, passive_data)
+        PassiveSkillWrapperBuff.create(ally_id, passive_data)[0]
     )
 
     initial_hp = ctx.characters[enemy_id].status.curr_hp
@@ -456,7 +456,7 @@ def _make_guardian_passive(guardian_id: CharacterId) -> PassiveSkillWrapperBuff:
         ],
         description="",
     )
-    return PassiveSkillWrapperBuff.create(guardian_id, passive_data)
+    return PassiveSkillWrapperBuff.create(guardian_id, passive_data)[0]
 
 
 def test_guardian_evaluated_at_enemy_post_action_position():
