@@ -27,17 +27,16 @@ class BuffContainer:
         existing = next((b for b in self._buffs if b.uid == target_uid), None)
 
         if existing is not None:
-            if buff_data.max_stack is None:
-                # 적층 불가 버프는 재부여 시 기존 동작대로 무시한다.
-                return
-            existing.stack_count = min(
-                buff_data.max_stack, existing.stack_count + add_event.stack_value
-            )
+            # 적층 불가 버프도 재부여 시 지속시간은 갱신(리셋)한다.
             existing.duration = BuffDurationCounter(
                 buff_data.duration_turn_value,
                 buff_data.duration_count_value,
                 buff_data.duration_count_deduct_condition,
             )
+            if buff_data.max_stack is not None:
+                existing.stack_count = min(
+                    buff_data.max_stack, existing.stack_count + add_event.stack_value
+                )
             return
 
         self._buffs.add(

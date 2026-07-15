@@ -98,8 +98,8 @@ class TestBuffStackAccumulation:
         # 4 + 9 = 13 이지만 max_stack=10에서 clamp 되어야 한다.
         assert ctx.get_buff_stack(holder, "재앙") == 10
 
-    def test_non_stackable_buff_reapply_is_ignored(self):
-        """max_stack이 없는 기존 버프는 재부여 시 그대로 무시되는 기존 동작을 유지한다."""
+    def test_non_stackable_buff_reapply_does_not_duplicate(self):
+        """max_stack이 없는 버프는 재부여해도 중복 생성되지 않고 인스턴스 하나를 유지한다."""
         buff = BuffData(
             id="공격력 증가",
             description="",
@@ -127,6 +127,43 @@ class TestBuffStackAccumulation:
         )
         buffs = ctx.buff_container.get_buffs_by(holder, None)
         assert len(buffs) == 1
+
+    def test_non_stackable_buff_reapply_resets_remaining_duration(self):
+        """max_stack이 없는 버프도 재부여 시 지속시간(remaining_turns)이 원래
+        값으로 리셋(연장)되어야 한다."""
+        buff = BuffData(
+            id="공격력 증가",
+            description="",
+            buff_class_name="BuffAtk",
+            duration_turn_value=3,
+            duration_count_value=None,
+            duration_count_deduct_condition=None,
+            value_type=ValueType.INTEGER,
+            value=5,
+            condition_=None,
+            condition_value=None,
+            is_debuff=False,
+        )
+        ctx = BattlefieldContext(buff_dict={"공격력 증가": buff}, skill_dict={})
+        holder = CharacterId("대상")
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+
+        ctx.buff_container.add(
+            BuffAddData(given_by=holder, applied_to=holder, buff_id="공격력 증가")
+        )
+        # 턴이 흘러 지속시간이 줄어든 상태를 재현한다.
+        ctx.buff_container.on_round_end()
+        existing = ctx.buff_container.get_buff(holder, "공격력 증가")
+        assert existing.duration.remaining_turns == 2
+
+        # 재부여하면 지속시간이 원래 값(3)으로 리셋되어야 한다.
+        ctx.buff_container.add(
+            BuffAddData(given_by=holder, applied_to=holder, buff_id="공격력 증가")
+        )
+        refreshed = ctx.buff_container.get_buff(holder, "공격력 증가")
+        assert refreshed.duration.remaining_turns == 3
 
 
 class TestConsumeStackForDamage:
