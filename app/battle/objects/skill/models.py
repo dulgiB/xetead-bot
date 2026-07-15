@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional, Type
 
 from battle.core.commands.define import RoundPhaseType
-from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import (
     MAX_EFFECT_COUNT,
     SkillTargetOverrideType,
@@ -17,6 +17,7 @@ from battle.objects.skill.target_functions import SkillTargetRule
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.buff.conditions import Condition
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,27 @@ class SkillEffectBase(abc.ABC):
     apply_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
     ] = None
+    # 적층형 버프 부여/제거 시 한 번에 적용할 스택 상한
+    buff_stack_cap: Optional[int] = None
+    # 일반(버프) 조건: eager하게 즉시 평가 가능한 Condition. "ConsumedBuffStackCountCondition"
+    # (스킬 조건)은 파싱 시점에 gate_value_source/gate_value로 변환되므로 여기 남지 않는다.
+    condition_class_name: Optional[str] = None
+    condition_value: Optional[int] = None
+    # 스킬 조건(ConsumedBuffStackCountCondition) 전용 지연 게이트. 커맨드 처리
+    # 중간값(같은 커맨드에서 지금까지 소모된 스택 합 등)에 의존해 expand() 시점엔
+    # 평가할 수 없으므로 BuffAddData에 실어 CommandPartCalculator._buff_add_gate_passes()에서 판정한다.
+    gate_value_source: Optional[ValueSourceType] = None
+    gate_value: Optional[int] = None
+
+    @property
+    def condition(self) -> Optional["Condition"]:
+        if not self.condition_class_name:
+            return None
+        condition_module = importlib.import_module("battle.objects.buff.conditions")
+        condition_class: Type["Condition"] = getattr(
+            condition_module, self.condition_class_name
+        )
+        return condition_class(value=self.condition_value)
 
     @abc.abstractmethod
     def _expand(
@@ -45,6 +67,7 @@ class SkillEffectBase(abc.ABC):
         list[DamageData],
         list[HealData],
         list[BuffAddData],
+        list[BuffRemoveData],
     ]:
         pass
 
@@ -58,6 +81,7 @@ class SkillEffectBase(abc.ABC):
         list[DamageData],
         list[HealData],
         list[BuffAddData],
+        list[BuffRemoveData],
     ]:
         if self.target_override is None:
             return self._expand(context, holder, targets)
@@ -85,19 +109,20 @@ def parse_skill_effect(
 
     value_source = (
         ValueSourceType(data[f"value_source_{index}"])
-        if data[f"value_source_{index}"]
+        if data.get(f"value_source_{index}")
         else None
     )
-    value = data[f"value_{index}"] if data[f"value_{index}"] else None
+    value = data.get(f"value_{index}") or None
     value_type = (
         SkillValueType(data[f"value_type_{index}"])
-        if data[f"value_type_{index}"]
+        if data.get(f"value_type_{index}")
         else None
     )
-    buff_name = data[f"buff_name_{index}"] if data[f"buff_name_{index}"] else None
+    # 스킬_캐릭터/스킬_패시브는 buff_id_{index}, 스킬_에너미는 buff_name_{index}를 쓴다.
+    buff_id = data.get(f"buff_id_{index}") or data.get(f"buff_name_{index}") or None
     buff_add_timing = (
         RoundPhaseType(data[f"buff_add_timing_{index}"])
-        if data[f"buff_add_timing_{index}"]
+        if data.get(f"buff_add_timing_{index}")
         else None
     )
     target_override = (
@@ -107,15 +132,41 @@ def parse_skill_effect(
     )
     apply_timing_raw = data.get(f"effect_apply_timing_{index}")
     apply_timing = RoundPhaseType(apply_timing_raw) if apply_timing_raw else None
+    buff_stack_cap = (
+        int(data[f"buff_stack_cap_{index}"])
+        if data.get(f"buff_stack_cap_{index}")
+        else None
+    )
+
+    condition_class_name = data.get(f"condition_{index}") or None
+    condition_value = (
+        int(data[f"condition_value_{index}"])
+        if data.get(f"condition_value_{index}")
+        else None
+    )
+    gate_value_source: Optional[ValueSourceType] = None
+    gate_value: Optional[int] = None
+    if condition_class_name == "ConsumedBuffStackCountCondition":
+        # 스킬 조건: 커맨드 처리 중간값에만 의존하므로 일반 Condition으로 두지
+        # 않고 기존 게이트 파이프라인(BuffAddData.gate_value_source/gate_value)으로 변환한다.
+        gate_value_source = ValueSourceType.CONSUMED_BUFF_STACK
+        gate_value = condition_value
+        condition_class_name = None
+        condition_value = None
 
     return effect(
         value_source=value_source,
         value=value,
         value_type=value_type,
-        buff_id=buff_name,
+        buff_id=buff_id,
         buff_add_timing=buff_add_timing,
         target_override=target_override,
         apply_timing=apply_timing,
+        buff_stack_cap=buff_stack_cap,
+        condition_class_name=condition_class_name,
+        condition_value=condition_value,
+        gate_value_source=gate_value_source,
+        gate_value=gate_value,
     )
 
 

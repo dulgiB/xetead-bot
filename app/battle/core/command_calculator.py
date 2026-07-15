@@ -4,16 +4,18 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
     BattleLogEntry,
+    BuffRemoveCalculateData,
     CommandPartData,
     DamageCalculateData,
     HealCalculateData,
 )
-from battle.objects.buff.buff_base import BuffAddData, BuffBase
+from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffRemoveData
 from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.define import (
     BuffApplyTiming,
     BuffCountDeductCondition,
     CombatStatType,
+    ValueSourceType,
 )
 from battle.objects.models import (
     CharacterId,
@@ -36,6 +38,7 @@ class CalculatorMutableData:
         damage_list: list[DamageData],
         heal_list: list[HealData],
         buff_add_list: list[BuffAddData],
+        buff_remove_list: Optional[list[BuffRemoveData]] = None,
         apply_timing: Optional[RoundPhaseType] = None,
     ):
         self.move_list: list[MoveData] = move_list
@@ -46,6 +49,10 @@ class CalculatorMutableData:
             HealCalculateData(heal_data, []) for heal_data in heal_list
         ]
         self.buff_add_data_list: list[BuffAddData] = buff_add_list
+        self.buff_remove_data_list: list[BuffRemoveCalculateData] = [
+            BuffRemoveCalculateData(remove_data, None)
+            for remove_data in (buff_remove_list or [])
+        ]
         self.apply_timing: Optional[RoundPhaseType] = apply_timing
 
 
@@ -65,6 +72,7 @@ class CommandPartCalculator:
                 data_per_effect.damage_list,
                 data_per_effect.heal_list,
                 data_per_effect.buff_add_list,
+                data_per_effect.buff_remove_list,
                 data_per_effect.apply_timing,
             )
             for data_per_effect in data.data_per_effect
@@ -77,7 +85,7 @@ class CommandPartCalculator:
 
         # (effect_seq_number, holder) 조합당 1회만 발동해야 하는 패시브
         # 스킬(GIVEN_DAMAGE/GIVEN_HEAL 기반)의 발동 여부 기록.
-        self._fired_given_value_passives: set[tuple[int, CharacterId]] = set()
+        self._fired_given_value_passives: set[tuple[int, CharacterId, int]] = set()
 
     @classmethod
     def create_empty_for_buff(
@@ -111,6 +119,7 @@ class CommandPartCalculator:
                 elif timing == RoundPhaseType.ENEMY_PRE_ACTION:
                     # 에너미 스킬 PRE effect: 전체 처리
                     self._process_move(i)
+                    self._process_buff_remove(i)
                     self._process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
@@ -119,6 +128,7 @@ class CommandPartCalculator:
         elif phase == RoundPhaseType.ALLY_ACTION:
             for i in range(len(self.data_by_effect)):
                 self._process_move(i)
+                self._process_buff_remove(i)
                 self._process_damage(i)
                 self._process_heal(i)
                 self._process_buff_add(i, phase)
@@ -128,12 +138,14 @@ class CommandPartCalculator:
                 timing = self.data_by_effect[i].apply_timing
                 if timing is None:
                     # 아군 스킬 동작: 대미지/힐과 POST 타이밍 버프만 처리 (이동은 PRE에서 완료)
+                    self._process_buff_remove(i)
                     self._process_damage(i)
                     self._process_heal(i)
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_POST_ACTION:
                     # 에너미 스킬 POST effect: 전체 처리
                     self._process_move(i)
+                    self._process_buff_remove(i)
                     self._process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
@@ -146,6 +158,7 @@ class CommandPartCalculator:
             # phase가 없다면 BuffContainer에서 호출한 경우
             for i in range(len(self.data_by_effect)):
                 self._process_move(i)
+                self._process_buff_remove(i)
                 self._process_damage(i)
                 self._process_heal(i)
 
@@ -156,6 +169,21 @@ class CommandPartCalculator:
             )
             if not move_data.is_forced:
                 self.context.buff_container.on_voluntary_move(move_data.character_id)
+
+    def _process_buff_remove(
+        self: "CommandPartCalculator", effect_seq_number: int
+    ) -> None:
+        """적층형 버프의 스택을 실제로 차감하고, 실제 차감량을 result_value에
+        기록한다(CONSUMED_BUFF_STACK 조회용). 스택이 부족해도 있는 만큼만 차감하고
+        실패하지 않는다."""
+        for remove_calc in self.data_by_effect[effect_seq_number].buff_remove_data_list:
+            base = remove_calc.base
+            buff = self.context.get_buff_instance(base.applied_to, base.buff_id)
+            current = buff.stack_count if buff is not None else 0
+            removed = min(base.requested_amount, current)
+            if buff is not None and removed:
+                buff.stack_count -= removed
+            remove_calc.result_value = removed
 
     @staticmethod
     def _damage_processed_in_phase(
@@ -305,6 +333,9 @@ class CommandPartCalculator:
                 BuffCountDeductCondition.ON_HIT,  # noqa: F821
                 damage_calc.base.attacker_id,
             )
+            self.context.buff_container.on_character_damaged(
+                damage_calc.base.target_id, self, effect_seq_number
+            )
         for damage_calc in list(
             self.data_by_effect[effect_seq_number].damage_data_list
         ):
@@ -375,6 +406,22 @@ class CommandPartCalculator:
             )
             heal_calc.roll_display = str(heal_value)
 
+    def _buff_add_gate_passes(
+        self: "CommandPartCalculator", data: BuffAddData, effect_seq_number: int
+    ) -> bool:
+        """조건부 부여 게이트 판정. gate_value_source가 없으면 항상 통과."""
+        if data.gate_value_source is None:
+            return True
+        if data.gate_value_source == ValueSourceType.CONSUMED_BUFF_STACK:
+            total = sum(
+                d.result_value
+                for effect in self.data_by_effect[: effect_seq_number + 1]
+                for d in effect.buff_remove_data_list
+                if d.result_value is not None
+            )
+            return total >= (data.gate_value or 0)
+        return True
+
     def _process_buff_add(
         self: "CommandPartCalculator",
         effect_seq_number: int,
@@ -383,14 +430,19 @@ class CommandPartCalculator:
         buff_add_list = self.data_by_effect[effect_seq_number].buff_add_data_list
         if phase == RoundPhaseType.ALLY_ACTION:
             for data in buff_add_list:
-                self.context.buff_container.add(self._redirect_applied_to(data))
+                if self._buff_add_gate_passes(data, effect_seq_number):
+                    self.context.buff_container.add(self._redirect_applied_to(data))
         elif phase == RoundPhaseType.ENEMY_PRE_ACTION:
             for data in buff_add_list:
-                if data.add_timing == RoundPhaseType.ENEMY_PRE_ACTION:
+                if data.add_timing == RoundPhaseType.ENEMY_PRE_ACTION and (
+                    self._buff_add_gate_passes(data, effect_seq_number)
+                ):
                     self.context.buff_container.add(self._redirect_applied_to(data))
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
             for data in buff_add_list:
-                if data.add_timing == RoundPhaseType.ENEMY_POST_ACTION:
+                if data.add_timing == RoundPhaseType.ENEMY_POST_ACTION and (
+                    self._buff_add_gate_passes(data, effect_seq_number)
+                ):
                     self.context.buff_container.add(self._redirect_applied_to(data))
         else:
             raise ValueError(f"Cannot add buffs at this phase: {phase}")
@@ -401,7 +453,8 @@ class CommandPartCalculator:
     ) -> None:
         """apply_timing이 명시된 에너미 스킬 effect용: buff_add_timing에 무관하게 모두 추가."""
         for data in self.data_by_effect[effect_seq_number].buff_add_data_list:
-            self.context.buff_container.add(self._redirect_applied_to(data))
+            if self._buff_add_gate_passes(data, effect_seq_number):
+                self.context.buff_container.add(self._redirect_applied_to(data))
 
     def _apply_buff_events(
         self: "CommandPartCalculator",

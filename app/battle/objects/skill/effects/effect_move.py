@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import BattlefieldColumnIndex, ValueSourceType
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
 from battle.objects.skill.models import SkillEffectBase
@@ -44,6 +44,7 @@ class SkillEffectMove(SkillEffectBase):
         list[DamageData],
         list[HealData],
         list[BuffAddData],
+        list[BuffRemoveData],
     ]:
         assert self.value_source is not None
 
@@ -57,6 +58,7 @@ class SkillEffectMove(SkillEffectBase):
                     )
                     for target in targets
                 ],
+                [],
                 [],
                 [],
                 [],
@@ -76,6 +78,7 @@ class SkillEffectMove(SkillEffectBase):
                 [],
                 [],
                 [],
+                [],
             )
 
         elif self.value_source == ValueSourceType.TARGET_CURR_POSITION:
@@ -88,6 +91,7 @@ class SkillEffectMove(SkillEffectBase):
                     )
                     for target in targets
                 ],
+                [],
                 [],
                 [],
                 [],
@@ -110,6 +114,7 @@ class SkillEffectMove(SkillEffectBase):
                 [],
                 [],
                 [],
+                [],
             )
 
         elif self.value_source == ValueSourceType.AWAY_FROM_HOLDER:
@@ -126,6 +131,7 @@ class SkillEffectMove(SkillEffectBase):
                     )
                     for target in targets
                 ],
+                [],
                 [],
                 [],
                 [],

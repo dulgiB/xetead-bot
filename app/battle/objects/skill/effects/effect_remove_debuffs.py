@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
 from battle.objects.skill.models import SkillEffectBase
 
@@ -16,7 +16,13 @@ class SkillEffectRemoveDebuffs(SkillEffectBase):
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
-    ) -> tuple[list[MoveData], list[DamageData], list[HealData], list[BuffAddData]]:
+    ) -> tuple[
+        list[MoveData],
+        list[DamageData],
+        list[HealData],
+        list[BuffAddData],
+        list[BuffRemoveData],
+    ]:
         for target in targets:
             debuffs = [
                 b
@@ -25,4 +31,4 @@ class SkillEffectRemoveDebuffs(SkillEffectBase):
             ]
             for buff in debuffs:
                 context.buff_container.remove(buff.uid)
-        return [], [], [], []
+        return [], [], [], [], []

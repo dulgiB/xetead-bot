@@ -180,8 +180,8 @@ def expand_character_command(
             data_per_effect_list: list[CommandPartDataPerEffect] = []
 
             for skill_effect in skill_used.data.effects:
-                move_list, damage_list, heal_list, buff_add_list = skill_effect.expand(
-                    context, command.user_id, target_characters
+                move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
+                    skill_effect.expand(context, command.user_id, target_characters)
                 )
                 data_per_effect_list.append(
                     CommandPartDataPerEffect(
@@ -189,6 +189,7 @@ def expand_character_command(
                         damage_list=damage_list,
                         heal_list=heal_list,
                         buff_add_list=buff_add_list,
+                        buff_remove_list=buff_remove_list,
                         apply_timing=skill_effect.apply_timing,
                     )
                 )
@@ -206,7 +207,7 @@ def expand_character_command(
 
             target_characters = item_used.target_rule.get_targets(part.targets)
 
-            move_list, damage_list, heal_list, buff_add_list = (
+            move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
                 item_used.data.effect.expand(
                     context, command.user_id, target_characters
                 )
@@ -221,6 +222,7 @@ def expand_character_command(
                             damage_list=damage_list,
                             heal_list=heal_list,
                             buff_add_list=buff_add_list,
+                            buff_remove_list=buff_remove_list,
                             apply_timing=item_used.data.effect.apply_timing,
                         ),
                     ),

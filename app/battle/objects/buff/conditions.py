@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from utils.battle_helpers import is_reachable
 
@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class Condition(abc.ABC):
     value: Optional[int] = None
+
+    # 이번 라운드에 이미 확정된 결과(damaged_this_round 등)에 의존하는 조건이면
+    # True로 오버라이드한다. ENEMY_POST_ACTION 트리거 패시브가 적의 지연 공격이
+    # 모두 적용된 뒤에 평가되어야 하는지 PassiveSkillWrapperBuff.timing이
+    # 판단하는 데 쓰인다(app/battle/objects/passive_skill/passive_skill.py 참고).
+    requires_round_resolved: ClassVar[bool] = False
 
     @abc.abstractmethod
     def is_applied(
@@ -254,3 +260,46 @@ class TargetIsInRangeCondition(Condition):
         target_pos = context.find_character_position(attacker_or_target)
         holder_range = holder_char.status[CombatStatType.RANGE]
         return is_reachable(holder_pos, target_pos, holder_range)
+
+
+@dataclass(frozen=True)
+class HolderWasAttackedCondition(Condition):
+    """holder가 이번 라운드 동안(damaged_this_round 기준) 대미지를 받았을 때 True.
+
+    "같은 열 아군 누구든" 대신 "자신이 맞았을 때만" 추가로 반응하는 조건에 쓴다.
+    """
+
+    requires_round_resolved: ClassVar[bool] = True
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        return holder in context.damaged_this_round
+
+
+@dataclass(frozen=True)
+class AllyInSameColumnWasAttackedCondition(Condition):
+    """holder와 같은 열·같은 진영(자신 포함)인 캐릭터 중 이번 라운드 동안
+    (damaged_this_round 기준) 대미지를 받은 자가 1명이라도 있으면 True."""
+
+    requires_round_resolved: ClassVar[bool] = True
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if holder not in context.characters:
+            return False
+        holder_char = context.characters[holder]
+        holder_pos = context.find_character_position(holder)
+        return any(
+            char.faction == holder_char.faction
+            and context.find_character_position(char_id) == holder_pos
+            and char_id in context.damaged_this_round
+            for char_id, char in context.characters.items()
+        )

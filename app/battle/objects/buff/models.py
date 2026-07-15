@@ -33,6 +33,9 @@ class BuffData:
 
     description: str
 
+    # 최대 적층 스택 수. None이면 적층 불가(재부여 시 무시, 기존 동작 유지).
+    max_stack: Optional[int] = None
+
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "BuffData":
         return BuffData(
@@ -57,6 +60,7 @@ class BuffData:
             else None,
             is_debuff=bool(data.get("is_debuff", False)),
             description=data["description"],
+            max_stack=int(data["max_stack"]) if data.get("max_stack") else None,
         )
 
     @property
@@ -70,8 +74,52 @@ class BuffData:
         return None
 
     def to_buff_instance(
-        self, given_by: CharacterId, applied_to: CharacterId
+        self, given_by: CharacterId, applied_to: CharacterId, initial_stack: int = 1
     ) -> "BuffBase":
         buff_module = importlib.import_module("battle.objects.buff.buffs")
         buff_class: Type["BuffBase"] = getattr(buff_module, self.buff_class_name)
-        return buff_class(given_by=given_by, applied_to=applied_to, data=self)
+        return buff_class(
+            given_by=given_by,
+            applied_to=applied_to,
+            data=self,
+            initial_stack=initial_stack,
+        )
+
+
+@dataclass
+class PassiveBuffData:
+    """'버프_패시브' 시트 전용 축소판 버프 데이터. 패시브 스킬이 기존 버프
+    이벤트를 그대로 재사용하는 "버프 모디파이어 경로"에서만 쓰인다 — 지속시간/
+    디버프 여부/적층 개념이 없는, 항상 켜져 있는 수정자이기 때문이다."""
+
+    id: str
+    buff_class_name: str
+    value: int
+    value_type: Optional[ValueType]
+    condition_: Optional[str]
+    condition_value: Optional[int]
+    description: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, str | int]) -> "PassiveBuffData":
+        return cls(
+            id=data["id"],
+            buff_class_name=data["buff_name"],
+            value=int(data["value"]) if data.get("value") else 0,
+            value_type=ValueType(data["value_type"]) if data.get("value_type") else None,
+            condition_=data.get("condition") or None,
+            condition_value=int(data["condition_value"])
+            if data.get("condition_value")
+            else None,
+            description=data.get("description", ""),
+        )
+
+    @property
+    def condition(self) -> Optional[Condition]:
+        if self.condition_:
+            condition_module = importlib.import_module("battle.objects.buff.conditions")
+            condition_class: Type[Condition] = getattr(
+                condition_module, self.condition_
+            )
+            return condition_class(value=self.condition_value)
+        return None
