@@ -21,6 +21,10 @@ def error_attack_position_too_far(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})가 공격 가능 범위를 벗어나 공격할 수 없습니다."
 
 
+def error_invalid_move_destination(pos: BattlefieldColumnIndex) -> str:
+    return f"지정한 위치({pos})는 이동 가능한 위치가 아닙니다."
+
+
 def error_skill_not_registered(skill_name: str) -> str:
     return f"지정한 스킬({skill_name})이 등록되어 있지 않아 사용할 수 없습니다."
 

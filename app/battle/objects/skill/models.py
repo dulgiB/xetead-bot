@@ -7,6 +7,7 @@ from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import (
     MAX_EFFECT_COUNT,
+    BattlefieldColumnIndex,
     SkillTargetOverrideType,
     ValueSourceType,
     ValueType,
@@ -62,6 +63,7 @@ class SkillEffectBase(abc.ABC):
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
+        raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]" = (),
     ) -> tuple[
         list[MoveData],
         list[DamageData],
@@ -76,6 +78,7 @@ class SkillEffectBase(abc.ABC):
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
+        raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]" = (),
     ) -> tuple[
         list[MoveData],
         list[DamageData],
@@ -84,10 +87,10 @@ class SkillEffectBase(abc.ABC):
         list[BuffRemoveData],
     ]:
         if self.target_override is None:
-            return self._expand(context, holder, targets)
+            return self._expand(context, holder, targets, raw_targets)
 
         if self.target_override == SkillTargetOverrideType.SELF:
-            return self._expand(context, holder, [holder])
+            return self._expand(context, holder, [holder], raw_targets)
 
         raise ValueError(self.target_override)
 

@@ -22,6 +22,7 @@ class SkillEffectDamage(SkillEffectBase):
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
+        raw_targets: tuple = (),
     ) -> tuple[
         list[MoveData],
         list[DamageData],
@@ -64,6 +65,7 @@ class SkillEffectDamageReverse(SkillEffectDamage):
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
+        raw_targets: tuple = (),
     ) -> tuple[
         list[MoveData],
         list[DamageData],
@@ -71,7 +73,7 @@ class SkillEffectDamageReverse(SkillEffectDamage):
         list[BuffAddData],
         list[BuffRemoveData],
     ]:
-        _, damage_list, _, _, _ = super()._expand(context, holder, targets)
+        _, damage_list, _, _, _ = super()._expand(context, holder, targets, raw_targets)
         reversed_damage_list = [
             DamageData(
                 attacker_id=d.attacker_id,

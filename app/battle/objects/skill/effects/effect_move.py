@@ -39,6 +39,7 @@ class SkillEffectMove(SkillEffectBase):
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
+        raw_targets: tuple = (),
     ) -> tuple[
         list[MoveData],
         list[DamageData],
@@ -107,6 +108,27 @@ class SkillEffectMove(SkillEffectBase):
                         to_position=_move_toward(
                             context.find_character_position(target), holder_pos, steps
                         ),
+                        is_forced=True,
+                    )
+                    for target in targets
+                ],
+                [],
+                [],
+                [],
+                [],
+            )
+
+        elif self.value_source == ValueSourceType.INPUT_COLUMN:
+            columns = [t for t in raw_targets if isinstance(t, BattlefieldColumnIndex)]
+            if not columns:
+                # 열을 지정하지 않으면 이동 없이 현재 위치를 유지한다.
+                return ([], [], [], [], [])
+            to_pos = columns[0]
+            return (
+                [
+                    MoveData(
+                        character_id=target,
+                        to_position=to_pos,
                         is_forced=True,
                     )
                     for target in targets

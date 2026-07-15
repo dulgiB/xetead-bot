@@ -2,6 +2,11 @@ import abc
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from battle.exceptions import (
+    CommandValidationError,
+    error_invalid_command_format,
+    error_invalid_move_destination,
+)
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 
@@ -79,3 +84,33 @@ class SkillTargetRuleNamed(SkillTargetRule):
     ) -> list[CharacterId]:
         assert all(isinstance(target, CharacterId) for target in targets)
         return targets
+
+
+@dataclass(frozen=True)
+class SkillTargetRuleNamedWithColumn(SkillTargetRule):
+    """
+    캐릭터 1명과 그 캐릭터에 인접한 열 1개(생략 가능)를 동시에 지정하는 스킬 효과.
+    - 열을 지정하지 않으면 이동 없이 캐릭터만 대상이 된다.
+    - 열을 지정하면 대상 캐릭터의 "현재 위치" 기준 ±1열이어야 한다.
+
+    ex. 스킬/스킬명/대상A       (열 생략)
+        스킬/스킬명/대상A/3열   (대상A를 3열로 이동)
+    """
+
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+    ) -> list[CharacterId]:
+        characters = [t for t in targets if isinstance(t, CharacterId)]
+        columns = [t for t in targets if isinstance(t, BattlefieldColumnIndex)]
+
+        if len(characters) != 1 or len(columns) > 1:
+            raise CommandValidationError(error_invalid_command_format())
+
+        if columns:
+            target_pos = self.context.find_character_position(characters[0])
+            if abs(target_pos.value - columns[0].value) != 1:
+                raise CommandValidationError(
+                    error_invalid_move_destination(columns[0])
+                )
+
+        return characters
