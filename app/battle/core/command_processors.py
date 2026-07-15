@@ -267,11 +267,20 @@ def try_expansion_if_valid(
                 continue
 
             # 3. 이동 목적지 검증 — damage 검증보다 먼저 수행해 user_pos를 갱신한다.
+            # 슬롯 점유 여부는 실제로 이동하는 캐릭터(move_data.character_id)의
+            # 진영 기준으로 확인해야 한다. 시전자의 진영으로 확인하면, 다른
+            # 진영의 캐릭터를 이동시키는 스킬(끌어당기기/밀어내기, 대상을
+            # 지정한 열로 이동시키는 스킬 등)에서 엉뚱한 진영의 열 점유 상태를
+            # 검사하게 된다.
             for move_data in sub_data.move_list:
                 to_pos = move_data.to_position
-                if context.try_find_empty_slot(user.faction, to_pos) is None:
+                mover_id = move_data.character_id
+                if mover_id not in context.characters:
+                    raise CommandValidationError(error_target_does_not_exist(mover_id))
+                mover_faction = context.characters[mover_id].faction
+                if context.try_find_empty_slot(mover_faction, to_pos) is None:
                     raise CommandValidationError(error_too_many_characters(to_pos))
-                if move_data.character_id == command.user_id:
+                if mover_id == command.user_id:
                     user_pos = to_pos
 
             # 4. 대미지/힐 대상 존재 및 사거리 확인 (이동 후 위치 기준)

@@ -188,6 +188,45 @@ def test_away_from_holder_boundary_clamping(push_skill):
     assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(6)
 
 
+def test_move_validation_uses_movers_faction_not_casters(push_skill):
+    """이동 목적지 자리 확인은 시전자가 아니라 실제로 이동하는 캐릭터(여기선 적)
+    진영 기준이어야 한다. 시전자(아군) 진영의 목적지 열이 가득 차 있어도,
+    실제로 이동하는 적 진영의 같은 번호 열이 비어 있다면 이동이 성공해야
+    한다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"밀어내기": push_skill})
+    manager = RoundManager(ctx)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
+    )
+
+    ally_id = CharacterId("아군 1")
+    enemy_id = CharacterId("적군 1")
+    # 아군: COL1(0), 적군: COL3(2) → 2칸 밀면 COL5(4)
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="밀어내기"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+    )
+    # 아군 진영의 COL5(4)를 가득 채워둔다 — 실제로 이동하는 쪽은 적이므로
+    # 이 아군 열이 가득 찬 것이 이동을 막아서는 안 된다.
+    for i in range(3):
+        ctx.add_character(
+            get_test_preset(f"아군 자리채움{i}"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(4),
+        )
+
+    cmd = parse_character_command(ally_id, "[스킬/밀어내기/적군 1]")
+    manager.process_command(cmd)
+
+    assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(4)
+
+
 # ── ON_ENEMY_MOVE 패시브 트리거 ───────────────────────────────────────────────
 
 
