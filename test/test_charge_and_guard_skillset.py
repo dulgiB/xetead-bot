@@ -75,6 +75,29 @@ def test_deals_damage_and_moves_target_to_specified_adjacent_column(cost2_skill)
     assert ctx.characters[enemy_id].status.curr_hp < 100
 
 
+def test_can_target_ally_for_damage_and_repositioning(cost2_skill):
+    """대상 진영에 제한이 없어야 한다 — 아군을 대상으로 지정해도 적과 동일하게
+    대미지를 입히고 지정한 인접 열로 이동시켜야 한다."""
+    ctx, manager = _make_manager(cost2_skill)
+    caster_id = CharacterId("아군 1")
+    ally_target_id = CharacterId("아군 2")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="Cost2Skill"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    # 아군 대상: COL3(2) → 인접 열은 COL2(1) 또는 COL4(3)
+    ctx.add_character(
+        get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(2)
+    )
+
+    cmd = parse_character_command(caster_id, "[스킬/Cost2Skill/아군 2/4열]")
+    manager.process_command(cmd)
+
+    assert ctx.find_character_position(ally_target_id) == BattlefieldColumnIndex(3)
+    assert ctx.characters[ally_target_id].status.curr_hp < 100
+
+
 def test_omitting_column_deals_damage_without_moving(cost2_skill):
     """열을 생략하면 대미지만 입히고 이동은 발생하지 않아야 한다."""
     ctx, manager = _make_manager(cost2_skill)
