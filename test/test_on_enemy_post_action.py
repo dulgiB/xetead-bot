@@ -79,7 +79,7 @@ def test_ally_did_not_move_takes_damage(stationary_debuff_data, marking_skill):
     ctx, manager, ally_id, enemy_id = _setup(stationary_debuff_data, marking_skill)
 
     # PRE: 적군이 조준 사격 선언 → 아군에게 '조준' 디버프 적용
-    cmd = parse_character_command(enemy_id, "[스킬/조준 사격/아군 1]")
+    cmd = parse_character_command(enemy_id, "[조준 사격/아군 1]", ctx)
     manager.process_command(cmd)
 
     initial_hp = ctx.characters[ally_id].status.curr_hp
@@ -97,14 +97,14 @@ def test_ally_moved_takes_no_damage(stationary_debuff_data, marking_skill):
     """아군이 이동하면 POST_ACTION 대미지를 받지 않아야 한다."""
     ctx, manager, ally_id, enemy_id = _setup(stationary_debuff_data, marking_skill)
 
-    cmd = parse_character_command(enemy_id, "[스킬/조준 사격/아군 1]")
+    cmd = parse_character_command(enemy_id, "[조준 사격/아군 1]", ctx)
     manager.process_command(cmd)
 
     initial_hp = ctx.characters[ally_id].status.curr_hp
 
     # ALLY_ACTION: 아군이 이동
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
-    move_cmd = parse_character_command(ally_id, "[이동/3]")
+    move_cmd = parse_character_command(ally_id, "[이동/3]", ctx)
     manager.process_command(move_cmd)
 
     # POST_ACTION: 조건 불충족 → 대미지 없음
@@ -119,7 +119,7 @@ def test_debuff_expires_after_one_round(stationary_debuff_data, marking_skill):
 
     ctx, manager, ally_id, enemy_id = _setup(stationary_debuff_data, marking_skill)
 
-    cmd = parse_character_command(enemy_id, "[스킬/조준 사격/아군 1]")
+    cmd = parse_character_command(enemy_id, "[조준 사격/아군 1]", ctx)
     manager.process_command(cmd)
 
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
@@ -150,7 +150,7 @@ def test_target_removed_before_post_action_does_not_crash():
     )
 
     # PRE: 적군이 아군 1을 공격 선언 (대미지/힐은 POST에서 재전개되어 처리됨)
-    cmd = parse_character_command(enemy_id, "[공격/아군 1]")
+    cmd = parse_character_command(enemy_id, "[공격/아군 1]", ctx)
     manager.process_command(cmd)
 
     manager.to_phase(RoundPhaseType.ALLY_ACTION)

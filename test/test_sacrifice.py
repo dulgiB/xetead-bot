@@ -87,7 +87,7 @@ def _setup(sacrifice_buff_data, sacrifice_skill):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
 
-    cmd = parse_character_command(protector_id, "[스킬/희생 방어/아군 2]")
+    cmd = parse_character_command(protector_id, "[희생 방어/아군 2]", ctx)
     manager.process_command(cmd)
 
     return ctx, manager, protector_id, protected_id, enemy_id
@@ -101,7 +101,7 @@ def test_attack_redirected_to_protector(sacrifice_buff_data, sacrifice_skill):
 
     # PRE_ACTION: 적군 공격 선언
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    cmd = parse_character_command(enemy_id, "[공격/아군 2]")
+    cmd = parse_character_command(enemy_id, "[공격/아군 2]", ctx)
     manager.process_command(cmd)
 
     # POST: 정산
@@ -122,7 +122,7 @@ def test_sacrifice_buff_expires_after_one_use(sacrifice_buff_data, sacrifice_ski
     )
 
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    cmd = parse_character_command(enemy_id, "[공격/아군 2]")
+    cmd = parse_character_command(enemy_id, "[공격/아군 2]", ctx)
     manager.process_command(cmd)
 
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
@@ -143,7 +143,7 @@ def test_second_attack_hits_protected_after_buff_expires(
 
     # 1라운드: 희생 방어 발동 소진
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]"))
+    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
@@ -153,7 +153,7 @@ def test_second_attack_hits_protected_after_buff_expires(
 
     # 2라운드: 버프 없으므로 피보호자 직접 피격
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]"))
+    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -200,7 +200,7 @@ def test_redirect_is_faction_agnostic(sacrifice_buff_data, sacrifice_skill):
 
     # 아군 1이 적군 2 공격 → 적군 1(보호자)이 대신 맞아야 함
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
-    manager.process_command(parse_character_command(ally_id, "[공격/적군 2]"))
+    manager.process_command(parse_character_command(ally_id, "[공격/적군 2]", ctx))
 
     assert ctx.characters[enemy_protector_id].status.curr_hp < 100  # 보호자 피격
     assert ctx.characters[enemy_protected_id].status.curr_hp == 100  # 피보호자 무사
@@ -248,9 +248,9 @@ def test_ally_heal_not_redirected(sacrifice_buff_data, sacrifice_skill):
     )
 
     # 보호자가 아군 2에게 희생 방어 부여
-    manager.process_command(parse_character_command(protector_id, "[스킬/희생 방어/아군 2]"))
+    manager.process_command(parse_character_command(protector_id, "[희생 방어/아군 2]", ctx))
     # 아군 3이 아군 2에게 힐 → 힐이 보호자(아군 1)에게 가면 안 됨
-    manager.process_command(parse_character_command(healer_id, "[스킬/힐/아군 2]"))
+    manager.process_command(parse_character_command(healer_id, "[힐/아군 2]", ctx))
 
     assert ctx.characters[protected_id].status.curr_hp == 70  # 50 + 20
     assert ctx.characters[protector_id].status.curr_hp == 100  # 변화 없음
@@ -277,7 +277,7 @@ def test_turn_based_sacrifice_redirects_every_round(sacrifice_skill):
 
     # 1라운드
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]"))
+    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -289,7 +289,7 @@ def test_turn_based_sacrifice_redirects_every_round(sacrifice_skill):
 
     # 2라운드: turn 기반이라 여전히 살아있어 다시 리다이렉트되어야 한다.
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]"))
+    manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -362,11 +362,11 @@ def test_sacrifice_redirects_attached_debuff(sacrifice_buff_data, sacrifice_skil
     )
 
     # 보호자가 피보호자에게 희생 방어 부여
-    manager.process_command(parse_character_command(protector_id, "[스킬/희생 방어/아군 2]"))
+    manager.process_command(parse_character_command(protector_id, "[희생 방어/아군 2]", ctx))
 
     # 적이 피보호자에게 저주 일격
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    manager.process_command(parse_character_command(enemy_id, "[스킬/저주 일격/아군 2]"))
+    manager.process_command(parse_character_command(enemy_id, "[저주 일격/아군 2]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -449,7 +449,7 @@ def test_sacrifice_reduces_redirected_damage():
 
     # 적이 피보호자에게 고정 50 대미지 → 보호자가 −20% 경감된 40 수령
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    manager.process_command(parse_character_command(enemy_id, "[스킬/강타/아군 2]"))
+    manager.process_command(parse_character_command(enemy_id, "[강타/아군 2]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 

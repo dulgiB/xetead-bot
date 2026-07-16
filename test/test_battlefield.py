@@ -68,7 +68,7 @@ def test_basic_attack_reduces_hp(battle_setup):
     enemy_id = CharacterId("적군 1")
     initial_hp = context.characters[enemy_id].status.curr_hp
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]", context)
     manager.process_command(cmd)
 
     assert context.characters[enemy_id].status.curr_hp < initial_hp
@@ -84,7 +84,7 @@ def test_basic_attack_wrong_phase_raises(empty_context):
     empty_context.add_character(
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
-    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]", empty_context)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)
 
@@ -106,7 +106,7 @@ def test_attack_out_of_range_raises(empty_context):
     empty_context.add_character(
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(6)
     )
-    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]", empty_context)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)
 
@@ -117,7 +117,7 @@ def test_hp_does_not_go_below_zero(battle_setup):
     enemy_id = CharacterId("적군 1")
     context.characters[enemy_id].status.curr_hp = 1  # HP를 1로 강제 설정
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]", context)
     manager.process_command(cmd)
 
     assert context.characters[enemy_id].status.curr_hp >= 0
@@ -129,7 +129,7 @@ def test_cost_deducted_after_action(battle_setup):
     user_id = CharacterId("아군 1")
     initial_cost = context.characters[user_id].status.remaining_cost
 
-    cmd = parse_character_command(user_id, "[공격/적군 1]")
+    cmd = parse_character_command(user_id, "[공격/적군 1]", context)
     manager.process_command(cmd)
 
     assert context.characters[user_id].status.remaining_cost < initial_cost
@@ -141,6 +141,6 @@ def test_insufficient_cost_raises(battle_setup):
     user_id = CharacterId("아군 1")
     context.characters[user_id].status.remaining_cost = 0  # 코스트 고갈
 
-    cmd = parse_character_command(user_id, "[공격/적군 1]")
+    cmd = parse_character_command(user_id, "[공격/적군 1]", context)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)

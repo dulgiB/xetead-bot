@@ -82,10 +82,10 @@ class TestAllyDamageReduction:
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(holder_id, "[공격/아군 대상]")
+            parse_character_command(holder_id, "[공격/아군 대상]", ctx)
         )
         manager.process_command(
-            parse_character_command(holder_id, "[공격/적군 대상]")
+            parse_character_command(holder_id, "[공격/적군 대상]", ctx)
         )
 
         ally_damage = 100 - ctx.characters[ally_target_id].status.curr_hp
@@ -162,7 +162,7 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
 
         # 적이 사거리 이내(COL3)의 피해아군을 공격 → damaged_this_round에 기록됨
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/피해아군]")
+            parse_character_command(CharacterId("적군"), "[공격/피해아군]", ctx)
         )
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
@@ -198,7 +198,7 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
 
         # Round 1: 피해아군이 공격당함 → 라운드 종료 시 보상 버프 부여
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/피해아군]")
+            parse_character_command(CharacterId("적군"), "[공격/피해아군]", ctx)
         )
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
