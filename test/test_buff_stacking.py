@@ -244,7 +244,7 @@ class TestConsumeStackForDamage:
 
         hp_before = ctx.characters[target].status.curr_hp
         manager.process_command(
-            parse_character_command(caster, "[스킬/저주 폭발/적군]")
+            parse_character_command(caster, "[저주 폭발/적군]", ctx)
         )
         hp_after = ctx.characters[target].status.curr_hp
 
@@ -264,7 +264,7 @@ class TestConsumeStackForDamage:
 
         hp_before = ctx.characters[target].status.curr_hp
         manager.process_command(
-            parse_character_command(caster, "[스킬/저주 폭발/적군]")
+            parse_character_command(caster, "[저주 폭발/적군]", ctx)
         )
         hp_after = ctx.characters[target].status.curr_hp
 
@@ -318,7 +318,7 @@ class TestAllyDamagedHook:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/동료]")
+            parse_character_command(CharacterId("적군"), "[공격/동료]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -341,7 +341,7 @@ class TestAllyDamagedHook:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/무관한아군]")
+            parse_character_command(CharacterId("적군"), "[공격/무관한아군]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -368,7 +368,7 @@ class TestAllyDamagedHook:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군1"), "[공격/동료]")
+            parse_character_command(CharacterId("적군1"), "[공격/동료]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
@@ -377,7 +377,7 @@ class TestAllyDamagedHook:
         ctx.on_finish_round()
         manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("적군2"), "[공격/Catastrophe]")
+            parse_character_command(CharacterId("적군2"), "[공격/Catastrophe]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         assert ctx.get_buff_stack(catastrophe_id, "재앙") == 1
@@ -425,7 +425,7 @@ class TestSkillEffectHealAndFillBuffStack:
         # space = 10-6=4 -> heal_amount = 4*5=20. 아군은 84->100(16 흡수),
         # 초과분 4는 시전자 자신에게: 90+4=94.
         manager.process_command(
-            parse_character_command(caster, "[스킬/재앙 나눔/아군]")
+            parse_character_command(caster, "[재앙 나눔/아군]", ctx)
         )
 
         assert ctx.characters[ally].status.curr_hp == 100

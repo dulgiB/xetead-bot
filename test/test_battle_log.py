@@ -27,7 +27,7 @@ def test_build_log_entries_records_damage(context_with_damage_skill):
     ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
 
     before = len(ctx.results)
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/강타/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[강타/적군 1]", ctx)
     manager.process_command(cmd)
     new_results = ctx.results[before:]
 
@@ -51,7 +51,7 @@ def test_build_log_entries_records_heal(context_with_heal_skill):
     )
 
     before = len(ctx.results)
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/회복/아군 2]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[회복/아군 2]", ctx)
     manager.process_command(cmd)
     new_results = ctx.results[before:]
 
@@ -72,7 +72,7 @@ def test_build_log_entries_records_buff_add(context_with_atk_buff_skill):
     ctx.add_character(get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(1))
 
     before = len(ctx.results)
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/공격 보조/아군 2]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[공격 보조/아군 2]", ctx)
     manager.process_command(cmd)
     new_results = ctx.results[before:]
 

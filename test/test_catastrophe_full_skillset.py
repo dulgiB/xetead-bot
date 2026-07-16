@@ -257,7 +257,7 @@ class TestPassiveSkill:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/동료]")
+            parse_character_command(CharacterId("적군"), "[공격/동료]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -278,7 +278,7 @@ class TestPassiveSkill:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/Catastrophe]")
+            parse_character_command(CharacterId("적군"), "[공격/Catastrophe]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
@@ -307,7 +307,7 @@ class TestPassiveSkill:
                 BattlefieldColumnIndex(0),
             )
             manager.process_command(
-                parse_character_command(CharacterId("적군"), "[공격/Catastrophe]")
+                parse_character_command(CharacterId("적군"), "[공격/Catastrophe]", ctx)
             )
             manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
             return ctx.characters[catastrophe_id].status.curr_hp
@@ -352,7 +352,7 @@ class TestCost2Skill:
 
         hp_before = ctx.characters[target].status.curr_hp
         manager.process_command(
-            parse_character_command(caster, "[스킬/Cost2Skill/적군]")
+            parse_character_command(caster, "[Cost2Skill/적군]", ctx)
         )
         hp_after = ctx.characters[target].status.curr_hp
 
@@ -371,7 +371,7 @@ class TestCost2Skill:
 
         hp_before = ctx.characters[target].status.curr_hp
         manager.process_command(
-            parse_character_command(caster, "[스킬/Cost2Skill/적군]")
+            parse_character_command(caster, "[Cost2Skill/적군]", ctx)
         )
         hp_after = ctx.characters[target].status.curr_hp
 
@@ -388,7 +388,7 @@ class TestCost2Skill:
         )
 
         manager.process_command(
-            parse_character_command(caster, "[스킬/Cost2Skill/적군]")
+            parse_character_command(caster, "[Cost2Skill/적군]", ctx)
         )
 
         assert ctx.get_buff_stack(caster, "재앙") == 0
@@ -422,7 +422,7 @@ class TestCost3Skill:
         # 남은 여유 = 10-6=4 -> 회복량 = 4*5=20. 아군은 84->100(16 흡수),
         # 초과 4는 시전자 자신에게: 90+4=94. 자신의 재앙 스택은 최대치(10)로 충전.
         manager.process_command(
-            parse_character_command(caster, "[스킬/Cost3Skill/아군]")
+            parse_character_command(caster, "[Cost3Skill/아군]", ctx)
         )
 
         assert ctx.characters[ally].status.curr_hp == 100

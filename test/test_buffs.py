@@ -140,7 +140,7 @@ class TestBuffAtk:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/대상]", ctx)
         )
 
         buffs = ctx.buff_container.get_buffs_by(
@@ -175,16 +175,16 @@ class TestBuffAtk:
 
         # 버프 없이 공격
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군]", ctx)
         )
         hp_after_no_buff = ctx.characters[CharacterId("적군")].status.curr_hp
 
         # 버프 부여
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/공격수]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/공격수]", ctx)
         )
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군]", ctx)
         )
         hp_after_buff = ctx.characters[CharacterId("적군")].status.curr_hp
 
@@ -245,7 +245,7 @@ class TestBuffAtk:
 
         # ATK 버프 없이 공격 (ATK=5 → 보너스 대미지 floor(5*0.2)=1, 고정 5 + 1 = 6)
         manager.process_command(
-            parse_character_command(attacker_id, "[스킬/약공격/대상]")
+            parse_character_command(attacker_id, "[약공격/대상]", ctx)
         )
         hp_after_no_buff = ctx.characters[target_id].status.curr_hp
         assert hp_after_no_buff == 94
@@ -254,10 +254,10 @@ class TestBuffAtk:
         # → ATK 55 → 보너스 대미지 floor(55*0.2)=11, 고정 5 + 11 = 16
         ctx.characters[target_id].status.curr_hp = 100
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/공격수]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/공격수]", ctx)
         )
         manager.process_command(
-            parse_character_command(attacker_id, "[스킬/약공격/대상]")
+            parse_character_command(attacker_id, "[약공격/대상]", ctx)
         )
         hp_after_buff = ctx.characters[target_id].status.curr_hp
         assert hp_after_buff == 84
@@ -297,7 +297,7 @@ class TestBuffGivenDamage:
 
         # 버프 없이 공격
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군]", ctx)
         )
         hp_after_no_buff = ctx.characters[CharacterId("적군")].status.curr_hp
         damage_no_buff = 100 - hp_after_no_buff
@@ -305,12 +305,12 @@ class TestBuffGivenDamage:
         # 버프 부여 후 공격
         manager.process_command(
             parse_character_command(
-                CharacterId("버퍼"), "[스킬/대미지 증가 스킬/공격수]"
+                CharacterId("버퍼"), "[대미지 증가 스킬/공격수]", ctx
             )
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군]", ctx)
         )
         hp_after_buff = ctx.characters[CharacterId("적군")].status.curr_hp
         damage_with_buff = hp_after_no_buff - hp_after_buff
@@ -364,7 +364,7 @@ class TestBuffGivenDamage:
         )
 
         manager.process_command(
-            parse_character_command(attacker_id, "[스킬/광역기/1열]")
+            parse_character_command(attacker_id, "[광역기/1열]", ctx)
         )
 
         # 고정 5 대미지 + 버프 고정 +10 = 15. 대상 수만큼 중복 적용되면 25가 된다.
@@ -427,16 +427,16 @@ class TestBuffReceivedDamage:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/취약 스킬/적군 A]")
+            parse_character_command(CharacterId("버퍼"), "[취약 스킬/적군 A]", ctx)
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군 A]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군 A]", ctx)
         )
         damage_to_buffed = 100 - ctx.characters[CharacterId("적군 A")].status.curr_hp
 
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군 B]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군 B]", ctx)
         )
         damage_to_normal = 100 - ctx.characters[CharacterId("적군 B")].status.curr_hp
 
@@ -466,16 +466,16 @@ class TestBuffReceivedDamage:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/방어 스킬/적군 A]")
+            parse_character_command(CharacterId("버퍼"), "[방어 스킬/적군 A]", ctx)
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군 A]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군 A]", ctx)
         )
         damage_to_buffed = 100 - ctx.characters[CharacterId("적군 A")].status.curr_hp
 
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군 B]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군 B]", ctx)
         )
         damage_to_normal = 100 - ctx.characters[CharacterId("적군 B")].status.curr_hp
 
@@ -508,13 +508,13 @@ class TestBuffNoDamage:
 
         # 적군에게 무적 부여
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/무적 스킬/적군]")
+            parse_character_command(CharacterId("버퍼"), "[무적 스킬/적군]", ctx)
         )
 
         initial_hp = ctx.characters[CharacterId("적군")].status.curr_hp
 
         manager.process_command(
-            parse_character_command(CharacterId("공격수"), "[공격/적군]")
+            parse_character_command(CharacterId("공격수"), "[공격/적군]", ctx)
         )
 
         assert ctx.characters[CharacterId("적군")].status.curr_hp == initial_hp
@@ -567,12 +567,12 @@ class TestBuffNoHeal:
 
         # 환자에게 회복 불가 부여
         manager.process_command(
-            parse_character_command(CharacterId("디버퍼"), "[스킬/회복 불가 스킬/환자]")
+            parse_character_command(CharacterId("디버퍼"), "[회복 불가 스킬/환자]", ctx)
         )
         initial_hp = ctx.characters[CharacterId("환자")].status.curr_hp
 
         manager.process_command(
-            parse_character_command(CharacterId("힐러"), "[스킬/회복 스킬/환자]")
+            parse_character_command(CharacterId("힐러"), "[회복 스킬/환자]", ctx)
         )
 
         assert ctx.characters[CharacterId("환자")].status.curr_hp == initial_hp
@@ -604,7 +604,7 @@ class TestBuffDamageOverTime:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("독사"), "[스킬/독 스킬/아군]")
+            parse_character_command(CharacterId("독사"), "[독 스킬/아군]", ctx)
         )
         initial_hp = ctx.characters[CharacterId("아군")].status.curr_hp
 
@@ -625,7 +625,7 @@ class TestBuffDamageOverTime:
         target_id = CharacterId("아군")
 
         manager.process_command(
-            parse_character_command(CharacterId("독사"), "[스킬/독 스킬/아군]")
+            parse_character_command(CharacterId("독사"), "[독 스킬/아군]", ctx)
         )
 
         for i in range(3):
@@ -681,7 +681,7 @@ class TestBuffHealOverTime:
         target_id = CharacterId("환자")
 
         manager.process_command(
-            parse_character_command(CharacterId("힐러"), "[스킬/재생 스킬/환자]")
+            parse_character_command(CharacterId("힐러"), "[재생 스킬/환자]", ctx)
         )
         hp_after_buff = ctx.characters[target_id].status.curr_hp
 
@@ -705,7 +705,7 @@ class TestBuffHealOverTime:
         target_id = CharacterId("환자")
 
         manager.process_command(
-            parse_character_command(CharacterId("힐러"), "[스킬/재생 스킬/환자]")
+            parse_character_command(CharacterId("힐러"), "[재생 스킬/환자]", ctx)
         )
         ctx.on_finish_round()
 
@@ -740,12 +740,12 @@ class TestBuffTaunt:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/공격수]")
+            parse_character_command(CharacterId("적군"), "[공격/공격수]", ctx)
         )
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("도발자"), "[스킬/도발 스킬/적군]")
+            parse_character_command(CharacterId("도발자"), "[도발 스킬/적군]", ctx)
         )
 
         hp_dealer_before = ctx.characters[CharacterId("공격수")].status.curr_hp
@@ -807,12 +807,12 @@ class TestBuffTaunt:
 
         # 적이 공격수에게 저주 일격 선언
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[스킬/저주 일격/공격수]")
+            parse_character_command(CharacterId("적군"), "[저주 일격/공격수]", ctx)
         )
         # 아군 페이즈: 도발자가 적을 도발
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("도발자"), "[스킬/도발 스킬/적군]")
+            parse_character_command(CharacterId("도발자"), "[도발 스킬/적군]", ctx)
         )
 
         hp_dealer_before = ctx.characters[CharacterId("공격수")].status.curr_hp
@@ -856,7 +856,7 @@ class TestBuffDuration:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/대상]", ctx)
         )
         target_id = CharacterId("대상")
 
@@ -889,7 +889,7 @@ class TestBuffDuration:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/대상]", ctx)
         )
 
         ctx.on_finish_round()
@@ -926,12 +926,12 @@ class TestBuffDuration:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/대상]")
+            parse_character_command(CharacterId("적군"), "[공격/대상]", ctx)
         )
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/대상]", ctx)
         )
         target_id = CharacterId("대상")
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
@@ -971,12 +971,12 @@ class TestBuffDuration:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[공격/대상]")
+            parse_character_command(CharacterId("적군"), "[공격/대상]", ctx)
         )
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/대상]", ctx)
         )
         target_id = CharacterId("대상")
 
@@ -1029,12 +1029,12 @@ class TestBuffDuration:
         )
 
         manager.process_command(
-            parse_character_command(CharacterId("적군"), "[스킬/약공격/대상]")
+            parse_character_command(CharacterId("적군"), "[약공격/대상]", ctx)
         )
 
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("버퍼"), "[스킬/버프 스킬/대상]")
+            parse_character_command(CharacterId("버퍼"), "[버프 스킬/대상]", ctx)
         )
         target_id = CharacterId("대상")
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ACTION)
@@ -1141,7 +1141,7 @@ class TestPassiveSkillSelfHealOnGivenDamage:
         hp_before = ctx.characters[attacker_id].status.curr_hp
 
         manager.process_command(
-            parse_character_command(attacker_id, "[스킬/고정 공격/적군]")
+            parse_character_command(attacker_id, "[고정 공격/적군]", ctx)
         )
 
         # 고정 20 대미지의 50% = 10 자기 회복
@@ -1203,7 +1203,7 @@ class TestPassiveSkillSelfHealOnGivenDamage:
         hp_before = ctx.characters[attacker_id].status.curr_hp
 
         manager.process_command(
-            parse_character_command(attacker_id, "[스킬/자해 포함 공격/공격수/적군]")
+            parse_character_command(attacker_id, "[자해 포함 공격/공격수/적군]", ctx)
         )
 
         # 자신+적군에게 각각 고정 20 대미지 → 자기 피해 20, 총 given damage 40의
@@ -1282,7 +1282,7 @@ class TestPassiveSkillSelfHealOnGivenHeal:
         healer_hp_before = ctx.characters[healer_id].status.curr_hp
 
         manager.process_command(
-            parse_character_command(healer_id, "[스킬/회복 스킬/환자]")
+            parse_character_command(healer_id, "[회복 스킬/환자]", ctx)
         )
 
         # 힐러 자신도 40 * 0.5 = 20 회복해야 한다
@@ -1306,7 +1306,7 @@ class TestPassiveSkillSelfHealOnGivenHeal:
         healer_id = CharacterId("힐러")
 
         manager.process_command(
-            parse_character_command(healer_id, "[스킬/회복 스킬/힐러]")
+            parse_character_command(healer_id, "[회복 스킬/힐러]", ctx)
         )
 
         # 자기 자신을 회복할 때는 추가 회복이 없으므로 정확히 40만 회복

@@ -1,21 +1,48 @@
 import pytest
+from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_processors import try_expansion_if_valid
 from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
+from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
 
 _USER = CharacterId("테스트")
 
 
-@pytest.fixture(autouse=True)
-def setup_character(empty_context):
-    """파서 검증에 필요한 테스트 캐릭터를 전장에 배치."""
-    empty_context.add_character(
-        get_test_preset("테스트"), FactionType.ALLY, BattlefieldColumnIndex(0)
+def _dummy_skill(skill_id: str) -> SkillData:
+    return SkillData(
+        id=skill_id,
+        target_rule="SkillTargetRuleNamed",
+        target_count=4,
+        cost=0,
+        effects=[],
+        description="",
     )
+
+
+@pytest.fixture
+def ctx() -> BattlefieldContext:
+    """파서가 이름만으로 스킬/아이템을 판별할 수 있도록, 테스트에서 쓰는
+    스킬명("스킬1", "스킬2", "스킬_1")을 실제로 보유한 캐릭터를 배치한다."""
+    context = BattlefieldContext(
+        buff_dict={},
+        skill_dict={
+            "스킬1": _dummy_skill("스킬1"),
+            "스킬2": _dummy_skill("스킬2"),
+            "스킬_1": _dummy_skill("스킬_1"),
+        },
+    )
+    context.add_character(
+        get_test_preset(
+            "테스트", skill_1_id="스킬1", skill_2_id="스킬2", skill_3_id="스킬_1"
+        ),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    return context
 
 
 @pytest.mark.parametrize(
@@ -71,9 +98,9 @@ def setup_character(empty_context):
                 ],
             ),
         ),
-        # 스킬1 + 단일 캐릭터 대상
+        # 스킬1 + 단일 캐릭터 대상 — 키워드 없이 스킬명으로 바로 시작
         (
-            "[ 스킬 / 스킬1 / 대상1       ]",
+            "[ 스킬1 / 대상1       ]",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
@@ -87,7 +114,7 @@ def setup_character(empty_context):
         ),
         # 스킬2 + 복수 캐릭터 대상 + 후방 지문
         (
-            "[스킬/스킬2/ 대상1/  대상2/ 대상 3/대상4   ] 지문",
+            "[스킬2/ 대상1/  대상2/ 대상 3/대상4   ] 지문",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
@@ -106,7 +133,7 @@ def setup_character(empty_context):
         ),
         # 스킬1 + 열 지정 대상
         (
-            "[스킬/스킬1/1열] 지문",
+            "[스킬1/1열] 지문",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
@@ -120,7 +147,7 @@ def setup_character(empty_context):
         ),
         # 스킬2 + 캐릭터 이름과 열이 섞인 대상 — 둘 다 순서대로 보존되어야 한다
         (
-            "[스킬/스킬2/대상1/2열]",
+            "[스킬2/대상1/2열]",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
@@ -135,7 +162,7 @@ def setup_character(empty_context):
         # 언더스코어가 포함된 스킬명/대상명 — 실제 캐릭터/스킬 id 명명 규칙에
         # 언더스코어가 쓰이는 경우가 있으므로 파싱 가능해야 한다.
         (
-            "[스킬/스킬_1/대상_1]",
+            "[스킬_1/대상_1]",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
@@ -149,8 +176,8 @@ def setup_character(empty_context):
         ),
     ],
 )
-def test_parse_smoke(input_str: str, expected: CharacterCommand | None, empty_context):
-    result = parse_character_command(_USER, input_str)
+def test_parse_smoke(input_str: str, expected: CharacterCommand | None, ctx):
+    result = parse_character_command(_USER, input_str, ctx)
     assert result == expected
 
 
@@ -158,12 +185,12 @@ def test_parse_smoke(input_str: str, expected: CharacterCommand | None, empty_co
     "input_str",
     [
         "[8]",  # 범위 밖 열 번호
-        "[대상]",  # 커맨드 타입 없이 대상만
-        "[1/스킬/대상]",  # 잘못된 순서
+        "[대상]",  # 커맨드 타입도, 등록된 스킬/아이템명도 아님
+        "[1/스킬/대상]",  # 잘못된 순서 — "1"은 스킬도 아이템도 아님
     ],
 )
-def test_parse_invalid(input_str: str, empty_context):
+def test_parse_invalid(input_str: str, ctx):
     with pytest.raises(CommandValidationError):
-        parsed = parse_character_command(_USER, input_str)
+        parsed = parse_character_command(_USER, input_str, ctx)
         if parsed:
-            try_expansion_if_valid(empty_context, parsed)
+            try_expansion_if_valid(ctx, parsed)

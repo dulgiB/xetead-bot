@@ -101,7 +101,7 @@ def test_skill_and_target_name_ignore_whitespace_differences():
     ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
 
     # 스킬명·대상명 모두 공백을 빼고 입력
-    cmd = parse_character_command(CharacterId("아군 1"), "[스킬/변칙공격/적군1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[변칙공격/적군1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[CharacterId("적군 1")].status.curr_hp == 90
@@ -113,7 +113,7 @@ def test_attack_target_name_with_extra_whitespace_resolves():
     ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군   1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군   1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[CharacterId("적군 1")].status.curr_hp < 100
@@ -138,7 +138,7 @@ def test_item_name_and_target_ignore_whitespace_differences():
         get_test_preset("아군 1", initial_hp=50), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[아이템/폭탄]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[폭탄]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[CharacterId("아군 1")].status.curr_hp == 70

@@ -68,7 +68,7 @@ def test_deals_damage_and_moves_target_to_specified_adjacent_column(cost2_skill)
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(2)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/Cost2Skill/적군 1/4열]")
+    cmd = parse_character_command(ally_id, "[Cost2Skill/적군 1/4열]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(3)
@@ -91,7 +91,7 @@ def test_can_target_ally_for_damage_and_repositioning(cost2_skill):
         get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(2)
     )
 
-    cmd = parse_character_command(caster_id, "[스킬/Cost2Skill/아군 2/4열]")
+    cmd = parse_character_command(caster_id, "[Cost2Skill/아군 2/4열]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(ally_target_id) == BattlefieldColumnIndex(3)
@@ -112,7 +112,7 @@ def test_omitting_column_deals_damage_without_moving(cost2_skill):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(2)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/Cost2Skill/적군 1]")
+    cmd = parse_character_command(ally_id, "[Cost2Skill/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(2)
@@ -133,7 +133,7 @@ def test_non_adjacent_column_is_rejected(cost2_skill):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(2)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/Cost2Skill/적군 1/7열]")
+    cmd = parse_character_command(ally_id, "[Cost2Skill/적군 1/7열]", ctx)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)
 
@@ -154,6 +154,6 @@ def test_two_character_targets_is_rejected(cost2_skill):
         get_test_preset("적군 2"), FactionType.ENEMY, BattlefieldColumnIndex(3)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/Cost2Skill/적군 1/적군 2]")
+    cmd = parse_character_command(ally_id, "[Cost2Skill/적군 1/적군 2]", ctx)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)

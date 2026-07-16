@@ -91,7 +91,7 @@ def test_item_damage_reduces_hp(bomb_setup):
     ctx, manager = bomb_setup
     enemy_id = CharacterId("적군 1")
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[아이템/폭탄/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[폭탄/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[enemy_id].status.curr_hp == 70  # 100 - 30
@@ -102,7 +102,7 @@ def test_item_consumes_inventory(bomb_setup):
     ctx, manager = bomb_setup
     assert ctx.inventory.get_count("아군 1", "폭탄") == 2
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[아이템/폭탄/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[폭탄/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.inventory.get_count("아군 1", "폭탄") == 1
@@ -114,7 +114,7 @@ def test_item_cost_is_deducted(bomb_setup):
     user_id = CharacterId("아군 1")
     initial_cost = ctx.characters[user_id].status.remaining_cost
 
-    cmd = parse_character_command(user_id, "[아이템/폭탄/적군 1]")
+    cmd = parse_character_command(user_id, "[폭탄/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[user_id].status.remaining_cost == initial_cost - 1
@@ -135,7 +135,7 @@ def test_item_uses_own_range_not_character_range(item_bomb):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(2)
     )
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[아이템/폭탄/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[폭탄/적군 1]", ctx)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)
 
@@ -151,7 +151,7 @@ def test_item_not_in_inventory_raises(item_bomb):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
 
-    cmd = parse_character_command(CharacterId("아군 1"), "[아이템/폭탄/적군 1]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[폭탄/적군 1]", ctx)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)
 
@@ -164,10 +164,10 @@ def test_unregistered_item_raises(item_bomb):
         get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
 
-    cmd = parse_character_command(
-        CharacterId("아군 1"), "[아이템/존재하지 않는 아이템]"
-    )
     with pytest.raises(CommandValidationError):
+        cmd = parse_character_command(
+            CharacterId("아군 1"), "[존재하지 않는 아이템]", ctx
+        )
         manager.process_command(cmd)
 
 
@@ -185,7 +185,7 @@ def test_self_item_heals_user(item_potion):
     )
 
     # 대상 미지정 → 파서가 자신에게 사용한 것으로 간주
-    cmd = parse_character_command(CharacterId("아군 1"), "[아이템/포션]")
+    cmd = parse_character_command(CharacterId("아군 1"), "[포션]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[CharacterId("아군 1")].status.curr_hp == 70  # 50 + 20
@@ -207,8 +207,8 @@ def test_practice_battle_blocks_item():
         get_test_preset("전사"), SideType.SIDE_1, BattlefieldColumnIndex(0)
     )
 
-    cmd = parse_character_command(CharacterId("전사"), "[아이템/포션]")
     with pytest.raises(CommandValidationError):
+        cmd = parse_character_command(CharacterId("전사"), "[포션]", ctx)
         manager.process_command(cmd)
 
 

@@ -126,7 +126,7 @@ def test_toward_holder_skill_moves_target(pull_skill):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(4)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/끌어당기기/적군 1]")
+    cmd = parse_character_command(ally_id, "[끌어당기기/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(2)
@@ -154,7 +154,7 @@ def test_away_from_holder_skill_moves_target(push_skill):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(2)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/밀어내기/적군 1]")
+    cmd = parse_character_command(ally_id, "[밀어내기/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(4)
@@ -182,7 +182,7 @@ def test_away_from_holder_boundary_clamping(push_skill):
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(5)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/밀어내기/적군 1]")
+    cmd = parse_character_command(ally_id, "[밀어내기/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(6)
@@ -221,7 +221,7 @@ def test_move_validation_uses_movers_faction_not_casters(push_skill):
             BattlefieldColumnIndex(4),
         )
 
-    cmd = parse_character_command(ally_id, "[스킬/밀어내기/적군 1]")
+    cmd = parse_character_command(ally_id, "[밀어내기/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(enemy_id) == BattlefieldColumnIndex(4)
@@ -263,7 +263,7 @@ def test_voluntary_enemy_move_triggers_passive():
 
     initial_hp = ctx.characters[enemy_id].status.curr_hp
 
-    cmd = parse_character_command(enemy_id, "[이동/2]")
+    cmd = parse_character_command(enemy_id, "[이동/2]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[enemy_id].status.curr_hp == initial_hp - 10
@@ -295,7 +295,7 @@ def test_forced_move_does_not_trigger_passive(pull_skill):
 
     initial_hp = ctx.characters[enemy_id].status.curr_hp
 
-    cmd = parse_character_command(ally_id, "[스킬/끌어당기기/적군 1]")
+    cmd = parse_character_command(ally_id, "[끌어당기기/적군 1]", ctx)
     manager.process_command(cmd)
 
     # 강제 이동이므로 패시브 대미지 없음 — HP는 초기값과 같아야 한다
@@ -326,7 +326,7 @@ def test_forced_move_updates_moved_this_round(pull_skill):
 
     assert enemy_id not in ctx.moved_this_round
 
-    cmd = parse_character_command(ally_id, "[스킬/끌어당기기/적군 1]")
+    cmd = parse_character_command(ally_id, "[끌어당기기/적군 1]", ctx)
     manager.process_command(cmd)
 
     assert enemy_id in ctx.moved_this_round
@@ -356,7 +356,7 @@ def test_passive_only_fires_for_enemy_faction():
 
     initial_hp = ctx.characters[ally2_id].status.curr_hp
 
-    cmd = parse_character_command(ally2_id, "[이동/2]")
+    cmd = parse_character_command(ally2_id, "[이동/2]", ctx)
     manager.process_command(cmd)
 
     # 같은 진영 이동이므로 패시브 미발동 — HP 변화 없음
@@ -404,7 +404,7 @@ def test_target_in_range_condition_prevents_out_of_range_trigger():
     initial_hp = ctx.characters[enemy_id].status.curr_hp
 
     # 적군이 COL5(4)로 이동 — 아직 거리 4 > 사거리 1 → 발동 안 함
-    cmd = parse_character_command(enemy_id, "[이동/5]")
+    cmd = parse_character_command(enemy_id, "[이동/5]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[enemy_id].status.curr_hp == initial_hp
@@ -450,7 +450,7 @@ def test_target_in_range_condition_triggers_when_in_range():
 
     initial_hp = ctx.characters[enemy_id].status.curr_hp
 
-    cmd = parse_character_command(enemy_id, "[이동/2]")
+    cmd = parse_character_command(enemy_id, "[이동/2]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[enemy_id].status.curr_hp == initial_hp - 10
@@ -540,11 +540,11 @@ def test_guardian_evaluated_at_enemy_post_action_position():
     ctx.buff_container.add_passive_wrapper(_make_guardian_passive(guardian_id))
 
     # PRE: 적이 피보호자(1열)에게 강타 선언
-    manager.process_command(parse_character_command(enemy_id, "[스킬/강타/아군 2]"))
+    manager.process_command(parse_character_command(enemy_id, "[강타/아군 2]", ctx))
 
     # ALLY: 피보호자가 보호자 열(0)로 이동
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
-    manager.process_command(parse_character_command(protected_id, "[이동/1]"))
+    manager.process_command(parse_character_command(protected_id, "[이동/1]", ctx))
     assert ctx.find_character_position(protected_id) == BattlefieldColumnIndex(0)
 
     # POST: 같은 열 판정이 이 시점 기준이므로 −10% 경감 (50 → 45)

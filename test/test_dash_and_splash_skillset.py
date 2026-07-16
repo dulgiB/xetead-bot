@@ -73,7 +73,7 @@ def test_caster_dashes_to_target_position(battle):
         get_test_preset("적군 주대상"), FactionType.ENEMY, BattlefieldColumnIndex(3)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/Cost3Skill/적군 주대상]")
+    cmd = parse_character_command(ally_id, "[Cost3Skill/적군 주대상]", ctx)
     manager.process_command(cmd)
 
     assert ctx.find_character_position(ally_id) == BattlefieldColumnIndex(3)
@@ -110,7 +110,7 @@ def test_main_target_and_path_enemies_take_damage_excluding_bystanders(battle):
         get_test_preset("적군 범위밖"), FactionType.ENEMY, BattlefieldColumnIndex(4)
     )
 
-    cmd = parse_character_command(ally_id, "[스킬/Cost3Skill/적군 주대상]")
+    cmd = parse_character_command(ally_id, "[Cost3Skill/적군 주대상]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[main_target_id].status.curr_hp < 100
