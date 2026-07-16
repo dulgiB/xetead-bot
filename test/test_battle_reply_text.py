@@ -12,6 +12,7 @@ from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
+    SkillEffectConsumeStackForDamage,
     SkillEffectDamage,
     SkillEffectHeal,
     SkillEffectMove,
@@ -262,3 +263,43 @@ def test_move_effect_inside_skill_shows_target_and_position():
 
     # 적군 1은 4열(BattlefieldColumnIndex(3))에서 시전자(1열) 쪽으로 1칸 이동 → 3열.
     assert reply == "【당기기 ▸ 적군 1】\n적군 1 | 3열로 이동"
+
+
+def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
+    """SkillEffectConsumeStackForDamage는 스택 소모 줄이 대미지 줄보다 먼저 나와야 한다
+    (실제 계산도 소모 결과를 대미지 값이 참조하는 순서)."""
+    stack_buff = BuffData(
+        id="저주", buff_class_name="BuffAtk", duration_turn_value=None,
+        duration_count_value=None, duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER, value=0, condition_=None, condition_value=None,
+        is_debuff=True, description="", max_stack=5,
+    )
+    skill = SkillData(
+        id="저주 방출",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectConsumeStackForDamage(
+                ValueSourceType.CONSUMED_BUFF_STACK, 100, ValueType.INTEGER, "저주", None,
+                buff_stack_cap=2,
+            )
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(buff_dict={"저주": stack_buff}, skill_dict={"저주 방출": skill})
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="저주 방출"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(BuffAddData(given_by=caster_id, applied_to=caster_id, buff_id="저주", stack_value=3))
+
+    reply = _run(ctx, manager, caster_id, "[저주 방출/적군 1]")
+
+    assert reply == (
+        "【저주 방출 ▸ 적군 1】\n"
+        "아군 1 | [저주]×2 소모 (잔여 1)\n"
+        "적군 1 | -2 → 98/100"
+    )

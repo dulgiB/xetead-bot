@@ -506,6 +506,47 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
     entries: list[BattleLogEntry] = []
     context = calculator.context
     for effect_data in calculator.data_by_effect:
+        # 같은 effect 안에서 스택 변화(소모/부여)와 수치 변화(대미지/회복)가
+        # 함께 일어나는 경우(SkillEffectConsumeStackForDamage,
+        # SkillEffectHealAndFillBuffStack) 스택 변화를 먼저 보여준다 —
+        # 실제 계산도 스택 소모/부여 결과를 대미지/회복 값이 참조하는 순서다.
+        for remove_calc in effect_data.buff_remove_data_list:
+            if not remove_calc.result_value:
+                continue
+            remaining = context.get_buff_stack(
+                remove_calc.base.applied_to, remove_calc.base.buff_id
+            )
+            entries.append(
+                BattleLogEntry(
+                    target_name=remove_calc.base.applied_to.name,
+                    kind=BattleLogEntryKind.BUFF_REMOVE,
+                    result=(
+                        f"[{remove_calc.base.buff_id}]×{remove_calc.result_value} 소모"
+                        f" (잔여 {remaining})"
+                    ),
+                    buff_id=remove_calc.base.buff_id,
+                    stack_delta=remove_calc.result_value,
+                )
+            )
+        for buff_add in effect_data.buff_add_data_list:
+            buff = context.get_buff_instance(buff_add.applied_to, buff_add.buff_id)
+            if buff is not None and buff.max_stack:
+                result = (
+                    f"[{buff_add.buff_id}]×{buff_add.stack_value} 부여"
+                    f" (잔여 {buff.stack_count})"
+                )
+            else:
+                duration_text = buff.duration.display_text() if buff is not None else ""
+                result = f"[{buff_add.buff_id}] 부여{duration_text}"
+            entries.append(
+                BattleLogEntry(
+                    target_name=buff_add.applied_to.name,
+                    kind=BattleLogEntryKind.BUFF_ADD,
+                    result=result,
+                    buff_id=buff_add.buff_id,
+                    stack_delta=buff_add.stack_value,
+                )
+            )
         # result_value가 None이면 이번 페이즈에서 아직 적용되지 않았거나(예: PRE 단계의
         # POST용 대미지/힐) 대상이 이미 사망해 건너뛴 항목이므로 로그에 남기지 않는다.
         for damage_calc in effect_data.damage_data_list:
@@ -538,43 +579,6 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     target_name=move_data.character_id.name,
                     kind=BattleLogEntryKind.MOVE,
                     result=f"{move_data.to_position}열로 이동",
-                )
-            )
-        for buff_add in effect_data.buff_add_data_list:
-            buff = context.get_buff_instance(buff_add.applied_to, buff_add.buff_id)
-            if buff is not None and buff.max_stack:
-                result = (
-                    f"[{buff_add.buff_id}]×{buff_add.stack_value} 부여"
-                    f" (잔여 {buff.stack_count})"
-                )
-            else:
-                duration_text = buff.duration.display_text() if buff is not None else ""
-                result = f"[{buff_add.buff_id}] 부여{duration_text}"
-            entries.append(
-                BattleLogEntry(
-                    target_name=buff_add.applied_to.name,
-                    kind=BattleLogEntryKind.BUFF_ADD,
-                    result=result,
-                    buff_id=buff_add.buff_id,
-                    stack_delta=buff_add.stack_value,
-                )
-            )
-        for remove_calc in effect_data.buff_remove_data_list:
-            if not remove_calc.result_value:
-                continue
-            remaining = context.get_buff_stack(
-                remove_calc.base.applied_to, remove_calc.base.buff_id
-            )
-            entries.append(
-                BattleLogEntry(
-                    target_name=remove_calc.base.applied_to.name,
-                    kind=BattleLogEntryKind.BUFF_REMOVE,
-                    result=(
-                        f"[{remove_calc.base.buff_id}]×{remove_calc.result_value} 소모"
-                        f" (잔여 {remaining})"
-                    ),
-                    buff_id=remove_calc.base.buff_id,
-                    stack_delta=remove_calc.result_value,
                 )
             )
         for target_id in effect_data.debuff_clear_list:
