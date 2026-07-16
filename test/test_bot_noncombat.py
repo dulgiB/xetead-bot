@@ -34,6 +34,7 @@ def _make_state(acct: str) -> BotState:
             )
         },
         spreadsheet=None,
+        field_spreadsheet=None,
     )
     state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
         quest_id="퀘스트1", bot_reply_post_id=123

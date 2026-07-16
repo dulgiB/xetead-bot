@@ -126,7 +126,13 @@ def test_reload_char_data_replaces_state_dicts(monkeypatch):
     """reload_char_data는 매번 load_char_data를 호출해 state의 캐릭터 캐시를 갱신한다."""
     from bot.main import BotState
 
-    state = BotState(char_dict={}, name_dict={}, noncombat_char_dict={}, spreadsheet=object())
+    state = BotState(
+        char_dict={},
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=object(),
+        field_spreadsheet=object(),
+    )
     fresh = ({"acct": "new"}, {"새캐릭터": "new"}, {"acct": "new_noncombat"})
     monkeypatch.setattr(main_module, "load_char_data", lambda spreadsheet: fresh)
 

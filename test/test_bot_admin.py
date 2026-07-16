@@ -24,6 +24,7 @@ def _make_state(**pending) -> BotState:
         name_dict={"유효 캐릭터": get_test_preset("유효 캐릭터")},
         noncombat_char_dict={},
         spreadsheet=None,
+        field_spreadsheet=None,
     )
     state.session = BattleSession(buff_dict={}, skill_dict={})
     state.pending_placements = pending.get("pending_placements", [])
