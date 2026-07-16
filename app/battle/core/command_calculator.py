@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
     BattleLogEntry,
+    BattleLogEntryKind,
     BuffRemoveCalculateData,
     CommandPartData,
     DamageCalculateData,
@@ -40,6 +41,7 @@ class CalculatorMutableData:
         buff_add_list: list[BuffAddData],
         buff_remove_list: Optional[list[BuffRemoveData]] = None,
         apply_timing: Optional[RoundPhaseType] = None,
+        debuff_clear_list: Optional[list[CharacterId]] = None,
     ):
         self.move_list: list[MoveData] = move_list
         self.damage_data_list: list[DamageCalculateData] = [
@@ -54,6 +56,7 @@ class CalculatorMutableData:
             for remove_data in (buff_remove_list or [])
         ]
         self.apply_timing: Optional[RoundPhaseType] = apply_timing
+        self.debuff_clear_list: list[CharacterId] = debuff_clear_list or []
 
 
 class CommandPartCalculator:
@@ -74,6 +77,7 @@ class CommandPartCalculator:
                 data_per_effect.buff_add_list,
                 data_per_effect.buff_remove_list,
                 data_per_effect.apply_timing,
+                data_per_effect.debuff_clear_list,
             )
             for data_per_effect in data.data_per_effect
             if data_per_effect is not None
@@ -495,9 +499,12 @@ class CommandPartCalculator:
 def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntry]:
     """process() 완료 후 calculator.data_by_effect를 순회해 대상별 로그 엔트리를 만든다.
 
-    로그_전투 시트에 대상 1명당 1행으로 기록하기 위한 자료다.
+    로그_전투 시트에 대상 1명당 1행으로 기록하는 것과, 봇 답글 포매터
+    (app/bot/battle_reply_text.py)가 플레이어에게 보여줄 텍스트를 조립하는 것
+    양쪽에 쓰인다.
     """
     entries: list[BattleLogEntry] = []
+    context = calculator.context
     for effect_data in calculator.data_by_effect:
         # result_value가 None이면 이번 페이즈에서 아직 적용되지 않았거나(예: PRE 단계의
         # POST용 대미지/힐) 대상이 이미 사망해 건너뛴 항목이므로 로그에 남기지 않는다.
@@ -507,8 +514,10 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
             entries.append(
                 BattleLogEntry(
                     target_name=damage_calc.base.target_id.name,
+                    kind=BattleLogEntryKind.DAMAGE,
                     result=f"대미지 {damage_calc.result_value}",
                     roll_display=damage_calc.roll_display,
+                    value=damage_calc.result_value,
                 )
             )
         for heal_calc in effect_data.heal_data_list:
@@ -517,22 +526,63 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
             entries.append(
                 BattleLogEntry(
                     target_name=heal_calc.base.target_id.name,
+                    kind=BattleLogEntryKind.HEAL,
                     result=f"회복 {heal_calc.result_value}",
                     roll_display=heal_calc.roll_display,
+                    value=heal_calc.result_value,
                 )
             )
         for move_data in effect_data.move_list:
             entries.append(
                 BattleLogEntry(
                     target_name=move_data.character_id.name,
+                    kind=BattleLogEntryKind.MOVE,
                     result=f"{move_data.to_position}열로 이동",
                 )
             )
         for buff_add in effect_data.buff_add_data_list:
+            buff = context.get_buff_instance(buff_add.applied_to, buff_add.buff_id)
+            if buff is not None and buff.max_stack:
+                result = (
+                    f"[{buff_add.buff_id}]×{buff_add.stack_value} 부여"
+                    f" (잔여 {buff.stack_count})"
+                )
+            else:
+                duration_text = buff.duration.display_text() if buff is not None else ""
+                result = f"[{buff_add.buff_id}] 부여{duration_text}"
             entries.append(
                 BattleLogEntry(
                     target_name=buff_add.applied_to.name,
-                    result=f"[{buff_add.buff_id}] 부여",
+                    kind=BattleLogEntryKind.BUFF_ADD,
+                    result=result,
+                    buff_id=buff_add.buff_id,
+                    stack_delta=buff_add.stack_value,
+                )
+            )
+        for remove_calc in effect_data.buff_remove_data_list:
+            if not remove_calc.result_value:
+                continue
+            remaining = context.get_buff_stack(
+                remove_calc.base.applied_to, remove_calc.base.buff_id
+            )
+            entries.append(
+                BattleLogEntry(
+                    target_name=remove_calc.base.applied_to.name,
+                    kind=BattleLogEntryKind.BUFF_REMOVE,
+                    result=(
+                        f"[{remove_calc.base.buff_id}]×{remove_calc.result_value} 소모"
+                        f" (잔여 {remaining})"
+                    ),
+                    buff_id=remove_calc.base.buff_id,
+                    stack_delta=remove_calc.result_value,
+                )
+            )
+        for target_id in effect_data.debuff_clear_list:
+            entries.append(
+                BattleLogEntry(
+                    target_name=target_id.name,
+                    kind=BattleLogEntryKind.DEBUFF_CLEAR,
+                    result="모든 디버프 제거",
                 )
             )
     return entries

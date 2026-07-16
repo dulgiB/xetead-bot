@@ -181,6 +181,11 @@ def expand_character_command(
             data_per_effect_list: list[CommandPartDataPerEffect] = []
 
             for skill_effect in skill_used.data.effects:
+                # expand()가 즉시 부수효과(디버프 일괄 제거 등)를 일으킬 수 있으므로,
+                # "무엇이 지워질지"는 expand() 호출 전에 먼저 확정해야 한다.
+                debuff_clear_list = skill_effect.get_debuff_clear_targets(
+                    context, target_characters
+                )
                 move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
                     skill_effect.expand(
                         context, command.user_id, target_characters, raw_targets
@@ -193,6 +198,7 @@ def expand_character_command(
                         heal_list=heal_list,
                         buff_add_list=buff_add_list,
                         buff_remove_list=buff_remove_list,
+                        debuff_clear_list=debuff_clear_list,
                         apply_timing=skill_effect.apply_timing,
                     )
                 )
@@ -210,6 +216,9 @@ def expand_character_command(
 
             target_characters = item_used.target_rule.get_targets(part.targets)
 
+            debuff_clear_list = item_used.data.effect.get_debuff_clear_targets(
+                context, target_characters
+            )
             move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
                 item_used.data.effect.expand(
                     context, command.user_id, target_characters
@@ -226,6 +235,7 @@ def expand_character_command(
                             heal_list=heal_list,
                             buff_add_list=buff_add_list,
                             buff_remove_list=buff_remove_list,
+                            debuff_clear_list=debuff_clear_list,
                             apply_timing=item_used.data.effect.apply_timing,
                         ),
                     ),

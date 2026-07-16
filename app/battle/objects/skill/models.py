@@ -94,6 +94,19 @@ class SkillEffectBase(abc.ABC):
 
         raise ValueError(self.target_override)
 
+    def get_debuff_clear_targets(
+        self,
+        context: "BattlefieldContext",
+        targets: list[CharacterId],
+    ) -> list[CharacterId]:
+        """디버프를 일괄 제거하는 효과(SkillEffectRemoveDebuffs)만 오버라이드한다.
+
+        expand() 호출 **전에** 불러야 한다 — expand()가 즉시 디버프를 지우므로,
+        "무엇이 지워질지"는 지우기 전에 확정해야 답글에 정확히 표시할 수 있다.
+        기본 구현은 대부분의 효과에 해당 사항이 없으므로 빈 리스트를 반환한다.
+        """
+        return []
+
 
 def parse_skill_effect(
     data: dict[str, str | int], index: int

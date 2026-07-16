@@ -1,4 +1,5 @@
 from dataclasses import KW_ONLY, dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Literal, Optional
 
 from battle.core.commands.define import RoundPhaseType
@@ -44,6 +45,8 @@ class CommandPartDataPerEffect:
     heal_list: list[HealData] = field(default_factory=list)
     buff_add_list: list[BuffAddData] = field(default_factory=list)
     buff_remove_list: list[BuffRemoveData] = field(default_factory=list)
+    # SkillEffectRemoveDebuffs가 디버프를 일괄 제거한 대상 (답글 표시용).
+    debuff_clear_list: list[CharacterId] = field(default_factory=list)
     # 에너미 스킬 전용: None이면 페이즈별 기본값(이동→PRE, 대미지/힐→POST) 사용.
     apply_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
@@ -89,6 +92,7 @@ class CommandPartData:
                         heal_list=data.heal_list,
                         buff_add_list=data.buff_add_list,
                         buff_remove_list=data.buff_remove_list,
+                        debuff_clear_list=data.debuff_clear_list,
                     )
                 )
         return CommandPartData(
@@ -126,13 +130,32 @@ class BuffRemoveCalculateData:
     result_value: Optional[int] = None
 
 
+class BattleLogEntryKind(str, Enum):
+    DAMAGE = "damage"
+    HEAL = "heal"
+    MOVE = "move"
+    BUFF_ADD = "buff_add"
+    BUFF_REMOVE = "buff_remove"
+    DEBUFF_CLEAR = "debuff_clear"
+
+
 @dataclass(frozen=True)
 class BattleLogEntry:
-    """로그_전투 시트 한 행에 대응하는 정산 결과 (대상 1명당 1개)."""
+    """로그_전투 시트 한 행에 대응하는 정산 결과 (대상 1명당 1개).
+
+    `result`/`roll_display`는 로그_전투 시트 기록용 텍스트로 그대로 유지한다.
+    `kind`와 나머지 구조화 필드는 봇 답글 포매터(app/bot/battle_reply_text.py)가
+    `entry.result` 문자열을 접두사로 재해석하지 않고 종류별로 바로 분기할 수
+    있도록 하기 위한 것이다.
+    """
 
     target_name: str
+    kind: BattleLogEntryKind
     result: str
     roll_display: Optional[str] = None
+    value: Optional[int] = None  # damage/heal 최종 수치
+    buff_id: Optional[str] = None  # buff_add/buff_remove
+    stack_delta: Optional[int] = None  # buff_add: 이번에 추가된 스택 / buff_remove: 이번에 소모된 스택
 
 
 @dataclass(frozen=True)

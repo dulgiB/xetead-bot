@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import BattleLogEntry
+from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import (
@@ -382,7 +382,9 @@ def _cmd_end(state: "BotState") -> str:
     battle_end_entries = [
         BattleLogEntry(
             target_name=char_id.name,
+            kind=BattleLogEntryKind.DAMAGE,
             result=f"대미지 {before - char.status.curr_hp}",
+            value=before - char.status.curr_hp,
         )
         for char_id, char in state.session.context.characters.items()
         if (before := hp_before[char_id]) != char.status.curr_hp
