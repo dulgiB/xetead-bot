@@ -35,6 +35,7 @@ class BattleSession:
         )
         self.manager = RoundManager(self.context)
         self.started: bool = False
+        self.name: Optional[str] = None
         self._phase_idx: int = 0
         self.round_n: int = 0
 
