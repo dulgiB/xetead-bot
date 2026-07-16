@@ -34,7 +34,7 @@ class GivenDamageModEvent(BuffEvent):
             effect_seq_number
         ].damage_data_list:
             if damage_data.base.attacker_id == holder:
-                damage_data.modifiers.append(self.value)
+                damage_data.given_modifiers.append(self.value)
 
 
 class BuffGivenDamage(BuffBase):

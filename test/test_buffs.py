@@ -329,6 +329,9 @@ class TestBuffGivenDamage:
             value_type=ValueType.INTEGER,
             value=10,
         )
+        # FIXED 값은 BuffGivenDamage(버프)에 면역이므로, 이 테스트는 ATK 기반
+        # 계수 100%(=ATK 그대로)로 5 대미지를 낸다 (FIXED 5와 동일한 기본
+        # 대미지를 내면서도 버프가 실제로 적용되는 경로를 검증한다).
         aoe_skill = SkillData(
             id="광역기",
             target_rule="SkillTargetRuleColumn",
@@ -336,7 +339,7 @@ class TestBuffGivenDamage:
             cost=0,
             effects=[
                 SkillEffectDamage(
-                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                    ValueSourceType.STAT_ATK, 100, ValueType.INTEGER, None, None
                 )
             ],
             description="",
@@ -346,7 +349,7 @@ class TestBuffGivenDamage:
 
         attacker_id = CharacterId("공격수")
         ctx.add_character(
-            get_test_preset("공격수", skill_1_id="광역기"),
+            get_test_preset("공격수", skill_1_id="광역기", atk=5),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )

@@ -100,18 +100,23 @@ class CommandPartData:
 @dataclass
 class DamageCalculateData:
     base: DamageData
-    modifiers: list[ValueModifierBase]
+    # 공격자(holder)가 주는 대미지에 적용되는 modifier (BuffGivenDamage 등)
+    given_modifiers: list[ValueModifierBase] = field(default_factory=list)
+    # 대상(holder)이 받는 대미지에 적용되는 modifier (BuffReceivedDamage, m_res, 희생 방어 등)
+    received_modifiers: list[ValueModifierBase] = field(default_factory=list)
     result_value: Optional[int] = None
-    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.__str__). 로그 기록용.
+    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.format_calculation()). 로그 기록용.
     roll_display: Optional[str] = None
 
 
 @dataclass
 class HealCalculateData:
     base: HealData
-    modifiers: list[ValueModifierBase]
+    # 회복 시전자(holder)가 주는 회복에 적용되는 modifier (BuffGivenHeal 등).
+    # "받는 회복" 버프는 아직 없어 받는 쪽 그룹은 두지 않는다.
+    given_modifiers: list[ValueModifierBase] = field(default_factory=list)
     result_value: Optional[int] = None
-    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.__str__). 로그 기록용.
+    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.format_calculation()). 로그 기록용.
     roll_display: Optional[str] = None
 
 

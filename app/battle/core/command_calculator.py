@@ -43,10 +43,10 @@ class CalculatorMutableData:
     ):
         self.move_list: list[MoveData] = move_list
         self.damage_data_list: list[DamageCalculateData] = [
-            DamageCalculateData(damage_data, []) for damage_data in damage_list
+            DamageCalculateData(damage_data) for damage_data in damage_list
         ]
         self.heal_data_list: list[HealCalculateData] = [
-            HealCalculateData(heal_data, []) for heal_data in heal_list
+            HealCalculateData(heal_data) for heal_data in heal_list
         ]
         self.buff_add_data_list: list[BuffAddData] = buff_add_list
         self.buff_remove_data_list: list[BuffRemoveCalculateData] = [
@@ -223,9 +223,14 @@ class CommandPartCalculator:
                     damage_calc.base = replace(damage_calc.base, target_id=final)
                     self._redirect_map[original] = final
                 # 희생 방어 경감: 보호자가 받는 대미지를 reduction%만큼 감소시킨다.
+                # 버프가 아니라 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
                 if reduction:
-                    damage_calc.modifiers.append(
-                        FloatValueModifier(source_name="희생 방어", value=-reduction)
+                    damage_calc.received_modifiers.append(
+                        FloatValueModifier(
+                            source_name="희생 방어",
+                            value=-reduction,
+                            applies_to_fixed=True,
+                        )
                     )
 
     def _resolve_redirect(
@@ -350,10 +355,12 @@ class CommandPartCalculator:
                 else attacker.status.is_magic_attacker
             )
             if is_magic_attack:
-                damage_calc.modifiers.append(target.status.m_res)
+                damage_calc.received_modifiers.append(target.status.m_res)
 
             damage_value = ValueWithModifiers(
-                damage_calc.base.value, damage_calc.modifiers
+                damage_calc.base.value,
+                damage_calc.given_modifiers,
+                damage_calc.received_modifiers,
             )
             damage_calc.result_value = self.context.apply_damage(
                 damage_calc.base.attacker_id,
@@ -362,7 +369,7 @@ class CommandPartCalculator:
                 self,
                 effect_seq_number,
             )
-            damage_calc.roll_display = str(damage_value)
+            damage_calc.roll_display = damage_value.format_calculation()
 
     @staticmethod
     def _is_live_heal_calc(
@@ -396,7 +403,9 @@ class CommandPartCalculator:
         for heal_calc in list(self.data_by_effect[effect_seq_number].heal_data_list):
             if not self._is_live_heal_calc(self.context, heal_calc):
                 continue
-            heal_value = ValueWithModifiers(heal_calc.base.value, heal_calc.modifiers)
+            heal_value = ValueWithModifiers(
+                heal_calc.base.value, heal_calc.given_modifiers, []
+            )
             heal_calc.result_value = self.context.apply_heal(
                 heal_calc.base.healer_id,
                 heal_calc.base.target_id,
@@ -404,7 +413,7 @@ class CommandPartCalculator:
                 self,
                 effect_seq_number,
             )
-            heal_calc.roll_display = str(heal_value)
+            heal_calc.roll_display = heal_value.format_calculation()
 
     def _buff_add_gate_passes(
         self: "CommandPartCalculator", data: BuffAddData, effect_seq_number: int

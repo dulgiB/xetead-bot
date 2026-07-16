@@ -34,7 +34,7 @@ class ReceivedDamageModEvent(BuffEvent):
             effect_seq_number
         ].damage_data_list:
             if damage_data.base.target_id == holder:
-                damage_data.modifiers.append(self.value)
+                damage_data.received_modifiers.append(self.value)
 
 
 class BuffReceivedDamage(BuffBase):

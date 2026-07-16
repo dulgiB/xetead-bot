@@ -50,7 +50,7 @@ class BonusDamageOnHitEvent(BuffEvent):
                     ),
                     is_magic_attack=damage_data.base.is_magic_attack,
                 )
-                new_items.append(DamageCalculateData(extra, []))
+                new_items.append(DamageCalculateData(extra))
         effect_data.damage_data_list.extend(new_items)
 
 

@@ -504,6 +504,9 @@ def test_guardian_evaluated_at_enemy_post_action_position():
     라운드 시작 시엔 다른 열이던 아군이 ALLY_ACTION에 보호자 열로 이동하면,
     POST 시점 위치 기준으로 보호받아야 한다.
     """
+    # FIXED 값은 BuffReceivedDamage(버프)에 면역이므로, ATK 기반 계수 100%
+    # (=ATK 그대로)로 50 대미지를 낸다 (FIXED 50과 동일한 기본 대미지를
+    # 내면서도 버프가 실제로 적용되는 경로를 검증한다).
     fixed_attack = SkillData(
         id="강타",
         target_rule="SkillTargetRuleNamed",
@@ -511,7 +514,7 @@ def test_guardian_evaluated_at_enemy_post_action_position():
         cost=0,
         effects=[
             SkillEffectDamage(
-                ValueSourceType.FIXED, 50, ValueType.INTEGER, None, None
+                ValueSourceType.STAT_ATK, 100, ValueType.INTEGER, None, None
             )
         ],
         description="",
@@ -534,7 +537,7 @@ def test_guardian_evaluated_at_enemy_post_action_position():
         get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(1)
     )
     ctx.add_character(
-        get_test_preset("적군 1", skill_1_id="강타"),
+        get_test_preset("적군 1", skill_1_id="강타", atk=50),
         FactionType.ENEMY, BattlefieldColumnIndex(1),
     )
     ctx.buff_container.add_passive_wrapper(_make_guardian_passive(guardian_id))

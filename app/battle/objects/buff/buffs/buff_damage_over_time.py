@@ -33,7 +33,6 @@ class DamageOverTimeEvent(BuffEvent):
                     target_id=holder,
                     value=BaseValueIndicator(ValueSourceType.FIXED, self.value),
                 ),
-                [],
             )
         )
 

@@ -53,12 +53,19 @@ class CombatStats:
 
     @property
     def m_res(self) -> FloatValueModifier:
+        # 버프가 아니라 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
         if self._m_res == MagicResistanceType.WEAK:
-            return FloatValueModifier(source_name="마법 저항", value=0.15)
+            return FloatValueModifier(
+                source_name="마법 저항", value=0.15, applies_to_fixed=True
+            )
         elif self._m_res == MagicResistanceType.NORMAL:
-            return FloatValueModifier(source_name="마법 저항", value=0)
+            return FloatValueModifier(
+                source_name="마법 저항", value=0, applies_to_fixed=True
+            )
         elif self._m_res == MagicResistanceType.STRONG:
-            return FloatValueModifier(source_name="마법 저항", value=-0.15)
+            return FloatValueModifier(
+                source_name="마법 저항", value=-0.15, applies_to_fixed=True
+            )
         else:
             raise ValueError(f"Unknown MagicResistanceType: {self._m_res}")
 

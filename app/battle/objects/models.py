@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
 from utils.dice import DiceRollResult, nd6
@@ -41,6 +41,14 @@ class BuffUid:
 @dataclass(frozen=True)
 class ValueModifierBase:
     source_name: str
+    # True면 FIXED(고정값) 대미지/힐에도 적용된다. 마력 적응(m_res)·희생 방어
+    # 경감처럼 버프가 아닌 게임 메커니즘용. BuffGivenDamage/BuffReceivedDamage/
+    # BuffGivenHeal 등 버프 유래 modifier는 기본값(False)을 그대로 써서
+    # FIXED 값에는 영향을 주지 않는다.
+    # kw_only: 서브클래스(IntValueModifier/FloatValueModifier)가 추가하는
+    # 필수 필드 value가 기본값 있는 필드보다 뒤에 오게 되는 dataclass 순서
+    # 제약을 피하기 위함.
+    applies_to_fixed: bool = field(default=False, kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -140,28 +148,59 @@ class BaseValueIndicator:
             raise ValueError(self.value_source)
 
 
+def _bucket_modifiers(
+    modifiers: list[ValueModifierBase], is_fixed: bool
+) -> tuple[list[IntValueModifier], list[FloatValueModifier]]:
+    """0이 아닌 modifier를 int/float로 나눈다. is_fixed면 applies_to_fixed=False인
+    (버프 유래) modifier는 걸러낸다."""
+    int_modifiers: list[IntValueModifier] = []
+    float_modifiers: list[FloatValueModifier] = []
+    for modifier in modifiers:
+        if is_fixed and not modifier.applies_to_fixed:
+            continue
+        if isinstance(modifier, IntValueModifier):
+            if modifier.value != 0:
+                int_modifiers.append(modifier)
+        elif isinstance(modifier, FloatValueModifier):
+            if modifier.value != 0:
+                float_modifiers.append(modifier)
+    return int_modifiers, float_modifiers
+
+
 @dataclass
 class ValueWithModifiers:
     base_value: BaseValueIndicator
-    int_modifiers: list[IntValueModifier]
-    float_modifiers: list[FloatValueModifier]
+    given_int_modifiers: list[IntValueModifier]
+    given_float_modifiers: list[FloatValueModifier]
+    received_int_modifiers: list[IntValueModifier]
+    received_float_modifiers: list[FloatValueModifier]
     roll_result: Optional[DiceRollResult] = None
+    base_display_value: Optional[int] = None
 
     base_coefficient: Optional[FloatValueModifier] = None
 
     def __init__(
         self,
         base_value: BaseValueIndicator,
-        modifiers: list[ValueModifierBase],
+        given_modifiers: list[ValueModifierBase],
+        received_modifiers: list[ValueModifierBase],
     ):
         self.base_value = base_value
-        self.int_modifiers = []
-        self.float_modifiers = []
-        # 스킬 자체의 계수(백분율). 예: 230 → ×2.3. 없으면 기본 100%(×1.0).
-        self.base_coefficient = None
+        self.roll_result = None
+        self.base_display_value = None
 
-        if (
+        is_fixed = (
             isinstance(self.base_value, BaseValueIndicator)
+            and self.base_value.value_source == ValueSourceType.FIXED
+        )
+
+        # 스킬 자체의 계수(백분율). 예: 230 → ×2.3. FIXED 값에는 적용하지 않는다
+        # (버프성 배율과 동일 취급 — 실제로 FIXED와 coefficient가 같이 쓰이는
+        # 곳은 현재 없다).
+        self.base_coefficient = None
+        if (
+            not is_fixed
+            and isinstance(self.base_value, BaseValueIndicator)
             and self.base_value.coefficient is not None
             and self.base_value.value_source
             not in (
@@ -172,13 +211,12 @@ class ValueWithModifiers:
         ):
             self.base_coefficient = self.base_value.coefficient
 
-        for modifier in modifiers:
-            if isinstance(modifier, IntValueModifier):
-                if modifier.value != 0:
-                    self.int_modifiers.append(modifier)
-            elif isinstance(modifier, FloatValueModifier):
-                if modifier.value != 0:
-                    self.float_modifiers.append(modifier)
+        self.given_int_modifiers, self.given_float_modifiers = _bucket_modifiers(
+            given_modifiers, is_fixed
+        )
+        self.received_int_modifiers, self.received_float_modifiers = _bucket_modifiers(
+            received_modifiers, is_fixed
+        )
 
     def get_value(
         self,
@@ -198,6 +236,7 @@ class ValueWithModifiers:
 
         if isinstance(base_value, int):
             value = base_value
+            self.base_display_value = base_value
         elif isinstance(base_value, DiceRollResult):
             self.roll_result = base_value
             value = base_value.result
@@ -205,46 +244,73 @@ class ValueWithModifiers:
             raise TypeError(type(base_value))
 
         total_int_modifier_value = sum(
-            modifier.value for modifier in self.int_modifiers
+            modifier.value
+            for modifier in (*self.given_int_modifiers, *self.received_int_modifiers)
         )
         value += total_int_modifier_value
 
-        # 백분율 계수: 스킬 기본 계수(없으면 100%)에 버프 등 가감(퍼센트 포인트)을 더한다.
-        # 예) 계수 230 + 버프 +20 → 250% → ×2.5. 음수로 0% 미만이 되면 0으로 클램프.
-        coefficient_percent = (
-            self.base_coefficient.value if self.base_coefficient is not None else 100
+        if self.base_coefficient is not None:
+            value = math.floor(value * self.base_coefficient.value / 100)
+
+        # 주는 쪽/받는 쪽 퍼센트 그룹은 각각 독립적인 배율 (1 + Σ퍼센트/100)을
+        # 이루고, 두 배율을 곱한다 (그룹 내부는 합연산, 그룹끼리는 곱연산).
+        given_factor = max(
+            0.0, 1 + sum(m.value for m in self.given_float_modifiers) / 100
         )
-        coefficient_percent += sum(
-            modifier.value for modifier in self.float_modifiers
+        received_factor = max(
+            0.0, 1 + sum(m.value for m in self.received_float_modifiers) / 100
         )
-        coefficient_percent = max(0, coefficient_percent)
-        value = math.floor(value * coefficient_percent / 100)
+        value = math.floor(value * given_factor * received_factor)
 
         return value
 
-    def __str__(self):
-        result_str = ""
-        if self.roll_result:
-            result_str += str(self.roll_result)
-        else:
-            result_str += str(self.base_value)
+    def format_calculation(self) -> Optional[str]:
+        """계산식 표시 문자열. 다이스도 안 굴리고 modifier/계수도 전혀 없으면
+        (전형적으로 modifier가 없는 FIXED 값) 보여줄 게 없다는 뜻으로 None을
+        반환한다."""
+        has_content = (
+            self.roll_result is not None
+            or self.base_coefficient is not None
+            or self.given_int_modifiers
+            or self.given_float_modifiers
+            or self.received_int_modifiers
+            or self.received_float_modifiers
+        )
+        if not has_content:
+            return None
 
-        if self.int_modifiers:
+        if self.roll_result is not None:
+            result_str = str(self.roll_result)
+        elif self.base_display_value is not None:
+            result_str = str(self.base_display_value)
+        else:
+            result_str = str(self.base_value)
+
+        int_modifiers = [*self.given_int_modifiers, *self.received_int_modifiers]
+        if int_modifiers:
             result_str += " + ("
-            for modifier in self.int_modifiers:
+            for modifier in int_modifiers:
                 result_str += f"{'' if modifier.value < 0 else '+'}{modifier.value}[{modifier.source_name}]"
             result_str += ")"
-        if self.base_coefficient is not None or self.float_modifiers:
-            parts: list[str] = []
-            if self.base_coefficient is not None:
-                parts.append(
-                    f"{math.floor(self.base_coefficient.value)}%[{self.base_coefficient.source_name}]"
-                )
-            for modifier in self.float_modifiers:
-                parts.append(
-                    f"{'' if modifier.value < 0 else '+'}{math.floor(modifier.value)}%[{modifier.source_name}]"
-                )
-            result_str += " * (" + " ".join(parts) + ")"
+
+        if self.base_coefficient is not None:
+            result_str += (
+                f" × {self.base_coefficient.value / 100:g}"
+                f"[{self.base_coefficient.source_name}]"
+            )
+
+        for float_modifiers in (
+            self.given_float_modifiers,
+            self.received_float_modifiers,
+        ):
+            if not float_modifiers:
+                continue
+            group_str = "1"
+            for modifier in float_modifiers:
+                sign = "-" if modifier.value < 0 else "+"
+                group_str += f" {sign} {abs(modifier.value) / 100:g}[{modifier.source_name}]"
+            result_str += f" × ({group_str})"
+
         return result_str
 
 
