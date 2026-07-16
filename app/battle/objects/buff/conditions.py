@@ -303,3 +303,53 @@ class AllyInSameColumnWasAttackedCondition(Condition):
             and char_id in context.damaged_this_round
             for char_id, char in context.characters.items()
         )
+
+
+@dataclass(frozen=True)
+class TargetIsAllyCondition(Condition):
+    """attacker_or_target이 holder와 같은 진영(아군)일 때 True."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if attacker_or_target is None:
+            return False
+        holder_char = context.characters.get(holder)
+        target_char = context.characters.get(attacker_or_target)
+        if holder_char is None or target_char is None:
+            return False
+        return holder_char.faction == target_char.faction
+
+
+@dataclass(frozen=True)
+class AllyInRangeWasAttackedCondition(Condition):
+    """holder의 사거리 이내(자신 포함)·같은 진영인 캐릭터 중 이번 라운드
+    동안(damaged_this_round 기준) 대미지를 받은 자가 1명이라도 있으면 True.
+    "라운드 최종 위치 기준"은 별도 처리가 필요 없다 — 라운드 종료 시점에
+    find_character_position()을 호출하면 자연히 그 라운드의 최종 위치가
+    나온다."""
+
+    requires_round_resolved: ClassVar[bool] = True
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        holder_char = context.characters.get(holder)
+        if holder_char is None:
+            return False
+        holder_pos = context.find_character_position(holder)
+        holder_range = holder_char.status[CombatStatType.RANGE]
+        return any(
+            char.faction == holder_char.faction
+            and is_reachable(
+                holder_pos, context.find_character_position(char_id), holder_range
+            )
+            and char_id in context.damaged_this_round
+            for char_id, char in context.characters.items()
+        )

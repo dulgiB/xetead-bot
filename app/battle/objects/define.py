@@ -83,6 +83,8 @@ class ValueSourceType(str, Enum):
     TOWARD_HOLDER = "공격자 방향으로"
     AWAY_FROM_HOLDER = "공격자 반대 방향으로"
 
+    INPUT_COLUMN = "지정한 열"
+
 
 class ValueType(str, Enum):
     INTEGER = "정수"

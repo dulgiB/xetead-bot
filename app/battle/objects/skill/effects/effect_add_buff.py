@@ -14,6 +14,7 @@ class SkillEffectAddBuff(SkillEffectBase):
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
+        raw_targets: tuple = (),
     ) -> tuple[
         list[MoveData],
         list[DamageData],

@@ -11,6 +11,9 @@ from utils.name_matching import whitespace_tolerant_literal
 # ex. [이동/1 - 스킬/대상A/대상B - 공격/대상A]
 
 kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{HangulJamoExtendedA}\p{HangulJamoExtendedB}"
+# 캐릭터/스킬/아이템 id에 언더스코어가 포함되는 경우(예: "스킬_1")가 있어
+# 이름·대상에 쓰이는 문자 집합에도 언더스코어를 포함한다.
+name_charset = rf"{kr_charset}0-9A-Za-z_"
 
 _이동 = whitespace_tolerant_literal("이동")
 _공격 = whitespace_tolerant_literal("공격")
@@ -24,22 +27,22 @@ command_format_move = regex.compile(rf"^\s*{_이동}\s*/\s*(?P<pos>[1-7]열?)\s*
 
 # 기본 공격 :: 공격/대상
 command_format_attack = regex.compile(
-    rf"^\s*{_공격}\s*/\s*(?P<target>[{kr_charset}0-9A-Za-z ]+)\s*$"
+    rf"^\s*{_공격}\s*/\s*(?P<target>[{name_charset} ]+)\s*$"
 )
 
 # 대상이 지정된 스킬 사용 :: 스킬/스킬명/대상1/대상2/대상3
 command_format_skill = regex.compile(
-    rf"^\s*{_스킬}\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+)\s*$"
+    rf"^\s*{_스킬}\s*/\s*(?P<skill_name>[{name_charset} ]+)\s*/\s*(?P<targets>[{name_charset}/ ]+)\s*$"
 )
 
 # 대상이 없는 스킬 사용 :: 스킬/스킬명
 command_format_skill_no_target = regex.compile(
-    rf"^\s*{_스킬}\s*/\s*(?P<skill_name>[{kr_charset}0-9A-Za-z ]+)\s*$"
+    rf"^\s*{_스킬}\s*/\s*(?P<skill_name>[{name_charset} ]+)\s*$"
 )
 
 # 아이템 사용 :: 아이템/아이템 이름(/대상)
 command_format_item = regex.compile(
-    rf"^\s*{_아이템}\s*/\s*(?P<item_name>[{kr_charset}0-9A-Za-z ]+)\s*(/\s*(?P<targets>[{kr_charset}0-9A-Za-z/ ]+))?\s*$"
+    rf"^\s*{_아이템}\s*/\s*(?P<item_name>[{name_charset} ]+)\s*(/\s*(?P<targets>[{name_charset}/ ]+))?\s*$"
 )
 
 

@@ -11,6 +11,7 @@ from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
 
 class PassiveSkillTrigger(str, Enum):
     ROUND_START = "라운드 시작"
+    ROUND_END = "라운드 종료"
     ON_ACTION = "행동 시"
     ON_ENEMY_MOVE = "적 이동 시"
     ENEMY_POST_ACTION = "적 후행 시"

@@ -176,12 +176,15 @@ def expand_character_command(
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
 
             target_characters = skill_used.target_rule.get_targets(part.targets)
+            raw_targets = tuple(part.targets)
 
             data_per_effect_list: list[CommandPartDataPerEffect] = []
 
             for skill_effect in skill_used.data.effects:
                 move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
-                    skill_effect.expand(context, command.user_id, target_characters)
+                    skill_effect.expand(
+                        context, command.user_id, target_characters, raw_targets
+                    )
                 )
                 data_per_effect_list.append(
                     CommandPartDataPerEffect(

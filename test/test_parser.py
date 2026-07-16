@@ -132,6 +132,21 @@ def setup_character(empty_context):
                 ],
             ),
         ),
+        # 언더스코어가 포함된 스킬명/대상명 — 실제 캐릭터/스킬 id 명명 규칙에
+        # 언더스코어가 쓰이는 경우가 있으므로 파싱 가능해야 한다.
+        (
+            "[스킬/스킬_1/대상_1]",
+            CharacterCommand(
+                user_id=_USER,
+                parts=[
+                    CommandPart(
+                        type_=ActionType.SKILL,
+                        skill_id="스킬_1",
+                        targets=[CharacterId("대상_1")],
+                    )
+                ],
+            ),
+        ),
     ],
 )
 def test_parse_smoke(input_str: str, expected: CharacterCommand | None, empty_context):

@@ -396,8 +396,15 @@ class TestBuffReceivedDamage:
         skill = make_buff_skill("방어 스킬", "피해 감소")
         return make_context(buff, skill_dict={"방어 스킬": skill})
 
-    def test_received_damage_buff_increases_damage_taken(self, ctx_damage_up):
-        """받는 대미지 증가 버프를 받은 캐릭터는 더 큰 피해를 입는다."""
+    def test_received_damage_buff_increases_damage_taken(self, ctx_damage_up, monkeypatch):
+        """받는 대미지 증가 버프를 받은 캐릭터는 더 큰 피해를 입는다.
+
+        두 공격이 각자 독립적으로 1d6을 굴리면, +50% 버프로도 주사위 눈 차이를
+        항상 뒤집을 수는 없어(예: 버프 쪽이 낮은 눈, 비버프 쪽이 높은 눈이 나오면
+        역전) 드물게 실패하는 flaky 테스트였다. 두 공격이 같은 주사위 눈을
+        굴리도록 고정해 버프 효과 자체만 결정론적으로 검증한다.
+        """
+        monkeypatch.setattr("random.randint", lambda a, b: 4)
         ctx = ctx_damage_up
         manager = setup_ally_phase(ctx)
         ctx.add_character(

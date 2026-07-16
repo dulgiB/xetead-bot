@@ -179,8 +179,16 @@ class PassiveSkillWrapperBuff(BuffBase):
         obj.value = 0
         obj.value_type = None
         obj.duration = BuffDurationCounter(None, None, None)
-        # 게이팅은 이제 passive_data.effects 각각의 condition으로 처리된다.
-        obj.condition = None
+        # "effects" 역할의 게이팅은 passive_data.effects 각각의 condition으로
+        # 처리된다(obj.condition은 쓰이지 않음). "buff_mod" 역할은 apply()가
+        # buff_mod_event.apply()로 직접 위임하며 그 안에서는 조건을 다시
+        # 확인하지 않으므로, buff_mod_event.condition을 여기 그대로 실어야
+        # _apply_buff_events()의 is_applied() 게이팅이 실제로 동작한다.
+        obj.condition = (
+            passive_data.buff_mod_event.condition
+            if role == "buff_mod" and passive_data.buff_mod_event is not None
+            else None
+        )
         obj.is_debuff = False
         obj._passive_data = passive_data
         obj._role = role
@@ -195,6 +203,8 @@ class PassiveSkillWrapperBuff(BuffBase):
             return BuffApplyTiming.ON_ACTION
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_START:
             return BuffApplyTiming.ON_ROUND_START
+        if self._passive_data.trigger == PassiveSkillTrigger.ROUND_END:
+            return BuffApplyTiming.ON_ROUND_END
         if self._passive_data.trigger == PassiveSkillTrigger.ON_ENEMY_MOVE:
             return BuffApplyTiming.ON_ENEMY_MOVE
         if self._passive_data.trigger == PassiveSkillTrigger.ENEMY_POST_ACTION:
