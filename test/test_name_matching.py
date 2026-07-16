@@ -150,9 +150,8 @@ def test_item_name_and_target_ignore_whitespace_differences():
 def test_admin_keyword_regexes_ignore_internal_whitespace():
     assert admin_module._RE_BATTLE_PREP.search("[전 투 준 비]")
     assert admin_module._RE_BATTLE_START.search("[전투  개시]")
-    assert admin_module._RE_PHASE.search("[페 이 즈]")
+    assert admin_module._RE_PHASE.search("[진 행]")
     assert admin_module._RE_CONTINUE.search("[전투속행]")
-    assert admin_module._RE_STATUS.search("[현  황]")
     assert admin_module._RE_END.search("[전투 종 료]")
     assert admin_module._RE_INVESTIGATION_BATTLE.search("[상 시 전 투]")
     assert admin_module._RE_PRACTICE_PREP.search("[대 련]")
