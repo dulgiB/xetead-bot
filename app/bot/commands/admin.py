@@ -19,6 +19,7 @@ from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
+from bot.battle_reply_text import format_battle_reply
 from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import load_battle_data
 from bot.log_sheets import (
@@ -536,11 +537,8 @@ def _cmd_proxy(
 
         before = len(state.session.context.results)
         state.session.process_command(command)
-        entries = [
-            entry
-            for result in state.session.context.results[before:]
-            for entry in result.log_entries
-        ]
+        new_results = state.session.context.results[before:]
+        entries = [entry for result in new_results for entry in result.log_entries]
         write_back_changed_hp(state.spreadsheet, state.session.context, entries)
 
         battle_log = BattleCommandLog(
@@ -550,7 +548,8 @@ def _cmd_proxy(
             command_text=cmd_str,
             entries=entries,
         )
-        return str(state.session.context), battle_log
+        reply_text = format_battle_reply(state.session.context, char_id, new_results)
+        return reply_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
             field_id=field_id,
