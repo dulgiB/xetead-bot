@@ -590,7 +590,7 @@ def _handle_practice_command(
     round_n = ps.round_n
 
     try:
-        command = parse_character_command(char_id, text)
+        command = parse_character_command(char_id, text, ps.context)
         if command is None:
             return (
                 "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]",

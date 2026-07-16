@@ -438,7 +438,7 @@ def _cmd_proxy(
         phase = ps.phase.value if ps.phase is not None else ""
 
         try:
-            command = parse_character_command(char_id, cmd_str)
+            command = parse_character_command(char_id, cmd_str, ps.context)
             if command is None:
                 return "◊ 커맨드 형식을 인식할 수 없습니다.", None
             result = ps.manager.process_command(command)
@@ -479,7 +479,7 @@ def _cmd_proxy(
     phase = state.session.current_phase
 
     try:
-        command = parse_character_command(char_id, cmd_str)
+        command = parse_character_command(char_id, cmd_str, state.session.context)
         if command is None:
             return "◊ 커맨드 형식을 인식할 수 없습니다.", None
 

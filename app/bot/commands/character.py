@@ -46,7 +46,7 @@ def handle_character_command(
     round_n = state.session.round_n
 
     try:
-        command = parse_character_command(char_id, text)
+        command = parse_character_command(char_id, text, state.session.context)
         if command is None:
             return "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]", None
 
