@@ -51,3 +51,7 @@ def error_no_item_in_inventory(item_id: str) -> str:
 
 def error_item_not_usable_here() -> str:
     return "이 전투에서는 아이템을 사용할 수 없습니다."
+
+
+def error_skill_or_item_not_registered(name: str) -> str:
+    return f"'{name}'은(는) 등록된 스킬도 아이템도 아닙니다."
