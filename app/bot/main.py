@@ -37,7 +37,7 @@ from bot.commands.noncombat import (
     parse_transfer_item_args,
     parse_use_item_args,
 )
-from bot import log_sheets
+from bot import field_sheet_renderer, log_sheets
 from bot.load_data import load_all_data, load_char_data
 from bot.noncombat_state import NonCombatState
 from bot.practice_state import PracticeBattleState
@@ -155,6 +155,19 @@ def _persist_battle_log(
     except Exception:
         logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
 
+    if battle_log.is_main and state.session is not None:
+        try:
+            field_sheet_renderer.render_public_field_sheet(
+                state.field_spreadsheet,
+                state.session.context,
+                round_n=state.session.round_n,
+                phase=state.session.current_phase.value,
+                enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                battle_name=state.session.name,
+            )
+        except Exception:
+            logger.exception("공개 필드 시트 렌더링 실패 (field_id=%s)", battle_log.field_id)
+
 
 def _persist_noncombat_log(
     state: "BotState",
@@ -184,6 +197,7 @@ class BotState:
         str, NoncombatCharacterDataFromSpreadsheet
     ]  # mastodon_id → data
     spreadsheet: gspread.Spreadsheet
+    field_spreadsheet: gspread.Spreadsheet
     session: Optional[BattleSession] = None
     preparation_status_id: Optional[int] = None  # [전투 준비] 안내 게시물 ID
     active_phase_post_id: Optional[int] = None  # 현재 페이즈 공지 게시물 ID
@@ -683,12 +697,14 @@ def main() -> None:
         name_dict,
         noncombat_char_dict,
         spreadsheet,
+        field_spreadsheet,
     ) = load_all_data()
     state = BotState(
         char_dict=char_dict,
         name_dict=name_dict,
         noncombat_char_dict=noncombat_char_dict,
         spreadsheet=spreadsheet,
+        field_spreadsheet=field_spreadsheet,
     )
 
     mastodon = Mastodon(

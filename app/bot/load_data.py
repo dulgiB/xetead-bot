@@ -109,18 +109,23 @@ def load_all_data() -> tuple[
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, NoncombatCharacterDataFromSpreadsheet],
     gspread.Spreadsheet,
+    gspread.Spreadsheet,
 ]:
     """
     봇 시작 시 1회 호출한다. gspread 연결을 새로 맺고 `load_battle_data()`로 위임한 뒤
     spreadsheet 핸들을 덧붙여 반환한다. 전투 세션 시작 시점의 재로드는
     `load_battle_data(state.spreadsheet)`를 직접 사용한다 (연결 재인증 불필요).
+
+    `field_spreadsheet`는 관중에게 공개하는 실시간 전투 UI 전용 스프레드시트로,
+    `db`(내부용 자동화 DB)와는 별도다.
     """
     gc = gspread.service_account_from_dict(
         json.loads(os.environ["GOOGLE_SPREADSHEET_CREDENTIALS"])
     )
     db = gc.open_by_key(os.environ["DB_SPREADSHEET_KEY"])
+    field_spreadsheet = gc.open_by_key(os.environ["FIELD_SPREADSHEET_KEY"])
 
-    return (*load_battle_data(db), db)
+    return (*load_battle_data(db), db, field_spreadsheet)
 
 
 def load_passive_buff_data(
