@@ -16,7 +16,8 @@ TRPG 캠페인의 전투를 자동 정산하는 Mastodon 봇.
 | `MASTODON_ACCESS_TOKEN`          | 봇 계정 액세스 토큰                             |
 | `MASTODON_API_BASE_URL`          | 마스토돈 인스턴스 URL                           |
 | `GOOGLE_SPREADSHEET_CREDENTIALS` | Google 서비스 계정 JSON (문자열)                |
-| `DB_SPREADSHEET_KEY`             | 스프레드시트 ID                               |
+| `DB_SPREADSHEET_KEY`             | 스프레드시트 ID (내부용 자동화 DB)                  |
+| `FIELD_SPREADSHEET_KEY`          | 스프레드시트 ID (관중 공개용 실시간 전투 UI "필드" 시트)     |
 
 ### 봇 시작
 

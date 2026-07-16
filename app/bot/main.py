@@ -37,7 +37,8 @@ from bot.commands.noncombat import (
     parse_transfer_item_args,
     parse_use_item_args,
 )
-from bot import log_sheets
+from bot import field_sheet_renderer, log_sheets
+from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data
 from bot.noncombat_state import NonCombatState
 from bot.practice_state import PracticeBattleState
@@ -110,7 +111,11 @@ def _persist_battle_log(
     battle_log: Optional[log_sheets.BattleCommandLog],
     reply_ref: str,
 ) -> None:
-    """커맨드 정산 결과를 로그_전투에 기록하고, 필드 시트 스냅샷도 함께 갱신한다.
+    """커맨드 정산 결과를 로그_전투(내부 자동화 DB)에 기록한다.
+
+    공개 필드 시트 렌더링/이미지 캡처는 답글 전송 *전에* 끝나야 같은 답글에
+    이미지를 붙일 수 있으므로 `MastodonBotListener._field_media_ids_for_battle_log()`
+    에서 별도로 처리한다 (여기서는 하지 않는다).
 
     스프레드시트 기록 실패가 전투 진행 자체를 막지 않도록 예외를 흡수한다.
     """
@@ -184,6 +189,7 @@ class BotState:
         str, NoncombatCharacterDataFromSpreadsheet
     ]  # mastodon_id → data
     spreadsheet: gspread.Spreadsheet
+    field_spreadsheet: gspread.Spreadsheet
     session: Optional[BattleSession] = None
     preparation_status_id: Optional[int] = None  # [전투 준비] 안내 게시물 ID
     active_phase_post_id: Optional[int] = None  # 현재 페이즈 공지 게시물 ID
@@ -213,6 +219,41 @@ class MastodonBotListener(StreamListener):
         self._mastodon = mastodon
         self._state = state
         self._bot_acct = bot_acct
+
+    def _capture_field_media_ids(self, state: "BotState") -> list:
+        """공개 필드 시트를 이미지로 캡처해 업로드하고 media_id 리스트를 반환한다.
+
+        캡처/업로드 실패는 예외를 흡수하고 빈 리스트를 반환한다 — 텍스트만
+        게시되며, 이 실패가 전투 진행 자체를 막지 않는다.
+        """
+        try:
+            with capture_field_sheet_image(state.field_spreadsheet) as image_path:
+                media = self._mastodon.media_post(str(image_path), mime_type="image/png")
+                return [media["id"]]
+        except Exception:
+            logger.exception("공개 필드 시트 이미지 캡처/업로드 실패")
+            return []
+
+    def _field_media_ids_for_battle_log(
+        self, state: "BotState", battle_log: Optional[log_sheets.BattleCommandLog]
+    ) -> list:
+        """본 전투(is_main) 커맨드 로그일 때만 필드 시트를 다시 렌더링하고
+        그 결과를 이미지로 캡처한다. 대련/상시전투는 대상이 아니다."""
+        if battle_log is None or not battle_log.is_main or state.session is None:
+            return []
+        try:
+            field_sheet_renderer.render_public_field_sheet(
+                state.field_spreadsheet,
+                state.session.context,
+                round_n=state.session.round_n,
+                phase=state.session.current_phase.value,
+                enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                battle_name=state.session.name,
+            )
+        except Exception:
+            logger.exception("공개 필드 시트 렌더링 실패")
+            return []
+        return self._capture_field_media_ids(state)
 
     def on_notification(self, notification: dict) -> None:
         acct: Optional[str] = None
@@ -286,8 +327,15 @@ class MastodonBotListener(StreamListener):
                         )
             else:
                 # reply_text가 있는 경우: 답글 전송
+                # (프록시 커맨드의 다이스/반영 결과 답글이면 공개 필드 시트
+                #  이미지를 함께 첨부한다 — battle_log가 없는 admin 커맨드는
+                #  media_ids가 빈 리스트가 되어 영향 없다)
+                reply_media_ids = self._field_media_ids_for_battle_log(
+                    state, result.battle_log
+                )
                 reply_status = self._reply(
-                    status_id, acct, visibility, result.reply_text
+                    status_id, acct, visibility, result.reply_text,
+                    media_ids=reply_media_ids,
                 )
                 _persist_battle_log(
                     state, result.battle_log, str(reply_status["id"])
@@ -296,11 +344,19 @@ class MastodonBotListener(StreamListener):
                 if result.set_preparation_post:
                     state.preparation_status_id = reply_status["id"]
 
-                # 퍼블릭 게시물 게시 (페이즈 게시물)
+                # 퍼블릭 게시물 게시 (페이즈 게시물) — 라운드 시작/종료면 공개
+                # 필드 시트 이미지를 첨부한다 (render_public_field_sheet는
+                # admin.py의 각 핸들러에서 이미 호출됐으므로 여기서는 캡처만)
                 if result.game_post_text is not None:
+                    game_media_ids = (
+                        self._capture_field_media_ids(state)
+                        if result.attach_field_image
+                        else []
+                    )
                     new_post = self._mastodon.status_post(
                         _truncate(result.game_post_text),
                         visibility="public",
+                        media_ids=game_media_ids or None,
                     )
                     new_post_id = new_post["id"]
 
@@ -405,7 +461,10 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.active_phase_post_id
         ):
             response, battle_log = handle_character_command(acct, text, state)
-            reply_status = self._reply(status_id, acct, visibility, response)
+            media_ids = self._field_media_ids_for_battle_log(state, battle_log)
+            reply_status = self._reply(
+                status_id, acct, visibility, response, media_ids=media_ids
+            )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             return
 
@@ -489,12 +548,18 @@ class MastodonBotListener(StreamListener):
             return
 
     def _reply(
-        self, in_reply_to_id: int, acct: str, visibility: str, text: str
+        self,
+        in_reply_to_id: int,
+        acct: str,
+        visibility: str,
+        text: str,
+        media_ids: Optional[list] = None,
     ) -> dict:
         return self._mastodon.status_post(
             f"@{acct} {_truncate(text)}",
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
+            media_ids=media_ids or None,
         )
 
 
@@ -683,12 +748,14 @@ def main() -> None:
         name_dict,
         noncombat_char_dict,
         spreadsheet,
+        field_spreadsheet,
     ) = load_all_data()
     state = BotState(
         char_dict=char_dict,
         name_dict=name_dict,
         noncombat_char_dict=noncombat_char_dict,
         spreadsheet=spreadsheet,
+        field_spreadsheet=field_spreadsheet,
     )
 
     mastodon = Mastodon(

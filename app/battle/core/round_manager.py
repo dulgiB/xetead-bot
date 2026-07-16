@@ -20,6 +20,9 @@ class RoundManager:
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
         self._enemy_command_list: dict[CharacterId, list[CharacterCommand]] = {}
 
+    def get_enemy_declared_commands(self) -> dict[CharacterId, list[CharacterCommand]]:
+        return self._enemy_command_list
+
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
 

@@ -19,6 +19,7 @@ from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
+from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import load_battle_data
 from bot.log_sheets import (
     BattleCommandLog,
@@ -37,6 +38,7 @@ _RE_MANUAL_PLACE = re.compile(
     rf"\[{whitespace_tolerant_literal('배치')}\s*/\s*([^/\]]+?)\s*/\s*([^/\]]+)]"
 )
 _RE_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투개시')}]")
+_RE_BATTLE_NAME = re.compile(r"「(.+?)」")
 _RE_PHASE = re.compile(rf"\[{whitespace_tolerant_literal('페이즈')}]")
 _RE_CONTINUE = re.compile(rf"\[{whitespace_tolerant_literal('전투속행')}]")
 _RE_STATUS = re.compile(rf"\[{whitespace_tolerant_literal('현황')}]")
@@ -68,6 +70,8 @@ class AdminCommandResult:
     set_practice_active_post: bool = False
     # 프록시 커맨드(_cmd_proxy)로 캐릭터 커맨드가 정산된 경우 로그_전투 기록용 자료
     battle_log: Optional[BattleCommandLog] = None
+    # True이면 game_post_text 게시 시 공개 필드 시트 이미지를 첨부한다 (라운드 시작/종료)
+    attach_field_image: bool = False
 
 
 def handle_admin_command(
@@ -87,7 +91,9 @@ def handle_admin_command(
         return AdminCommandResult(_cmd_manual_place(name, faction_col_str, state))
 
     if _RE_BATTLE_START.search(text):
-        return _cmd_battle_start(state)
+        name_match = _RE_BATTLE_NAME.search(text)
+        battle_name = name_match.group(1).strip() if name_match else None
+        return _cmd_battle_start(state, battle_name)
 
     if _RE_PHASE.search(text):
         return _cmd_advance_phase(state)
@@ -176,7 +182,9 @@ def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str
     return f"◊ {name}({faction.value} {column}열)을 수동 배치 목록에 추가했습니다."
 
 
-def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
+def _cmd_battle_start(
+    state: "BotState", battle_name: Optional[str] = None
+) -> AdminCommandResult:
     if state.session is None:
         return AdminCommandResult(
             "◊ 진행 중인 전투가 없습니다. 먼저 [전투 준비]를 입력하세요."
@@ -219,6 +227,7 @@ def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
 
     # 3. 전투 시작
     state.session.start()
+    state.session.name = battle_name
 
     # 4. 필드 시트 저장
     try:
@@ -235,6 +244,18 @@ def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
 
+    try:
+        render_public_field_sheet(
+            state.field_spreadsheet,
+            state.session.context,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            battle_name=state.session.name,
+        )
+    except Exception as e:
+        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
+
     reply_parts = ["◊ 전투 시작"]
     if errors:
         reply_parts.append("⚠️ 오류:\n" + "\n".join(errors))
@@ -245,7 +266,7 @@ def _cmd_battle_start(state: "BotState") -> AdminCommandResult:
         state.session.round_n,
         state.session,
     )
-    return AdminCommandResult(reply_text, game_post)
+    return AdminCommandResult(reply_text, game_post, attach_field_image=True)
 
 
 def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
@@ -278,6 +299,18 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
 
+    try:
+        render_public_field_sheet(
+            state.field_spreadsheet,
+            state.session.context,
+            round_n=state.session.round_n,
+            phase=new_phase.value,
+            enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            battle_name=state.session.name,
+        )
+    except Exception as e:
+        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
+
     game_post = _make_phase_post_text(
         new_phase, state.session.round_n, state.session, hp_before
     )
@@ -289,7 +322,9 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     # → 호출측에서 game_post_text가 None인지 여부로 판단하므로
     #   POST_ACTION과 STANDBY는 게시물을 올리되 active_phase_post_id를 None으로 처리
     #   (game_post_text가 있더라도 None 처리하는 건 main.py에서)
-    return AdminCommandResult(reply, game_post)
+    # STANDBY 진입 시점은 버프 턴 차감/제거가 끝난 "라운드 종료" 최종 상태다.
+    attach_field_image = new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+    return AdminCommandResult(reply, game_post, attach_field_image=attach_field_image)
 
 
 def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
@@ -317,11 +352,23 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
 
+    try:
+        render_public_field_sheet(
+            state.field_spreadsheet,
+            state.session.context,
+            round_n=state.session.round_n,
+            phase=new_phase.value,
+            enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            battle_name=state.session.name,
+        )
+    except Exception as e:
+        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
+
     game_post = _make_phase_post_text(new_phase, state.session.round_n, state.session)
 
     error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
     reply = f"◊ 라운드 {state.session.round_n} 시작{error_suffix}"
-    return AdminCommandResult(reply, game_post)
+    return AdminCommandResult(reply, game_post, attach_field_image=True)
 
 
 def _cmd_status(state: "BotState") -> str:
@@ -372,6 +419,18 @@ def _cmd_end(state: "BotState") -> str:
         )
     except Exception as e:
         errors.append(f"스프레드시트 저장 실패: {e}")
+
+    try:
+        render_public_field_sheet(
+            state.field_spreadsheet,
+            state.session.context,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            battle_name=state.session.name,
+        )
+    except Exception as e:
+        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
 
     state.session = None
     state.preparation_status_id = None
