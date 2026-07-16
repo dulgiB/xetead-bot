@@ -70,6 +70,8 @@ class AdminCommandResult:
     set_practice_active_post: bool = False
     # 프록시 커맨드(_cmd_proxy)로 캐릭터 커맨드가 정산된 경우 로그_전투 기록용 자료
     battle_log: Optional[BattleCommandLog] = None
+    # True이면 game_post_text 게시 시 공개 필드 시트 이미지를 첨부한다 (라운드 시작/종료)
+    attach_field_image: bool = False
 
 
 def handle_admin_command(
@@ -264,7 +266,7 @@ def _cmd_battle_start(
         state.session.round_n,
         state.session,
     )
-    return AdminCommandResult(reply_text, game_post)
+    return AdminCommandResult(reply_text, game_post, attach_field_image=True)
 
 
 def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
@@ -320,7 +322,9 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     # → 호출측에서 game_post_text가 None인지 여부로 판단하므로
     #   POST_ACTION과 STANDBY는 게시물을 올리되 active_phase_post_id를 None으로 처리
     #   (game_post_text가 있더라도 None 처리하는 건 main.py에서)
-    return AdminCommandResult(reply, game_post)
+    # STANDBY 진입 시점은 버프 턴 차감/제거가 끝난 "라운드 종료" 최종 상태다.
+    attach_field_image = new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+    return AdminCommandResult(reply, game_post, attach_field_image=attach_field_image)
 
 
 def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
@@ -364,7 +368,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
 
     error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
     reply = f"◊ 라운드 {state.session.round_n} 시작{error_suffix}"
-    return AdminCommandResult(reply, game_post)
+    return AdminCommandResult(reply, game_post, attach_field_image=True)
 
 
 def _cmd_status(state: "BotState") -> str:
