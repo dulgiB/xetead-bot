@@ -14,7 +14,7 @@ from battle.core.commands.models import (
     CommandPart,
     CommandPartProcessResult,
 )
-from battle.objects.define import ActionType, CombatStatType
+from battle.objects.define import ActionType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -84,9 +84,9 @@ def _target_name(target: object) -> str:
 
 def _format_entry(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
     if entry.kind == BattleLogEntryKind.DAMAGE:
-        return _format_damage_or_heal(context, entry, sign="-")
+        return _format_damage_or_heal(entry, sign="-")
     if entry.kind == BattleLogEntryKind.HEAL:
-        return _format_damage_or_heal(context, entry, sign="+")
+        return _format_damage_or_heal(entry, sign="+")
     if entry.kind == BattleLogEntryKind.MOVE:
         target_id = CharacterId(entry.target_name)
         position = context.find_character_position(target_id)
@@ -96,17 +96,15 @@ def _format_entry(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
     return f"{entry.target_name} | {entry.result}"
 
 
-def _format_damage_or_heal(
-    context: "BattlefieldContext", entry: BattleLogEntry, *, sign: str
-) -> str:
-    target_id = CharacterId(entry.target_name)
-    char = context.characters.get(target_id)
-    if char is None:
+def _format_damage_or_heal(entry: BattleLogEntry, *, sign: str) -> str:
+    # entry.hp_after/max_hp는 이 대미지/회복이 적용된 "그 시점"의 스냅샷이다.
+    # 같은 커맨드에서 같은 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상),
+    # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
+    if entry.hp_after is None:
         # 대미지로 사망해 전장에서 제거된 경우 등 — 잔여 체력을 보여줄 수 없다.
         line = f"{entry.target_name} | {sign}{entry.value}"
     else:
-        max_hp = char.status[CombatStatType.MAX_HP]
-        line = f"{entry.target_name} | {sign}{entry.value} → {char.status.curr_hp}/{max_hp}"
+        line = f"{entry.target_name} | {sign}{entry.value} → {entry.hp_after}/{entry.max_hp}"
     if entry.roll_display:
         line += f"\n↳ {entry.roll_display}"
     return line

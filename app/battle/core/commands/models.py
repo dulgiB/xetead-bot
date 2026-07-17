@@ -111,6 +111,11 @@ class DamageCalculateData:
     result_value: Optional[int] = None
     # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.format_calculation()). 로그 기록용.
     roll_display: Optional[str] = None
+    # 대미지 적용 직후의 대상 HP/최대 HP 스냅샷. 같은 커맨드에서 같은 대상이
+    # 여러 번 맞을 수 있어(예: 스킬 효과 2개), 답글 포매터가 나중에
+    # context를 다시 조회하면 최종 HP만 보이게 되므로 그 시점 값을 남겨둔다.
+    hp_after: Optional[int] = None
+    max_hp: Optional[int] = None
 
 
 @dataclass
@@ -122,6 +127,9 @@ class HealCalculateData:
     result_value: Optional[int] = None
     # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.format_calculation()). 로그 기록용.
     roll_display: Optional[str] = None
+    # 회복 적용 직후의 대상 HP/최대 HP 스냅샷 (DamageCalculateData.hp_after 참고).
+    hp_after: Optional[int] = None
+    max_hp: Optional[int] = None
 
 
 @dataclass
@@ -156,6 +164,12 @@ class BattleLogEntry:
     value: Optional[int] = None  # damage/heal 최종 수치
     buff_id: Optional[str] = None  # buff_add/buff_remove
     stack_delta: Optional[int] = None  # buff_add: 이번에 추가된 스택 / buff_remove: 이번에 소모된 스택
+    # damage/heal 적용 직후의 대상 HP/최대 HP 스냅샷. 같은 커맨드에서 같은
+    # 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상), 답글 포매터가
+    # 나중에 context를 다시 조회하면 최종 HP만 보이게 되므로 이 시점 값을
+    # 그대로 들고 있는다.
+    hp_after: Optional[int] = None
+    max_hp: Optional[int] = None
 
 
 @dataclass(frozen=True)

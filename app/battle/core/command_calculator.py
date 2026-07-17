@@ -374,6 +374,8 @@ class CommandPartCalculator:
                 effect_seq_number,
             )
             damage_calc.roll_display = damage_value.format_calculation()
+            damage_calc.hp_after = target.status.curr_hp
+            damage_calc.max_hp = target.status[CombatStatType.MAX_HP]
 
     @staticmethod
     def _is_live_heal_calc(
@@ -407,6 +409,7 @@ class CommandPartCalculator:
         for heal_calc in list(self.data_by_effect[effect_seq_number].heal_data_list):
             if not self._is_live_heal_calc(self.context, heal_calc):
                 continue
+            target = self.context.characters[heal_calc.base.target_id]
             heal_value = ValueWithModifiers(
                 heal_calc.base.value, heal_calc.given_modifiers, []
             )
@@ -418,6 +421,8 @@ class CommandPartCalculator:
                 effect_seq_number,
             )
             heal_calc.roll_display = heal_value.format_calculation()
+            heal_calc.hp_after = target.status.curr_hp
+            heal_calc.max_hp = target.status[CombatStatType.MAX_HP]
 
     def _buff_add_gate_passes(
         self: "CommandPartCalculator", data: BuffAddData, effect_seq_number: int
@@ -559,6 +564,8 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     result=f"대미지 {damage_calc.result_value}",
                     roll_display=damage_calc.roll_display,
                     value=damage_calc.result_value,
+                    hp_after=damage_calc.hp_after,
+                    max_hp=damage_calc.max_hp,
                 )
             )
         for heal_calc in effect_data.heal_data_list:
@@ -571,6 +578,8 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     result=f"회복 {heal_calc.result_value}",
                     roll_display=heal_calc.roll_display,
                     value=heal_calc.result_value,
+                    hp_after=heal_calc.hp_after,
+                    max_hp=heal_calc.max_hp,
                 )
             )
         for move_data in effect_data.move_list:

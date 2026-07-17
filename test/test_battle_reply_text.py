@@ -304,3 +304,34 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
         "적군 1 | -2 → 98/100\n"
         "↳ 2 × 1[계수]"
     )
+
+
+def test_multiple_damage_effects_on_same_target_show_hp_at_each_step():
+    """같은 대상이 한 스킬 안에서 두 번 맞으면, 각 줄은 그 시점의 HP를 보여줘야
+    한다 — 마지막에 context를 다시 조회해 최종 HP만 보이면 안 된다."""
+    skill = SkillData(
+        id="연타",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None),
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None),
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"연타": skill})
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="연타"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+
+    reply = _run(ctx, manager, caster_id, "[연타/적군 1]")
+
+    assert reply == (
+        "【연타 ▸ 적군 1】\n"
+        "적군 1 | -10 → 90/100\n"
+        "적군 1 | -5 → 85/100"
+    )
