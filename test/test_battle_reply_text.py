@@ -301,5 +301,6 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
     assert reply == (
         "【저주 방출 ▸ 적군 1】\n"
         "아군 1 | [저주]×2 소모 (잔여 1)\n"
-        "적군 1 | -2 → 98/100"
+        "적군 1 | -2 → 98/100\n"
+        "↳ 2 × 1[계수]"
     )

@@ -109,40 +109,36 @@ class BaseValueIndicator:
             return calculator.context.find_character_position(target_id).value
 
         elif self.value_source == ValueSourceType.GIVEN_DAMAGE:
-            # 현재 effect 포함, 이미 result_value가 설정된 damage 합산
-            total = sum(
+            # 현재 effect 포함, 이미 result_value가 설정된 damage 합산.
+            # coefficient는 ValueWithModifiers.base_coefficient가 다른 값
+            # 소스와 동일하게 적용한다 (계산식 표시를 위해 여기서 미리
+            # 곱해두지 않는다).
+            return sum(
                 data.result_value
                 for effect in calculator.data_by_effect[: effect_seq_number + 1]
                 for data in effect.damage_data_list
                 if data.result_value is not None
             )
-            if self.coefficient is not None:
-                return math.floor(total * self.coefficient.value / 100)
-            return total
 
         elif self.value_source == ValueSourceType.GIVEN_HEAL:
-            # 현재 effect 포함, 이미 result_value가 설정된 heal 합산
-            total = sum(
+            # 현재 effect 포함, 이미 result_value가 설정된 heal 합산.
+            # coefficient 처리는 GIVEN_DAMAGE와 동일.
+            return sum(
                 data.result_value
                 for effect in calculator.data_by_effect[: effect_seq_number + 1]
                 for data in effect.heal_data_list
                 if data.result_value is not None
             )
-            if self.coefficient is not None:
-                return math.floor(total * self.coefficient.value / 100)
-            return total
 
         elif self.value_source == ValueSourceType.CONSUMED_BUFF_STACK:
-            # 현재 effect 포함, 이미 result_value가 설정된 버프 제거량 합산
-            total = sum(
+            # 현재 effect 포함, 이미 result_value가 설정된 버프 제거량 합산.
+            # coefficient 처리는 GIVEN_DAMAGE와 동일.
+            return sum(
                 data.result_value
                 for effect in calculator.data_by_effect[: effect_seq_number + 1]
                 for data in effect.buff_remove_data_list
                 if data.result_value is not None
             )
-            if self.coefficient is not None:
-                return math.floor(total * self.coefficient.value / 100)
-            return total
 
         else:
             raise ValueError(self.value_source)
@@ -196,18 +192,15 @@ class ValueWithModifiers:
 
         # 스킬 자체의 계수(백분율). 예: 230 → ×2.3. FIXED 값에는 적용하지 않는다
         # (버프성 배율과 동일 취급 — 실제로 FIXED와 coefficient가 같이 쓰이는
-        # 곳은 현재 없다).
+        # 곳은 현재 없다). GIVEN_DAMAGE/GIVEN_HEAL/CONSUMED_BUFF_STACK도 다른
+        # 값 소스와 동일하게 여기서 계수를 적용해야 계산식에 표시된다
+        # (예전에는 BaseValueIndicator.get_value() 안에서 미리 곱해 계산식에
+        # 드러나지 않았다).
         self.base_coefficient = None
         if (
             not is_fixed
             and isinstance(self.base_value, BaseValueIndicator)
             and self.base_value.coefficient is not None
-            and self.base_value.value_source
-            not in (
-                ValueSourceType.GIVEN_DAMAGE,
-                ValueSourceType.GIVEN_HEAL,
-                ValueSourceType.CONSUMED_BUFF_STACK,
-            )
         ):
             self.base_coefficient = self.base_value.coefficient
 

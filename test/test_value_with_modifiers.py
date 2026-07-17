@@ -138,3 +138,40 @@ def test_format_calculation_matches_given_received_group_example():
         "(4 + 3) × 1.2[계수] × (1 + 0.3[주는 대미지 증가] - 0.1[주는 대미지 감소])"
         " × (1 - 0.1[받는 대미지 감소] + 0.15[마법 저항])"
     )
+
+
+def test_consumed_buff_stack_coefficient_shows_in_calculation():
+    """GIVEN_DAMAGE/GIVEN_HEAL/CONSUMED_BUFF_STACK 소스도 다른 값 소스와 동일하게
+    계수가 base_coefficient로 적용되어 계산식에 표시되어야 한다 (예전에는
+    BaseValueIndicator.get_value() 내부에서 미리 곱해져 계산식에 드러나지
+    않았다)."""
+    context = _FakeConsumedStackCalculator(consumed_amount=2)
+    value = ValueWithModifiers(
+        BaseValueIndicator(
+            ValueSourceType.CONSUMED_BUFF_STACK,
+            coefficient=FloatValueModifier(source_name="계수", value=300),
+        ),
+        given_modifiers=[],
+        received_modifiers=[],
+    )
+    result = value.get_value(context, _USER, _TARGET, 0)
+
+    assert result == 6  # floor(2 × 3.0)
+    assert value.format_calculation() == "2 × 3[계수]"
+
+
+class _FakeConsumedStackCalculator:
+    """CONSUMED_BUFF_STACK 값 소스가 참조하는 data_by_effect만 흉내내는 스텁."""
+
+    def __init__(self, consumed_amount: int):
+        from dataclasses import dataclass
+
+        @dataclass
+        class _RemoveCalc:
+            result_value: int
+
+        class _EffectData:
+            def __init__(self, amount):
+                self.buff_remove_data_list = [_RemoveCalc(result_value=amount)]
+
+        self.data_by_effect = [_EffectData(consumed_amount)]
