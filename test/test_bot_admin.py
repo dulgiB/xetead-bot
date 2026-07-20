@@ -391,7 +391,7 @@ def test_ally_action_phase_post_does_not_attach_field_image(monkeypatch):
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
     listener.on_notification(
-        _make_notification("test-admin", 1, 0, "[페이즈]")
+        _make_notification("test-admin", 1, 0, "[진행]")
     )
 
     public_posts = [

@@ -39,9 +39,8 @@ _RE_MANUAL_PLACE = re.compile(
 )
 _RE_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투개시')}]")
 _RE_BATTLE_NAME = re.compile(r"「(.+?)」")
-_RE_PHASE = re.compile(rf"\[{whitespace_tolerant_literal('페이즈')}]")
+_RE_PHASE = re.compile(rf"\[{whitespace_tolerant_literal('진행')}]")
 _RE_CONTINUE = re.compile(rf"\[{whitespace_tolerant_literal('전투속행')}]")
-_RE_STATUS = re.compile(rf"\[{whitespace_tolerant_literal('현황')}]")
 _RE_END = re.compile(rf"\[{whitespace_tolerant_literal('전투종료')}]")
 _RE_INVESTIGATION_BATTLE = re.compile(rf"\[{whitespace_tolerant_literal('상시전투')}]")
 _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
@@ -100,9 +99,6 @@ def handle_admin_command(
 
     if _RE_CONTINUE.search(text):
         return _cmd_continue_battle(state)
-
-    if _RE_STATUS.search(text):
-        return AdminCommandResult(_cmd_status(state))
 
     if _RE_END.search(text):
         return AdminCommandResult(_cmd_end(state))
@@ -369,12 +365,6 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
     error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
     reply = f"◊ 라운드 {state.session.round_n} 시작{error_suffix}"
     return AdminCommandResult(reply, game_post, attach_field_image=True)
-
-
-def _cmd_status(state: "BotState") -> str:
-    if state.session is None:
-        return "◊ 진행 중인 전투가 없습니다."
-    return str(state.session.context)
 
 
 def _cmd_end(state: "BotState") -> str:
