@@ -318,6 +318,18 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
         if new_phase == RoundPhaseType.ENEMY_POST_ACTION
         else None
     )
+    if post_action_results is not None:
+        # 적의 POST_ACTION 정산으로 발생한 대미지/힐도 "캐릭터" 시트에 반영한다
+        # (개별 캐릭터 커맨드/프록시 경로에서만 write-back하던 기존 갭을 메움).
+        post_action_entries = [
+            entry
+            for part_results in post_action_results.values()
+            for part_result in part_results
+            for entry in part_result.log_entries
+        ]
+        write_back_changed_hp(
+            state.spreadsheet, state.session.context, post_action_entries
+        )
     game_post = _make_phase_post_text(
         new_phase, state.session.round_n, state.session, post_action_results
     )

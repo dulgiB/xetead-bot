@@ -455,7 +455,9 @@ class MastodonBotListener(StreamListener):
             state.active_phase_post_id is not None
             and in_reply_to_id == state.active_phase_post_id
         ):
-            response, battle_log = handle_character_command(acct, text, state)
+            response, battle_log = handle_character_command(
+                acct, text, state, state.session, str(state.preparation_status_id)
+            )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             return

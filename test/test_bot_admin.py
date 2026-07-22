@@ -104,10 +104,11 @@ def test_advance_phase_always_marks_field_image():
     assert to_standby.attach_field_image is True
 
 
-def test_enemy_post_action_summary_includes_calculation():
+def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
     표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
     누락된다."""
+    monkeypatch.setattr(log_sheets, "update_character_curr_hp", lambda *a, **k: None)
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -126,6 +127,35 @@ def test_enemy_post_action_summary_includes_calculation():
 
     assert "↳" in to_post_action.game_post_text
     assert "적 캐릭터" in to_post_action.game_post_text
+
+
+def test_advance_phase_writes_back_post_action_damage(monkeypatch):
+    """적 공격 정산(ENEMY_POST_ACTION) 시 발생한 대미지도 "캐릭터" 시트에
+    반영되어야 한다 — 이전에는 개별 캐릭터 커맨드/프록시에서만 write-back이
+    호출되고 POST_ACTION 정산 자체는 반영되지 않는 갭이 있었다."""
+    recorded_hp: dict = {}
+    monkeypatch.setattr(
+        log_sheets,
+        "update_character_curr_hp",
+        lambda spreadsheet, name, hp: recorded_hp.__setitem__(name, hp),
+    )
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    admin_module._cmd_proxy("적 캐릭터", "[공격/유효 캐릭터]", state)
+
+    _cmd_advance_phase(state)  # → 아군 행동
+    _cmd_advance_phase(state)  # → 적 공격 정산
+
+    assert "유효 캐릭터" in recorded_hp
 
 
 def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
