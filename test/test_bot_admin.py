@@ -14,6 +14,7 @@ from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
 from bot import log_sheets  # noqa: E402
 from bot import main as main_module  # noqa: E402
 from bot.commands import admin as admin_module  # noqa: E402
+from bot.commands import character as character_module  # noqa: E402
 from bot.commands.admin import (  # noqa: E402
     _cmd_advance_phase,
     _cmd_battle_start,
@@ -83,9 +84,10 @@ def test_battle_start_marks_round_start_for_field_image():
     assert result.attach_field_image is True
 
 
-def test_advance_phase_marks_field_image_only_on_round_end():
-    """페이즈 전환은 '라운드 종료'(STANDBY 진입) 때만 이미지를 붙여야 하고,
-    그 외 페이즈 전환(ALLY_ACTION, ENEMY_POST_ACTION 진입)은 붙이면 안 된다."""
+def test_advance_phase_always_marks_field_image():
+    """필드 현황은 str 대신 이미지로만 표시하므로, 모든 페이즈 전환
+    게시물(ALLY_ACTION, ENEMY_POST_ACTION, STANDBY 진입 모두)에 이미지를
+    붙여야 한다."""
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
@@ -97,9 +99,58 @@ def test_advance_phase_marks_field_image_only_on_round_end():
     to_enemy_post_action = _cmd_advance_phase(state)
     to_standby = _cmd_advance_phase(state)
 
-    assert to_ally_action.attach_field_image is False
-    assert to_enemy_post_action.attach_field_image is False
+    assert to_ally_action.attach_field_image is True
+    assert to_enemy_post_action.attach_field_image is True
     assert to_standby.attach_field_image is True
+
+
+def test_enemy_post_action_summary_includes_calculation():
+    """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
+    표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
+    누락된다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    admin_module._cmd_proxy("적 캐릭터", "[공격/유효 캐릭터]", state)
+
+    _cmd_advance_phase(state)  # → 아군 행동
+    to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
+
+    assert "↳" in to_post_action.game_post_text
+    assert "적 캐릭터" in to_post_action.game_post_text
+
+
+def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
+    """관리자 프록시로 대행한 PRE 선언 답글도 POST 정산과 마찬가지로,
+    CommandPart(파트)별 헤더 앞에 대행한 캐릭터의 이름이 붙어야 한다 —
+    답글 자체만으로는 누가 행동했는지 알 수 없기 때문이다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    reply_text, _battle_log = admin_module._cmd_proxy(
+        "적 캐릭터", "[이동/3열 - 공격/유효 캐릭터]", state
+    )
+
+    assert reply_text == (
+        "적 캐릭터 【이동 ▸ 3열】\n\n"
+        "적 캐릭터 【공격 ▸ 유효 캐릭터】"
+    )
 
 
 def test_continue_battle_marks_round_start_for_field_image():
@@ -158,6 +209,8 @@ class _FakeMastodon:
         self.last_media_id: int = 0
 
     def status_post(self, *args, **kwargs):
+        if args:
+            kwargs = {**kwargs, "status": args[0]}
         self.status_post_calls.append(kwargs)
         return {"id": next(self._next_id)}
 
@@ -221,6 +274,38 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
     assert state.practice.round_n == round_n_after_start
 
 
+def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
+    """[전투준비] 공지는 답글이 아니라 타임라인의 새 게시물로 올라가야 하고,
+    이후 참가 신청 답글이 그 게시물을 정상적으로 대상 삼을 수 있어야 한다."""
+    state = _make_state()
+    state.session = None
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+    monkeypatch.setattr(admin_module, "load_battle_data", lambda spreadsheet: (
+        {}, {}, {}, {}, None, state.char_dict, state.name_dict, state.noncombat_char_dict
+    ))
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투준비]"))
+
+    assert len(mastodon.status_post_calls) == 1
+    prep_call = mastodon.status_post_calls[0]
+    assert "in_reply_to_id" not in prep_call
+    assert "전투 준비" in prep_call["status"]
+
+    prep_post_id = state.preparation_status_id
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    listener.on_notification(
+        _make_notification("ally_acct", 2, prep_post_id, "아무 코멘트")
+    )
+
+    assert "ally_acct" in state.pending_participants
+
+
 def test_malformed_notification_does_not_raise():
     """형식이 예상과 다른(status가 없는 등) 알림이 와도 예외가 밖으로
     전파되면 안 된다 — 스트리밍 리스너 전체가 죽는 것을 방지한다."""
@@ -264,87 +349,6 @@ def test_capture_field_media_ids_absorbs_exception(monkeypatch):
     assert listener._capture_field_media_ids(state) == []
 
 
-def test_field_media_ids_for_battle_log_skips_non_main_log(monkeypatch):
-    """대련/상시전투(is_main=False) 로그는 필드 시트 이미지 대상이 아니다."""
-
-    def _should_not_be_called(spreadsheet):
-        raise AssertionError("is_main=False 로그는 캡처를 시도하면 안 된다")
-
-    state = _make_state()
-    monkeypatch.setattr(main_module, "capture_field_sheet_image", _should_not_be_called)
-    listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
-
-    non_main_log = log_sheets.BattleCommandLog(
-        field_id="1", round_n=1, phase="아군 행동", command_text="x", is_main=False
-    )
-
-    assert listener._field_media_ids_for_battle_log(state, non_main_log) == []
-
-
-def test_field_media_ids_for_battle_log_skips_none_log():
-    state = _make_state()
-    listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
-
-    assert listener._field_media_ids_for_battle_log(state, None) == []
-
-
-def test_field_media_ids_for_battle_log_renders_then_captures_for_main_log(monkeypatch):
-    """본 전투(is_main=True) 로그는 시트를 다시 렌더링한 뒤 그 결과를 캡처해야 한다."""
-    state = _make_state(
-        pending_placements=[
-            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
-        ]
-    )
-    _cmd_battle_start(state)
-
-    render_calls: list[dict] = []
-    monkeypatch.setattr(
-        main_module.field_sheet_renderer,
-        "render_public_field_sheet",
-        lambda *args, **kwargs: render_calls.append(kwargs),
-    )
-    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
-
-    mastodon = _FakeMastodon()
-    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
-    main_log = log_sheets.BattleCommandLog(
-        field_id="1", round_n=1, phase="아군 행동", command_text="x"
-    )
-
-    media_ids = listener._field_media_ids_for_battle_log(state, main_log)
-
-    assert len(render_calls) == 1
-    assert media_ids == [mastodon.last_media_id]
-
-
-def test_field_media_ids_for_battle_log_skips_capture_when_render_fails(monkeypatch):
-    """시트 렌더링 자체가 실패하면 캡처를 시도하지 않고 빈 리스트를 반환한다."""
-    state = _make_state(
-        pending_placements=[
-            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
-        ]
-    )
-    _cmd_battle_start(state)
-
-    def _failing_render(*args, **kwargs):
-        raise RuntimeError("render boom")
-
-    def _should_not_be_called(spreadsheet):
-        raise AssertionError("렌더링 실패 시 캡처를 시도하면 안 된다")
-
-    monkeypatch.setattr(
-        main_module.field_sheet_renderer, "render_public_field_sheet", _failing_render
-    )
-    monkeypatch.setattr(main_module, "capture_field_sheet_image", _should_not_be_called)
-
-    listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
-    main_log = log_sheets.BattleCommandLog(
-        field_id="1", round_n=1, phase="아군 행동", command_text="x"
-    )
-
-    assert listener._field_media_ids_for_battle_log(state, main_log) == []
-
-
 def test_round_start_game_post_attaches_field_image(monkeypatch):
     """[전투개시] 공개 게시물(라운드 시작 알림)에 필드 시트 이미지가 첨부되어야 한다."""
     state = _make_state(
@@ -372,9 +376,48 @@ def test_round_start_game_post_attaches_field_image(monkeypatch):
     assert public_posts[0]["media_ids"] == [mastodon.last_media_id]
 
 
-def test_ally_action_phase_post_does_not_attach_field_image(monkeypatch):
-    """라운드 시작/종료가 아닌 일반 페이즈 전환 공개 게시물에는 이미지가
-    붙으면 안 된다."""
+def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
+    """본 전투의 캐릭터 커맨드 답글은 이미지를 첨부하지 않고 텍스트만
+    보내야 한다 — 필드 시트 이미지는 페이즈 게시물 전용이다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
+    monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    active_post_id = state.active_phase_post_id
+
+    listener.on_notification(
+        _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
+    )
+
+    reply_calls = [
+        c for c in mastodon.status_post_calls if "in_reply_to_id" in c
+    ]
+    char_reply = reply_calls[-1]
+    assert char_reply["media_ids"] is None
+    assert "공격" in char_reply["status"]
+
+
+def test_ally_action_phase_post_attaches_field_image(monkeypatch):
+    """필드 현황은 str 대신 이미지로만 표시하므로, 일반 페이즈 전환
+    공개 게시물(아군 행동 등)에도 이미지가 붙어야 한다."""
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
@@ -398,5 +441,40 @@ def test_ally_action_phase_post_does_not_attach_field_image(monkeypatch):
         c for c in mastodon.status_post_calls if "in_reply_to_id" not in c
     ]
     assert len(public_posts) == 1
+    assert public_posts[0]["media_ids"] == [mastodon.last_media_id]
+
+
+def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatch):
+    """이미지 캡처가 실패하면 게시물 텍스트에 str(context) 필드 보드를
+    대체 표시해야 한다 (정보가 완전히 유실되면 안 되므로)."""
+
+    @contextlib.contextmanager
+    def _failing_capture(spreadsheet):
+        raise RuntimeError("capture boom")
+        yield  # pragma: no cover
+
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    _cmd_battle_start(state)
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _failing_capture)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification("test-admin", 1, 0, "[진행]")
+    )
+
+    public_posts = [
+        c for c in mastodon.status_post_calls if "in_reply_to_id" not in c
+    ]
+    assert len(public_posts) == 1
     assert public_posts[0]["media_ids"] is None
-    assert mastodon.media_post_calls == []
+    assert "유효 캐릭터" in public_posts[0]["status"]

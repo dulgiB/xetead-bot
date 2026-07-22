@@ -32,7 +32,7 @@ class GivenHealModEvent(BuffEvent):
     ) -> None:
         for heal_data in calculator.data_by_effect[effect_seq_number].heal_data_list:
             if heal_data.base.healer_id == holder:
-                heal_data.modifiers.append(self.value)
+                heal_data.given_modifiers.append(self.value)
 
 
 class BuffGivenHeal(BuffBase):

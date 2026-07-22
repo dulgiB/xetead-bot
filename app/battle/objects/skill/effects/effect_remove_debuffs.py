@@ -8,8 +8,21 @@ if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
 
 
+def _clearable_debuffs(context: "BattlefieldContext", target: CharacterId) -> list:
+    return [
+        b
+        for b in context.buff_container.get_buffs_by(target, None)
+        if b.is_debuff and not b.duration.is_passive
+    ]
+
+
 class SkillEffectRemoveDebuffs(SkillEffectBase):
     """대상에게 걸린 패시브가 아닌 디버프를 전부 제거한다."""
+
+    def get_debuff_clear_targets(
+        self, context: "BattlefieldContext", targets: list[CharacterId]
+    ) -> list[CharacterId]:
+        return [target for target in targets if _clearable_debuffs(context, target)]
 
     def _expand(
         self,
@@ -25,11 +38,6 @@ class SkillEffectRemoveDebuffs(SkillEffectBase):
         list[BuffRemoveData],
     ]:
         for target in targets:
-            debuffs = [
-                b
-                for b in context.buff_container.get_buffs_by(target, None)
-                if b.is_debuff and not b.duration.is_passive
-            ]
-            for buff in debuffs:
+            for buff in _clearable_debuffs(context, target):
                 context.buff_container.remove(buff.uid)
         return [], [], [], [], []

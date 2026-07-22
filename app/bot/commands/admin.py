@@ -5,11 +5,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import BattleLogEntry
+from battle.core.commands.models import (
+    BattleLogEntry,
+    BattleLogEntryKind,
+    CommandPartProcessResult,
+)
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
+    ActionType,
     BattlefieldColumnIndex,
     FactionType,
 )
@@ -19,6 +24,7 @@ from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
+from bot.battle_reply_text import format_battle_reply
 from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import load_battle_data
 from bot.log_sheets import (
@@ -31,6 +37,7 @@ from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 
 if TYPE_CHECKING:
+    from battle.core.battlefield_context import BattlefieldContext
     from bot.main import BotState
 
 _RE_BATTLE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('전투준비')}]")
@@ -71,6 +78,8 @@ class AdminCommandResult:
     battle_log: Optional[BattleCommandLog] = None
     # True이면 game_post_text 게시 시 공개 필드 시트 이미지를 첨부한다 (라운드 시작/종료)
     attach_field_image: bool = False
+    # True이면 reply_text를 답글이 아니라 타임라인의 새 게시물로 올린다 (전투 준비 공지 등)
+    post_as_new_status: bool = False
 
 
 def handle_admin_command(
@@ -145,7 +154,9 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
         inventory,
     )
     reply = "◊ 전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨주세요."
-    return AdminCommandResult(reply, set_preparation_post=True)
+    return AdminCommandResult(
+        reply, set_preparation_post=True, post_as_new_status=True
+    )
 
 
 def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str:
@@ -269,14 +280,6 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     if state.session is None or not state.session.started:
         return AdminCommandResult("◊ 진행 중인 전투가 없습니다.")
 
-    # POST_ACTION 직전 HP 스냅샷 (결과 발표에 사용)
-    hp_before: Optional[dict] = None
-    if state.session.current_phase == RoundPhaseType.ALLY_ACTION:
-        hp_before = {
-            cid: char.status.curr_hp
-            for cid, char in state.session.context.characters.items()
-        }
-
     new_phase = state.session.advance_phase()
 
     # 필드 시트 저장 (커맨드 수신 없는 페이즈에서도)
@@ -307,8 +310,13 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     except Exception as e:
         errors.append(f"공개 필드 시트 렌더링 실패: {e}")
 
+    post_action_results = (
+        state.session.manager.get_last_post_action_results()
+        if new_phase == RoundPhaseType.ENEMY_POST_ACTION
+        else None
+    )
     game_post = _make_phase_post_text(
-        new_phase, state.session.round_n, state.session, hp_before
+        new_phase, state.session.round_n, state.session, post_action_results
     )
 
     error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
@@ -318,9 +326,9 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     # → 호출측에서 game_post_text가 None인지 여부로 판단하므로
     #   POST_ACTION과 STANDBY는 게시물을 올리되 active_phase_post_id를 None으로 처리
     #   (game_post_text가 있더라도 None 처리하는 건 main.py에서)
-    # STANDBY 진입 시점은 버프 턴 차감/제거가 끝난 "라운드 종료" 최종 상태다.
-    attach_field_image = new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
-    return AdminCommandResult(reply, game_post, attach_field_image=attach_field_image)
+    # 필드 상태가 str 대신 이미지로만 표시되므로, 모든 페이즈 전환 게시물에
+    # 필드 시트 이미지를 첨부한다.
+    return AdminCommandResult(reply, game_post, attach_field_image=True)
 
 
 def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
@@ -382,7 +390,9 @@ def _cmd_end(state: "BotState") -> str:
     battle_end_entries = [
         BattleLogEntry(
             target_name=char_id.name,
+            kind=BattleLogEntryKind.DAMAGE,
             result=f"대미지 {before - char.status.curr_hp}",
+            value=before - char.status.curr_hp,
         )
         for char_id, char in state.session.context.characters.items()
         if (before := hp_before[char_id]) != char.status.curr_hp
@@ -504,7 +514,8 @@ def _cmd_proxy(
                 is_main=False,
                 entries=entries,
             )
-            return str(ps.context), battle_log
+            reply_text = format_battle_reply(ps.context, char_id, result.part_results)
+            return reply_text, battle_log
         except CommandValidationError as e:
             battle_log = BattleCommandLog(
                 field_id=field_id,
@@ -534,11 +545,8 @@ def _cmd_proxy(
 
         before = len(state.session.context.results)
         state.session.process_command(command)
-        entries = [
-            entry
-            for result in state.session.context.results[before:]
-            for entry in result.log_entries
-        ]
+        new_results = state.session.context.results[before:]
+        entries = [entry for result in new_results for entry in result.log_entries]
         write_back_changed_hp(state.spreadsheet, state.session.context, entries)
 
         battle_log = BattleCommandLog(
@@ -548,7 +556,8 @@ def _cmd_proxy(
             command_text=cmd_str,
             entries=entries,
         )
-        return str(state.session.context), battle_log
+        reply_text = _format_named_reply(state.session.context, char_id, new_results)
+        return reply_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -605,53 +614,79 @@ def _make_phase_post_text(
     phase: RoundPhaseType,
     round_n: int,
     session: "BattleSession",
-    hp_before: Optional[dict] = None,
+    post_action_results: Optional[
+        dict[CharacterId, list[CommandPartProcessResult]]
+    ] = None,
 ) -> str:
+    # 필드 현황은 게시물에 첨부되는 공개 필드 시트 이미지로 표시하므로, 이
+    # 텍스트에는 str(session.context) 보드를 중복으로 넣지 않는다.
     if phase == RoundPhaseType.ENEMY_PRE_ACTION:
-        return f"◊ [라운드 {round_n}] 적군 행동 선언\n\n{session.context}"
+        return f"◊ [라운드 {round_n}] 적군 행동 선언"
 
     if phase == RoundPhaseType.ALLY_ACTION:
         return (
             f"◊ [라운드 {round_n}] 아군 행동\n\n"
-            "이 게시물에 답글로 커맨드를 입력해 주세요.\n"
-            f"\n{session.context}"
+            "이 게시물에 답글로 커맨드를 입력해 주세요."
         )
 
     if phase == RoundPhaseType.ENEMY_POST_ACTION:
-        result_lines = _format_hp_changes(session, hp_before)
-        body = "\n".join(result_lines) if result_lines else "변동 없음"
-        return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n{body}\n\n{session.context}"
+        body = _format_enemy_post_action_results(
+            session.context, post_action_results or {}
+        )
+        return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n\n{body}"
 
     if phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
         return (
             f"◊ [라운드 {round_n} 종료]\n\n"
-            f"버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요.\n"
-            f"\n{session.context}"
+            f"버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요."
         )
 
-    return str(session.context)
+    return ""
 
 
-def _format_hp_changes(
-    session: "BattleSession", hp_before: Optional[dict]
-) -> list[str]:
-    if hp_before is None:
-        return []
-    lines = []
-    for char_id, char in session.context.characters.items():
-        prev_hp = hp_before.get(char_id)
-        if prev_hp is None:
-            continue
-        diff = prev_hp - char.status.curr_hp
-        if diff > 0:
-            lines.append(
-                f"  {char_id.name}: -{diff} HP ({prev_hp} → {char.status.curr_hp})"
-            )
-        elif diff < 0:
-            lines.append(
-                f"  {char_id.name}: +{-diff} HP ({prev_hp} → {char.status.curr_hp})"
-            )
-    return lines
+def _format_named_reply(
+    context: "BattlefieldContext",
+    char_id: CharacterId,
+    part_results: list[CommandPartProcessResult],
+) -> str:
+    """part_results를 커맨드(파트) 하나당 "{이름} 【헤더】/계산식" 블록으로
+    조립한다. 여러 파트가 있으면 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+
+    프록시(관리자 대행) 답글은 실제로 행동한 캐릭터가 누구인지 답글 자체만
+    보고는 알 수 없으므로(직접 답글과 달리 caster에게 보내는 답글이 아님),
+    헤더 앞에 이름을 붙인다.
+    """
+    blocks = []
+    for part_result in part_results:
+        block = format_battle_reply(context, char_id, [part_result])
+        if block:
+            blocks.append(f"{char_id.name} {block}")
+    return "\n\n".join(blocks)
+
+
+def _format_enemy_post_action_results(
+    context: "BattlefieldContext",
+    post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
+) -> str:
+    """ENEMY_POST_ACTION 정산 결과를 "{적 이름} 【헤더】/계산식" 블록으로
+    조립한다. 커맨드(파트) 하나당 블록 하나이며, 같은 적의 커맨드가
+    여러 개여도 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+
+    이동은 PRE 선언 시점에 이미 답글로 안내되었으므로 여기서는 제외한다
+    (POST 재전개 시 move_list가 빈 채로 남아 헤더만 중복 출력되는 것을 막는다).
+    """
+    blocks = []
+    for user_id, part_results in post_action_results.items():
+        non_move_results = [
+            r
+            for r in part_results
+            if r.expanded_part.original_part is None
+            or r.expanded_part.original_part.type_ != ActionType.MOVE
+        ]
+        block = _format_named_reply(context, user_id, non_move_results)
+        if block:
+            blocks.append(block)
+    return "\n\n".join(blocks) if blocks else "변동 없음"
 
 
 # ---------------------------------------------------------------------------

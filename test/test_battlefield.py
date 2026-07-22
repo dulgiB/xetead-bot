@@ -4,13 +4,23 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.exceptions import CommandValidationError
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
     ActionType,
     BattlefieldColumnIndex,
     FactionType,
+    ValueSourceType,
+    ValueType,
 )
 from battle.objects.models import CharacterId
+from battle.objects.passive_skill.models import (
+    PassiveSkillData,
+    PassiveSkillTargetType,
+    PassiveSkillTrigger,
+)
+from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
+from battle.objects.skill.effects import SkillEffectDamage
 from helpers import get_test_preset
 
 
@@ -144,3 +154,55 @@ def test_insufficient_cost_raises(battle_setup):
     cmd = parse_character_command(user_id, "[공격/적군 1]", context)
     with pytest.raises(CommandValidationError):
         manager.process_command(cmd)
+
+
+def test_str_has_no_buff_section_when_no_buffs_active(empty_context):
+    """전장에 걸린 버프/디버프가 없으면 str(context)에 버프 안내 섹션이
+    추가되면 안 된다(필드 표현 텍스트만 그대로 나온다)."""
+    empty_context.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+
+    assert "↳" not in str(empty_context)
+
+
+def test_str_lists_active_buffs_with_duration_and_description(
+    context_with_atk_buff_skill, buff_atk_data
+):
+    """str(context)는 이미지 없이도 버프/디버프를 확인할 수 있도록, 대상별로
+    "{이름} | [{버프}] ({기간})" 줄과 "↳ {설명}" 줄을 보여줘야 한다."""
+    ctx = context_with_atk_buff_skill
+    buff_atk_data.description = "다음 공격의 대미지를 증가시킨다."
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(
+        BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="공격력 증가")
+    )
+
+    text = str(ctx)
+
+    assert (
+        "아군 1 | [공격력 증가] (3턴/0회)\n"
+        "↳ 다음 공격의 대미지를 증가시킨다." in text
+    )
+
+
+def test_str_excludes_passive_skill_wrapper_buffs(empty_context):
+    """PassiveSkillWrapperBuff는 "버프" 시트에 등록된 실제 버프/디버프가
+    아니라 캐릭터 고유 특성이므로, 버프 안내 목록에 나오면 안 된다."""
+    ally_id = CharacterId("아군 1")
+    empty_context.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    passive_data = PassiveSkillData(
+        id="특성",
+        trigger=PassiveSkillTrigger.ON_ENEMY_MOVE,
+        target_type=PassiveSkillTargetType.ATTACKER_OR_TARGET,
+        effects=[SkillEffectDamage(ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None)],
+        description="",
+    )
+    empty_context.buff_container.add_passive_wrapper(
+        PassiveSkillWrapperBuff.create(ally_id, passive_data)[0]
+    )
+
+    assert "특성" not in str(empty_context)

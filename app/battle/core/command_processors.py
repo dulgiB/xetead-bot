@@ -52,7 +52,7 @@ def process_admin_command(
             round_manager._context.apply_damage(
                 damage_data.attacker_id,
                 damage_data.target_id,
-                ValueWithModifiers(damage_data.value, []),
+                ValueWithModifiers(damage_data.value, [], []),
                 None,
                 i,
             )
@@ -60,7 +60,7 @@ def process_admin_command(
             round_manager._context.apply_heal(
                 heal_data.healer_id,
                 heal_data.target_id,
-                ValueWithModifiers(heal_data.value, []),
+                ValueWithModifiers(heal_data.value, [], []),
                 None,
                 i,
             )

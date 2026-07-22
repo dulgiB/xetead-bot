@@ -57,6 +57,7 @@ class SkillEffectConsumeStackForDamage(SkillEffectBase):
         damage_value = BaseValueIndicator(
             value_source=self.value_source,
             coefficient=FloatValueModifier(source_name="계수", value=self.value),
+            consumed_buff_id=self.buff_id,
         )
         damage_list = [
             DamageData(

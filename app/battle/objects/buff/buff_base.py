@@ -84,6 +84,17 @@ class BuffDurationCounter:
             return self.remaining_count == 0
         return True
 
+    def display_text(self) -> str:
+        """"(N턴/M회)" 형식의 표시 텍스트. 패시브(영구)면 빈 문자열."""
+        if self.is_passive:
+            return ""
+        parts = []
+        if self.remaining_turns is not None:
+            parts.append(f"{self.remaining_turns}턴")
+        if self.remaining_count is not None:
+            parts.append(f"{self.remaining_count}회")
+        return f" ({'/'.join(parts)})" if parts else ""
+
 
 class BuffBase(abc.ABC):
     def __init__(

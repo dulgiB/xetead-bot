@@ -133,9 +133,9 @@ class PassiveSkillWrapperEvent(BuffEvent):
                 if calculator._buff_add_gate_passes(buff_add, effect_seq_number):
                     calculator.context.buff_container.add(buff_add)
             for damage in damage_list:
-                effect_data.damage_data_list.append(DamageCalculateData(damage, []))
+                effect_data.damage_data_list.append(DamageCalculateData(damage))
             for heal in heal_list:
-                effect_data.heal_data_list.append(HealCalculateData(heal, []))
+                effect_data.heal_data_list.append(HealCalculateData(heal))
 
 
 class PassiveSkillWrapperBuff(BuffBase):

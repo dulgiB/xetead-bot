@@ -6,6 +6,7 @@ from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.models import CharacterId
 
+from bot.battle_reply_text import format_battle_reply
 from bot.log_sheets import BattleCommandLog, write_back_changed_hp
 
 if TYPE_CHECKING:
@@ -52,11 +53,8 @@ def handle_character_command(
 
         before = len(state.session.context.results)
         state.session.process_command(command)
-        entries = [
-            entry
-            for result in state.session.context.results[before:]
-            for entry in result.log_entries
-        ]
+        new_results = state.session.context.results[before:]
+        entries = [entry for result in new_results for entry in result.log_entries]
         write_back_changed_hp(state.spreadsheet, state.session.context, entries)
 
         battle_log = BattleCommandLog(
@@ -66,7 +64,8 @@ def handle_character_command(
             command_text=text,
             entries=entries,
         )
-        return str(state.session.context), battle_log
+        reply_text = format_battle_reply(state.session.context, char_id, new_results)
+        return reply_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
             field_id=field_id,

@@ -41,7 +41,6 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.objects.buff.buff_base import BuffDurationCounter
     from battle.objects.character.combat_character import CombatCharacter
 
 _FIELD_SHEET = "필드"
@@ -240,19 +239,8 @@ def _format_buff_cell(
     note_lines = []
     for buff in buffs:
         icon = "▾" if buff.is_debuff else "▴"
-        display_lines.append(f"{icon} {buff.id}{_duration_text(buff.duration)}")
+        display_lines.append(f"{icon} {buff.id}{buff.duration.display_text()}")
         description = context.get_buff_data_by_id(buff.id).description
         note_lines.append(f"[{buff.id}] {description}")
 
     return "\n".join(display_lines), "\n".join(note_lines)
-
-
-def _duration_text(duration: "BuffDurationCounter") -> str:
-    if duration.is_passive:
-        return ""
-    parts = []
-    if duration.remaining_turns is not None:
-        parts.append(f"{duration.remaining_turns}턴")
-    if duration.remaining_count is not None:
-        parts.append(f"{duration.remaining_count}회")
-    return f" ({'/'.join(parts)})" if parts else ""
