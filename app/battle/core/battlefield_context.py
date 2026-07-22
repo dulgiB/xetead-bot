@@ -102,7 +102,40 @@ class BattlefieldContext:
                 f"[{column_idx}] " + " | ".join(str(ally) for ally in ally_list)
             )
 
-        return f"적군\n{'\n'.join(enemy_str)}\n\n아군\n{'\n'.join(ally_str)}"
+        board = f"적군\n{'\n'.join(enemy_str)}\n\n아군\n{'\n'.join(ally_str)}"
+
+        buff_summary = self._format_buff_summary()
+        if not buff_summary:
+            return board
+        return f"{board}\n\n{buff_summary}"
+
+    def _format_buff_summary(self) -> str:
+        """전장에 살아있는 캐릭터들이 보유한 버프/디버프를 텍스트로 나열한다.
+
+        필드를 이미지로 보여줄 수 없는 경우(대련/상시전투, 또는 본 전투의
+        이미지 캡처 실패 폴백)에는 버프/디버프 내용이 이미지 없이는 확인할
+        방법이 없으므로, str(context)에 이 안내를 포함시킨다. 패시브 스킬
+        래퍼(PassiveSkillWrapperBuff)는 "버프" 시트에 등록된 실제 버프가
+        아니라 캐릭터 고유 특성이므로 이 목록에서는 제외한다.
+        """
+        blocks = []
+        for char_id in self.characters:
+            buffs = sorted(
+                (
+                    buff
+                    for buff in self.buff_container.get_buffs_by(char_id, None)
+                    if not isinstance(buff, PassiveSkillWrapperBuff)
+                ),
+                key=lambda buff: buff.id,
+            )
+            for buff in buffs:
+                buff_data = self._buff_dictionary.get(buff.id)
+                description = buff_data.description if buff_data is not None else ""
+                blocks.append(
+                    f"{char_id.name} | [{buff.id}]{buff.duration.display_text()}\n"
+                    f"↳ {description}"
+                )
+        return "\n\n".join(blocks)
 
     def clear(self):
         self.characters.clear()
