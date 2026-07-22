@@ -104,10 +104,11 @@ def test_advance_phase_always_marks_field_image():
     assert to_standby.attach_field_image is True
 
 
-def test_enemy_post_action_summary_includes_calculation():
+def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
     표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
     누락된다."""
+    monkeypatch.setattr(log_sheets, "update_character_curr_hp", lambda *a, **k: None)
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -126,6 +127,35 @@ def test_enemy_post_action_summary_includes_calculation():
 
     assert "↳" in to_post_action.game_post_text
     assert "적 캐릭터" in to_post_action.game_post_text
+
+
+def test_advance_phase_writes_back_post_action_damage(monkeypatch):
+    """적 공격 정산(ENEMY_POST_ACTION) 시 발생한 대미지도 "캐릭터" 시트에
+    반영되어야 한다 — 이전에는 개별 캐릭터 커맨드/프록시에서만 write-back이
+    호출되고 POST_ACTION 정산 자체는 반영되지 않는 갭이 있었다."""
+    recorded_hp: dict = {}
+    monkeypatch.setattr(
+        log_sheets,
+        "update_character_curr_hp",
+        lambda spreadsheet, name, hp: recorded_hp.__setitem__(name, hp),
+    )
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    admin_module._cmd_proxy("적 캐릭터", "[공격/유효 캐릭터]", state)
+
+    _cmd_advance_phase(state)  # → 아군 행동
+    _cmd_advance_phase(state)  # → 적 공격 정산
+
+    assert "유효 캐릭터" in recorded_hp
 
 
 def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
@@ -553,3 +583,214 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     round_call = mastodon.status_post_calls[-1]
     assert round_call["visibility"] == "unlisted"
     assert round_call["in_reply_to_id"] == active_post_id
+
+
+def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
+    """DM 전투 테스트 공용 셋업. (mastodon, listener, state, char_dict, name_dict) 반환.
+
+    "전사"는 아군 랜덤 배치로 어느 열에 놓이든 "고블린"을 공격할 수 있어야
+    하므로 attack_range를 전체 열 폭(7)으로 넉넉히 잡는다 — 그렇지 않으면
+    무작위 배치 결과에 따라 사거리 밖 판정으로 테스트가 간헐적으로 실패한다.
+    """
+    monkeypatch.setattr(log_sheets, "update_character_curr_hp", lambda *a, **k: None)
+    state = _make_state()
+    char_dict = {"player_acct": get_test_preset("전사", attack_range=7)}
+    name_dict = {
+        "전사": get_test_preset("전사", attack_range=7),
+        "고블린": get_test_preset("고블린", max_hp=enemy_max_hp),
+    }
+    monkeypatch.setattr(
+        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+    return mastodon, listener, state, char_dict, name_dict
+
+
+def test_dm_battle_start_places_enemy_by_command_and_allies_by_mention(monkeypatch):
+    """[전투 발생][배치/이름/열]은 적만 그 위치에 배치하고, admin이 함께
+    멘션한 계정 중 char_dict에 등록된 캐릭터는 참전 신청 없이 자동으로
+    아군 무작위 배치되어야 한다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+
+    assert len(state.dm_battles) == 1
+    dm_state = next(iter(state.dm_battles.values()))
+    goblin_id = CharacterId("고블린")
+    warrior_id = CharacterId("전사")
+    assert goblin_id in dm_state.session.context.characters
+    assert warrior_id in dm_state.session.context.characters
+    assert dm_state.session.context.characters[goblin_id].faction == FactionType.ENEMY
+    assert dm_state.session.context.characters[warrior_id].faction == FactionType.ALLY
+    assert (
+        dm_state.session.context.find_character_position(goblin_id)
+        == BattlefieldColumnIndex.from_str("1열")
+    )
+    assert dm_state.session.started is True
+
+
+def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
+    """DM 전투의 모든 게시물은 최초 [전투 발생] DM의 visibility를 따르고 서로
+    답글로 이어지며, 아군 커맨드로 적이 전멸하면 admin의 [진행] 없이 즉시
+    전투가 종료되고 state.dm_battles에서 제거되어야 한다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch, enemy_max_hp=1
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+    pre_call = mastodon.status_post_calls[-1]
+    assert pre_call["visibility"] == "direct"
+    assert pre_call["in_reply_to_id"] == 1
+    dm_state = next(iter(state.dm_battles.values()))
+    pre_post_id = dm_state.active_post_id
+
+    # admin 프록시로 적 PRE 선언 (이동만, 대미지 없음)
+    listener.on_notification(
+        _make_notification("test-admin", 2, pre_post_id, "고블린 [이동/2열]")
+    )
+    proxy_reply = mastodon.status_post_calls[-1]
+    assert "고블린" in name_dict  # sanity
+    assert str(dm_state.session.context) in proxy_reply["status"]
+
+    # admin이 [진행]으로 ALLY_ACTION 진입 — 이전 게시물에 답글로 이어져야 함
+    listener.on_notification(
+        _make_notification("test-admin", 3, pre_post_id, "[진행]")
+    )
+    ally_call = mastodon.status_post_calls[-1]
+    assert ally_call["visibility"] == "direct"
+    assert ally_call["in_reply_to_id"] == pre_post_id
+    active_post_id = dm_state.active_post_id
+    assert active_post_id != pre_post_id
+
+    # 아군이 공격해 적을 전멸시킴 — [진행] 없이 즉시 종료돼야 함
+    listener.on_notification(
+        _make_notification("player_acct", 4, active_post_id, "[공격/고블린]")
+    )
+
+    end_call = mastodon.status_post_calls[-1]
+    assert end_call["visibility"] == "direct"
+    assert end_call["in_reply_to_id"] == active_post_id
+    assert "전투 종료" in end_call["status"]
+    assert "아군" in end_call["status"]
+    assert state.dm_battles == {}
+
+
+def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
+    """DM 전투는 실시간 확인 수단이 답글뿐이므로, 아군 커맨드 답글에도 매번
+    현재 필드 상태(str(context))가 포함되어야 한다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch, enemy_max_hp=100
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+    dm_state = next(iter(state.dm_battles.values()))
+    pre_post_id = dm_state.active_post_id
+
+    listener.on_notification(
+        _make_notification("test-admin", 2, pre_post_id, "[진행]")
+    )
+    active_post_id = dm_state.active_post_id
+
+    listener.on_notification(
+        _make_notification("player_acct", 3, active_post_id, "[공격/고블린]")
+    )
+
+    char_reply = mastodon.status_post_calls[-1]
+    assert str(dm_state.session.context) in char_reply["status"]
+
+
+def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
+    """두 개의 DM 전투가 동시에 진행되어도 서로의 상태(적/아군 배치, 라운드)가
+    섞이면 안 된다 — state.dm_battles는 여러 인스턴스를 동시에 관리해야 한다."""
+    monkeypatch.setattr(log_sheets, "update_character_curr_hp", lambda *a, **k: None)
+    state = _make_state()
+    char_dict = {
+        "player1_acct": get_test_preset("전사1"),
+        "player2_acct": get_test_preset("전사2"),
+    }
+    name_dict = {
+        "전사1": get_test_preset("전사1"),
+        "전사2": get_test_preset("전사2"),
+        "고블린": get_test_preset("고블린"),
+        "오크": get_test_preset("오크"),
+    }
+    monkeypatch.setattr(
+        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player1_acct"],
+        )
+    )
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            2,
+            0,
+            "[전투 발생][배치/오크/2열]",
+            visibility="direct",
+            extra_mentions=["player2_acct"],
+        )
+    )
+
+    assert len(state.dm_battles) == 2
+    dm_states = list(state.dm_battles.values())
+    goblin_battle = next(
+        dm for dm in dm_states if CharacterId("고블린") in dm.session.context.characters
+    )
+    orc_battle = next(
+        dm for dm in dm_states if CharacterId("오크") in dm.session.context.characters
+    )
+    assert goblin_battle is not orc_battle
+    assert CharacterId("오크") not in goblin_battle.session.context.characters
+    assert CharacterId("고블린") not in orc_battle.session.context.characters
+    assert CharacterId("전사1") in goblin_battle.session.context.characters
+    assert CharacterId("전사2") in orc_battle.session.context.characters

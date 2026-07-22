@@ -20,6 +20,7 @@ from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from utils.name_matching import whitespace_tolerant_literal
 
 from bot.battle_reply_text import format_battle_reply
+from bot.commands import admin as admin_commands
 from bot.commands.admin import AdminCommandResult, handle_admin_command
 from bot.commands.character import handle_character_command
 from bot.commands.noncombat import (
@@ -39,6 +40,7 @@ from bot.commands.noncombat import (
     parse_use_item_args,
 )
 from bot import log_sheets
+from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data
 from bot.noncombat_state import NonCombatState
@@ -107,6 +109,20 @@ def _truncate(text: str) -> str:
     return text[: _MAX_POST_LENGTH - 1] + "…"
 
 
+def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) -> None:
+    """DmBattleState의 스레드 tip을 new_post_id로 옮긴다.
+
+    state.dm_battles는 tip post_id를 키로 쓰므로, 옛 키를 지우지 않으면
+    페이즈가 넘어갈 때마다 이전 게시물 id로도 계속 라우팅되는 좀비 항목이
+    남는다 — 반드시 옛 키를 먼저 지운 뒤 새 키로 등록해야 한다.
+    """
+    if not dm.field_id:
+        dm.field_id = str(new_post_id)
+    state.dm_battles.pop(dm.active_post_id, None)
+    dm.active_post_id = new_post_id
+    state.dm_battles[new_post_id] = dm
+
+
 def _persist_battle_log(
     state: "BotState",
     battle_log: Optional[log_sheets.BattleCommandLog],
@@ -142,7 +158,11 @@ def _persist_battle_log(
                     state.session.context, include_hp=False
                 ),
             )
-        elif not battle_log.is_main and state.practice is not None:
+        elif (
+            not battle_log.is_main
+            and state.practice is not None
+            and battle_log.field_id == str(state.practice.prep_post_id)
+        ):
             phase = state.practice.phase
             log_sheets.upsert_field_row(
                 state.spreadsheet,
@@ -154,6 +174,19 @@ def _persist_battle_log(
                     state.practice.context, include_hp=True
                 ),
             )
+        elif not battle_log.is_main:
+            dm = admin_commands.find_dm_battle_by_field_id(state, battle_log.field_id)
+            if dm is not None:
+                log_sheets.upsert_field_row(
+                    state.spreadsheet,
+                    battle_log.field_id,
+                    is_main=False,
+                    round_n=dm.session.round_n,
+                    phase=dm.session.current_phase.value,
+                    characters=log_sheets.build_field_characters(
+                        dm.session.context, include_hp=False
+                    ),
+                )
     except Exception:
         logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
 
@@ -196,6 +229,9 @@ class BotState:
     )  # (name, faction, column)
     practice: Optional[PracticeBattleState] = None
     noncombat: NonCombatState = field(default_factory=NonCombatState)
+    dm_battles: dict[int, DmBattleState] = field(
+        default_factory=dict
+    )  # key = 현재 스레드 tip 게시물 id
 
 
 def reload_char_data(state: BotState) -> None:
@@ -281,7 +317,11 @@ class MastodonBotListener(StreamListener):
         )
         if is_admin or is_investigation_self_mention:
             result: AdminCommandResult = handle_admin_command(
-                text, state, mentions=mentions or [], visibility=visibility
+                text,
+                state,
+                mentions=mentions or [],
+                visibility=visibility,
+                in_reply_to_id=in_reply_to_id,
             )
 
             if not result.reply_text:
@@ -295,6 +335,10 @@ class MastodonBotListener(StreamListener):
                         state.practice.prep_post_id = new_post_id
                     if result.set_practice_active_post and state.practice is not None:
                         state.practice.active_post_id = new_post_id
+                    if result.dm_battle_to_register is not None:
+                        _register_dm_battle(
+                            state, result.dm_battle_to_register, new_post_id
+                        )
                     if state.session is not None and state.session.started:
                         state.active_phase_post_id = (
                             new_post_id
@@ -339,9 +383,13 @@ class MastodonBotListener(StreamListener):
                         and state.session is not None
                     ):
                         post_text = f"{post_text}\n\n{state.session.context}"
+                    post_kwargs: dict = {"media_ids": game_media_ids or None}
+                    if result.game_post_in_reply_to is not None:
+                        post_kwargs["in_reply_to_id"] = result.game_post_in_reply_to
+                    if result.game_post_visibility is not None:
+                        post_kwargs["visibility"] = result.game_post_visibility
                     new_post = self._mastodon.status_post(
-                        _truncate(post_text),
-                        media_ids=game_media_ids or None,
+                        _truncate(post_text), **post_kwargs
                     )
                     new_post_id = new_post["id"]
 
@@ -350,6 +398,11 @@ class MastodonBotListener(StreamListener):
 
                     if result.set_practice_active_post and state.practice is not None:
                         state.practice.active_post_id = new_post_id
+
+                    if result.dm_battle_to_register is not None:
+                        _register_dm_battle(
+                            state, result.dm_battle_to_register, new_post_id
+                        )
 
                     if state.session is not None and state.session.started:
                         state.active_phase_post_id = (
@@ -455,9 +508,27 @@ class MastodonBotListener(StreamListener):
             state.active_phase_post_id is not None
             and in_reply_to_id == state.active_phase_post_id
         ):
-            response, battle_log = handle_character_command(acct, text, state)
+            response, battle_log = handle_character_command(
+                acct, text, state, state.session, str(state.preparation_status_id)
+            )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
+            return
+
+        # 5.5. DM 전투 중 캐릭터 커맨드 (해당 스레드의 tip 게시물에 대한 답글)
+        if in_reply_to_id is not None and in_reply_to_id in state.dm_battles:
+            dm_state = state.dm_battles[in_reply_to_id]
+            reply, end_post_text, battle_log = _handle_dm_battle_command(
+                acct, text, state, dm_state
+            )
+            reply_status = self._reply(status_id, acct, visibility, reply)
+            _persist_battle_log(state, battle_log, str(reply_status["id"]))
+            if end_post_text is not None:
+                self._mastodon.status_post(
+                    _truncate(end_post_text),
+                    visibility=dm_state.visibility,
+                    in_reply_to_id=dm_state.active_post_id,
+                )
             return
 
         nc = state.noncombat
@@ -726,6 +797,30 @@ def _handle_practice_command(
         f"{ps.context}"
     )
     return reply_text, game_post, battle_log
+
+
+def _handle_dm_battle_command(
+    acct: str, text: str, state: "BotState", dm_state: DmBattleState
+) -> tuple[str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
+    """
+    DM 전투 중 캐릭터 커맨드를 처리한다. handle_character_command를 그대로
+    재사용하되, DM 전투는 스레드 답글이 유일한 실시간 확인 수단이므로 매
+    답글에 현재 필드 상태(str(context))를 덧붙이고, 처리 후 전멸 여부를
+    확인해 전멸 시 전투를 종료한다.
+
+    반환값: (reply_text, end_post_text_or_None, battle_log_or_None)
+    """
+    response, battle_log = handle_character_command(
+        acct, text, state, dm_state.session, dm_state.field_id
+    )
+    response = f"{response}\n\n{dm_state.session.context}"
+
+    winner = admin_commands._check_dm_battle_wipe(dm_state)
+    if winner is None:
+        return response, None, battle_log
+
+    end_post_text = admin_commands._end_dm_battle(dm_state, state, winner)
+    return response, end_post_text, battle_log
 
 
 def main() -> None:
