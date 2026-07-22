@@ -38,7 +38,7 @@ from bot.commands.noncombat import (
     parse_transfer_item_args,
     parse_use_item_args,
 )
-from bot import field_sheet_renderer, log_sheets
+from bot import log_sheets
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data
 from bot.noncombat_state import NonCombatState
@@ -113,10 +113,6 @@ def _persist_battle_log(
     reply_ref: str,
 ) -> None:
     """커맨드 정산 결과를 로그_전투(내부 자동화 DB)에 기록한다.
-
-    공개 필드 시트 렌더링/이미지 캡처는 답글 전송 *전에* 끝나야 같은 답글에
-    이미지를 붙일 수 있으므로 `MastodonBotListener._field_media_ids_for_battle_log()`
-    에서 별도로 처리한다 (여기서는 하지 않는다).
 
     스프레드시트 기록 실패가 전투 진행 자체를 막지 않도록 예외를 흡수한다.
     """
@@ -235,27 +231,6 @@ class MastodonBotListener(StreamListener):
             logger.exception("공개 필드 시트 이미지 캡처/업로드 실패")
             return []
 
-    def _field_media_ids_for_battle_log(
-        self, state: "BotState", battle_log: Optional[log_sheets.BattleCommandLog]
-    ) -> list:
-        """본 전투(is_main) 커맨드 로그일 때만 필드 시트를 다시 렌더링하고
-        그 결과를 이미지로 캡처한다. 대련/상시전투는 대상이 아니다."""
-        if battle_log is None or not battle_log.is_main or state.session is None:
-            return []
-        try:
-            field_sheet_renderer.render_public_field_sheet(
-                state.field_spreadsheet,
-                state.session.context,
-                round_n=state.session.round_n,
-                phase=state.session.current_phase.value,
-                enemy_declared=state.session.manager.get_enemy_declared_commands(),
-                battle_name=state.session.name,
-            )
-        except Exception:
-            logger.exception("공개 필드 시트 렌더링 실패")
-            return []
-        return self._capture_field_media_ids(state)
-
     def on_notification(self, notification: dict) -> None:
         acct: Optional[str] = None
         status_id: Optional[int] = None
@@ -327,16 +302,10 @@ class MastodonBotListener(StreamListener):
                             else None
                         )
             else:
-                # reply_text가 있는 경우: 답글 전송
-                # (프록시 커맨드의 다이스/반영 결과 답글이면 공개 필드 시트
-                #  이미지를 함께 첨부한다 — battle_log가 없는 admin 커맨드는
-                #  media_ids가 빈 리스트가 되어 영향 없다)
-                reply_media_ids = self._field_media_ids_for_battle_log(
-                    state, result.battle_log
-                )
+                # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
+                # 이미지는 페이즈 게시물에만 첨부한다)
                 reply_status = self._reply(
                     status_id, acct, visibility, result.reply_text,
-                    media_ids=reply_media_ids,
                 )
                 _persist_battle_log(
                     state, result.battle_log, str(reply_status["id"])
@@ -472,10 +441,7 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.active_phase_post_id
         ):
             response, battle_log = handle_character_command(acct, text, state)
-            media_ids = self._field_media_ids_for_battle_log(state, battle_log)
-            reply_status = self._reply(
-                status_id, acct, visibility, response, media_ids=media_ids
-            )
+            reply_status = self._reply(status_id, acct, visibility, response)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             return
 
