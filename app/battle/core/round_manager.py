@@ -8,7 +8,7 @@ from battle.core.command_processors import (
 )
 from battle.core.commands.admin import AdminCommand
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import CharacterCommand
+from battle.core.commands.models import CharacterCommand, CommandPartProcessResult
 from battle.exceptions import CommandValidationError
 from battle.objects.define import FactionType
 from battle.objects.models import CharacterId
@@ -19,9 +19,20 @@ class RoundManager:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
         self._enemy_command_list: dict[CharacterId, list[CharacterCommand]] = {}
+        self._last_post_action_results: dict[
+            CharacterId, list[CommandPartProcessResult]
+        ] = {}
 
     def get_enemy_declared_commands(self) -> dict[CharacterId, list[CharacterCommand]]:
         return self._enemy_command_list
+
+    def get_last_post_action_results(
+        self,
+    ) -> dict[CharacterId, list[CommandPartProcessResult]]:
+        """가장 최근 ENEMY_POST_ACTION 정산에서 적군 개별 캐릭터가 낸
+        결과(대미지/힐/계산식 포함)를 반환한다. 답글용 game_post 텍스트
+        조립에 쓰인다."""
+        return self._last_post_action_results
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
@@ -37,11 +48,13 @@ class RoundManager:
             # 버프(ON_ACTION 타이밍)를 새로 부여하는 패시브는 그 버프가 뒤이어
             # 처리되는 이 라운드의 공격에 곧바로 반영되어야 한다.
             self._context.buff_container.on_enemy_post_action()
+            self._last_post_action_results = {}
             for user_id, remaining_commands in self._enemy_command_list.items():
                 post_results = try_process_enemy_command_on_post_action(
                     self._context, user_id, remaining_commands
                 )
                 self._context.results.extend(post_results)
+                self._last_post_action_results[user_id] = post_results
             # 적의 공격이 모두 적용된 뒤에 발동한다. damaged_this_round(이번
             # 라운드에 누가 맞았는지)에 반응하는 패시브 전용 타이밍이라, 위
             # on_enemy_post_action()과 달리 이 시점에만 평가돼야 하는 패시브만

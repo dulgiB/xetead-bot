@@ -345,17 +345,27 @@ class MastodonBotListener(StreamListener):
                 if result.set_preparation_post:
                     state.preparation_status_id = reply_status["id"]
 
-                # 퍼블릭 게시물 게시 (페이즈 게시물) — 라운드 시작/종료면 공개
-                # 필드 시트 이미지를 첨부한다 (render_public_field_sheet는
-                # admin.py의 각 핸들러에서 이미 호출됐으므로 여기서는 캡처만)
+                # 퍼블릭 게시물 게시 (페이즈 게시물) — 필드 시트 이미지를
+                # 첨부한다 (render_public_field_sheet는 admin.py의 각
+                # 핸들러에서 이미 호출됐으므로 여기서는 캡처만).
                 if result.game_post_text is not None:
                     game_media_ids = (
                         self._capture_field_media_ids(state)
                         if result.attach_field_image
                         else []
                     )
+                    post_text = result.game_post_text
+                    # 이미지 캡처가 실패하면(빈 media_ids) 필드 현황을 텍스트로
+                    # 대체 표시한다 — 성공 시에는 이미지만으로 충분하므로
+                    # str(context) 보드를 중복으로 붙이지 않는다.
+                    if (
+                        result.attach_field_image
+                        and not game_media_ids
+                        and state.session is not None
+                    ):
+                        post_text = f"{post_text}\n\n{state.session.context}"
                     new_post = self._mastodon.status_post(
-                        _truncate(result.game_post_text),
+                        _truncate(post_text),
                         visibility="public",
                         media_ids=game_media_ids or None,
                     )

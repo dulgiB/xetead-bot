@@ -83,9 +83,10 @@ def test_battle_start_marks_round_start_for_field_image():
     assert result.attach_field_image is True
 
 
-def test_advance_phase_marks_field_image_only_on_round_end():
-    """페이즈 전환은 '라운드 종료'(STANDBY 진입) 때만 이미지를 붙여야 하고,
-    그 외 페이즈 전환(ALLY_ACTION, ENEMY_POST_ACTION 진입)은 붙이면 안 된다."""
+def test_advance_phase_always_marks_field_image():
+    """필드 현황은 str 대신 이미지로만 표시하므로, 모든 페이즈 전환
+    게시물(ALLY_ACTION, ENEMY_POST_ACTION, STANDBY 진입 모두)에 이미지를
+    붙여야 한다."""
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
@@ -97,9 +98,33 @@ def test_advance_phase_marks_field_image_only_on_round_end():
     to_enemy_post_action = _cmd_advance_phase(state)
     to_standby = _cmd_advance_phase(state)
 
-    assert to_ally_action.attach_field_image is False
-    assert to_enemy_post_action.attach_field_image is False
+    assert to_ally_action.attach_field_image is True
+    assert to_enemy_post_action.attach_field_image is True
     assert to_standby.attach_field_image is True
+
+
+def test_enemy_post_action_summary_includes_calculation():
+    """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
+    표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
+    누락된다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    admin_module._cmd_proxy("적 캐릭터", "[공격/유효 캐릭터]", state)
+
+    _cmd_advance_phase(state)  # → 아군 행동
+    to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
+
+    assert "↳" in to_post_action.game_post_text
+    assert "적 캐릭터" in to_post_action.game_post_text
 
 
 def test_continue_battle_marks_round_start_for_field_image():
@@ -158,6 +183,8 @@ class _FakeMastodon:
         self.last_media_id: int = 0
 
     def status_post(self, *args, **kwargs):
+        if args:
+            kwargs = {**kwargs, "status": args[0]}
         self.status_post_calls.append(kwargs)
         return {"id": next(self._next_id)}
 
@@ -372,9 +399,9 @@ def test_round_start_game_post_attaches_field_image(monkeypatch):
     assert public_posts[0]["media_ids"] == [mastodon.last_media_id]
 
 
-def test_ally_action_phase_post_does_not_attach_field_image(monkeypatch):
-    """라운드 시작/종료가 아닌 일반 페이즈 전환 공개 게시물에는 이미지가
-    붙으면 안 된다."""
+def test_ally_action_phase_post_attaches_field_image(monkeypatch):
+    """필드 현황은 str 대신 이미지로만 표시하므로, 일반 페이즈 전환
+    공개 게시물(아군 행동 등)에도 이미지가 붙어야 한다."""
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
@@ -398,5 +425,40 @@ def test_ally_action_phase_post_does_not_attach_field_image(monkeypatch):
         c for c in mastodon.status_post_calls if "in_reply_to_id" not in c
     ]
     assert len(public_posts) == 1
+    assert public_posts[0]["media_ids"] == [mastodon.last_media_id]
+
+
+def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatch):
+    """이미지 캡처가 실패하면 게시물 텍스트에 str(context) 필드 보드를
+    대체 표시해야 한다 (정보가 완전히 유실되면 안 되므로)."""
+
+    @contextlib.contextmanager
+    def _failing_capture(spreadsheet):
+        raise RuntimeError("capture boom")
+        yield  # pragma: no cover
+
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    _cmd_battle_start(state)
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _failing_capture)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification("test-admin", 1, 0, "[진행]")
+    )
+
+    public_posts = [
+        c for c in mastodon.status_post_calls if "in_reply_to_id" not in c
+    ]
+    assert len(public_posts) == 1
     assert public_posts[0]["media_ids"] is None
-    assert mastodon.media_post_calls == []
+    assert "유효 캐릭터" in public_posts[0]["status"]

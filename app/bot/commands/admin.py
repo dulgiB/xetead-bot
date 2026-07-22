@@ -5,11 +5,16 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
+from battle.core.commands.models import (
+    BattleLogEntry,
+    BattleLogEntryKind,
+    CommandPartProcessResult,
+)
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
+    ActionType,
     BattlefieldColumnIndex,
     FactionType,
 )
@@ -32,6 +37,7 @@ from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 
 if TYPE_CHECKING:
+    from battle.core.battlefield_context import BattlefieldContext
     from bot.main import BotState
 
 _RE_BATTLE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('전투준비')}]")
@@ -270,14 +276,6 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     if state.session is None or not state.session.started:
         return AdminCommandResult("◊ 진행 중인 전투가 없습니다.")
 
-    # POST_ACTION 직전 HP 스냅샷 (결과 발표에 사용)
-    hp_before: Optional[dict] = None
-    if state.session.current_phase == RoundPhaseType.ALLY_ACTION:
-        hp_before = {
-            cid: char.status.curr_hp
-            for cid, char in state.session.context.characters.items()
-        }
-
     new_phase = state.session.advance_phase()
 
     # 필드 시트 저장 (커맨드 수신 없는 페이즈에서도)
@@ -308,8 +306,13 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     except Exception as e:
         errors.append(f"공개 필드 시트 렌더링 실패: {e}")
 
+    post_action_results = (
+        state.session.manager.get_last_post_action_results()
+        if new_phase == RoundPhaseType.ENEMY_POST_ACTION
+        else None
+    )
     game_post = _make_phase_post_text(
-        new_phase, state.session.round_n, state.session, hp_before
+        new_phase, state.session.round_n, state.session, post_action_results
     )
 
     error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
@@ -319,9 +322,9 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     # → 호출측에서 game_post_text가 None인지 여부로 판단하므로
     #   POST_ACTION과 STANDBY는 게시물을 올리되 active_phase_post_id를 None으로 처리
     #   (game_post_text가 있더라도 None 처리하는 건 main.py에서)
-    # STANDBY 진입 시점은 버프 턴 차감/제거가 끝난 "라운드 종료" 최종 상태다.
-    attach_field_image = new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
-    return AdminCommandResult(reply, game_post, attach_field_image=attach_field_image)
+    # 필드 상태가 str 대신 이미지로만 표시되므로, 모든 페이즈 전환 게시물에
+    # 필드 시트 이미지를 첨부한다.
+    return AdminCommandResult(reply, game_post, attach_field_image=True)
 
 
 def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
@@ -607,53 +610,60 @@ def _make_phase_post_text(
     phase: RoundPhaseType,
     round_n: int,
     session: "BattleSession",
-    hp_before: Optional[dict] = None,
+    post_action_results: Optional[
+        dict[CharacterId, list[CommandPartProcessResult]]
+    ] = None,
 ) -> str:
+    # 필드 현황은 게시물에 첨부되는 공개 필드 시트 이미지로 표시하므로, 이
+    # 텍스트에는 str(session.context) 보드를 중복으로 넣지 않는다.
     if phase == RoundPhaseType.ENEMY_PRE_ACTION:
-        return f"◊ [라운드 {round_n}] 적군 행동 선언\n\n{session.context}"
+        return f"◊ [라운드 {round_n}] 적군 행동 선언"
 
     if phase == RoundPhaseType.ALLY_ACTION:
         return (
             f"◊ [라운드 {round_n}] 아군 행동\n\n"
-            "이 게시물에 답글로 커맨드를 입력해 주세요.\n"
-            f"\n{session.context}"
+            "이 게시물에 답글로 커맨드를 입력해 주세요."
         )
 
     if phase == RoundPhaseType.ENEMY_POST_ACTION:
-        result_lines = _format_hp_changes(session, hp_before)
-        body = "\n".join(result_lines) if result_lines else "변동 없음"
-        return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n{body}\n\n{session.context}"
+        body = _format_enemy_post_action_results(
+            session.context, post_action_results or {}
+        )
+        return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n\n{body}"
 
     if phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
         return (
             f"◊ [라운드 {round_n} 종료]\n\n"
-            f"버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요.\n"
-            f"\n{session.context}"
+            f"버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요."
         )
 
-    return str(session.context)
+    return ""
 
 
-def _format_hp_changes(
-    session: "BattleSession", hp_before: Optional[dict]
-) -> list[str]:
-    if hp_before is None:
-        return []
-    lines = []
-    for char_id, char in session.context.characters.items():
-        prev_hp = hp_before.get(char_id)
-        if prev_hp is None:
-            continue
-        diff = prev_hp - char.status.curr_hp
-        if diff > 0:
-            lines.append(
-                f"  {char_id.name}: -{diff} HP ({prev_hp} → {char.status.curr_hp})"
-            )
-        elif diff < 0:
-            lines.append(
-                f"  {char_id.name}: +{-diff} HP ({prev_hp} → {char.status.curr_hp})"
-            )
-    return lines
+def _format_enemy_post_action_results(
+    context: "BattlefieldContext",
+    post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
+) -> str:
+    """ENEMY_POST_ACTION 정산 결과를 "{적 이름} 【헤더】/계산식" 블록으로
+    조립한다. 커맨드(파트) 하나당 블록 하나이며, 같은 적의 커맨드가
+    여러 개여도 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+
+    이동은 PRE 선언 시점에 이미 답글로 안내되었으므로 여기서는 제외한다
+    (POST 재전개 시 move_list가 빈 채로 남아 헤더만 중복 출력되는 것을 막는다).
+    """
+    blocks = []
+    for user_id, part_results in post_action_results.items():
+        non_move_results = [
+            r
+            for r in part_results
+            if r.expanded_part.original_part is None
+            or r.expanded_part.original_part.type_ != ActionType.MOVE
+        ]
+        for part_result in non_move_results:
+            block = format_battle_reply(context, user_id, [part_result])
+            if block:
+                blocks.append(f"{user_id.name} {block}")
+    return "\n\n".join(blocks) if blocks else "변동 없음"
 
 
 # ---------------------------------------------------------------------------
