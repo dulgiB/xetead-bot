@@ -300,15 +300,64 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
 
     assert reply == (
         "【저주 방출 ▸ 적군 1】\n"
-        "아군 1 | [저주]×2 소모 (잔여 1)\n"
+        "아군 1 | [저주]×2 소모 → 잔여 1\n"
         "적군 1 | -2 → 98/100\n"
-        "↳ 2 × 1[계수]"
+        "↳ 2[저주] × 1"
     )
 
 
-def test_multiple_damage_effects_on_same_target_show_hp_at_each_step():
-    """같은 대상이 한 스킬 안에서 두 번 맞으면, 각 줄은 그 시점의 HP를 보여줘야
-    한다 — 마지막에 context를 다시 조회해 최종 HP만 보이면 안 된다."""
+def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
+    """공격 굴림 기반 대미지 + 버프 스택 소모 대미지가 같은 대상에게 함께 들어가는
+    스킬(예: 반송형 스킬)은 한 줄로 합쳐서 보여줘야 하고, 스택 소모 항목은
+    버프 이름으로 라벨링되어야 한다."""
+    stack_buff = BuffData(
+        id="저주", buff_class_name="BuffAtk", duration_turn_value=None,
+        duration_count_value=None, duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER, value=0, condition_=None, condition_value=None,
+        is_debuff=True, description="", max_stack=10,
+    )
+    skill = SkillData(
+        id="이중 타격",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectDamage(ValueSourceType.STAT_ATK, 150, ValueType.INTEGER, None, None),
+            SkillEffectConsumeStackForDamage(
+                ValueSourceType.CONSUMED_BUFF_STACK, 300, ValueType.INTEGER, "저주", None,
+                buff_stack_cap=5,
+            ),
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(buff_dict={"저주": stack_buff}, skill_dict={"이중 타격": skill})
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="이중 타격", atk=6),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(
+        BuffAddData(given_by=caster_id, applied_to=caster_id, buff_id="저주", stack_value=5)
+    )
+
+    reply = _run(ctx, manager, caster_id, "[이중 타격/적군 1]")
+
+    # STAT_ATK(다이스 없음) 6 × 1.5[계수] = 9, 스택 소모 5 × 3[계수] = 15 → 합계 24
+    assert reply == (
+        "【이중 타격 ▸ 적군 1】\n"
+        "아군 1 | [저주]×5 소모 → 잔여 0\n"
+        "적군 1 | -24 → 76/100\n"
+        "↳ 6 × 1.5[계수] + 5[저주] × 3"
+    )
+
+
+def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
+    """같은 대상이 한 스킬 안의 여러 effect로 대미지를 받으면, 실제로는 한 번의
+    타격이므로 두 줄로 나뉘어 순차 HP를 보여주는 대신 합산된 값 한 줄로
+    보여줘야 한다. 계산식은 각 구성 요소를 "+"로 이어붙인다."""
     skill = SkillData(
         id="연타",
         target_rule="SkillTargetRuleNamed",
@@ -332,6 +381,6 @@ def test_multiple_damage_effects_on_same_target_show_hp_at_each_step():
 
     assert reply == (
         "【연타 ▸ 적군 1】\n"
-        "적군 1 | -10 → 90/100\n"
-        "적군 1 | -5 → 85/100"
+        "적군 1 | -15 → 85/100\n"
+        "↳ 10 + 5"
     )

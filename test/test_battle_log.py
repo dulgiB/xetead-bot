@@ -148,7 +148,7 @@ def test_build_log_entries_records_stacking_buff_add_with_stack_count():
     assert entries[0].kind == BattleLogEntryKind.BUFF_ADD
     assert entries[0].buff_id == "재앙"
     assert entries[0].stack_delta == 2
-    assert entries[0].result == "[재앙]×2 부여 (잔여 2)"
+    assert entries[0].result == "[재앙]×2 부여 → 잔여 2"
 
 
 def test_build_log_entries_records_buff_remove_from_stack_consumption():
@@ -206,7 +206,7 @@ def test_build_log_entries_records_buff_remove_from_stack_consumption():
     assert remove_entries[0].target_name == "아군 1"
     assert remove_entries[0].buff_id == "재앙"
     assert remove_entries[0].stack_delta == 2
-    assert remove_entries[0].result == "[재앙]×2 소모 (잔여 1)"
+    assert remove_entries[0].result == "[재앙]×2 소모 → 잔여 1"
 
     damage_entries = [e for e in entries if e.kind == BattleLogEntryKind.DAMAGE]
     assert len(damage_entries) == 1

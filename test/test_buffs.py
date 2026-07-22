@@ -379,6 +379,82 @@ class TestBuffGivenDamage:
         # 대상이 둘이어도 행동은 1회이므로 count는 1만 소모되어야 한다.
         assert buffs[0].duration.remaining_count == 2
 
+    def test_count_buff_not_double_deducted_by_multi_effect_skill_on_same_target(self):
+        """스킬 하나가 effect 두 개로 같은 대상에게 대미지를 나누어 입혀도, 공격자
+        측(ON_ATTACK)과 대상 측(ON_HIT) count형 버프는 행동 1회당 한 번만
+        차감되어야 한다 — 두 effect를 두 번의 순차적 타격으로 취급하면 안 된다."""
+        attack_buff = make_buff_data(
+            "대미지 증가",
+            "BuffGivenDamage",
+            duration_turn_value=None,
+            duration_count_value=3,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_ATTACK,
+            value_type=ValueType.INTEGER,
+            value=10,
+        )
+        hit_buff = make_buff_data(
+            "피해 증가",
+            "BuffReceivedDamage",
+            duration_turn_value=None,
+            duration_count_value=3,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_HIT,
+            value_type=ValueType.PERCENT,
+            value=10,
+        )
+        two_effect_skill = SkillData(
+            id="이단 타격",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                ),
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                ),
+            ],
+            description="",
+        )
+        ctx = make_context(
+            attack_buff, hit_buff, skill_dict={"이단 타격": two_effect_skill}
+        )
+        manager = setup_ally_phase(ctx)
+
+        attacker_id = CharacterId("공격수")
+        target_id = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("공격수", skill_1_id="이단 타격"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=attacker_id, applied_to=attacker_id, buff_id="대미지 증가"
+            )
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target_id, applied_to=target_id, buff_id="피해 증가")
+        )
+
+        manager.process_command(
+            parse_character_command(attacker_id, "[이단 타격/적군]", ctx)
+        )
+
+        attack_buffs = ctx.buff_container.get_buffs_by(
+            attacker_id, BuffApplyTiming.ON_ACTION
+        )
+        hit_buffs = ctx.buff_container.get_buffs_by(
+            target_id, BuffApplyTiming.ON_ACTION
+        )
+        # effect가 둘이어도 실제 타격은 1회이므로 양쪽 다 count는 1만 소모되어야 한다.
+        assert attack_buffs[0].duration.remaining_count == 2
+        assert hit_buffs[0].duration.remaining_count == 2
+
 
 class TestBuffReceivedDamage:
     """BuffReceivedDamage: 피격 시 해당 캐릭터가 받는 대미지에 수정자를 적용한다."""

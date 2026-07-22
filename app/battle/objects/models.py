@@ -66,6 +66,10 @@ class BaseValueIndicator:
     value_source: ValueSourceType
     value: Optional[int] = None
     coefficient: Optional[FloatValueModifier] = None
+    # CONSUMED_BUFF_STACK 전용: 소모한 버프 id. format_calculation()이 소모량을
+    # "{값}[{buff_id}]"로 라벨링하는 데 쓰인다(계산식에서 어느 버프를 소모했는지
+    # 보여주기 위함). 다른 value_source에서는 쓰이지 않는다.
+    consumed_buff_id: Optional[str] = None
 
     def get_value(
         self,
@@ -272,10 +276,21 @@ class ValueWithModifiers:
         if not has_content:
             return None
 
+        # CONSUMED_BUFF_STACK은 소모한 버프 이름을 숫자에 직접 라벨링해서 보여준다
+        # (예: "5[유예된 재앙]") — 이 경우 배율에 다시 "[계수]"를 붙이면 중복이라 생략한다.
+        consumed_buff_id = (
+            self.base_value.consumed_buff_id
+            if isinstance(self.base_value, BaseValueIndicator)
+            else None
+        )
+
         if self.roll_result is not None:
             result_str = str(self.roll_result)
         elif self.base_display_value is not None:
-            result_str = str(self.base_display_value)
+            if consumed_buff_id is not None:
+                result_str = f"{self.base_display_value}[{consumed_buff_id}]"
+            else:
+                result_str = str(self.base_display_value)
         else:
             result_str = str(self.base_value)
 
@@ -287,10 +302,13 @@ class ValueWithModifiers:
             result_str += ")"
 
         if self.base_coefficient is not None:
-            result_str += (
-                f" × {self.base_coefficient.value / 100:g}"
-                f"[{self.base_coefficient.source_name}]"
-            )
+            if consumed_buff_id is not None:
+                result_str += f" × {self.base_coefficient.value / 100:g}"
+            else:
+                result_str += (
+                    f" × {self.base_coefficient.value / 100:g}"
+                    f"[{self.base_coefficient.source_name}]"
+                )
 
         for float_modifiers in (
             self.given_float_modifiers,

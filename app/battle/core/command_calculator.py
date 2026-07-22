@@ -91,6 +91,15 @@ class CommandPartCalculator:
         # 스킬(GIVEN_DAMAGE/GIVEN_HEAL 기반)의 발동 여부 기록.
         self._fired_given_value_passives: set[tuple[int, CharacterId, int]] = set()
 
+        # 스킬 하나(커맨드 파트 하나)가 effect를 여러 개 써서 같은 대상에게 여러 번
+        # 대미지를 입혀도 실제로는 "한 번의 타격"이다. ON_ATTACK/ON_HIT count형
+        # 버프(공격 시/피격 시 차감)가 effect마다 중복 발동하지 않도록, 이
+        # CommandPartCalculator 인스턴스(=한 번의 process() 호출) 생애 동안
+        # 공격자/대상별로 한 번만 발동시킨다. 인스턴스는 process() 호출마다
+        # 새로 생성되므로(command_processors.py) 별도 리셋이 필요 없다.
+        self._on_attack_fired: set[CharacterId] = set()
+        self._on_hit_fired: set[CharacterId] = set()
+
     @classmethod
     def create_empty_for_buff(
         cls, context: "BattlefieldContext"
@@ -319,15 +328,18 @@ class CommandPartCalculator:
             if self._is_live_damage_calc(self.context, damage_calc)
         ]
 
-        # 공격자 측 ON_ATTACK 버프는 광역 효과라도 행동(effect) 1회당 한 번만
-        # 적용/차감한다. GivenDamageModEvent 등은 자신이 attacker의 모든 대미지
-        # 항목을 내부에서 순회하므로, 여러 번 호출하면 대상 수만큼 중복 적용된다.
-        seen_attackers: set[CharacterId] = set()
+        # 공격자 측 ON_ATTACK 버프, 대상 측 ON_HIT 버프는 같은 스킬(커맨드 파트)
+        # 안에서 effect가 여러 개라도, 그리고 하나의 effect가 광역이라도 행동
+        # 1회당(공격자/대상 조합이 아니라 공격자 1명/대상 1명당) 한 번만
+        # 적용/차감한다 — 여러 effect가 같은 대상에게 대미지를 더하는 것은 여러 번의
+        # 타격이 아니라 한 번의 타격을 구성하는 요소들이기 때문이다. 이 dedup은
+        # 인스턴스 전체(=이 커맨드 파트의 process() 호출 전체)에 걸쳐 유지된다
+        # (self._on_attack_fired/_on_hit_fired, __init__ 참고).
         for damage_calc in live_damage_calcs:
             attacker_id = damage_calc.base.attacker_id
-            if attacker_id in seen_attackers:
+            if attacker_id in self._on_attack_fired:
                 continue
-            seen_attackers.add(attacker_id)
+            self._on_attack_fired.add(attacker_id)
             self._apply_buff_events(
                 effect_seq_number,
                 attacker_id,
@@ -336,12 +348,15 @@ class CommandPartCalculator:
             )
 
         for damage_calc in live_damage_calcs:
-            self._apply_buff_events(
-                effect_seq_number,
-                damage_calc.base.target_id,
-                BuffCountDeductCondition.ON_HIT,  # noqa: F821
-                damage_calc.base.attacker_id,
-            )
+            target_id = damage_calc.base.target_id
+            if target_id not in self._on_hit_fired:
+                self._on_hit_fired.add(target_id)
+                self._apply_buff_events(
+                    effect_seq_number,
+                    target_id,
+                    BuffCountDeductCondition.ON_HIT,  # noqa: F821
+                    damage_calc.base.attacker_id,
+                )
             self.context.buff_container.on_character_damaged(
                 damage_calc.base.target_id, self, effect_seq_number
             )
@@ -501,6 +516,48 @@ class CommandPartCalculator:
                     self.context.buff_container.remove(buff.uid)
 
 
+def _damage_calcs_for_target(
+    calculator: "CommandPartCalculator", target_id: CharacterId
+) -> list["DamageCalculateData"]:
+    return [
+        damage_calc
+        for effect_data in calculator.data_by_effect
+        for damage_calc in effect_data.damage_data_list
+        if damage_calc.result_value is not None
+        and damage_calc.base.target_id == target_id
+    ]
+
+
+def _build_damage_entry(
+    calculator: "CommandPartCalculator", target_id: CharacterId
+) -> BattleLogEntry:
+    """target_id에게 이 커맨드 파트(스킬 1회 사용) 안에서 일어난 대미지를 전부 모아
+    하나의 로그 엔트리로 합친다. 스킬 하나가 effect를 여러 개 써서 같은 대상에게
+    여러 번 대미지를 입혀도(예: 공격 굴림 대미지 + 스택 소모 대미지) 실제로는
+    한 번의 타격이므로, HP도 순차적으로 두 줄 보여주지 않고 최종 결과 한 줄로
+    보여준다. 계산식은 각 구성 요소의 계산식을 "+"로 이어붙인다(구성 요소가
+    하나뿐이면 그 계산식을 그대로 써서 기존 표시와 동일하게 유지한다)."""
+    calcs = _damage_calcs_for_target(calculator, target_id)
+    total_value = sum(c.result_value for c in calcs)
+    last = calcs[-1]
+    if len(calcs) == 1:
+        roll_display = last.roll_display
+    else:
+        roll_display = " + ".join(
+            c.roll_display if c.roll_display is not None else str(c.result_value)
+            for c in calcs
+        )
+    return BattleLogEntry(
+        target_name=target_id.name,
+        kind=BattleLogEntryKind.DAMAGE,
+        result=f"대미지 {total_value}",
+        roll_display=roll_display,
+        value=total_value,
+        hp_after=last.hp_after,
+        max_hp=last.max_hp,
+    )
+
+
 def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntry]:
     """process() 완료 후 calculator.data_by_effect를 순회해 대상별 로그 엔트리를 만든다.
 
@@ -510,7 +567,18 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
     """
     entries: list[BattleLogEntry] = []
     context = calculator.context
-    for effect_data in calculator.data_by_effect:
+
+    # 대상별로 대미지를 입힌 마지막 effect 인덱스를 미리 계산해 둔다 — 같은
+    # 대상에게 여러 effect가 대미지를 입히면 마지막 effect 위치에서 한 번만
+    # 합쳐서 내보내기 위함(_build_damage_entry 참고).
+    last_damage_effect_index: dict[CharacterId, int] = {}
+    for idx, effect_data in enumerate(calculator.data_by_effect):
+        for damage_calc in effect_data.damage_data_list:
+            if damage_calc.result_value is not None:
+                last_damage_effect_index[damage_calc.base.target_id] = idx
+
+    emitted_damage_targets: set[CharacterId] = set()
+    for idx, effect_data in enumerate(calculator.data_by_effect):
         # 같은 effect 안에서 스택 변화(소모/부여)와 수치 변화(대미지/회복)가
         # 함께 일어나는 경우(SkillEffectConsumeStackForDamage,
         # SkillEffectHealAndFillBuffStack) 스택 변화를 먼저 보여준다 —
@@ -527,7 +595,7 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     kind=BattleLogEntryKind.BUFF_REMOVE,
                     result=(
                         f"[{remove_calc.base.buff_id}]×{remove_calc.result_value} 소모"
-                        f" (잔여 {remaining})"
+                        f" → 잔여 {remaining}"
                     ),
                     buff_id=remove_calc.base.buff_id,
                     stack_delta=remove_calc.result_value,
@@ -538,7 +606,7 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
             if buff is not None and buff.max_stack:
                 result = (
                     f"[{buff_add.buff_id}]×{buff_add.stack_value} 부여"
-                    f" (잔여 {buff.stack_count})"
+                    f" → 잔여 {buff.stack_count}"
                 )
             else:
                 duration_text = buff.duration.display_text() if buff is not None else ""
@@ -554,20 +622,18 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
             )
         # result_value가 None이면 이번 페이즈에서 아직 적용되지 않았거나(예: PRE 단계의
         # POST용 대미지/힐) 대상이 이미 사망해 건너뛴 항목이므로 로그에 남기지 않는다.
+        # 같은 대상에게 이 파트의 다른(뒤쪽) effect가 아직 대미지를 더 줄 예정이면
+        # 여기서는 내보내지 않고, 마지막으로 대미지를 준 effect 위치에서 합쳐서 낸다.
         for damage_calc in effect_data.damage_data_list:
             if damage_calc.result_value is None:
                 continue
-            entries.append(
-                BattleLogEntry(
-                    target_name=damage_calc.base.target_id.name,
-                    kind=BattleLogEntryKind.DAMAGE,
-                    result=f"대미지 {damage_calc.result_value}",
-                    roll_display=damage_calc.roll_display,
-                    value=damage_calc.result_value,
-                    hp_after=damage_calc.hp_after,
-                    max_hp=damage_calc.max_hp,
-                )
-            )
+            target_id = damage_calc.base.target_id
+            if target_id in emitted_damage_targets:
+                continue
+            if last_damage_effect_index.get(target_id) != idx:
+                continue
+            emitted_damage_targets.add(target_id)
+            entries.append(_build_damage_entry(calculator, target_id))
         for heal_calc in effect_data.heal_data_list:
             if heal_calc.result_value is None:
                 continue
