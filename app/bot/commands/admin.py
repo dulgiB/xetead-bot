@@ -507,7 +507,8 @@ def _cmd_proxy(
                 is_main=False,
                 entries=entries,
             )
-            return str(ps.context), battle_log
+            reply_text = format_battle_reply(ps.context, char_id, result.part_results)
+            return reply_text, battle_log
         except CommandValidationError as e:
             battle_log = BattleCommandLog(
                 field_id=field_id,

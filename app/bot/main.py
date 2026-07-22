@@ -19,6 +19,7 @@ from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from utils.name_matching import whitespace_tolerant_literal
 
+from bot.battle_reply_text import format_battle_reply
 from bot.commands.admin import AdminCommandResult, handle_admin_command
 from bot.commands.character import handle_character_command
 from bot.commands.noncombat import (
@@ -676,6 +677,7 @@ def _handle_practice_command(
             is_main=False,
             entries=entries,
         )
+        reply_text = format_battle_reply(ps.context, char_id, result.part_results)
     except CommandValidationError as e:
         battle_log = log_sheets.BattleCommandLog(
             field_id=field_id,
@@ -701,7 +703,7 @@ def _handle_practice_command(
                 f"{ps.context}"
             )
             state.practice = None
-            return "◊ 전투가 종료되었습니다.", game_post, battle_log
+            return reply_text, game_post, battle_log
 
         ps.advance_to_second_mover()
         second_label = ps.side_label(ps.second_mover)
@@ -710,7 +712,7 @@ def _handle_practice_command(
             f"후공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
             f"{ps.context}"
         )
-        return "◊ 커맨드 처리 완료", game_post, battle_log
+        return reply_text, game_post, battle_log
 
     # SECOND_MOVER_ACTION
     ps.end_round()
@@ -723,7 +725,7 @@ def _handle_practice_command(
             f"{ps.context}"
         )
         state.practice = None
-        return "◊ 전투가 종료되었습니다.", game_post, battle_log
+        return reply_text, game_post, battle_log
 
     ps.start_round()
     mover_label = ps.side_label(ps.first_mover)
@@ -732,7 +734,7 @@ def _handle_practice_command(
         f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
         f"{ps.context}"
     )
-    return "◊ 커맨드 처리 완료", game_post, battle_log
+    return reply_text, game_post, battle_log
 
 
 def main() -> None:
