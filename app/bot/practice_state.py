@@ -22,6 +22,10 @@ class PracticeBattleState:
     prep_post_id: int = 0
     active_post_id: Optional[int] = None
 
+    # 진행 게시물 visibility — 최초 [대련]/[상시전투] 개시 멘션의 visibility로
+    # 고정해, 세션 내내 게시되는 퍼블릭 게시물들이 이 값을 그대로 따르게 한다.
+    visibility: str = "public"
+
     # 페이즈 (PracticeRoundManager에 위임)
     first_mover: Optional[SideType] = None
     second_mover: Optional[SideType] = None

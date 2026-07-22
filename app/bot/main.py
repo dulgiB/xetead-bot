@@ -281,7 +281,7 @@ class MastodonBotListener(StreamListener):
         )
         if is_admin or is_investigation_self_mention:
             result: AdminCommandResult = handle_admin_command(
-                text, state, mentions=mentions or []
+                text, state, mentions=mentions or [], visibility=visibility
             )
 
             if not result.reply_text:
@@ -341,7 +341,6 @@ class MastodonBotListener(StreamListener):
                         post_text = f"{post_text}\n\n{state.session.context}"
                     new_post = self._mastodon.status_post(
                         _truncate(post_text),
-                        visibility="public",
                         media_ids=game_media_ids or None,
                     )
                     new_post_id = new_post["id"]
@@ -379,9 +378,12 @@ class MastodonBotListener(StreamListener):
                         logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
                         if ps.all_declared():
                             game_post_text = _start_investigation_battle(state)
+                            prev_post_id = ps.prep_post_id
                             ps.prep_post_id = 0
                             new_post = self._mastodon.status_post(
-                                _truncate(game_post_text), visibility="public"
+                                _truncate(game_post_text),
+                                visibility=ps.visibility,
+                                in_reply_to_id=prev_post_id,
                             )
                             if state.practice is not None:
                                 state.practice.active_post_id = new_post["id"]
@@ -402,9 +404,12 @@ class MastodonBotListener(StreamListener):
                         )
                         if ps.all_declared() and ps.teams_valid():
                             game_post_text = _start_practice_battle(state)
+                            prev_post_id = ps.prep_post_id
                             ps.prep_post_id = 0
                             new_post = self._mastodon.status_post(
-                                _truncate(game_post_text), visibility="public"
+                                _truncate(game_post_text),
+                                visibility=ps.visibility,
+                                in_reply_to_id=prev_post_id,
                             )
                             if state.practice is not None:
                                 state.practice.active_post_id = new_post["id"]
@@ -418,6 +423,8 @@ class MastodonBotListener(StreamListener):
             and state.practice.active_post_id is not None
             and in_reply_to_id == state.practice.active_post_id
         ):
+            practice_visibility = state.practice.visibility
+            prev_post_id = state.practice.active_post_id
             reply, game_post, battle_log = _handle_practice_command(
                 acct, text, state
             )
@@ -425,7 +432,9 @@ class MastodonBotListener(StreamListener):
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
                 new_post = self._mastodon.status_post(
-                    _truncate(game_post), visibility="public"
+                    _truncate(game_post),
+                    visibility=practice_visibility,
+                    in_reply_to_id=prev_post_id,
                 )
                 if state.practice is not None:
                     state.practice.active_post_id = new_post["id"]

@@ -220,16 +220,24 @@ class _FakeMastodon:
         return {"id": self.last_media_id}
 
 
-def _make_notification(acct: str, status_id: int, in_reply_to_id: int, text: str) -> dict:
+def _make_notification(
+    acct: str,
+    status_id: int,
+    in_reply_to_id: int,
+    text: str,
+    visibility: str = "public",
+    extra_mentions: list[str] | None = None,
+) -> dict:
+    mentions = [{"acct": "bot"}] + [{"acct": a} for a in (extra_mentions or [])]
     return {
         "type": "mention",
         "account": {"acct": acct},
         "status": {
             "id": status_id,
             "content": f"<p>@bot {text}</p>",
-            "visibility": "public",
+            "visibility": visibility,
             "in_reply_to_id": in_reply_to_id,
-            "mentions": [{"acct": "bot"}],
+            "mentions": mentions,
         },
     }
 
@@ -374,6 +382,9 @@ def test_round_start_game_post_attaches_field_image(monkeypatch):
     ]
     assert len(public_posts) == 1
     assert public_posts[0]["media_ids"] == [mastodon.last_media_id]
+    # 본 전투 페이즈 게시물은 visibility를 강제하지 않고 계정/서버 기본값을
+    # 따라야 한다 — "public"으로 하드코딩하면 안 된다.
+    assert "visibility" not in public_posts[0]
 
 
 def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
@@ -478,3 +489,67 @@ def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatc
     assert len(public_posts) == 1
     assert public_posts[0]["media_ids"] is None
     assert "유효 캐릭터" in public_posts[0]["status"]
+
+
+def test_practice_session_posts_thread_together_with_matching_visibility(
+    monkeypatch,
+):
+    """대련 세션의 모든 게시물은 최초 [대련] 개시 멘션의 visibility를 따르고,
+    서로 답글로 이어져 하나의 스레드를 이뤄야 한다 — 매번 독립된 공개
+    게시물로 흩어지면 안 된다."""
+    state = _make_state()
+    char_dict = {
+        "swordsman_acct": get_test_preset("검사"),
+        "archer_acct": get_test_preset("궁수"),
+    }
+    name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
+    monkeypatch.setattr(
+        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[대련]",
+            visibility="unlisted",
+            extra_mentions=["swordsman_acct", "archer_acct"],
+        )
+    )
+    prep_call = mastodon.status_post_calls[-1]
+    assert prep_call["visibility"] == "unlisted"
+    assert prep_call["in_reply_to_id"] == 1
+    prep_post_id = state.practice.prep_post_id
+
+    listener.on_notification(
+        _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/3열]")
+    )
+    listener.on_notification(
+        _make_notification("archer_acct", 3, prep_post_id, "[2팀/5열]")
+    )
+    start_call = mastodon.status_post_calls[-1]
+    assert start_call["visibility"] == "unlisted"
+    assert start_call["in_reply_to_id"] == prep_post_id
+
+    active_post_id = state.practice.active_post_id
+    first_acct, second_name = (
+        ("swordsman_acct", "궁수")
+        if state.practice.first_mover.value == "1팀"
+        else ("archer_acct", "검사")
+    )
+    listener.on_notification(
+        _make_notification(
+            first_acct, 4, active_post_id, f"[공격/{second_name}]"
+        )
+    )
+    round_call = mastodon.status_post_calls[-1]
+    assert round_call["visibility"] == "unlisted"
+    assert round_call["in_reply_to_id"] == active_post_id

@@ -83,7 +83,10 @@ class AdminCommandResult:
 
 
 def handle_admin_command(
-    text: str, state: "BotState", mentions: list[str] | None = None
+    text: str,
+    state: "BotState",
+    mentions: list[str] | None = None,
+    visibility: str = "public",
 ) -> AdminCommandResult:
     """
     어드민 커맨드 텍스트를 파싱해 처리하고 AdminCommandResult를 반환한다.
@@ -113,10 +116,10 @@ def handle_admin_command(
         return AdminCommandResult(_cmd_end(state))
 
     if _RE_INVESTIGATION_BATTLE.search(text):
-        return _cmd_investigation_battle(text, mentions or [], state)
+        return _cmd_investigation_battle(text, mentions or [], state, visibility)
 
     if _RE_PRACTICE_PREP.search(text):
-        return _cmd_practice_prep(mentions or [], state)
+        return _cmd_practice_prep(mentions or [], state, visibility)
 
     if m := _RE_PROXY.match(text):
         char_name = m.group(1).strip()
@@ -445,7 +448,7 @@ def _cmd_end(state: "BotState") -> str:
 
 
 def _cmd_practice_prep(
-    expected_accts: list[str], state: "BotState"
+    expected_accts: list[str], state: "BotState", visibility: str = "public"
 ) -> AdminCommandResult:
     if state.practice is not None:
         return AdminCommandResult("◊ 이미 진행 중인 대련/상시전투가 있습니다.")
@@ -466,6 +469,7 @@ def _cmd_practice_prep(
         context=context,
         manager=manager,
         expected_accts=list(expected_accts),
+        visibility=visibility,
     )
 
     participant_text = (
@@ -695,7 +699,7 @@ def _format_enemy_post_action_results(
 
 
 def _cmd_investigation_battle(
-    text: str, mentions: list[str], state: "BotState"
+    text: str, mentions: list[str], state: "BotState", visibility: str = "public"
 ) -> AdminCommandResult:
     """[상시전투] 커맨드: 적군을 즉시 배치하고 아군 포지션 선언 대기 안내를 게시한다."""
     if state.practice is not None:
@@ -718,6 +722,7 @@ def _cmd_investigation_battle(
         manager=manager,
         is_investigation=True,
         expected_accts=list(mentions),
+        visibility=visibility,
     )
 
     errors: list[str] = []
