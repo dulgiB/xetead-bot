@@ -128,6 +128,31 @@ def test_enemy_post_action_summary_includes_calculation():
     assert "적 캐릭터" in to_post_action.game_post_text
 
 
+def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
+    """관리자 프록시로 대행한 PRE 선언 답글도 POST 정산과 마찬가지로,
+    CommandPart(파트)별 헤더 앞에 대행한 캐릭터의 이름이 붙어야 한다 —
+    답글 자체만으로는 누가 행동했는지 알 수 없기 때문이다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    reply_text, _battle_log = admin_module._cmd_proxy(
+        "적 캐릭터", "[이동/3열 - 공격/유효 캐릭터]", state
+    )
+
+    assert reply_text == (
+        "적 캐릭터 【이동 ▸ 3열】\n\n"
+        "적 캐릭터 【공격 ▸ 유효 캐릭터】"
+    )
+
+
 def test_continue_battle_marks_round_start_for_field_image():
     """[전투속행]은 다음 라운드 시작(ENEMY_PRE_ACTION 진입)이므로 이미지를
     붙여야 한다."""

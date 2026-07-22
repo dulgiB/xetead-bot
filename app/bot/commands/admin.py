@@ -556,7 +556,7 @@ def _cmd_proxy(
             command_text=cmd_str,
             entries=entries,
         )
-        reply_text = format_battle_reply(state.session.context, char_id, new_results)
+        reply_text = _format_named_reply(state.session.context, char_id, new_results)
         return reply_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
@@ -644,6 +644,26 @@ def _make_phase_post_text(
     return ""
 
 
+def _format_named_reply(
+    context: "BattlefieldContext",
+    char_id: CharacterId,
+    part_results: list[CommandPartProcessResult],
+) -> str:
+    """part_results를 커맨드(파트) 하나당 "{이름} 【헤더】/계산식" 블록으로
+    조립한다. 여러 파트가 있으면 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+
+    프록시(관리자 대행) 답글은 실제로 행동한 캐릭터가 누구인지 답글 자체만
+    보고는 알 수 없으므로(직접 답글과 달리 caster에게 보내는 답글이 아님),
+    헤더 앞에 이름을 붙인다.
+    """
+    blocks = []
+    for part_result in part_results:
+        block = format_battle_reply(context, char_id, [part_result])
+        if block:
+            blocks.append(f"{char_id.name} {block}")
+    return "\n\n".join(blocks)
+
+
 def _format_enemy_post_action_results(
     context: "BattlefieldContext",
     post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
@@ -663,10 +683,9 @@ def _format_enemy_post_action_results(
             if r.expanded_part.original_part is None
             or r.expanded_part.original_part.type_ != ActionType.MOVE
         ]
-        for part_result in non_move_results:
-            block = format_battle_reply(context, user_id, [part_result])
-            if block:
-                blocks.append(f"{user_id.name} {block}")
+        block = _format_named_reply(context, user_id, non_move_results)
+        if block:
+            blocks.append(block)
     return "\n\n".join(blocks) if blocks else "변동 없음"
 
 
