@@ -78,6 +78,8 @@ class AdminCommandResult:
     battle_log: Optional[BattleCommandLog] = None
     # True이면 game_post_text 게시 시 공개 필드 시트 이미지를 첨부한다 (라운드 시작/종료)
     attach_field_image: bool = False
+    # True이면 reply_text를 답글이 아니라 타임라인의 새 게시물로 올린다 (전투 준비 공지 등)
+    post_as_new_status: bool = False
 
 
 def handle_admin_command(
@@ -152,7 +154,9 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
         inventory,
     )
     reply = "◊ 전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨주세요."
-    return AdminCommandResult(reply, set_preparation_post=True)
+    return AdminCommandResult(
+        reply, set_preparation_post=True, post_as_new_status=True
+    )
 
 
 def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str:

@@ -303,10 +303,16 @@ class MastodonBotListener(StreamListener):
                         )
             else:
                 # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
-                # 이미지는 페이즈 게시물에만 첨부한다)
-                reply_status = self._reply(
-                    status_id, acct, visibility, result.reply_text,
-                )
+                # 이미지는 페이즈 게시물에만 첨부한다). post_as_new_status면
+                # 답글이 아니라 타임라인의 새 게시물로 올린다(전투 준비 공지 등).
+                if result.post_as_new_status:
+                    reply_status = self._mastodon.status_post(
+                        _truncate(result.reply_text), visibility="public"
+                    )
+                else:
+                    reply_status = self._reply(
+                        status_id, acct, visibility, result.reply_text,
+                    )
                 _persist_battle_log(
                     state, result.battle_log, str(reply_status["id"])
                 )

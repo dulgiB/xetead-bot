@@ -249,6 +249,38 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
     assert state.practice.round_n == round_n_after_start
 
 
+def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
+    """[전투준비] 공지는 답글이 아니라 타임라인의 새 게시물로 올라가야 하고,
+    이후 참가 신청 답글이 그 게시물을 정상적으로 대상 삼을 수 있어야 한다."""
+    state = _make_state()
+    state.session = None
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+    monkeypatch.setattr(admin_module, "load_battle_data", lambda spreadsheet: (
+        {}, {}, {}, {}, None, state.char_dict, state.name_dict, state.noncombat_char_dict
+    ))
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투준비]"))
+
+    assert len(mastodon.status_post_calls) == 1
+    prep_call = mastodon.status_post_calls[0]
+    assert "in_reply_to_id" not in prep_call
+    assert "전투 준비" in prep_call["status"]
+
+    prep_post_id = state.preparation_status_id
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    listener.on_notification(
+        _make_notification("ally_acct", 2, prep_post_id, "아무 코멘트")
+    )
+
+    assert "ally_acct" in state.pending_participants
+
+
 def test_malformed_notification_does_not_raise():
     """형식이 예상과 다른(status가 없는 등) 알림이 와도 예외가 밖으로
     전파되면 안 된다 — 스트리밍 리스너 전체가 죽는 것을 방지한다."""
