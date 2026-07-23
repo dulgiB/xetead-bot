@@ -54,6 +54,7 @@ class BattleSession:
     def start(self) -> None:
         self.started = True
         self.round_n = 1
+        self.context.on_battle_start()
         self.manager.process_command(
             ChangePhaseCommand(
                 type_=ActionType.ADMIN,

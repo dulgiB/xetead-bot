@@ -67,6 +67,16 @@ class SkillTargetRuleColumn(SkillTargetRule):
         assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
         for column in targets:
             target_id_list += self.context.position_map[target_faction][column].values()
+
+        # position_map 슬롯을 차지하지 않는 동료(예: 소환수)는 owner의 위치를
+        # 그대로 따르므로, owner가 대상 열에 있으면 함께 포함시킨다.
+        for companion_id, owner_id in self.context.companion_owners.items():
+            owner = self.context.characters.get(owner_id)
+            if owner is None or owner.faction != target_faction:
+                continue
+            if self.context.find_character_position(owner_id) in targets:
+                target_id_list.append(companion_id)
+
         return target_id_list
 
 

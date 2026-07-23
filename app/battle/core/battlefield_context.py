@@ -1,4 +1,5 @@
 import copy
+import math
 from typing import Optional
 
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -22,6 +23,7 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     CombatStatType,
     FactionType,
+    MagicResistanceType,
 )
 from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId, ValueWithModifiers
@@ -69,6 +71,11 @@ class BattlefieldContext:
         }
 
         self.buff_container: BuffContainer = BuffContainer(self)
+
+        # 슬롯(position_map)을 차지하지 않는 동료 캐릭터: companion_id -> owner_id.
+        # 이런 캐릭터는 self.characters에는 있지만 position_map에는 등록되지
+        # 않으며, find_character_position()이 owner의 위치를 그대로 반환한다.
+        self.companion_owners: dict[CharacterId, CharacterId] = {}
 
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
@@ -140,6 +147,7 @@ class BattlefieldContext:
     def clear(self):
         self.characters.clear()
         self.buff_container.clear()
+        self.companion_owners.clear()
         self.position_map[FactionType.ALLY] = {
             index: {}
             for index in BattlefieldColumnIndex
@@ -222,7 +230,11 @@ class BattlefieldContext:
         for buff in self.buff_container.get_buffs_by(char_id, None):
             self.buff_container.remove(buff.uid)
 
-        self._remove_from_position_map(char_id)
+        # 슬롯을 차지하지 않는 동료는 애초에 position_map에 없으므로 제거 시도를
+        # 건너뛴다.
+        if char_id not in self.companion_owners:
+            self._remove_from_position_map(char_id)
+        self.companion_owners.pop(char_id, None)
         return self.characters.pop(char_id)
 
     def try_find_empty_slot(
@@ -256,6 +268,13 @@ class BattlefieldContext:
     def find_character_position(self, char_id: CharacterId) -> BattlefieldColumnIndex:
         if char_id not in self.characters.keys():
             raise CommandValidationError(error_target_does_not_exist(char_id))
+
+        # 슬롯을 차지하지 않는 동료는 position_map을 뒤지지 않고 owner의 위치를
+        # 그대로 따른다 — owner가 이동하면 동료도 자동으로 같이 이동한 것으로
+        # 취급된다.
+        owner_id = self.companion_owners.get(char_id)
+        if owner_id is not None:
+            return self.find_character_position(owner_id)
 
         char = self.characters[char_id]
         for column_idx, characters in self.position_map[char.faction].items():
@@ -328,8 +347,52 @@ class BattlefieldContext:
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
 
+    def on_battle_start(self) -> None:
+        self.buff_container.on_battle_start()
+
     def on_battle_end(self) -> None:
         self.buff_container.on_battle_end()
+
+    def spawn_companion_if_absent(
+        self, owner_id: CharacterId, companion_id: CharacterId, hp_percent: int
+    ) -> None:
+        """owner_id의 소환수 성격의 동료 캐릭터를 생성한다. 이미 살아 있으면
+        (존재 + 체력 1 이상) 아무 일도 하지 않는다 — 전투 시작 시 1회 소환과,
+        부재 시에만 재소환하는 스킬 효과 양쪽에서 공유하는 idempotent 헬퍼다.
+
+        일반 캐릭터와 달리 position_map 슬롯을 전혀 차지하지 않는다(진영당 열
+        3자리를 두고 아군과 경쟁하지 않는다) — companion_owners에 등록해
+        find_character_position()이 owner의 위치를 그대로 따르게 한다. 그래서
+        add_character()를 거치지 않고 CombatCharacter를 직접 만든다.
+        """
+        existing = self.characters.get(companion_id)
+        if existing is not None and existing.status.curr_hp > 0:
+            return
+
+        owner = self.characters.get(owner_id)
+        if owner is None:
+            return
+
+        companion_max_hp = math.floor(
+            owner.status[CombatStatType.MAX_HP] * hp_percent / 100
+        )
+        character = CombatCharacter(
+            self,
+            companion_id,
+            owner.faction,
+            CombatStats(
+                0,
+                companion_max_hp,
+                0,
+                MagicResistanceType.NORMAL,
+                False,
+                0,
+                None,
+            ),
+            skills=[],
+        )
+        self.characters[companion_id] = character
+        self.companion_owners[companion_id] = owner_id
 
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]

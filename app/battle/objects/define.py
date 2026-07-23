@@ -112,6 +112,7 @@ class ActionType(str, Enum):
 
 
 class BuffApplyTiming(str, Enum):
+    ON_BATTLE_START = "전투 시작 시"
     ON_ROUND_START = "라운드 시작 시"
     ON_ACTION = "행동 시"
     ON_ENEMY_POST_ACTION = "적 후행 시"

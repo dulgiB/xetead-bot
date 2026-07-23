@@ -201,6 +201,8 @@ class PassiveSkillWrapperBuff(BuffBase):
             # _apply_buff_events()가 ON_ACTION 타이밍 버프만 조회하므로, trigger가
             # 무엇이든 항상 ON_ACTION이어야 실제로 대미지/회복에 반영된다.
             return BuffApplyTiming.ON_ACTION
+        if self._passive_data.trigger == PassiveSkillTrigger.BATTLE_START:
+            return BuffApplyTiming.ON_BATTLE_START
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_START:
             return BuffApplyTiming.ON_ROUND_START
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_END:
