@@ -242,6 +242,33 @@ class EnemyInRangeCountCondition(Condition):
 
 
 @dataclass(frozen=True)
+class AllyInRangeCountCondition(Condition):
+    """holder의 사거리 내 아군(자신 제외) 수가 value명 이상일 때 True. 패시브 스킬 조건 등에 사용."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        holder_char = context.characters.get(holder)
+        if holder_char is None:
+            return False
+        holder_pos = context.find_character_position(holder)
+        holder_range = holder_char.status[CombatStatType.RANGE]
+        ally_count = sum(
+            1
+            for char_id, char in context.characters.items()
+            if char_id != holder
+            and char.faction == holder_char.faction
+            and is_reachable(
+                holder_pos, context.find_character_position(char_id), holder_range
+            )
+        )
+        return ally_count >= self.value
+
+
+@dataclass(frozen=True)
 class TargetIsInRangeCondition(Condition):
     """attacker_or_target이 holder의 사거리 내에 있을 때 True. ON_ENEMY_MOVE 견제 패시브 등에 사용."""
 
