@@ -145,6 +145,10 @@ class BattleLogEntryKind(str, Enum):
     BUFF_ADD = "buff_add"
     BUFF_REMOVE = "buff_remove"
     DEBUFF_CLEAR = "debuff_clear"
+    # 방어막/반사 등 BuffNoDataBase 계열이 대미지/회복을 완전히 무효화해
+    # damage_data_list/heal_data_list에서 항목 자체가 사라졌을 때, "왜 대미지가
+    # 안 보이는지"를 답글에 남기기 위한 종류.
+    NO_EFFECT = "no_effect"
 
 
 @dataclass(frozen=True)

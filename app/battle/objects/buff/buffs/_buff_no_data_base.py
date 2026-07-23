@@ -13,9 +13,18 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class NoDataEvent(BuffEvent, abc.ABC):
+    # 무효화 로그(예: "[방어막] 소모, 대미지 없음")에 표시할 버프 라벨.
+    buff_label: str
+
     @property
     def priority(self) -> BuffEventCalculatePriority:
         return BuffEventCalculatePriority.POST
+
+    @property
+    @abc.abstractmethod
+    def _effect_label(self) -> str:
+        """무효화 로그에 붙일 효과 이름 (예: "대미지", "회복")."""
+        pass
 
     @abc.abstractmethod
     def _get_data_list(
@@ -34,6 +43,10 @@ class NoDataEvent(BuffEvent, abc.ABC):
         to_remove = [d for d in data_list if d.base.target_id == holder]
         for d in to_remove:
             data_list.remove(d)
+        if to_remove:
+            calculator.data_by_effect[effect_seq_number].nullified_effect_list.append(
+                (holder, f"[{self.buff_label}] 소모, {self._effect_label} 없음")
+            )
 
 
 class BuffNoDataBase(BuffBase, abc.ABC):

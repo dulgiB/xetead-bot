@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class ReflectEvent(BuffEvent):
+    # 무효화 로그(예: "[반사] 소모, 대미지 없음")에 표시할 버프 라벨.
+    buff_label: str
+
     _REFLECT_PERCENT: ClassVar[int] = 40
 
     @property
@@ -46,10 +49,20 @@ class ReflectEvent(BuffEvent):
             attacker_id = damage_calc.base.attacker_id
             if attacker_id not in calculator.context.characters:
                 continue
-            base_value = ValueWithModifiers(
+            value_with_modifiers = ValueWithModifiers(
                 damage_calc.base.value, damage_calc.given_modifiers, []
-            ).get_value(calculator, attacker_id, holder, effect_seq_number)
+            )
+            base_value = value_with_modifiers.get_value(
+                calculator, attacker_id, holder, effect_seq_number
+            )
             reflect_value = math.floor(base_value * self._REFLECT_PERCENT / 100)
+            # 원래 대미지 계산식(공격 굴림 + 주는 대미지 버프)에 "× 반사 계수"를
+            # 덧붙여 답글에 어떻게 반사량이 나왔는지 그대로 보여준다. 계산할 게
+            # 전혀 없어(고정 대미지 등) format_calculation()이 None을 반환하면
+            # 최종 수치만이라도 보여준다.
+            given_calc_display = value_with_modifiers.format_calculation() or str(
+                base_value
+            )
             reflected.append(
                 DamageCalculateData(
                     base=DamageData(
@@ -58,13 +71,21 @@ class ReflectEvent(BuffEvent):
                         value=BaseValueIndicator(
                             value_source=ValueSourceType.FIXED, value=reflect_value
                         ),
-                    )
+                    ),
+                    roll_display=(
+                        f"{given_calc_display} × "
+                        f"{self._REFLECT_PERCENT / 100:g}[반사 계수]"
+                    ),
                 )
             )
 
         for damage_calc in to_nullify:
             data_list.remove(damage_calc)
         data_list.extend(reflected)
+
+        calculator.data_by_effect[effect_seq_number].nullified_effect_list.append(
+            (holder, f"[{self.buff_label}] 소모, 대미지 없음")
+        )
 
 
 class BuffReflect(BuffBase):
@@ -75,4 +96,6 @@ class BuffReflect(BuffBase):
         return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> ReflectEvent:
-        return ReflectEvent(condition=self.condition)
+        return ReflectEvent(
+            condition=self.condition, buff_label=self.display_id_label()
+        )
