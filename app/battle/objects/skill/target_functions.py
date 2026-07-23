@@ -67,6 +67,12 @@ class SkillTargetRuleColumn(SkillTargetRule):
         assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
         for column in targets:
             target_id_list += self.context.position_map[target_faction][column].values()
+
+        # position_map 슬롯을 차지하지 않는 동료(예: 소환수)는 열 대상에
+        # 독립적으로 포함시키지 않는다 — owner만 맞은 것으로 취급하고, 가디언
+        # 버프가 있다면 그 1회분 대미지를 owner/동료가 나눠 받는다(단일 대상
+        # 공격과 동일한 분담 경로). 동료를 여기서 함께 넣으면 owner와 동료가
+        # 각자 전체 대미지를 따로 맞는 셈이 되어 실질 피해량이 2배가 된다.
         return target_id_list
 
 

@@ -167,6 +167,9 @@ class BuffContainer:
     def on_enemy_post_action_resolved(self) -> None:
         self._apply_round_events(BuffApplyTiming.ON_ENEMY_POST_ACTION_RESOLVED)
 
+    def on_battle_start(self) -> None:
+        self._apply_round_events(BuffApplyTiming.ON_BATTLE_START)
+
     def on_round_start(self):
         self._apply_round_events(BuffApplyTiming.ON_ROUND_START)
 

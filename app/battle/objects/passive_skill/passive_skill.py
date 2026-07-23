@@ -39,6 +39,7 @@ def _resolve_targets(
             char_id
             for char_id, char in context.characters.items()
             if char_id != holder
+            and char_id not in context.companion_owners
             and char.faction == holder_char.faction
             and context.find_character_position(char_id) == holder_pos
         ]
@@ -48,7 +49,8 @@ def _resolve_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char.faction == holder_char.faction
+            if char_id not in context.companion_owners
+            and char.faction == holder_char.faction
             and context.find_character_position(char_id) == holder_pos
         ]
 
@@ -56,14 +58,16 @@ def _resolve_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char.faction == holder_char.faction
+            if char_id not in context.companion_owners
+            and char.faction == holder_char.faction
         ]
 
     if target_type == PassiveSkillTargetType.LOWEST_HP_ALLY:
         allies = [
             char_id
             for char_id, char in context.characters.items()
-            if char.faction == holder_char.faction
+            if char_id not in context.companion_owners
+            and char.faction == holder_char.faction
         ]
         if not allies:
             return []
@@ -201,6 +205,8 @@ class PassiveSkillWrapperBuff(BuffBase):
             # _apply_buff_events()가 ON_ACTION 타이밍 버프만 조회하므로, trigger가
             # 무엇이든 항상 ON_ACTION이어야 실제로 대미지/회복에 반영된다.
             return BuffApplyTiming.ON_ACTION
+        if self._passive_data.trigger == PassiveSkillTrigger.BATTLE_START:
+            return BuffApplyTiming.ON_BATTLE_START
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_START:
             return BuffApplyTiming.ON_ROUND_START
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_END:
