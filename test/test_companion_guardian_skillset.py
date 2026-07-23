@@ -356,9 +356,13 @@ class TestSummonAtBattleStart:
         assert ctx.try_find_empty_slot(FactionType.ALLY, BattlefieldColumnIndex(0)) is None
         assert companion_id not in ctx.position_map[FactionType.ALLY][BattlefieldColumnIndex(0)].values()
 
-    def test_enemy_column_aoe_still_hits_slotless_companion(self):
-        """동료가 position_map에 없어도, owner의 열을 노리는 열 대상(AOE)
-        스킬은 동료도 함께 맞혀야 한다(위치를 owner와 공유하기 때문)."""
+    def test_enemy_column_aoe_splits_as_single_hit_on_owner(self):
+        """동료가 position_map에 없어도 owner의 열을 노리는 열 대상(AOE)
+        스킬에 맞긴 하지만, 동료를 독립된 별도 대상으로 추가 포함하지는
+        않는다 — owner만 맞은 것으로 취급하고, 그 1회분 대미지를 가디언
+        버프가 owner/동료에게 절반씩 나눠 준다(단일 대상 공격과 동일한
+        분담 경로). 동료를 열 대상에 별도로 포함시키면 owner와 동료가
+        각자 전체 대미지를 따로 맞아 실질 피해량이 2배가 되므로 피한다."""
         ctx = _make_context()
         _add_owner(ctx, max_hp=200, atk=100)
         ctx.add_character(
@@ -379,10 +383,10 @@ class TestSummonAtBattleStart:
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
-        # 동료가 이미 같은 effect의 독자적인 대상이므로 owner 몫을 추가로
-        # 나눠 얹지 않는다(이중 피격 방지) — 각자 자기 몫만 그대로 받는다.
-        assert owner_hp_before - ctx.characters[OWNER].status.curr_hp == 10
-        assert companion_hp_before - ctx.characters[companion_id].status.curr_hp == 10
+        # 고정 10 대미지 1회분을 절반씩(5/5) 나눠 받는다 — 합계는 원래
+        # 1회분(10) 그대로다.
+        assert owner_hp_before - ctx.characters[OWNER].status.curr_hp == 5
+        assert companion_hp_before - ctx.characters[companion_id].status.curr_hp == 5
         # owner가 실제로 맞았으므로 반격은 정상적으로 발동해야 한다.
         assert ctx.characters[enemy].status.curr_hp == 1000 - 80
 

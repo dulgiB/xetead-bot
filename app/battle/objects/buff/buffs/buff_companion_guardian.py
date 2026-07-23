@@ -49,10 +49,11 @@ class CompanionGuardianEvent(BuffEvent):
             dc.base.target_id == holder for dc in effect_data.damage_data_list
         )
 
-        # 열 대상(AOE) 공격은 동료가 holder와 같은 열을 공유하는 탓에 동료를
-        # 이미 별도의 직접 대상으로도 포함시킨다(SkillTargetRuleColumn 참고).
-        # 그 경우 holder 몫을 또 나눠 얹으면 동료가 이중으로 얻어맞게 되므로,
-        # 동료가 이번 effect에서 이미 독자적인 대상이면 분담을 건너뛴다.
+        # SkillTargetRuleColumn은 동료를 열 대상에 독립적으로 포함시키지
+        # 않으므로(항상 holder만 맞은 것으로 취급) 보통은 해당 없지만, 스킬이
+        # holder와 동료를 각각 명시적으로 지정하는 등 동료가 같은 effect의
+        # 독자적인 대상으로 이미 포함된 예외적인 경우까지 대비해 방어적으로
+        # 분담을 건너뛴다 — 그렇지 않으면 동료가 이중으로 얻어맞는다.
         companion_already_targeted = any(
             dc.base.target_id == companion_id for dc in effect_data.damage_data_list
         )
