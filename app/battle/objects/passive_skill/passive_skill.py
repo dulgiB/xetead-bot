@@ -39,6 +39,7 @@ def _resolve_targets(
             char_id
             for char_id, char in context.characters.items()
             if char_id != holder
+            and char_id not in context.companion_owners
             and char.faction == holder_char.faction
             and context.find_character_position(char_id) == holder_pos
         ]
@@ -48,7 +49,8 @@ def _resolve_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char.faction == holder_char.faction
+            if char_id not in context.companion_owners
+            and char.faction == holder_char.faction
             and context.find_character_position(char_id) == holder_pos
         ]
 
@@ -56,14 +58,16 @@ def _resolve_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char.faction == holder_char.faction
+            if char_id not in context.companion_owners
+            and char.faction == holder_char.faction
         ]
 
     if target_type == PassiveSkillTargetType.LOWEST_HP_ALLY:
         allies = [
             char_id
             for char_id, char in context.characters.items()
-            if char.faction == holder_char.faction
+            if char_id not in context.companion_owners
+            and char.faction == holder_char.faction
         ]
         if not allies:
             return []

@@ -22,10 +22,11 @@ from battle.exceptions import (
     error_no_remaining_cost,
     error_skill_not_registered,
     error_target_does_not_exist,
+    error_target_is_companion,
     error_too_many_characters,
     error_too_many_targets,
 )
-from battle.objects.define import ActionType, CombatStatType
+from battle.objects.define import ActionType, BattlefieldColumnIndex, CombatStatType
 from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, ValueWithModifiers
 
@@ -181,6 +182,11 @@ def try_expansion_if_valid(
       2. 코스트가 충분한지
       3. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
       4. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
+      5. 커맨드가 동료(소환수)를 명시적으로 대상 지정하지 않았는지 — 동료는
+         owner에게 종속된 실드 개념이라 직접 대상으로 선언할 수 없다. 코스트 3
+         스킬처럼 스킬 효과가 내부적으로 동료를 대상으로 계산하는 것은
+         플레이어의 "선언"이 아니므로 이 검증 대상이 아니다(그런 내부 target_id는
+         원본 커맨드의 targets에 나타나지 않는다).
     """
 
     # 1. 사용자 존재 확인
@@ -193,7 +199,8 @@ def try_expansion_if_valid(
 
     # 1.5. 캐릭터/스킬/아이템 이름 공백 무시 매칭 — 사용자가 입력한 공백이
     # 등록된 표기와 다르더라도(예: "변칙공격" vs "변칙 공격") 등록된 표기로
-    # 치환해 이후 검증·전개가 정확한 값으로 이루어지도록 한다.
+    # 치환해 이후 검증·전개가 정확한 값으로 이루어지도록 한다. 이 시점에
+    # 플레이어가 직접 타이핑한 대상만 동료 여부를 검사한다.
     command.parts[:] = [
         replace(
             part,
@@ -208,8 +215,7 @@ def try_expansion_if_valid(
                 else part.item_id
             ),
             targets=[
-                context.resolve_character_id(t) if isinstance(t, CharacterId) else t
-                for t in part.targets
+                _resolve_and_reject_companion_target(context, t) for t in part.targets
             ],
         )
         for part in command.parts
@@ -301,3 +307,14 @@ def try_expansion_if_valid(
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
     return expanded_command_data_list, needed_cost
+
+
+def _resolve_and_reject_companion_target(
+    context: BattlefieldContext, target: "CharacterId | BattlefieldColumnIndex"
+) -> "CharacterId | BattlefieldColumnIndex":
+    if not isinstance(target, CharacterId):
+        return target
+    resolved = context.resolve_character_id(target)
+    if resolved in context.companion_owners:
+        raise CommandValidationError(error_target_is_companion(resolved))
+    return resolved

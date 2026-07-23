@@ -15,11 +15,14 @@ CompanionBuff2)을 쓴다.
   없으면 동료를 최대 체력 10%로 재소환한다.
 """
 
+import pytest
+
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.exceptions import CommandValidationError
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
@@ -30,8 +33,9 @@ from battle.objects.define import (
     ValueType,
 )
 from battle.objects.models import CharacterId
-from battle.objects.passive_skill.models import PassiveSkillData
-from battle.objects.skill.effects import SkillEffectDamage
+from battle.objects.passive_skill.models import PassiveSkillData, PassiveSkillTargetType
+from battle.objects.passive_skill.passive_skill import _resolve_targets
+from battle.objects.skill.effects import SkillEffectAddBuff, SkillEffectDamage
 from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
 
@@ -194,6 +198,22 @@ def _skill_dict() -> dict[str, SkillData]:
                     value=60,
                     value_type=ValueType.INTEGER,
                     buff_id=None,
+                    buff_add_timing=None,
+                )
+            ],
+            description="",
+        ),
+        "도발스킬": SkillData(
+            id="도발스킬",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectAddBuff(
+                    value_source=None,
+                    value=None,
+                    value_type=None,
+                    buff_id="도발",
                     buff_add_timing=None,
                 )
             ],
@@ -555,3 +575,66 @@ class TestCompanionGuardianSplitAndCounter:
 
         assert owner_hp_before - ctx.characters[OWNER].status.curr_hp == 60
         assert enemy_hp_before - ctx.characters[enemy].status.curr_hp == 0
+
+
+class TestCompanionCannotBeDeclaredAsTarget:
+    """동료는 owner에게 종속된 실드 개념이라, 공격/스킬/버프/디버프의 명시적
+    대상으로 선언되면 안 된다 — 반드시 owner를 대상으로 지정해야 하고, 필요한
+    분담은 가디언 버프가 내부적으로 처리한다."""
+
+    def _make_ready_context(self):
+        ctx = _make_context()
+        _add_owner(ctx, max_hp=200, atk=100)
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000, skill_1_id="고정대미지스킬"),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.on_battle_start()
+        return ctx
+
+    def test_attack_declaring_companion_as_target_is_rejected(self):
+        ctx = self._make_ready_context()
+        companion_id = _companion_id(ctx)
+        manager = _setup_ally_phase(ctx)
+        enemy = CharacterId("적군")
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+        with pytest.raises(CommandValidationError):
+            manager.process_command(
+                parse_character_command(
+                    enemy, f"[고정대미지스킬/{companion_id.name}]", ctx
+                )
+            )
+
+    def test_buff_declaring_companion_as_target_is_rejected(self):
+        ctx = self._make_ready_context()
+        companion_id = _companion_id(ctx)
+        manager = _setup_ally_phase(ctx)
+        enemy = CharacterId("적군")
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+        with pytest.raises(CommandValidationError):
+            manager.process_command(
+                parse_character_command(enemy, f"[도발스킬/{companion_id.name}]", ctx)
+            )
+
+    def test_all_allies_passive_target_excludes_companion(self):
+        """전체 아군/같은 열 아군처럼 대상을 자동으로 열거하는 패시브
+        타입에서도 동료는 빠져야 한다 — owner는 별도로 포함되므로 버프
+        효과 자체가 사라지는 것은 아니다."""
+        ctx = self._make_ready_context()
+        companion_id = _companion_id(ctx)
+
+        for target_type in (
+            PassiveSkillTargetType.SAME_COLUMN_ALLIES,
+            PassiveSkillTargetType.SELF_AND_SAME_COLUMN_ALLIES,
+            PassiveSkillTargetType.ALL_ALLIES,
+        ):
+            targets = _resolve_targets(ctx, OWNER, None, target_type)
+            assert companion_id not in targets
+
+        lowest_hp_targets = _resolve_targets(
+            ctx, OWNER, None, PassiveSkillTargetType.LOWEST_HP_ALLY
+        )
+        assert companion_id not in lowest_hp_targets
