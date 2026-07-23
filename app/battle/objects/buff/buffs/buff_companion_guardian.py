@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, ClassVar, Optional
 from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.companion import companion_id_for, is_companion_alive
+from battle.objects.companion import is_companion_alive
 from battle.objects.define import BuffApplyTiming, ValueSourceType
 from battle.objects.models import (
     BaseValueIndicator,
@@ -40,7 +40,7 @@ class CompanionGuardianEvent(BuffEvent):
         calculator: "CommandPartCalculator",
         effect_seq_number: int,
     ) -> None:
-        companion_id = companion_id_for(holder)
+        companion_id = calculator.context.find_companion_id(holder)
         if not is_companion_alive(calculator.context, companion_id):
             return
 

@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, ClassVar
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
-from battle.objects.companion import companion_id_for, is_companion_alive
+from battle.objects.companion import is_companion_alive
 from battle.objects.models import (
     BaseValueIndicator,
     CharacterId,
@@ -42,7 +42,7 @@ class SkillEffectDamageOrTauntIfCompanionAbsent(SkillEffectBase):
             and self.buff_id is not None
         )
         is_magic_attack = context.characters[holder].status.is_magic_attacker
-        companion_alive = is_companion_alive(context, companion_id_for(holder))
+        companion_alive = is_companion_alive(context, context.find_companion_id(holder))
         coefficient = self.value if companion_alive else self._NO_COMPANION_COEFFICIENT
 
         damage_list = [

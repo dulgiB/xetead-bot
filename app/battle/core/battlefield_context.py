@@ -18,7 +18,6 @@ from battle.objects.buff.buffs import BuffCompanionGuardian
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
-from battle.objects.companion import companion_id_for
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
     MAX_SKILL_SLOT_COUNT,
@@ -153,7 +152,7 @@ class BattlefieldContext:
         붙이지 않는다."""
         if not isinstance(buff, BuffCompanionGuardian):
             return ""
-        companion = self.characters.get(companion_id_for(char_id))
+        companion = self.characters.get(self.find_companion_id(char_id))
         if companion is None:
             return ""
         max_hp = companion.status[CombatStatType.MAX_HP]
@@ -280,6 +279,16 @@ class BattlefieldContext:
             return raw_skill_id
         return resolve_matching_key(raw_skill_id, (s.data.id for s in user.skills))
 
+    def find_companion_id(self, owner_id: CharacterId) -> Optional[CharacterId]:
+        """owner_id가 소환한 동료의 CharacterId. 아직 한 번도 소환된 적 없다면
+        None. 동료의 id는 최초 소환 시 결정된 이름을 그대로 쓰므로(죽어서
+        curr_hp가 0이 되어도 companion_owners 등록은 유지된다), 공식으로
+        재계산하지 않고 이 조회로 찾는다."""
+        for companion_id, owner in self.companion_owners.items():
+            if owner == owner_id:
+                return companion_id
+        return None
+
     def find_character_position(self, char_id: CharacterId) -> BattlefieldColumnIndex:
         if char_id not in self.characters.keys():
             raise CommandValidationError(error_target_does_not_exist(char_id))
@@ -368,26 +377,13 @@ class BattlefieldContext:
     def on_battle_end(self) -> None:
         self.buff_container.on_battle_end()
 
-    def spawn_companion_if_absent(
-        self, owner_id: CharacterId, companion_id: CharacterId, hp_percent: int
+    def _spawn_companion_character(
+        self, owner: CombatCharacter, companion_id: CharacterId, hp_percent: int
     ) -> None:
-        """owner_id의 소환수 성격의 동료 캐릭터를 생성한다. 이미 살아 있으면
-        (존재 + 체력 1 이상) 아무 일도 하지 않는다 — 전투 시작 시 1회 소환과,
-        부재 시에만 재소환하는 스킬 효과 양쪽에서 공유하는 idempotent 헬퍼다.
-
-        일반 캐릭터와 달리 position_map 슬롯을 전혀 차지하지 않는다(진영당 열
-        3자리를 두고 아군과 경쟁하지 않는다) — companion_owners에 등록해
+        """일반 캐릭터와 달리 position_map 슬롯을 전혀 차지하지 않는다(진영당
+        열 3자리를 두고 아군과 경쟁하지 않는다) — companion_owners에 등록해
         find_character_position()이 owner의 위치를 그대로 따르게 한다. 그래서
-        add_character()를 거치지 않고 CombatCharacter를 직접 만든다.
-        """
-        existing = self.characters.get(companion_id)
-        if existing is not None and existing.status.curr_hp > 0:
-            return
-
-        owner = self.characters.get(owner_id)
-        if owner is None:
-            return
-
+        add_character()를 거치지 않고 CombatCharacter를 직접 만든다."""
         companion_max_hp = math.floor(
             owner.status[CombatStatType.MAX_HP] * hp_percent / 100
         )
@@ -407,7 +403,48 @@ class BattlefieldContext:
             skills=[],
         )
         self.characters[companion_id] = character
-        self.companion_owners[companion_id] = owner_id
+        self.companion_owners[companion_id] = owner.id
+
+    def spawn_companion_if_absent(
+        self, owner_id: CharacterId, buff_name: str, hp_percent: int
+    ) -> None:
+        """owner_id의 소환수 성격의 동료를 처음 소환한다. 이미 살아 있으면
+        (존재 + 체력 1 이상) 아무 일도 하지 않는다 — 전투 시작 시 패시브가
+        중복 호출돼도 안전한 idempotent 헬퍼다.
+
+        동료의 CharacterId는 이 시점에 buff_name(owner에게 부여되는 가디언
+        버프의 id) 그대로 확정된다 — 가디언 버프 id는 해당 캐릭터 전용으로
+        유일하다는 전제이므로 owner 이름을 덧붙이지 않는다. 이후 재소환
+        (revive_companion)이나 조회(find_companion_id)는 이 이름을 다시
+        계산하지 않고 companion_owners 등록을 그대로 재사용한다.
+        """
+        existing_id = self.find_companion_id(owner_id)
+        if existing_id is not None:
+            existing = self.characters[existing_id]
+            if existing.status.curr_hp > 0:
+                return
+
+        owner = self.characters.get(owner_id)
+        if owner is None:
+            return
+
+        companion_id = existing_id or CharacterId(buff_name)
+        self._spawn_companion_character(owner, companion_id, hp_percent)
+
+    def revive_companion(self, owner_id: CharacterId, hp_percent: int) -> None:
+        """owner_id가 전투 중 최초 소환한 적 있는(companion_owners에 등록된)
+        동료를 낮은 체력으로 재소환한다. 패시브(spawn_companion_if_absent)가
+        전투 시작 시 항상 먼저 동료를 소환해 이름을 확정해 두므로, 재소환
+        스킬 효과는 그 이름을 다시 알 필요 없이 이 메서드로 위임한다."""
+        companion_id = self.find_companion_id(owner_id)
+        if companion_id is None:
+            raise ValueError(f"{owner_id.name}의 동료가 아직 한 번도 소환되지 않았습니다.")
+
+        owner = self.characters.get(owner_id)
+        if owner is None:
+            return
+
+        self._spawn_companion_character(owner, companion_id, hp_percent)
 
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]
