@@ -19,6 +19,7 @@
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
@@ -116,6 +117,59 @@ def _buff_dict() -> dict[str, BuffData]:
                 "max_stack": "",
             }
         ),
+        # 아래 두 개는 [반사]가 공격자의 "주는 대미지" 버프는 반영하되, 피격자
+        # (자신)와 되돌려받는 공격자 양쪽의 "받는 대미지" 버프는 무시한다는
+        # 것을 검증하기 위한 테스트 전용 버프다.
+        "GivenBoostTest": BuffData.from_dict(
+            {
+                "id": "GivenBoostTest",
+                "buff_name": "BuffGivenDamage",
+                "duration_turn_value": 1,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value": 50,
+                "value_type": "퍼센트",
+                "condition": "",
+                "condition_value": "",
+                "description": "테스트용. 주는 대미지가 50% 증가한다.",
+                "is_debuff": False,
+                "max_stack": "",
+            }
+        ),
+        "ReceivedGuardTest": BuffData.from_dict(
+            {
+                "id": "ReceivedGuardTest",
+                "buff_name": "BuffReceivedDamage",
+                "duration_turn_value": 1,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value": -50,
+                "value_type": "퍼센트",
+                "condition": "",
+                "condition_value": "",
+                "description": "테스트용. 받는 대미지가 50% 감소한다.",
+                "is_debuff": False,
+                "max_stack": "",
+            }
+        ),
+        # 방어막/반사가 대미지만 무효화하고 부가 효과(디버프 부여)는 그대로
+        # 적용된다는 것을 검증하기 위한 마커 디버프.
+        "MarkDebuffTest": BuffData.from_dict(
+            {
+                "id": "MarkDebuffTest",
+                "buff_name": "BuffGivenDamage",
+                "duration_turn_value": 2,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value": -10,
+                "value_type": "퍼센트",
+                "condition": "",
+                "condition_value": "",
+                "description": "테스트용 마커 디버프. 주는 대미지가 10% 감소한다.",
+                "is_debuff": True,
+                "max_stack": "",
+            }
+        ),
     }
 
 
@@ -199,6 +253,46 @@ def _skill_dict() -> dict[str, SkillData]:
                     "사거리 내에서 열 1개를 지정한다. 범위 내의 모든 아군에게 "
                     "2턴/1회 동안 [방어막]을 부여한다. 만약 그 아군에게 "
                     "[Formation]이 부여되어 있다면 [방어막] 대신 [반사]를 부여한다."
+                ),
+            }
+        ),
+        "MarkedStrikeSkill": SkillData.from_dict(
+            {
+                "id": "MarkedStrikeSkill",
+                "target_rule": "SkillTargetRuleNamed",
+                "target_count": 1,
+                "cost": 1,
+                "effect_0": "SkillEffectDamage",
+                "condition_0": "",
+                "condition_value_0": "",
+                "value_source_0": "공격 굴림값",
+                "value_0": 100,
+                "value_type_0": "퍼센트",
+                "buff_id_0": "",
+                "buff_stack_cap_0": "",
+                "target_override_0": "",
+                "effect_1": "SkillEffectAddBuff",
+                "condition_1": "",
+                "condition_value_1": "",
+                "value_source_1": "",
+                "value_1": "",
+                "value_type_1": "",
+                "buff_id_1": "MarkDebuffTest",
+                "buff_stack_cap_1": "",
+                "target_override_1": "",
+                "effect_2": "",
+                "condition_2": "",
+                "condition_value_2": "",
+                "value_source_2": "",
+                "value_2": "",
+                "value_type_2": "",
+                "buff_id_2": "",
+                "buff_stack_cap_2": "",
+                "target_override_2": "",
+                "description": (
+                    "테스트용. 대상에게 공격 굴림 100%만큼 대미지를 입히고 2턴간 "
+                    "[MarkDebuffTest]를 부여한다 — 방어막/반사가 대미지만 무효화할 "
+                    "뿐 부가 효과(버프 부여)는 그대로 적용된다는 것을 검증하는 용도."
                 ),
             }
         ),
@@ -440,3 +534,184 @@ class TestReflectBuff:
         assert target_hp_before == target_hp_after
         assert attacker_hp_before - attacker_hp_after == 40
         assert ctx.buff_container.get_buff(target, "반사") is None
+
+    def test_no_effect_log_entry_is_recorded_when_reflect_consumes_a_hit(self):
+        """무효화된 피격자 쪽에는 "[반사] 소모, 대미지 없음" 로그가, 반격당한
+        공격자 쪽에는 반사 계산식이 포함된 대미지 로그가 각각 남는다."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        attacker = CharacterId("Formation")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Formation", atk=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target, applied_to=target, buff_id="반사")
+        )
+
+        manager.process_command(
+            parse_character_command(attacker, "[공격/적군]", ctx)
+        )
+        entries = ctx.results[-1].log_entries
+
+        no_effect = next(e for e in entries if e.kind == BattleLogEntryKind.NO_EFFECT)
+        assert no_effect.target_name == "적군"
+        assert no_effect.result == "[반사] 소모, 대미지 없음"
+
+        reflected = next(e for e in entries if e.kind == BattleLogEntryKind.DAMAGE)
+        assert reflected.target_name == "Formation"
+        assert reflected.value == 40
+        assert reflected.roll_display is not None
+        assert "반사 계수" in reflected.roll_display
+
+    def test_reflect_amplifies_with_attackers_given_damage_buff(self):
+        """공격자에게 "주는 대미지 증가" 버프가 있으면 반사량도 함께 커진다."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        attacker = CharacterId("Formation")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Formation", atk=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target, applied_to=target, buff_id="반사")
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=attacker, applied_to=attacker, buff_id="GivenBoostTest")
+        )
+
+        attacker_hp_before = ctx.characters[attacker].status.curr_hp
+        manager.process_command(
+            parse_character_command(attacker, "[공격/적군]", ctx)
+        )
+        attacker_hp_after = ctx.characters[attacker].status.curr_hp
+
+        # floor(100 * 1.5) = 150, floor(150 * 0.4) = 60
+        assert attacker_hp_before - attacker_hp_after == 60
+
+    def test_reflect_ignores_reflectors_own_received_damage_buff(self):
+        """반사를 보유한 피격자 자신의 "받는 대미지 감소" 버프는 반사량 계산에
+        반영되지 않는다(피격자의 받는 대미지 버프는 무시)."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        attacker = CharacterId("Formation")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Formation", atk=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target, applied_to=target, buff_id="반사")
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target, applied_to=target, buff_id="ReceivedGuardTest")
+        )
+
+        attacker_hp_before = ctx.characters[attacker].status.curr_hp
+        manager.process_command(
+            parse_character_command(attacker, "[공격/적군]", ctx)
+        )
+        attacker_hp_after = ctx.characters[attacker].status.curr_hp
+
+        # ReceivedGuardTest(-50%)가 반영됐다면 20이 됐겠지만, 무시되므로 그대로 40.
+        assert attacker_hp_before - attacker_hp_after == 40
+
+    def test_reflect_ignores_attackers_own_received_damage_buff_when_reflected_back(
+        self,
+    ):
+        """공격자 자신에게 "받는 대미지 감소" 버프가 있어도, 되돌아오는 반사
+        대미지에는 반영되지 않는다(되돌려받는 공격자의 받는 대미지 버프 무시)."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        attacker = CharacterId("Formation")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Formation", atk=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target, applied_to=target, buff_id="반사")
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=attacker, applied_to=attacker, buff_id="ReceivedGuardTest"
+            )
+        )
+
+        attacker_hp_before = ctx.characters[attacker].status.curr_hp
+        manager.process_command(
+            parse_character_command(attacker, "[공격/적군]", ctx)
+        )
+        attacker_hp_after = ctx.characters[attacker].status.curr_hp
+
+        # ReceivedGuardTest(-50%)가 반영됐다면 20이 됐겠지만, 무시되므로 그대로 40.
+        assert attacker_hp_before - attacker_hp_after == 40
+
+
+class TestNullifyingBuffsPreserveSideEffects:
+    """방어막/반사는 "대미지"만 무효화한다 — 같은 공격에 딸린 버프 부여 같은
+    부가 효과는 그대로 적용돼야 한다."""
+
+    def _run(self, *, target_buff_id: str) -> tuple[int, bool]:
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        caster = CharacterId("Formation")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Formation", atk=100, skill_1_id="MarkedStrikeSkill"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target, applied_to=target, buff_id=target_buff_id)
+        )
+
+        hp_before = ctx.characters[target].status.curr_hp
+        manager.process_command(
+            parse_character_command(caster, "[MarkedStrikeSkill/적군]", ctx)
+        )
+        hp_after = ctx.characters[target].status.curr_hp
+
+        has_debuff = ctx.buff_container.get_buff(target, "MarkDebuffTest") is not None
+        return hp_before - hp_after, has_debuff
+
+    def test_shield_nullifies_damage_but_still_applies_debuff(self):
+        damage, has_debuff = self._run(target_buff_id="방어막")
+        assert damage == 0
+        assert has_debuff
+
+    def test_reflect_nullifies_damage_but_still_applies_debuff(self):
+        damage, has_debuff = self._run(target_buff_id="반사")
+        assert damage == 0
+        assert has_debuff
