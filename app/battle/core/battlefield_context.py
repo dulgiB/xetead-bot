@@ -14,9 +14,11 @@ from battle.exceptions import (
     error_target_does_not_exist,
     error_too_many_characters,
 )
+from battle.objects.buff.buffs import BuffCompanionGuardian
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
+from battle.objects.companion import companion_id_for
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
     MAX_SKILL_SLOT_COUNT,
@@ -139,10 +141,23 @@ class BattlefieldContext:
                 buff_data = self._buff_dictionary.get(buff.id)
                 description = buff_data.description if buff_data is not None else ""
                 blocks.append(
-                    f"{char_id.name} | [{buff.id}]{buff.duration.display_text()}\n"
+                    f"{char_id.name} | [{buff.id}]{buff.duration.display_text()}"
+                    f"{self._format_companion_hp_suffix(buff, char_id)}\n"
                     f"↳ {description}"
                 )
         return "\n\n".join(blocks)
+
+    def _format_companion_hp_suffix(self, buff, char_id: CharacterId) -> str:
+        """BuffCompanionGuardian(CompanionBuff1)에 한해 동료 체력을 버프 표시줄에
+        덧붙인다: " (동료이름: 현재/최대)". 동료가 아직 없으면 아무것도
+        붙이지 않는다."""
+        if not isinstance(buff, BuffCompanionGuardian):
+            return ""
+        companion = self.characters.get(companion_id_for(char_id))
+        if companion is None:
+            return ""
+        max_hp = companion.status[CombatStatType.MAX_HP]
+        return f" ({companion.id.name}: {companion.status.curr_hp}/{max_hp})"
 
     def clear(self):
         self.characters.clear()
