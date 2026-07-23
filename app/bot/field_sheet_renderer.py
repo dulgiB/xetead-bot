@@ -239,8 +239,9 @@ def _format_buff_cell(
     note_lines = []
     for buff in buffs:
         icon = "▾" if buff.is_debuff else "▴"
-        display_lines.append(f"{icon} {buff.id}{buff.duration.display_text()}")
+        label = buff.display_id_label()
+        display_lines.append(f"{icon} {label}{buff.duration.display_text()}")
         description = context.get_buff_data_by_id(buff.id).description
-        note_lines.append(f"[{buff.id}] {description}")
+        note_lines.append(f"[{label}] {description}")
 
     return "\n".join(display_lines), "\n".join(note_lines)

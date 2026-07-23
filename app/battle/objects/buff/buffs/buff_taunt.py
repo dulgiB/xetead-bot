@@ -40,3 +40,6 @@ class BuffTaunt(BuffBase):
 
     def get_target_override(self) -> Optional[CharacterId]:
         return self.given_by
+
+    def display_id_label(self) -> str:
+        return f"{self.id}: {self.given_by.name}"

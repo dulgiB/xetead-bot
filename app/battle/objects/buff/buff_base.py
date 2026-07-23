@@ -141,6 +141,11 @@ class BuffBase(abc.ABC):
     def get_target_override(self) -> Optional[CharacterId]:
         return None
 
+    def display_id_label(self) -> str:
+        """버프 표시용 id 라벨. 기본은 id 그대로. 부여자에 따라 대상이
+        달라지는 버프(도발 등)는 오버라이드해서 부여자 이름을 덧붙인다."""
+        return self.id
+
     def get_sacrifice_override(self) -> Optional[CharacterId]:
         return None
 

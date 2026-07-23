@@ -827,6 +827,9 @@ class TestBuffTaunt:
             parse_character_command(CharacterId("도발자"), "[도발 스킬/적군]", ctx)
         )
 
+        taunted_buff = ctx.buff_container.get_buffs_by(CharacterId("적군"), None)[0]
+        assert taunted_buff.display_id_label() == "도발: 도발자"
+
         hp_dealer_before = ctx.characters[CharacterId("공격수")].status.curr_hp
         hp_taunter_before = ctx.characters[CharacterId("도발자")].status.curr_hp
 

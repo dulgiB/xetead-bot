@@ -603,14 +603,15 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
             )
         for buff_add in effect_data.buff_add_data_list:
             buff = context.get_buff_instance(buff_add.applied_to, buff_add.buff_id)
+            label = buff.display_id_label() if buff is not None else buff_add.buff_id
             if buff is not None and buff.max_stack:
                 result = (
-                    f"[{buff_add.buff_id}]×{buff_add.stack_value} 부여"
+                    f"[{label}]×{buff_add.stack_value} 부여"
                     f" → 잔여 {buff.stack_count}"
                 )
             else:
                 duration_text = buff.duration.display_text() if buff is not None else ""
-                result = f"[{buff_add.buff_id}] 부여{duration_text}"
+                result = f"[{label}] 부여{duration_text}"
             entries.append(
                 BattleLogEntry(
                     target_name=buff_add.applied_to.name,
