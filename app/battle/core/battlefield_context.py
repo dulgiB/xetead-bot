@@ -140,7 +140,8 @@ class BattlefieldContext:
                 buff_data = self._buff_dictionary.get(buff.id)
                 description = buff_data.description if buff_data is not None else ""
                 blocks.append(
-                    f"{char_id.name} | [{buff.id}]{buff.duration.display_text()}"
+                    f"{char_id.name} | [{buff.display_id_label()}]"
+                    f"{buff.duration.display_text()}"
                     f"{self._format_companion_hp_suffix(buff, char_id)}\n"
                     f"↳ {description}"
                 )
