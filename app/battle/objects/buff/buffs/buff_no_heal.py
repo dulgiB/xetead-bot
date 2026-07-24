@@ -9,6 +9,10 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class NoHealEvent(NoDataEvent):
+    @property
+    def _effect_label(self) -> str:
+        return "회복"
+
     def _get_data_list(
         self, calculator: "CommandPartCalculator", effect_seq_number: int
     ) -> list:
@@ -17,4 +21,6 @@ class NoHealEvent(NoDataEvent):
 
 class BuffNoHeal(BuffNoDataBase):
     def create_event(self) -> NoHealEvent:
-        return NoHealEvent(condition=self.condition)
+        return NoHealEvent(
+            condition=self.condition, buff_label=self.display_id_label()
+        )

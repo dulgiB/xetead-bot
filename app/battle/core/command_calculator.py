@@ -57,6 +57,9 @@ class CalculatorMutableData:
         ]
         self.apply_timing: Optional[RoundPhaseType] = apply_timing
         self.debuff_clear_list: list[CharacterId] = debuff_clear_list or []
+        # 방어막/반사 등이 대미지·회복 항목 자체를 제거(무효화)했을 때
+        # (대상, 표시 메시지) 쌍을 기록한다. NoDataEvent/ReflectEvent가 채운다.
+        self.nullified_effect_list: list[tuple[CharacterId, str]] = []
 
 
 class CommandPartCalculator:
@@ -388,7 +391,11 @@ class CommandPartCalculator:
                 self,
                 effect_seq_number,
             )
-            damage_calc.roll_display = damage_value.format_calculation()
+            # roll_display가 이미 설정돼 있으면 덮어쓰지 않는다 — 반사(BuffReflect)처럼
+            # 이 damage_calc 자체가 FIXED 고정값이라 여기서 다시 계산하면 표시할 게
+            # 없어지는(None) 대신, 이벤트가 미리 만들어 둔 계산식 문자열을 그대로 쓴다.
+            if damage_calc.roll_display is None:
+                damage_calc.roll_display = damage_value.format_calculation()
             damage_calc.hp_after = target.status.curr_hp
             damage_calc.max_hp = target.status[CombatStatType.MAX_HP]
 
@@ -619,6 +626,14 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     result=result,
                     buff_id=buff_add.buff_id,
                     stack_delta=buff_add.stack_value,
+                )
+            )
+        for target_id, message in effect_data.nullified_effect_list:
+            entries.append(
+                BattleLogEntry(
+                    target_name=target_id.name,
+                    kind=BattleLogEntryKind.NO_EFFECT,
+                    result=message,
                 )
             )
         # result_value가 None이면 이번 페이즈에서 아직 적용되지 않았거나(예: PRE 단계의

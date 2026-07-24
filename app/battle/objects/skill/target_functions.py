@@ -77,6 +77,28 @@ class SkillTargetRuleColumn(SkillTargetRule):
 
 
 @dataclass(frozen=True)
+class SkillTargetRuleAllyColumn(SkillTargetRule):
+    """
+    사용자의 사거리 내 0-6 사이의 위치 index를 기준으로, 시전자와 같은 진영의
+    캐릭터를 대상으로 하는 스킬 효과 (아군 대상 열 광역)
+    - 인원 상한 없음 (광역기 개념)
+
+    ex. 자신의 사거리 내 아군 열 하나를 지정해 그 열의 아군 전체에게 버프 부여
+    """
+
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+    ) -> list[CharacterId]:
+        target_id_list = []
+        target_faction = self.context.characters[self.skill_holder_id].faction
+
+        assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
+        for column in targets:
+            target_id_list += self.context.position_map[target_faction][column].values()
+        return target_id_list
+
+
+@dataclass(frozen=True)
 class SkillTargetRuleNamed(SkillTargetRule):
     """
     대상의 이름을 지정하여 사용 가능한 스킬 효과
