@@ -79,6 +79,10 @@ class ValueSourceType(str, Enum):
     GIVEN_HEAL = "해당 행동으로 부여한 회복량"
     CONSUMED_BUFF_STACK = "해당 행동으로 소모한 버프 스택 수"
     INCREASED_BUFF_STACK = "해당 행동으로 증가한 버프 스택 수"
+    # CONSUMED_BUFF_STACK과 달리 스택을 소모(제거)하지 않고 대상에게 걸린
+    # 버프의 "현재" 스택 수를 그대로 읽는다. 라운드 종료 DoT처럼 스택은
+    # 그대로 둔 채 그 수치에 비례한 대미지/회복을 표현할 때 쓴다.
+    REFERENCED_BUFF_STACK = "참조 버프의 현재 스택 수"
 
     TOWARD_HOLDER = "공격자 방향으로"
     AWAY_FROM_HOLDER = "공격자 반대 방향으로"
@@ -121,6 +125,7 @@ class BuffApplyTiming(str, Enum):
     # 평가되어야 하는 패시브 전용(PassiveSkillWrapperBuff.timing 참고).
     ON_ENEMY_POST_ACTION_RESOLVED = "적 후행 결과 반영 후"
     ON_ROUND_END = "라운드 종료 시"
+    # 자발적 이동과 강제 이동(스킬로 밀려나는 등) 모두 발동한다.
     ON_ENEMY_MOVE = "적 이동 시"
     # 자신이 공격자/피격자가 아니어도, 같은 진영·같은 열의 누군가(자신 포함)가
     # 대미지를 입을 때마다 발동한다.

@@ -32,6 +32,25 @@ def format_battle_reply(
     return "\n\n".join(blocks)
 
 
+def format_round_end_log_entries(
+    context: "BattlefieldContext", entries: list[BattleLogEntry]
+) -> str:
+    """라운드 종료 시 발동한 버프(DoT/HoT 등)의 결과를 대상 캐릭터별로 묶어
+    "【라운드 종료 처리 ▸ {대상}】" 블록으로 조립한다. 해당 라운드에 발동한
+    효과가 없으면 빈 문자열을 반환한다."""
+    if not entries:
+        return ""
+    grouped: dict[str, list[BattleLogEntry]] = {}
+    for entry in entries:
+        grouped.setdefault(entry.target_name, []).append(entry)
+    blocks = [
+        f"【라운드 종료 처리 ▸ {target_name}】\n"
+        + "\n".join(_format_entry(context, entry) for entry in target_entries)
+        for target_name, target_entries in grouped.items()
+    ]
+    return "\n\n".join(blocks)
+
+
 def _format_part(
     context: "BattlefieldContext",
     caster_id: CharacterId,
@@ -41,11 +60,16 @@ def _format_part(
     assert isinstance(part, CommandPart)
     header = _format_header(caster_id, part)
 
-    # 최상위 [이동] 커맨드는 헤더 한 줄이 전부다 (스킬 효과로서의 이동과 다름).
+    log_entries = part_result.log_entries
     if part.type_ == ActionType.MOVE:
-        return header
+        # 최상위 [이동] 커맨드는 헤더가 이미 "어디로 이동했는지"를 보여주므로
+        # 그 자체를 나타내는 MOVE 종류 로그는 중복이라 제외한다(스킬 효과로서의
+        # 이동과 다름). 다만 그 이동이 ON_ENEMY_MOVE 반격 등을 유발했다면
+        # extra_log_entries를 통해 다른 종류(DAMAGE 등)의 로그가 함께 실려
+        # 있을 수 있으므로 그건 그대로 보여준다.
+        log_entries = [e for e in log_entries if e.kind != BattleLogEntryKind.MOVE]
 
-    body_lines = [_format_entry(context, entry) for entry in part_result.log_entries]
+    body_lines = [_format_entry(context, entry) for entry in log_entries]
     if not body_lines:
         return header
     return header + "\n" + "\n".join(body_lines)

@@ -21,6 +21,7 @@ from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.effects import SkillEffectDamage, SkillEffectMove
 from battle.objects.skill.effects.effect_move import _move_away_from, _move_toward
 from battle.objects.skill.models import SkillData
+from bot.battle_reply_text import format_battle_reply
 from helpers import get_test_preset
 
 # ── 상대적 이동 헬퍼 함수 단위 테스트 ────────────────────────────────────────────
@@ -269,8 +270,35 @@ def test_voluntary_enemy_move_triggers_passive():
     assert ctx.characters[enemy_id].status.curr_hp == initial_hp - 10
 
 
-def test_forced_move_does_not_trigger_passive(pull_skill):
-    """강제 이동(스킬 효과)은 ON_ENEMY_MOVE 패시브를 발동시키지 않아야 한다."""
+def test_voluntary_enemy_move_reaction_damage_bundles_into_move_reply():
+    """ON_ENEMY_MOVE 패시브가 유발한 대미지는 그 이동을 유발한 적 자신의
+    [이동] 답글에 같은 블록으로 묶여 나와야 한다(별도 답글로 새지 않음)."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    manager = RoundManager(ctx)  # ENEMY_PRE_ACTION 시작
+
+    ally_id = CharacterId("아군 1")
+    enemy_id = CharacterId("적군 1")
+
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(3)
+    )
+
+    ctx.buff_container.add_passive_wrapper(_make_intercept_passive(ally_id))
+
+    before = len(ctx.results)
+    cmd = parse_character_command(enemy_id, "[이동/2]", ctx)
+    manager.process_command(cmd)
+    reply = format_battle_reply(ctx, enemy_id, ctx.results[before:])
+
+    assert reply == "【이동 ▸ 2열】\n적군 1 | -10 → 90/100"
+
+
+def test_forced_move_also_triggers_passive(pull_skill):
+    """강제 이동(스킬 효과)도 자발적 이동과 동일하게 ON_ENEMY_MOVE 패시브를
+    발동시켜야 한다."""
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"끌어당기기": pull_skill})
     manager = RoundManager(ctx)
     manager.process_command(
@@ -298,8 +326,7 @@ def test_forced_move_does_not_trigger_passive(pull_skill):
     cmd = parse_character_command(ally_id, "[끌어당기기/적군 1]", ctx)
     manager.process_command(cmd)
 
-    # 강제 이동이므로 패시브 대미지 없음 — HP는 초기값과 같아야 한다
-    assert ctx.characters[enemy_id].status.curr_hp == initial_hp
+    assert ctx.characters[enemy_id].status.curr_hp == initial_hp - 10
 
 
 def test_forced_move_updates_moved_this_round(pull_skill):

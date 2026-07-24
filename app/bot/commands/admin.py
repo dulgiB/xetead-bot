@@ -24,7 +24,7 @@ from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
-from bot.battle_reply_text import format_battle_reply
+from bot.battle_reply_text import format_battle_reply, format_round_end_log_entries
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import load_battle_data
@@ -367,8 +367,24 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
         write_back_changed_hp(
             state.spreadsheet, state.session.context, post_action_entries
         )
+
+    round_end_log_entries = (
+        state.session.manager.get_last_round_end_log_entries()
+        if new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+        else None
+    )
+    if round_end_log_entries:
+        # 라운드 종료 시 발동한 DoT/HoT 등도 "캐릭터"/"에너미" 시트에 반영한다.
+        write_back_changed_hp(
+            state.spreadsheet, state.session.context, round_end_log_entries
+        )
+
     game_post = _make_phase_post_text(
-        new_phase, state.session.round_n, state.session, post_action_results
+        new_phase,
+        state.session.round_n,
+        state.session,
+        post_action_results,
+        round_end_log_entries,
     )
 
     error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
@@ -670,6 +686,7 @@ def _make_phase_post_text(
     post_action_results: Optional[
         dict[CharacterId, list[CommandPartProcessResult]]
     ] = None,
+    round_end_log_entries: Optional[list[BattleLogEntry]] = None,
 ) -> str:
     # 필드 현황은 게시물에 첨부되는 공개 필드 시트 이미지로 표시하므로, 이
     # 텍스트에는 str(session.context) 보드를 중복으로 넣지 않는다.
@@ -689,10 +706,14 @@ def _make_phase_post_text(
         return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n\n{body}"
 
     if phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
-        return (
-            f"◊ [라운드 {round_n} 종료]\n\n"
-            f"버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요."
+        header = f"◊ [라운드 {round_n} 종료]"
+        tail = "버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요."
+        body = format_round_end_log_entries(
+            session.context, round_end_log_entries or []
         )
+        if body:
+            return f"{header}\n\n{body}\n\n{tail}"
+        return f"{header}\n\n{tail}"
 
     return ""
 
@@ -931,6 +952,14 @@ def _cmd_dm_battle_advance_phase(
         ]
         write_back_changed_hp(state.spreadsheet, session.context, post_action_entries)
 
+    round_end_log_entries = (
+        session.manager.get_last_round_end_log_entries()
+        if new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+        else None
+    )
+    if round_end_log_entries:
+        write_back_changed_hp(state.spreadsheet, session.context, round_end_log_entries)
+
     winner = _check_dm_battle_wipe(dm_state)
     if winner is not None:
         end_text = _end_dm_battle(dm_state, state, winner)
@@ -942,7 +971,7 @@ def _cmd_dm_battle_advance_phase(
         )
 
     game_post = _make_phase_post_text(
-        new_phase, session.round_n, session, post_action_results
+        new_phase, session.round_n, session, post_action_results, round_end_log_entries
     )
     game_post += f"\n\n{session.context}"
 

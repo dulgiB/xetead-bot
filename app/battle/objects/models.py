@@ -59,6 +59,10 @@ class IntValueModifier(ValueModifierBase):
 @dataclass(frozen=True)
 class FloatValueModifier(ValueModifierBase):
     value: float
+    # "× (a × b)"처럼 여러 배율의 곱으로 분해해서 보여주고 싶을 때만 채운다.
+    # (라벨, 퍼센트값) 쌍의 튜플. value는 이미 그 곱셈 결과이므로 실제 계산에는
+    # 영향을 주지 않고 format_calculation()의 표시 방식만 바꾼다.
+    display_factors: Optional[tuple[tuple[str, float], ...]] = None
 
 
 @dataclass(frozen=True)
@@ -66,9 +70,10 @@ class BaseValueIndicator:
     value_source: ValueSourceType
     value: Optional[int] = None
     coefficient: Optional[FloatValueModifier] = None
-    # CONSUMED_BUFF_STACK 전용: 소모한 버프 id. format_calculation()이 소모량을
-    # "{값}[{buff_id}]"로 라벨링하는 데 쓰인다(계산식에서 어느 버프를 소모했는지
-    # 보여주기 위함). 다른 value_source에서는 쓰이지 않는다.
+    # CONSUMED_BUFF_STACK/REFERENCED_BUFF_STACK 전용: 대상 버프 id.
+    # format_calculation()이 수치를 "{값}[{buff_id}]"로 라벨링하는 데 쓰인다
+    # (계산식에서 어느 버프에서 온 수치인지 보여주기 위함). 다른 value_source에서는
+    # 쓰이지 않는다.
     consumed_buff_id: Optional[str] = None
 
     def get_value(
@@ -143,6 +148,12 @@ class BaseValueIndicator:
                 for data in effect.buff_remove_data_list
                 if data.result_value is not None
             )
+
+        elif self.value_source == ValueSourceType.REFERENCED_BUFF_STACK:
+            # CONSUMED_BUFF_STACK과 달리 스택을 소모하지 않고, target_id에게
+            # 걸린 consumed_buff_id 버프의 "현재" 스택 수를 그대로 읽는다.
+            assert self.consumed_buff_id is not None
+            return calculator.context.get_buff_stack(target_id, self.consumed_buff_id)
 
         else:
             raise ValueError(self.value_source)
@@ -302,7 +313,13 @@ class ValueWithModifiers:
             result_str += ")"
 
         if self.base_coefficient is not None:
-            if consumed_buff_id is not None:
+            if self.base_coefficient.display_factors is not None:
+                factors_str = " × ".join(
+                    f"{factor_value / 100:g}[{factor_label}]"
+                    for factor_label, factor_value in self.base_coefficient.display_factors
+                )
+                result_str += f" × ({factors_str})"
+            elif consumed_buff_id is not None:
                 result_str += f" × {self.base_coefficient.value / 100:g}"
             else:
                 result_str += (
@@ -338,6 +355,10 @@ class DamageData:
     target_id: CharacterId
     value: BaseValueIndicator
     is_magic_attack: Optional[bool] = None
+    # False면 "공격자가 대미지를 줄 때마다" 트리거되는 패시브(예:
+    # BuffApplyDebuffOnDealingDamage)를 발동시키지 않는다. 버프 반격 등
+    # 파생 대미지가 원래 패시브를 재귀적으로 유발하지 않도록 하는 용도.
+    triggers_given_damage_passives: bool = True
 
 
 @dataclass(frozen=True)

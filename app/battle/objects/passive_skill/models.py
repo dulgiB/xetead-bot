@@ -53,6 +53,7 @@ class PassiveSkillData:
             temp.value = passive_buff_data.value
             temp.value_type = passive_buff_data.value_type
             temp.condition = passive_buff_data.condition
+            temp.reference_buff_id = passive_buff_data.reference_buff_id
             buff_mod_event = temp.create_event()
 
         effects: list[SkillEffectBase] = []

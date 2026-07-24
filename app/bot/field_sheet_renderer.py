@@ -240,7 +240,10 @@ def _format_buff_cell(
     for buff in buffs:
         icon = "▾" if buff.is_debuff else "▴"
         label = buff.display_id_label()
-        display_lines.append(f"{icon} {label}{buff.duration.display_text()}")
+        stack_count = buff.stack_count if buff.max_stack is not None else None
+        display_lines.append(
+            f"{icon} {label}{buff.duration.display_text(stack_count)}"
+        )
         description = context.get_buff_data_by_id(buff.id).description
         note_lines.append(f"[{label}] {description}")
 
