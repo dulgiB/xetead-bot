@@ -11,7 +11,10 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buffs import BuffGivenDamage
-from battle.objects.buff.conditions import AllyInRangeWasAttackedCondition, TargetIsAllyCondition
+from battle.objects.buff.conditions import (
+    OtherAllyInRangeWasAttackedCondition,
+    TargetIsAllyCondition,
+)
 from battle.objects.buff.models import BuffData
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType, ValueType
 from battle.objects.models import CharacterId
@@ -97,8 +100,9 @@ class TestAllyDamageReduction:
 
 
 class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
-    """(B) 사거리 이내 아군이 그 라운드에 대미지를 입었다면, 다음 라운드에만
-    지속되는 '주는 대미지 +10%' 버프를 자신에게 부여해야 한다."""
+    """(B) 사거리 이내 자신을 제외한 아군이 그 라운드에 대미지를 입었다면,
+    다음 라운드에만 지속되는 '주는 대미지 +10%' 버프를 자신에게 부여해야
+    한다. 자신이 맞은 것만으로는 발동하지 않는다."""
 
     REWARD_BUFF_ID = "RewardBuff"
 
@@ -130,7 +134,7 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
                     value_type=None,
                     buff_id=self.REWARD_BUFF_ID,
                     buff_add_timing=None,
-                    condition_class_name="AllyInRangeWasAttackedCondition",
+                    condition_class_name="OtherAllyInRangeWasAttackedCondition",
                 )
             ],
             description="",
@@ -179,6 +183,27 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
         self._add_characters(ctx)
         holder_id = CharacterId("시전자")
 
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+        manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+        assert not any(
+            b.id == self.REWARD_BUFF_ID
+            for b in ctx.buff_container.get_buffs_by(holder_id, None)
+        )
+
+    def test_no_buff_when_only_holder_itself_was_damaged(self):
+        """사거리 이내 다른 아군은 멀쩡하고 홀더 자신만 맞았다면 발동하지
+        않아야 한다(OtherAllyInRangeWasAttackedCondition은 자신을 제외)."""
+        ctx = self._make_context()
+        manager = _make_manager(ctx)
+        self._add_characters(ctx)
+        holder_id = CharacterId("시전자")
+
+        # 적이 '피해아군' 대신 홀더 자신('시전자')을 공격
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[공격/시전자]", ctx)
+        )
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
