@@ -19,7 +19,7 @@ from battle.objects.skill.effects import (
     SkillEffectRemoveDebuffs,
 )
 from battle.objects.skill.models import SkillData
-from bot.battle_reply_text import format_battle_reply
+from bot.battle_reply_text import format_battle_reply, format_round_end_log_entries
 from helpers import get_test_preset
 from spreadsheets.inventory import Inventory
 
@@ -300,7 +300,7 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
 
     assert reply == (
         "【저주 방출 ▸ 적군 1】\n"
-        "아군 1 | [저주]×2 소모 → 잔여 1\n"
+        "아군 1 | [저주]×2 소모 → 최종 1\n"
         "적군 1 | -2 → 98/100\n"
         "↳ 2[저주] × 1"
     )
@@ -348,7 +348,7 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
     # STAT_ATK(다이스 없음) 6 × 1.5[계수] = 9, 스택 소모 5 × 3[계수] = 15 → 합계 24
     assert reply == (
         "【이중 타격 ▸ 적군 1】\n"
-        "아군 1 | [저주]×5 소모 → 잔여 0\n"
+        "아군 1 | [저주]×5 소모 → 최종 0\n"
         "적군 1 | -24 → 76/100\n"
         "↳ 6 × 1.5[계수] + 5[저주] × 3"
     )
@@ -383,4 +383,171 @@ def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
         "【연타 ▸ 적군 1】\n"
         "적군 1 | -15 → 85/100\n"
         "↳ 10 + 5"
+    )
+
+
+# ── 라운드 종료 처리(DoT/HoT) 답글 포맷팅 ────────────────────────────────────────
+
+
+def _dot_buff_data(*, buff_id: str = "DoT", value: int = 10) -> BuffData:
+    return BuffData.from_dict(
+        {
+            "id": buff_id,
+            "buff_name": "BuffDamageOverTime",
+            "duration_turn_value": 2,
+            "duration_count_value": "",
+            "duration_count_deduct_condition": "",
+            "value": value,
+            "value_type": "정수",
+            "condition": "",
+            "condition_value": "",
+            "description": "",
+            "is_debuff": True,
+        }
+    )
+
+
+def _hot_buff_data(*, buff_id: str = "HoT", value: int = 10) -> BuffData:
+    return BuffData.from_dict(
+        {
+            "id": buff_id,
+            "buff_name": "BuffHealOverTime",
+            "duration_turn_value": 2,
+            "duration_count_value": "",
+            "duration_count_deduct_condition": "",
+            "value": value,
+            "value_type": "정수",
+            "condition": "",
+            "condition_value": "",
+            "description": "",
+            "is_debuff": False,
+        }
+    )
+
+
+def test_round_end_dot_produces_round_end_processing_block():
+    """라운드 종료 시 발동한 DoT는 "【라운드 종료 처리 ▸ 대상】" 블록으로
+    나와야 한다."""
+    ctx = BattlefieldContext(buff_dict={"DoT": _dot_buff_data(value=10)}, skill_dict={})
+    manager = RoundManager(ctx)
+    enemy_id = CharacterId("적군 1")
+    ctx.add_character(get_test_preset("적군 1", max_hp=100), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="DoT"))
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+
+    assert body == "【라운드 종료 처리 ▸ 적군 1】\n적군 1 | -10 → 90/100"
+
+
+def test_round_end_hot_uses_plus_sign():
+    """라운드 종료 시 발동한 HoT는 "-"가 아니라 "+" 부호로 표시돼야 한다."""
+    ctx = BattlefieldContext(buff_dict={"HoT": _hot_buff_data(value=7)}, skill_dict={})
+    manager = RoundManager(ctx)
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", initial_hp=50, max_hp=100), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.buff_container.add(BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="HoT"))
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+
+    assert body == "【라운드 종료 처리 ▸ 아군 1】\n아군 1 | +7 → 57/100"
+
+
+def test_round_end_groups_multiple_targets_into_separate_blocks():
+    """서로 다른 대상에게 발동한 라운드 종료 효과는 대상별로 블록이
+    나뉘어야 한다."""
+    ctx = BattlefieldContext(
+        buff_dict={"DoT": _dot_buff_data(value=10), "HoT": _hot_buff_data(value=7)},
+        skill_dict={},
+    )
+    manager = RoundManager(ctx)
+    enemy_id = CharacterId("적군 1")
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(get_test_preset("적군 1", max_hp=100), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1", initial_hp=50, max_hp=100), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.buff_container.add(BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="DoT"))
+    ctx.buff_container.add(BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="HoT"))
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+
+    assert body == (
+        "【라운드 종료 처리 ▸ 적군 1】\n"
+        "적군 1 | -10 → 90/100\n\n"
+        "【라운드 종료 처리 ▸ 아군 1】\n"
+        "아군 1 | +7 → 57/100"
+    )
+
+
+def test_round_end_returns_empty_string_when_nothing_fires():
+    """발동한 ON_ROUND_END 효과가 없으면 빈 문자열을 반환해야 한다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    manager = RoundManager(ctx)
+    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+
+    assert body == ""
+
+
+def test_round_end_stack_proportional_dot_shows_calculation_line():
+    """다른 버프의 스택 수에 비례하는 라운드 종료 DoT(예:
+    BuffDamageOverTimePerReferencedBuffStack)는 재앙/균열 계열과 동일하게
+    "{스택}[{버프id}] × {배율}" 형태의 계산식이 함께 표시돼야 한다."""
+    mark = BuffData.from_dict(
+        {
+            "id": "Mark",
+            "buff_name": "BuffStackingMark",
+            "duration_turn_value": 2,
+            "duration_count_value": "",
+            "duration_count_deduct_condition": "",
+            "value": "",
+            "value_type": "",
+            "condition": "",
+            "condition_value": "",
+            "description": "",
+            "is_debuff": True,
+            "max_stack": 3,
+        }
+    )
+    mark_drain = BuffData.from_dict(
+        {
+            "id": "MarkDrain",
+            "buff_name": "BuffDamageOverTimePerReferencedBuffStack",
+            "duration_turn_value": 2,
+            "duration_count_value": "",
+            "duration_count_deduct_condition": "",
+            "value": 5,
+            "value_type": "정수",
+            "condition": "",
+            "condition_value": "",
+            "description": "",
+            "is_debuff": True,
+            "reference_buff_id": "Mark",
+        }
+    )
+    ctx = BattlefieldContext(buff_dict={"Mark": mark, "MarkDrain": mark_drain}, skill_dict={})
+    manager = RoundManager(ctx)
+    enemy_id = CharacterId("적군 1")
+    ctx.add_character(get_test_preset("적군 1", max_hp=100), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(
+        BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="Mark", stack_value=3)
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="MarkDrain")
+    )
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+
+    assert body == (
+        "【라운드 종료 처리 ▸ 적군 1】\n"
+        "적군 1 | -15 → 85/100\n"
+        "↳ 3[Mark] × 5"
     )
