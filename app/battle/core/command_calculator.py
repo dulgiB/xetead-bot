@@ -60,6 +60,10 @@ class CalculatorMutableData:
         # 방어막/반사 등이 대미지·회복 항목 자체를 제거(무효화)했을 때
         # (대상, 표시 메시지) 쌍을 기록한다. NoDataEvent/ReflectEvent가 채운다.
         self.nullified_effect_list: list[tuple[CharacterId, str]] = []
+        # 이 effect(주로 이동)가 유발한 반응(예: ON_ENEMY_MOVE 반격)이 이미
+        # 별도 계산기로 확정 처리된 뒤, 그 결과 로그만 이 effect의 로그에
+        # 얹어 넣기 위한 목록. BuffContainer.on_enemy_move()가 채운다.
+        self.extra_log_entries: list[BattleLogEntry] = []
 
 
 class CommandPartCalculator:
@@ -183,8 +187,9 @@ class CommandPartCalculator:
             self.context.move_character_to(
                 move_data.character_id, move_data.to_position
             )
-            if not move_data.is_forced:
-                self.context.buff_container.on_voluntary_move(move_data.character_id)
+            self.context.buff_container.on_enemy_move(
+                move_data.character_id, self, effect_seq_number
+            )
 
     def _process_buff_remove(
         self: "CommandPartCalculator", effect_seq_number: int
@@ -565,6 +570,32 @@ def _build_damage_entry(
     )
 
 
+def build_buff_add_log_entry(
+    context: "BattlefieldContext", buff_add: "BuffAddData"
+) -> BattleLogEntry:
+    """buff_container.add()로 이미 반영된 BuffAddData 하나를 로그 엔트리로
+    변환한다. build_log_entries()의 일반 경로와, ON_ACTION 버프 이벤트가
+    (calculator.data_by_effect[...].buff_add_data_list를 거치지 않고) 직접
+    buff_container.add()를 호출한 뒤 extra_log_entries에 결과를 얹는 경로
+    양쪽에서 재사용한다 — 후자는 트리거된 시점의 페이즈(PRE/POST)에 따라
+    _process_buff_add()가 항상 호출되지 않을 수 있어, 일반 경로로는 로그를
+    보장할 수 없기 때문이다."""
+    buff = context.get_buff_instance(buff_add.applied_to, buff_add.buff_id)
+    label = buff.display_id_label() if buff is not None else buff_add.buff_id
+    if buff is not None and buff.max_stack:
+        result = f"[{label}]×{buff_add.stack_value} 부여 → 최종 {buff.stack_count}"
+    else:
+        duration_text = buff.duration.display_text() if buff is not None else ""
+        result = f"[{label}] 부여{duration_text}"
+    return BattleLogEntry(
+        target_name=buff_add.applied_to.name,
+        kind=BattleLogEntryKind.BUFF_ADD,
+        result=result,
+        buff_id=buff_add.buff_id,
+        stack_delta=buff_add.stack_value,
+    )
+
+
 def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntry]:
     """process() 완료 후 calculator.data_by_effect를 순회해 대상별 로그 엔트리를 만든다.
 
@@ -593,7 +624,7 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
         for remove_calc in effect_data.buff_remove_data_list:
             if not remove_calc.result_value:
                 continue
-            remaining = context.get_buff_stack(
+            final_stack = context.get_buff_stack(
                 remove_calc.base.applied_to, remove_calc.base.buff_id
             )
             entries.append(
@@ -602,32 +633,14 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     kind=BattleLogEntryKind.BUFF_REMOVE,
                     result=(
                         f"[{remove_calc.base.buff_id}]×{remove_calc.result_value} 소모"
-                        f" → 잔여 {remaining}"
+                        f" → 최종 {final_stack}"
                     ),
                     buff_id=remove_calc.base.buff_id,
                     stack_delta=remove_calc.result_value,
                 )
             )
         for buff_add in effect_data.buff_add_data_list:
-            buff = context.get_buff_instance(buff_add.applied_to, buff_add.buff_id)
-            label = buff.display_id_label() if buff is not None else buff_add.buff_id
-            if buff is not None and buff.max_stack:
-                result = (
-                    f"[{label}]×{buff_add.stack_value} 부여"
-                    f" → 잔여 {buff.stack_count}"
-                )
-            else:
-                duration_text = buff.duration.display_text() if buff is not None else ""
-                result = f"[{label}] 부여{duration_text}"
-            entries.append(
-                BattleLogEntry(
-                    target_name=buff_add.applied_to.name,
-                    kind=BattleLogEntryKind.BUFF_ADD,
-                    result=result,
-                    buff_id=buff_add.buff_id,
-                    stack_delta=buff_add.stack_value,
-                )
-            )
+            entries.append(build_buff_add_log_entry(context, buff_add))
         for target_id, message in effect_data.nullified_effect_list:
             entries.append(
                 BattleLogEntry(
@@ -680,4 +693,5 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     result="모든 디버프 제거",
                 )
             )
+        entries.extend(effect_data.extra_log_entries)
     return entries

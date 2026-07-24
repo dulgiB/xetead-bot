@@ -84,15 +84,20 @@ class BuffDurationCounter:
             return self.remaining_count == 0
         return True
 
-    def display_text(self) -> str:
-        """"(N턴/M회)" 형식의 표시 텍스트. 패시브(영구)면 빈 문자열."""
-        if self.is_passive:
-            return ""
+    def display_text(self, stack_count: Optional[int] = None) -> str:
+        """"(N턴/M회)" 또는 "(N턴/M스택)" 형식의 표시 텍스트.
+
+        stack_count는 적층형 버프(max_stack이 있는 버프)에 한해 호출측이
+        넘긴다. 구조상 적층형 버프는 duration_count_value(횟수)를 쓰지
+        않으므로 M회/M스택이 함께 나타나는 경우는 없다. 아무 것도 표시할
+        내용이 없으면(패시브 + 비적층) 빈 문자열."""
         parts = []
         if self.remaining_turns is not None:
             parts.append(f"{self.remaining_turns}턴")
         if self.remaining_count is not None:
             parts.append(f"{self.remaining_count}회")
+        if stack_count is not None:
+            parts.append(f"{stack_count}스택")
         return f" ({'/'.join(parts)})" if parts else ""
 
 
@@ -129,6 +134,9 @@ class BuffBase(abc.ABC):
         # 적층(스택) 지원. max_stack이 None이면 적층 불가 버프(기존 동작과 동일).
         self.max_stack = data.max_stack
         self.stack_count = initial_stack
+
+        # 다른 버프의 id를 참조해야 하는 효과 전용(대부분의 버프는 쓰지 않음).
+        self.reference_buff_id = data.reference_buff_id
 
     def __hash__(self):
         return hash(self.uid)

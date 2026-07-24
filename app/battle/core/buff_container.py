@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
-from battle.core.command_calculator import CommandPartCalculator
+from battle.core.command_calculator import CommandPartCalculator, build_log_entries
+from battle.core.commands.models import BattleLogEntry
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -78,7 +79,7 @@ class BuffContainer:
             None,
         )
 
-    def _apply_round_events(self, timing: BuffApplyTiming) -> None:
+    def _apply_round_events(self, timing: BuffApplyTiming) -> list[BattleLogEntry]:
         event_pairs = [
             (buff.create_event(), buff.given_by, buff.applied_to)
             for buff in self._buffs
@@ -91,9 +92,25 @@ class BuffContainer:
             if event.is_applied(self._context, applied_to, given_by):
                 event.apply(applied_to, given_by, buff_calculator, 0)
         buff_calculator.process(None)
+        return build_log_entries(buff_calculator)
 
-    def on_voluntary_move(self, moved_char_id: CharacterId) -> None:
-        """자발적 이동 시 ON_ENEMY_MOVE 타이밍 패시브를 발동한다. 강제 이동은 제외된다."""
+    def on_enemy_move(
+        self,
+        moved_char_id: CharacterId,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
+    ) -> None:
+        """이동 시(자발적/강제 모두) ON_ENEMY_MOVE 타이밍 패시브/버프를 발동한다.
+
+        대미지 적용은 지금처럼 별도의 즉시-확정 계산기로 처리해 이동 종류
+        (PRE 선언/강제 이동 등)에 관계없이 항상 그 자리에서 HP에 반영되게
+        하되, 그 결과 로그는 이동을 유발한 calculator/effect_seq_number의
+        extra_log_entries에 실어 build_log_entries()가 같은 CommandPart의
+        로그로 함께 내보내게 한다(같은 calculator/effect를 그대로 재사용하지
+        않는 이유는 command_calculator.py의 PRE/POST 분기 참고 — 적이 스스로
+        선언한 이동은 PRE에서 _process_damage가 호출되지 않아 대미지가
+        누락된다).
+        """
         moved_char = self._context.characters.get(moved_char_id)
         if moved_char is None:
             return
@@ -118,6 +135,10 @@ class BuffContainer:
             if event.is_applied(self._context, holder, moved_char_id):
                 event.apply(holder, moved_char_id, buff_calculator, 0)
         buff_calculator.process(None)
+
+        calculator.data_by_effect[effect_seq_number].extra_log_entries.extend(
+            build_log_entries(buff_calculator)
+        )
 
     def on_character_damaged(
         self,
@@ -173,8 +194,8 @@ class BuffContainer:
     def on_round_start(self):
         self._apply_round_events(BuffApplyTiming.ON_ROUND_START)
 
-    def on_round_end(self) -> list[BuffUid]:
-        self._apply_round_events(BuffApplyTiming.ON_ROUND_END)
+    def on_round_end(self) -> tuple[list[BattleLogEntry], list[BuffUid]]:
+        log_entries = self._apply_round_events(BuffApplyTiming.ON_ROUND_END)
 
         buffs_to_remove: list[BuffBase] = []
         for buff in self._buffs:
@@ -185,6 +206,6 @@ class BuffContainer:
         if buffs_to_remove:
             for buff in buffs_to_remove:
                 self._buffs.remove(buff)
-            return [buff.uid for buff in buffs_to_remove]
+            return log_entries, [buff.uid for buff in buffs_to_remove]
 
-        return []
+        return log_entries, []

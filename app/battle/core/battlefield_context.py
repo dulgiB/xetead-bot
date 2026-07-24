@@ -8,7 +8,7 @@ from utils.name_matching import resolve_matching_key
 
 from battle.core.buff_container import BuffContainer
 from battle.core.command_calculator import CommandPartCalculator
-from battle.core.commands.models import CommandPartProcessResult
+from battle.core.commands.models import BattleLogEntry, CommandPartProcessResult
 from battle.exceptions import (
     CommandValidationError,
     error_target_does_not_exist,
@@ -139,9 +139,10 @@ class BattlefieldContext:
             for buff in buffs:
                 buff_data = self._buff_dictionary.get(buff.id)
                 description = buff_data.description if buff_data is not None else ""
+                stack_count = buff.stack_count if buff.max_stack is not None else None
                 blocks.append(
                     f"{char_id.name} | [{buff.display_id_label()}]"
-                    f"{buff.duration.display_text()}"
+                    f"{buff.duration.display_text(stack_count)}"
                     f"{self._format_companion_hp_suffix(buff, char_id)}\n"
                     f"↳ {description}"
                 )
@@ -367,10 +368,11 @@ class BattlefieldContext:
                 CombatStatType.COST_PER_TURN
             ]
 
-    def on_finish_round(self):
-        self.buff_container.on_round_end()
+    def on_finish_round(self) -> list[BattleLogEntry]:
+        log_entries, _ = self.buff_container.on_round_end()
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
+        return log_entries
 
     def on_battle_start(self) -> None:
         self.buff_container.on_battle_start()

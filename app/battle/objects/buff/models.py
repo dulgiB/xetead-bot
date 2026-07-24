@@ -36,6 +36,10 @@ class BuffData:
     # 최대 적층 스택 수. None이면 적층 불가(재부여 시 무시, 기존 동작 유지).
     max_stack: Optional[int] = None
 
+    # 다른 버프의 id를 참조해야 하는 효과(스택 수 기반 대미지 등) 전용.
+    # 참조 대상이 없는 대부분의 버프에는 쓰이지 않는다.
+    reference_buff_id: Optional[str] = None
+
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "BuffData":
         return BuffData(
@@ -61,6 +65,7 @@ class BuffData:
             is_debuff=bool(data.get("is_debuff", False)),
             description=data["description"],
             max_stack=int(data["max_stack"]) if data.get("max_stack") else None,
+            reference_buff_id=data.get("reference_buff_id") or None,
         )
 
     @property
@@ -99,6 +104,8 @@ class PassiveBuffData:
     condition_: Optional[str]
     condition_value: Optional[int]
     description: str
+    # BuffData.reference_buff_id와 동일한 목적(다른 버프 id 참조).
+    reference_buff_id: Optional[str] = None
 
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "PassiveBuffData":
@@ -112,6 +119,7 @@ class PassiveBuffData:
             if data.get("condition_value")
             else None,
             description=data.get("description", ""),
+            reference_buff_id=data.get("reference_buff_id") or None,
         )
 
     @property
