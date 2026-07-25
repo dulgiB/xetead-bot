@@ -1,5 +1,7 @@
 from typing import TYPE_CHECKING, Optional
 
+from utils.battle_helpers import is_reachable
+
 from battle.core.command_calculator import CommandPartCalculator, build_log_entries
 from battle.core.commands.models import BattleLogEntry
 
@@ -11,7 +13,7 @@ if TYPE_CHECKING:
     )
 
 from battle.objects.buff.buff_base import BuffDurationCounter
-from battle.objects.define import BuffApplyTiming
+from battle.objects.define import BuffApplyTiming, CombatStatType
 from battle.objects.models import BuffUid, CharacterId
 
 
@@ -176,6 +178,88 @@ class BuffContainer:
         for event, holder in event_pairs:
             if event.is_applied(self._context, holder, damaged_char_id):
                 event.apply(holder, damaged_char_id, calculator, effect_seq_number)
+
+    def on_ally_in_range_damaged(
+        self,
+        damaged_char_id: CharacterId,
+        attacker_id: CharacterId,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
+    ) -> None:
+        """damaged_char_id가 대미지를 받을 때, holder의 사거리 이내(자신 포함)·
+        같은 진영인 캐릭터가 보유한 ALLY_IN_RANGE_DAMAGED 타이밍 버프를
+        발동한다. on_character_damaged(ALLY_DAMAGED, 같은 열 기준)와 달리
+        사거리를 기준으로 한다는 점만 다르다.
+
+        이벤트의 attacker_or_target에는 공격자(attacker_id)를 전달한다 —
+        반격 등 홀더가 공격자에게 무언가를 하는 반응을 표현하기 쉽도록.
+        """
+        damaged_char = self._context.characters.get(damaged_char_id)
+        if damaged_char is None or attacker_id not in self._context.characters:
+            return
+        damaged_pos = self._context.find_character_position(damaged_char_id)
+
+        event_pairs = []
+        for buff in self._buffs:
+            if buff.timing != BuffApplyTiming.ALLY_IN_RANGE_DAMAGED:
+                continue
+            holder_char = self._context.characters.get(buff.applied_to)
+            if holder_char is None or holder_char.faction != damaged_char.faction:
+                continue
+            holder_pos = self._context.find_character_position(buff.applied_to)
+            holder_range = holder_char.status[CombatStatType.RANGE]
+            if not is_reachable(holder_pos, damaged_pos, holder_range):
+                continue
+            event_pairs.append((buff.create_event(), buff.applied_to))
+
+        if not event_pairs:
+            return
+
+        event_pairs.sort(key=lambda x: x[0].priority.value)
+        for event, holder in event_pairs:
+            if event.is_applied(self._context, holder, attacker_id):
+                event.apply(holder, attacker_id, calculator, effect_seq_number)
+
+    def on_ally_in_range_attacked(
+        self,
+        attacker_id: CharacterId,
+        target_id: CharacterId,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
+    ) -> None:
+        """attacker_id가 target_id를 공격할 때, holder의 사거리 이내·같은
+        진영인 캐릭터(자신 포함)가 보유한 ALLY_IN_RANGE_ATTACKED 타이밍
+        버프를 발동한다. holder 자신이 공격자가 아니어도 발동한다는 점에서
+        일반 ON_ACTION(ON_ATTACK) 버프와 다르다.
+
+        이벤트의 attacker_or_target에는 공격 대상(target_id)을 전달한다 —
+        "그 대상에게도 대미지를 입힌다" 같은 반응을 표현하기 쉽도록.
+        """
+        attacker_char = self._context.characters.get(attacker_id)
+        if attacker_char is None or target_id not in self._context.characters:
+            return
+        attacker_pos = self._context.find_character_position(attacker_id)
+
+        event_pairs = []
+        for buff in self._buffs:
+            if buff.timing != BuffApplyTiming.ALLY_IN_RANGE_ATTACKED:
+                continue
+            holder_char = self._context.characters.get(buff.applied_to)
+            if holder_char is None or holder_char.faction != attacker_char.faction:
+                continue
+            holder_pos = self._context.find_character_position(buff.applied_to)
+            holder_range = holder_char.status[CombatStatType.RANGE]
+            if not is_reachable(holder_pos, attacker_pos, holder_range):
+                continue
+            event_pairs.append((buff.create_event(), buff.applied_to))
+
+        if not event_pairs:
+            return
+
+        event_pairs.sort(key=lambda x: x[0].priority.value)
+        for event, holder in event_pairs:
+            if event.is_applied(self._context, holder, target_id):
+                event.apply(holder, target_id, calculator, effect_seq_number)
 
     def on_battle_end(self) -> None:
         """전투 종료 시점에 모든 버프의 on_battle_end() 훅을 호출한다."""
