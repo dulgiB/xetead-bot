@@ -380,3 +380,34 @@ class AllyInRangeWasAttackedCondition(Condition):
             and char_id in context.damaged_this_round
             for char_id, char in context.characters.items()
         )
+
+
+@dataclass(frozen=True)
+class OtherAllyInRangeWasAttackedCondition(Condition):
+    """holder의 사거리 이내·같은 진영이면서 holder 자신은 제외한 캐릭터 중
+    이번 라운드 동안(damaged_this_round 기준) 대미지를 받은 자가 1명이라도
+    있으면 True. holder 자신이 맞은 것만으로는 발동하지 않는다는 점에서
+    AllyInRangeWasAttackedCondition(자신 포함)과 구분된다."""
+
+    requires_round_resolved: ClassVar[bool] = True
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        holder_char = context.characters.get(holder)
+        if holder_char is None:
+            return False
+        holder_pos = context.find_character_position(holder)
+        holder_range = holder_char.status[CombatStatType.RANGE]
+        return any(
+            char_id != holder
+            and char.faction == holder_char.faction
+            and is_reachable(
+                holder_pos, context.find_character_position(char_id), holder_range
+            )
+            and char_id in context.damaged_this_round
+            for char_id, char in context.characters.items()
+        )
