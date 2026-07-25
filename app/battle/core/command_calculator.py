@@ -368,6 +368,18 @@ class CommandPartCalculator:
             self.context.buff_container.on_character_damaged(
                 damage_calc.base.target_id, self, effect_seq_number
             )
+            self.context.buff_container.on_ally_in_range_damaged(
+                damage_calc.base.target_id,
+                damage_calc.base.attacker_id,
+                self,
+                effect_seq_number,
+            )
+            self.context.buff_container.on_ally_in_range_attacked(
+                damage_calc.base.attacker_id,
+                damage_calc.base.target_id,
+                self,
+                effect_seq_number,
+            )
         for damage_calc in list(
             self.data_by_effect[effect_seq_number].damage_data_list
         ):

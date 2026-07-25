@@ -204,6 +204,12 @@ class PassiveSkillWrapperBuff(BuffBase):
             # buff_mod_event(ReceivedDamageModEvent 등)는 실제 공격 처리 중
             # _apply_buff_events()가 ON_ACTION 타이밍 버프만 조회하므로, trigger가
             # 무엇이든 항상 ON_ACTION이어야 실제로 대미지/회복에 반영된다.
+            # 다만 ALLY_IN_RANGE_DAMAGED는 예외다 — 이 트리거는 홀더 자신이
+            # 공격자/피격자가 아닌 제3자 관전 반응이라 _apply_buff_events가
+            # 아예 호출되지 않으므로, BuffContainer.on_ally_in_range_damaged()가
+            # 조회하는 타이밍을 그대로 써야 실제로 발동한다.
+            if self._passive_data.trigger == PassiveSkillTrigger.ALLY_IN_RANGE_DAMAGED:
+                return BuffApplyTiming.ALLY_IN_RANGE_DAMAGED
             return BuffApplyTiming.ON_ACTION
         if self._passive_data.trigger == PassiveSkillTrigger.BATTLE_START:
             return BuffApplyTiming.ON_BATTLE_START
