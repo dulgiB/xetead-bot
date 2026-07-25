@@ -130,6 +130,13 @@ class BuffApplyTiming(str, Enum):
     # 자신이 공격자/피격자가 아니어도, 같은 진영·같은 열의 누군가(자신 포함)가
     # 대미지를 입을 때마다 발동한다.
     ALLY_DAMAGED = "아군 피격 시"
+    # ALLY_DAMAGED와 동일하되 "같은 열" 대신 "사거리 내"를 기준으로 한다.
+    # 자신이 공격자/피격자가 아니어도, 자신의 사거리 내·같은 진영의 누군가
+    # (자신 포함)가 대미지를 입을 때마다 발동한다.
+    ALLY_IN_RANGE_DAMAGED = "사거리 내 아군 피격 시"
+    # 자신이 공격자가 아니어도, 자신의 사거리 내·같은 진영의 누군가가 다른
+    # 누군가를 공격할 때마다 발동한다.
+    ALLY_IN_RANGE_ATTACKED = "사거리 내 아군 공격 시"
 
 
 class BuffCountDeductCondition(str, Enum):

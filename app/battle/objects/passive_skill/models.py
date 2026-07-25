@@ -17,6 +17,7 @@ class PassiveSkillTrigger(str, Enum):
     ON_ENEMY_MOVE = "적 이동 시"
     ENEMY_POST_ACTION = "적 후행 시"
     ALLY_DAMAGED = "아군 피격 시"
+    ALLY_IN_RANGE_DAMAGED = "사거리 내 아군 피격 시"
 
 
 class PassiveSkillTargetType(str, Enum):

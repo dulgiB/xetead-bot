@@ -19,6 +19,8 @@ class GivenDamageAgainstDebuffModEvent(BuffEvent):
     """condition(보통 TargetHasDebuffCondition)이 충족될 때 value만큼 주는 대미지를
     올리고, 공격 대상이 [균열]까지 보유하고 있으면 bonus_value를 추가로 더한다."""
 
+    is_pure_damage_modifier: ClassVar[bool] = True
+
     value: FloatValueModifier
     bonus_value: FloatValueModifier
 
