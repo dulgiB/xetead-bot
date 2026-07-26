@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, ClassVar, Iterator, Optional
 
 from utils.battle_helpers import is_reachable
 
@@ -9,6 +9,40 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.character.combat_character import CombatCharacter
+
+
+def _characters_in_holder_scope(
+    context: "BattlefieldContext",
+    holder: CharacterId,
+    *,
+    same_faction: bool,
+    include_self: bool,
+    in_range: bool,
+) -> Iterator[tuple[CharacterId, "CombatCharacter"]]:
+    """holder를 기준으로 (진영 일치 여부) × (자신 포함 여부) ×
+    (같은 열 / 사거리 내) 조건에 맞는 캐릭터들을 순회한다. "같은 열"/"사거리
+    내" 범위만 다른 조건들(AllyInSameColumnCondition, AllyInRangeCountCondition
+    등)이 공유하는 순회 로직이다."""
+    holder_char = context.characters.get(holder)
+    if holder_char is None:
+        return
+    holder_pos = context.find_character_position(holder)
+    holder_range = holder_char.status[CombatStatType.RANGE] if in_range else None
+
+    for char_id, char in context.characters.items():
+        if not include_self and char_id == holder:
+            continue
+        if (char.faction == holder_char.faction) != same_faction:
+            continue
+        if in_range:
+            if not is_reachable(
+                holder_pos, context.find_character_position(char_id), holder_range
+            ):
+                continue
+        elif context.find_character_position(char_id) != holder_pos:
+            continue
+        yield char_id, char
 
 
 @dataclass(frozen=True)
@@ -127,15 +161,10 @@ class AllyInSameColumnCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        if holder not in context.characters:
-            return False
-        holder_char = context.characters[holder]
-        holder_pos = context.find_character_position(holder)
         return any(
-            char_id != holder
-            and char.faction == holder_char.faction
-            and context.find_character_position(char_id) == holder_pos
-            for char_id, char in context.characters.items()
+            _characters_in_holder_scope(
+                context, holder, same_faction=True, include_self=False, in_range=False
+            )
         )
 
 
@@ -225,17 +254,10 @@ class EnemyInRangeCountCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        holder_char = context.characters.get(holder)
-        if holder_char is None:
-            return False
-        holder_pos = context.find_character_position(holder)
-        holder_range = holder_char.status[CombatStatType.RANGE]
         enemy_count = sum(
             1
-            for char_id, char in context.characters.items()
-            if char.faction != holder_char.faction
-            and is_reachable(
-                holder_pos, context.find_character_position(char_id), holder_range
+            for _ in _characters_in_holder_scope(
+                context, holder, same_faction=False, include_self=True, in_range=True
             )
         )
         return enemy_count >= self.value
@@ -251,18 +273,10 @@ class AllyInRangeCountCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        holder_char = context.characters.get(holder)
-        if holder_char is None:
-            return False
-        holder_pos = context.find_character_position(holder)
-        holder_range = holder_char.status[CombatStatType.RANGE]
         ally_count = sum(
             1
-            for char_id, char in context.characters.items()
-            if char_id != holder
-            and char.faction == holder_char.faction
-            and is_reachable(
-                holder_pos, context.find_character_position(char_id), holder_range
+            for _ in _characters_in_holder_scope(
+                context, holder, same_faction=True, include_self=False, in_range=True
             )
         )
         return ally_count >= self.value
@@ -320,15 +334,11 @@ class AllyInSameColumnWasAttackedCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        if holder not in context.characters:
-            return False
-        holder_char = context.characters[holder]
-        holder_pos = context.find_character_position(holder)
         return any(
-            char.faction == holder_char.faction
-            and context.find_character_position(char_id) == holder_pos
-            and char_id in context.damaged_this_round
-            for char_id, char in context.characters.items()
+            char_id in context.damaged_this_round
+            for char_id, _ in _characters_in_holder_scope(
+                context, holder, same_faction=True, include_self=True, in_range=False
+            )
         )
 
 
@@ -367,18 +377,11 @@ class AllyInRangeWasAttackedCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        holder_char = context.characters.get(holder)
-        if holder_char is None:
-            return False
-        holder_pos = context.find_character_position(holder)
-        holder_range = holder_char.status[CombatStatType.RANGE]
         return any(
-            char.faction == holder_char.faction
-            and is_reachable(
-                holder_pos, context.find_character_position(char_id), holder_range
+            char_id in context.damaged_this_round
+            for char_id, _ in _characters_in_holder_scope(
+                context, holder, same_faction=True, include_self=True, in_range=True
             )
-            and char_id in context.damaged_this_round
-            for char_id, char in context.characters.items()
         )
 
 
@@ -397,17 +400,9 @@ class OtherAllyInRangeWasAttackedCondition(Condition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        holder_char = context.characters.get(holder)
-        if holder_char is None:
-            return False
-        holder_pos = context.find_character_position(holder)
-        holder_range = holder_char.status[CombatStatType.RANGE]
         return any(
-            char_id != holder
-            and char.faction == holder_char.faction
-            and is_reachable(
-                holder_pos, context.find_character_position(char_id), holder_range
+            char_id in context.damaged_this_round
+            for char_id, _ in _characters_in_holder_scope(
+                context, holder, same_faction=True, include_self=False, in_range=True
             )
-            and char_id in context.damaged_this_round
-            for char_id, char in context.characters.items()
         )
