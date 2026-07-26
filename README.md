@@ -21,9 +21,11 @@ TRPG 캠페인의 전투를 자동 정산하는 Mastodon 봇.
 
 ### 봇 시작
 
+의존성은 [uv](https://docs.astral.sh/uv/)로 관리한다 (`pyproject.toml` / `uv.lock`).
+
 ```bash
-pip install -r requirements.txt
-PYTHONPATH=app python app/bot/main.py
+uv sync
+PYTHONPATH=app uv run python app/bot/main.py
 ```
 
 ---
@@ -76,7 +78,7 @@ PYTHONPATH=app python app/bot/main.py
 | 컬럼                                                                | 설명                                                                                    |
 |-------------------------------------------------------------------|---------------------------------------------------------------------------------------|
 | `id`                                                              | 아이템 이름 (= ID, 고유)                                                                     |
-| `target_rule`                                                     | 대상 규칙 클래스명 (`SkillTargetRuleSelf` / `SkillTargetRuleNamed` / `SkillTargetRuleColumn`) |
+| `target_rule`                                                     | 대상 규칙 클래스명 ([스킬 대상 규칙](#스킬-대상-규칙) 참조)                                              |
 | `cost`                                                            | 코스트                                                                                   |
 | `range`                                                           | 사거리 (아이템 고유 — 캐릭터 사거리와 무관)                                                            |
 | `effect_0`                                                        | 효과 클래스명 (스킬 효과 재사용: `SkillEffectDamage`, `SkillEffectHeal`, `SkillEffectAddBuff` 등)   |
@@ -239,6 +241,7 @@ PYTHONPATH=app python app/bot/main.py
 
 - 대상이 사거리 내에 있어야 한다.
 - 코스트 1 소모.
+- 진영 제한이 없다 — 아군을 대상으로 지정해도 그대로 대미지가 들어간다.
 
 #### 스킬
 
@@ -353,24 +356,53 @@ PYTHONPATH=app python app/bot/main.py
 
 ### 발동 타이밍
 
-| 타이밍              | 발동 시점    |
-|------------------|----------|
-| `ON_ROUND_START` | 라운드 시작 시 |
-| `ON_ACTION`      | 공격/피격 시  |
-| `ON_ROUND_END`   | 라운드 종료 시 |
+| 타이밍                        | 발동 시점                          |
+|-----------------------------|---------------------------------|
+| `ON_BATTLE_START`            | 전투 시작 시                        |
+| `ON_ROUND_START`             | 라운드 시작 시                       |
+| `ON_ACTION`                  | 자신이 공격 또는 피격 시                 |
+| `ON_ENEMY_POST_ACTION`       | 적 후행(정산) 시                     |
+| `ON_ROUND_END`               | 라운드 종료 시                       |
+| `ON_ENEMY_MOVE`              | 적이 이동할 때 (자발적/강제 이동 모두)        |
+| `ALLY_DAMAGED`               | 같은 열의 아군(자신 포함)이 피격 시          |
+| `ALLY_IN_RANGE_DAMAGED`      | 사거리 내 아군(자신 포함)이 피격 시          |
+| `ALLY_IN_RANGE_ATTACKED`     | 사거리 내 아군(자신 포함)이 누군가를 공격할 때    |
+
+패시브 스킬("스킬_패시브" 시트)의 `트리거` 컬럼도 이와 유사한 값을 쓰지만
+완전히 같은 목록은 아니다 — 예를 들어 `사거리 내 아군 공격 시`는 아직 패시브
+스킬 트리거로는 제공되지 않는다.
 
 ### 구현된 버프 목록
 
-| 버프 클래스               | 효과                      |
-|----------------------|-------------------------|
-| `BuffAtk`            | 공격력 수치 증가               |
-| `BuffReceivedDamage` | 받는 대미지 배율 변경            |
-| `BuffGivenDamage`    | 주는 대미지 배율 변경            |
-| `BuffDamageOverTime` | 매 라운드 지속 대미지            |
-| `BuffHealOverTime`   | 매 라운드 지속 회복             |
-| `BuffNoDamage`       | 대미지 무효                  |
-| `BuffNoHeal`         | 회복 무효                   |
-| `BuffTaunt`          | 도발 — 홀더의 모든 공격이 도발자를 향함 |
+버프 클래스 이름은 "버프" 시트의 `buff_class_name` 컬럼에 그대로 입력한다.
+
+| 버프 클래스                                | 효과                                          |
+|-----------------------------------------|---------------------------------------------|
+| `BuffAtk`                                | 공격력 수치 증가/감소                                 |
+| `BuffGivenDamage`                        | 주는 대미지 배율 변경                                 |
+| `BuffReceivedDamage`                      | 받는 대미지 배율 변경                                 |
+| `BuffGivenAndReceivedDamage`              | 주는 대미지와 받는 대미지를 함께 변경 (트레이드오프)                |
+| `BuffGivenDamageAgainstDebuff`            | 디버프가 걸린 대상을 공격하면 주는 대미지 증가                    |
+| `BuffGivenHeal`                           | 주는 회복량 배율 변경                                 |
+| `BuffDamageOverTime`                      | 매 라운드 종료 시 고정 대미지                            |
+| `BuffDamageOverTimePerReferencedBuffStack`| 매 라운드 종료 시 다른 버프의 스택 수에 비례한 고정 대미지            |
+| `BuffHealOverTime`                        | 매 라운드 종료 시 고정 회복                             |
+| `BuffNoDamage`                            | 대미지 1회 무효 (방어막류)                            |
+| `BuffNoHeal`                              | 회복 1회 무효                                    |
+| `BuffTaunt`                               | 도발 — 홀더의 모든 공격이 도발자를 향함                      |
+| `BuffReflect`                             | 반사 — 받은 대미지를 공격자에게 되돌림                        |
+| `BuffSacrifice`                           | 희생 방어 — 보호 대상이 받을 공격을 대신 맞음                   |
+| `BuffFormation`                           | 진형 밀집 시 받는 대미지 감소                            |
+| `BuffFracture`                            | [균열] 적층형 순수 마커 디버프 (다른 효과가 스택을 조회해 활용)        |
+| `BuffCatastrophe`                         | [재앙] 적층형 순수 마커 — 전투 종료 시 스택×3만큼 자신의 체력 소모     |
+| `BuffStackingMark`                        | 범용 적층형 순수 마커 (재앙/균열과 동일 목적, 별도 식별가 필요할 때)     |
+| `BuffConditionalDamage`                   | 적 후행 시 조건이 만족되면 고정 대미지 부여 (Condition 조합 필수) |
+| `BuffApplyDebuffOnDealingDamage`          | 대미지를 줄 때마다 대상에게 지정 버프(디버프) 부여               |
+| `BuffBonusDamageOnHit`                    | 피격 시 공격력 기반 추가 대미지 부여                        |
+| `BuffCompanionGuardian`                   | 동료 생존 시 받는 대미지를 절반씩 분담 + 공격자에게 반격            |
+| `BuffCounterDamageOnAllyInRangeDamaged`   | 사거리 내 아군이 피격 시 공격자에게 반격 대미지                  |
+| `BuffCounterDamageOnMarkedAllyAttack`     | 사거리 내에서 특정 버프를 보유한 아군이 공격하면 같은 대상에게 추가 대미지  |
+| `BuffCounterDamageOnEnemyMove`            | 사거리 내 적이 이동할 때마다 반격 대미지 (대상 디버프 스택에 비례)     |
 
 ### 도발 상세
 
@@ -382,11 +414,13 @@ PYTHONPATH=app python app/bot/main.py
 
 ## 스킬 대상 규칙
 
-| 규칙 클래스                  | 대상 지정 방식          |
-|-------------------------|-------------------|
-| `SkillTargetRuleSelf`   | 항상 자기 자신 (입력 무시)  |
-| `SkillTargetRuleNamed`  | 이름으로 지정한 캐릭터      |
-| `SkillTargetRuleColumn` | 열 번호로 지정, 해당 열 전원 |
+| 규칙 클래스                        | 대상 지정 방식                                       |
+|---------------------------------|--------------------------------------------------|
+| `SkillTargetRuleSelf`           | 항상 자기 자신 (입력 무시)                                |
+| `SkillTargetRuleNamed`          | 이름으로 지정한 캐릭터                                    |
+| `SkillTargetRuleNamedWithColumn`| 캐릭터 1명 + 인접 열 1개(생략 가능) — 열을 지정하면 그 캐릭터를 이동시킴  |
+| `SkillTargetRuleColumn`         | 열 번호로 지정, 해당 열의 **적군** 전원                       |
+| `SkillTargetRuleAllyColumn`     | 열 번호로 지정, 해당 열의 **아군** 전원                       |
 
 ---
 
