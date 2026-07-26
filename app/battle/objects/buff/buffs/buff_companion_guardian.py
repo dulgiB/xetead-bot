@@ -4,14 +4,10 @@ from typing import TYPE_CHECKING, ClassVar, Optional
 from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
+from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.companion import is_companion_alive
 from battle.objects.define import BuffApplyTiming, ValueSourceType
-from battle.objects.models import (
-    BaseValueIndicator,
-    CharacterId,
-    DamageData,
-    FloatValueModifier,
-)
+from battle.objects.models import CharacterId, FloatValueModifier
 
 if TYPE_CHECKING:
     from battle.core.command_calculator import CommandPartCalculator
@@ -86,17 +82,12 @@ class CompanionGuardianEvent(BuffEvent):
         )
         if attacker_alive:
             effect_data.damage_data_list.append(
-                DamageCalculateData(
-                    base=DamageData(
-                        attacker_id=holder,
-                        target_id=attacker_or_target,
-                        value=BaseValueIndicator(
-                            value_source=ValueSourceType.STAT_ATK_ROLL,
-                            coefficient=FloatValueModifier(
-                                source_name="CompanionBuff1(반격)", value=self._COUNTER_PERCENT
-                            ),
-                        ),
-                    )
+                make_coefficient_damage_calc(
+                    attacker_id=holder,
+                    target_id=attacker_or_target,
+                    value_source=ValueSourceType.STAT_ATK_ROLL,
+                    source_name="CompanionBuff1(반격)",
+                    coefficient_value=self._COUNTER_PERCENT,
                 )
             )
 

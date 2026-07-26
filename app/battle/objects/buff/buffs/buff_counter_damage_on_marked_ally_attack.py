@@ -1,17 +1,12 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
 
-from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
+from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.buff.reactive_damage import apply_pure_damage_modifiers_to
 from battle.objects.define import BuffApplyTiming, ValueSourceType
-from battle.objects.models import (
-    BaseValueIndicator,
-    CharacterId,
-    DamageData,
-    FloatValueModifier,
-)
+from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.command_calculator import CommandPartCalculator
@@ -67,17 +62,12 @@ class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
         if not has_marked_attacker:
             return
 
-        new_damage_calc = DamageCalculateData(
-            base=DamageData(
-                attacker_id=holder,
-                target_id=target_id,
-                value=BaseValueIndicator(
-                    value_source=ValueSourceType.STAT_ATK_ROLL,
-                    coefficient=FloatValueModifier(
-                        source_name=f"{self.label}: {holder.name}", value=self._PERCENT
-                    ),
-                ),
-            )
+        new_damage_calc = make_coefficient_damage_calc(
+            attacker_id=holder,
+            target_id=target_id,
+            value_source=ValueSourceType.STAT_ATK_ROLL,
+            source_name=f"{self.label}: {holder.name}",
+            coefficient_value=self._PERCENT,
         )
         apply_pure_damage_modifiers_to(
             new_damage_calc, holder, target_id, calculator, effect_seq_number
