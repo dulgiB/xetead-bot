@@ -123,7 +123,10 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 
 ### 등록
 
-스프레드시트 "버프" 시트 → `BuffData.from_dict()` → `buff_class_name` 문자열로 `importlib` dispatch → `BuffBase` 구현체 인스턴스화.
+스프레드시트 "버프" 시트(컬럼 스키마는
+[SPREADSHEET_SCHEMA.md](SPREADSHEET_SCHEMA.md#버프-시트-버프) 참고) →
+`BuffData.from_dict()` → `buff_class_name` 문자열(시트 컬럼명은 `buff_name`)로
+`importlib` dispatch → `BuffBase` 구현체 인스턴스화.
 
 ### 타이밍
 
@@ -184,7 +187,9 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 
 ### 데이터 흐름
 
-스프레드시트 "스킬" 시트 → `SkillData.from_dict()` → `to_skill_instance()` → `Skill(target_rule, data)`.
+스프레드시트 "스킬_캐릭터"/"스킬_에너미" 시트(컬럼 스키마는
+[SPREADSHEET_SCHEMA.md](SPREADSHEET_SCHEMA.md#스킬_캐릭터--스킬_에너미-시트)
+참고) → `SkillData.from_dict()` → `to_skill_instance()` → `Skill(target_rule, data)`.
 
 ### SkillTargetRule
 
@@ -307,6 +312,12 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 
 → [README.md#실행](README.md#실행) 참조.
 
+## 스프레드시트 스키마
+
+"버프"/"버프_패시브"/"스킬_캐릭터"/"스킬_에너미"/"스킬_패시브" 시트의 컬럼
+스키마, `condition`/`effect_N`에 넣는 클래스 이름, 관련 enum 값 목록은
+→ [SPREADSHEET_SCHEMA.md](SPREADSHEET_SCHEMA.md) 참조.
+
 ---
 
 ## 새 버프/스킬 효과 추가 방법
@@ -316,22 +327,22 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 1. `app/battle/objects/buff/buffs/` 에 `BuffBase` 상속 클래스 작성
 2. `timing`, `create_event()` 구현. 대상 교체가 필요하면 `get_target_override()` 재정의.
 3. `app/battle/objects/buff/buffs/__init__.py`에 export 추가
-4. 스프레드시트 "버프" 시트에 `buff_class_name` 컬럼에 클래스 이름 등록
+4. 스프레드시트 "버프" 시트에 `buff_name` 컬럼(데이터클래스 필드명은 `buff_class_name`)에 클래스 이름 등록
 
 ### 스킬 효과 추가
 
 1. `app/battle/objects/skill/effects/` 에 `SkillEffectBase` 상속 클래스 작성
 2. `_expand()` 구현 (반환: `move_list, damage_list, heal_list, buff_add_list, buff_remove_list`)
 3. `app/battle/objects/skill/effects/__init__.py`에 export 추가
-4. 스프레드시트 "스킬" 시트에 `effect_N` 컬럼에 클래스 이름 등록
+4. 스프레드시트 "스킬_캐릭터"/"스킬_에너미" 시트에 `effect_N` 컬럼에 클래스 이름 등록
 
 ### 패시브 스킬 추가
 
 1. 새 로직이 필요하면 위 "버프 추가"/"스킬 효과 추가" 순서로 `BuffBase`
    또는 `SkillEffectBase` 구현체를 먼저 만든다. 기존 스킬 효과를 그대로
    재사용할 수 있으면 이 단계는 생략한다.
-2. 버프 이벤트를 재사용하려면(버프 모디파이어 경로) "버프_패시브" 시트에
-   `buff_class_name`으로 등록한다. 스킬 효과 경로를 쓰려면 이 단계는 생략한다.
+2. 버프 이벤트를 재사용하려면(버프 모디파이어 경로) "버프_패시브" 시트의
+   `buff_name` 컬럼에 등록한다. 스킬 효과 경로를 쓰려면 이 단계는 생략한다.
 3. "스킬_패시브" 시트에 `trigger`(`PassiveSkillTrigger`),
    `target_type`(`PassiveSkillTargetType`), (버프 모디파이어 경로라면)
    `buff_id`, (스킬 효과 경로라면) `effect_0`/`effect_1` 등을 등록한다.

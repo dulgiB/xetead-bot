@@ -32,6 +32,10 @@ PYTHONPATH=app uv run python app/bot/main.py
 
 ## 스프레드시트 설정
 
+전투 로직이 참조하는 "버프"/"버프_패시브"/"스킬_캐릭터"/"스킬_에너미"/
+"스킬_패시브" 시트의 컬럼 스키마와, 그 컬럼에 넣는 클래스 이름·enum 값
+목록은 [SPREADSHEET_SCHEMA.md](SPREADSHEET_SCHEMA.md)에 정리했다.
+
 ### 캐릭터 시트
 
 | 컬럼                                                                               | 설명                                |
@@ -81,10 +85,8 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `target_rule`                                                     | 대상 규칙 클래스명 ([스킬 대상 규칙](#스킬-대상-규칙) 참조)                                              |
 | `cost`                                                            | 코스트                                                                                   |
 | `range`                                                           | 사거리 (아이템 고유 — 캐릭터 사거리와 무관)                                                            |
-| `effect_0`                                                        | 효과 클래스명 (스킬 효과 재사용: `SkillEffectDamage`, `SkillEffectHeal`, `SkillEffectAddBuff` 등)   |
-| `value_source_0`, `value_0`, `value_type_0`                       | 효과 수치 정의 (대미지/회복 계산 참조)                                                               |
-| `buff_name_0`                                                     | 버프 부여 효과일 때 버프 ID                                                                     |
-| `buff_add_timing_0`, `target_override_0`, `effect_apply_timing_0` | 선택 옵션 (스킬 `effect_0` 컬럼과 동일 구조)                                                       |
+| `effect_0` (및 부속 컬럼)                                            | 효과 1개, [SPREADSHEET_SCHEMA.md](SPREADSHEET_SCHEMA.md#effect_n-컬럼-패턴-스킬아이템-공용)의 `effect_N` 컬럼 패턴과 동일 |
+| `usable_outside_battle`                                           | `TRUE`면 전투 밖(비전투 상황)에서도 `[사용/아이템]` 커맨드로 사용 가능 (현재 회복 효과만 지원)              |
 
 - `target_count` 컬럼은 없다. 대상 수 상한 검증 없이 `target_rule`에 위임한다.
 - 커맨드 형식은 [아이템](#아이템) 참조.
