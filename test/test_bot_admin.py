@@ -6,7 +6,13 @@ import contextlib
 import itertools
 from pathlib import Path
 
-from battle.objects.define import BattlefieldColumnIndex, FactionType  # noqa: E402
+from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
+from battle.objects.buff.models import BuffData  # noqa: E402
+from battle.objects.define import (  # noqa: E402
+    BattlefieldColumnIndex,
+    FactionType,
+    ValueType,
+)
 from battle.objects.models import CharacterId  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import SideType  # noqa: E402
@@ -20,7 +26,7 @@ from bot.commands.admin import (  # noqa: E402
     _cmd_battle_start,
     _cmd_continue_battle,
 )
-from bot.main import BotState, MastodonBotListener  # noqa: E402
+from bot.main import BotState, MastodonBotListener, _handle_practice_command  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
@@ -630,6 +636,63 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     round_call = mastodon.status_post_calls[-1]
     assert round_call["visibility"] == "unlisted"
     assert round_call["in_reply_to_id"] == active_post_id
+
+
+def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
+    """대련은 이미 공격으로 한쪽이 즉시 전멸하면 그 자리에서 승자를 선언하고
+    종료된다. 이 테스트는 그중 놓치기 쉬운 경로 하나를 확인한다 — 후공 차례
+    처리 중 ps.end_round()가 적용하는 라운드 종료 DoT로 전멸이 일어나는
+    경우도, 다음 라운드까지 기다리지 않고 그 즉시 종료되어야 한다(HP는
+    end_round() 이후에 다시 계산해야 한다)."""
+    dot_buff = BuffData(
+        id="맹독",
+        buff_class_name="BuffDamageOverTime",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER,
+        value=999,
+        condition_=None,
+        condition_value=None,
+        is_debuff=True,
+        description="",
+    )
+    ctx = PracticeBattlefieldContext(buff_dict={"맹독": dot_buff}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=CharacterId("A"), applied_to=CharacterId("B"), buff_id="맹독"
+        )
+    )
+
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
+    ps.start_round()
+
+    side_to_acct = {SideType.SIDE_1: "acct_a", SideType.SIDE_2: "acct_b"}
+    state = BotState(
+        char_dict={
+            "acct_a": get_test_preset("A"),
+            "acct_b": get_test_preset("B"),
+        },
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    first_acct = side_to_acct[ps.first_mover]
+    _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
+    assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
+
+    second_acct = side_to_acct[ps.second_mover]
+    _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+
+    assert "종료" in game_post
+    assert "승자: 1팀" in game_post
+    assert state.practice is None
 
 
 def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry(

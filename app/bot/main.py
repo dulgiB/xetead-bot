@@ -783,11 +783,11 @@ def _handle_practice_command(
         )
         return f"◊ {e}", None, battle_log
 
-    hp1 = ps.total_hp_by_side(SideType.SIDE_1)
-    hp2 = ps.total_hp_by_side(SideType.SIDE_2)
     battle_mode = "상시전투" if ps.is_investigation else "대련"
 
     if current_phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
+        hp1 = ps.total_hp_by_side(SideType.SIDE_1)
+        hp2 = ps.total_hp_by_side(SideType.SIDE_2)
         if hp1 == 0 or hp2 == 0:
             ps.end_round()
             winner_label = ps.side_label(ps.winner())
@@ -810,6 +810,11 @@ def _handle_practice_command(
 
     # SECOND_MOVER_ACTION
     ps.end_round()
+    # end_round()에서 ON_ROUND_END 버프(DoT/HoT)나 탈락 처리가 방금 일어날 수
+    # 있으므로, hp1/hp2는 end_round() 이후에 다시 계산해야 한다 — 그 전에
+    # 계산한 값을 그대로 쓰면 라운드 종료 시점에 발생한 전멸을 놓친다.
+    hp1 = ps.total_hp_by_side(SideType.SIDE_1)
+    hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
     if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
         winner_label = ps.side_label(ps.winner())
