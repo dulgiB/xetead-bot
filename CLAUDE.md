@@ -31,8 +31,6 @@ app/
       context.py                 # PracticeBattlefieldContext
       define.py                  # SideType, PracticeRoundPhase
       round_manager.py           # PracticeRoundManager
-    visualization/
-      renderer.py                # 전장 상태 → HTML/이미지 렌더링 (공개 필드 시트 캡처에 사용)
     objects/
       buff/
         buff_base.py             # BuffBase, BuffDurationCounter, BuffAddData
