@@ -1,3 +1,4 @@
+import logging
 import random
 import re
 import traceback
@@ -44,6 +45,20 @@ from bot.session import BattleSession
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from bot.main import BotState
+
+logger = logging.getLogger(__name__)
+
+# 스프레드시트 저장/렌더링 등 내부 구현 detail을 담은 예외 메시지는
+# 플레이어/관리자에게 그대로 노출하지 않는다 — 대신 이 문구로 통일해
+# 보여주고, 전체 트레이스는 _log_system_error()로 서버 로그에만 남긴다.
+_SYSTEM_ERROR_MESSAGE = "◊ 시스템 오류입니다."
+
+
+def _log_system_error(action: str) -> None:
+    """진행 중인 except 블록 안에서 호출해, action(예: '필드 시트 저장')이
+    실패했다는 전체 트레이스를 서버 로그에 남긴다."""
+    logger.exception("%s 실패", action)
+
 
 _RE_BATTLE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('전투준비')}]")
 _RE_MANUAL_PLACE = re.compile(
@@ -265,7 +280,9 @@ def _cmd_battle_start(
         for acct in state.pending_participants
         if acct in state.char_dict
     ]
-    _assign_random_positions(state.session, ally_data_list, FactionType.ALLY)
+    errors.extend(
+        _assign_random_positions(state.session, ally_data_list, FactionType.ALLY)
+    )
 
     state.pending_placements.clear()
     state.pending_participants.clear()
@@ -281,6 +298,7 @@ def _cmd_battle_start(
     state.session.name = battle_name
 
     # 4. 필드 시트 저장
+    system_error = False
     try:
         upsert_field_row(
             state.spreadsheet,
@@ -292,8 +310,9 @@ def _cmd_battle_start(
                 state.session.context, include_hp=False
             ),
         )
-    except Exception as e:
-        errors.append(f"스프레드시트 저장 실패: {e}")
+    except Exception:
+        _log_system_error("필드 시트 저장")
+        system_error = True
 
     try:
         render_public_field_sheet(
@@ -304,12 +323,15 @@ def _cmd_battle_start(
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
         )
-    except Exception as e:
-        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
+    except Exception:
+        _log_system_error("공개 필드 시트 렌더링")
+        system_error = True
 
     reply_parts = ["◊ 전투 시작"]
     if errors:
         reply_parts.append("⚠️ 오류:\n" + "\n".join(errors))
+    if system_error:
+        reply_parts.append(_SYSTEM_ERROR_MESSAGE)
     reply_text = "\n".join(reply_parts)
 
     game_post = _make_phase_post_text(
@@ -327,7 +349,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     new_phase = state.session.advance_phase()
 
     # 필드 시트 저장 (커맨드 수신 없는 페이즈에서도)
-    errors: list[str] = []
+    system_error = False
     try:
         upsert_field_row(
             state.spreadsheet,
@@ -339,8 +361,9 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
                 state.session.context, include_hp=False
             ),
         )
-    except Exception as e:
-        errors.append(f"스프레드시트 저장 실패: {e}")
+    except Exception:
+        _log_system_error("필드 시트 저장")
+        system_error = True
 
     try:
         render_public_field_sheet(
@@ -351,8 +374,9 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
         )
-    except Exception as e:
-        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
+    except Exception:
+        _log_system_error("공개 필드 시트 렌더링")
+        system_error = True
 
     post_action_results = (
         state.session.manager.get_last_post_action_results()
@@ -398,7 +422,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
         eliminated_characters,
     )
 
-    error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
+    error_suffix = f"\n{_SYSTEM_ERROR_MESSAGE}" if system_error else ""
     reply = f"◊ 페이즈 전환: {new_phase.value}{error_suffix}"
 
     # 커맨드 수신 없는 페이즈는 active_phase_post_id를 None으로 만들어야 함
@@ -420,7 +444,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
 
     new_phase = state.session.advance_phase()  # → ENEMY_PRE_ACTION
 
-    errors: list[str] = []
+    system_error = False
     try:
         upsert_field_row(
             state.spreadsheet,
@@ -432,8 +456,9 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
                 state.session.context, include_hp=False
             ),
         )
-    except Exception as e:
-        errors.append(f"스프레드시트 저장 실패: {e}")
+    except Exception:
+        _log_system_error("필드 시트 저장")
+        system_error = True
 
     try:
         render_public_field_sheet(
@@ -444,12 +469,13 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
         )
-    except Exception as e:
-        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
+    except Exception:
+        _log_system_error("공개 필드 시트 렌더링")
+        system_error = True
 
     game_post = _make_phase_post_text(new_phase, state.session.round_n, state.session)
 
-    error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
+    error_suffix = f"\n{_SYSTEM_ERROR_MESSAGE}" if system_error else ""
     reply = f"◊ 라운드 {state.session.round_n} 시작{error_suffix}"
     return AdminCommandResult(reply, game_post, attach_field_image=True)
 
@@ -458,7 +484,7 @@ def _cmd_end(state: "BotState") -> str:
     if state.session is None or not state.session.started:
         return "◊ 진행 중인 전투가 없습니다."
 
-    errors: list[str] = []
+    system_error = False
 
     # 전투 종료 시점 버프 훅([재앙] 등) 처리 후, 변경된 HP를 스프레드시트에 반영한다.
     hp_before = {
@@ -481,8 +507,9 @@ def _cmd_end(state: "BotState") -> str:
             write_back_changed_hp(
                 state.spreadsheet, state.session.context, battle_end_entries
             )
-        except Exception as e:
-            errors.append(f"전투 종료 처리 HP 반영 실패: {e}")
+        except Exception:
+            _log_system_error("전투 종료 처리 HP 반영")
+            system_error = True
 
     try:
         upsert_field_row(
@@ -496,8 +523,9 @@ def _cmd_end(state: "BotState") -> str:
             ),
             ended=True,
         )
-    except Exception as e:
-        errors.append(f"스프레드시트 저장 실패: {e}")
+    except Exception:
+        _log_system_error("필드 시트 저장")
+        system_error = True
 
     try:
         render_public_field_sheet(
@@ -508,8 +536,9 @@ def _cmd_end(state: "BotState") -> str:
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
         )
-    except Exception as e:
-        errors.append(f"공개 필드 시트 렌더링 실패: {e}")
+    except Exception:
+        _log_system_error("공개 필드 시트 렌더링")
+        system_error = True
 
     state.session = None
     state.preparation_status_id = None
@@ -518,8 +547,8 @@ def _cmd_end(state: "BotState") -> str:
     state.pending_placements.clear()
 
     result = "◊ 전투 종료"
-    if errors:
-        result += "\n⚠️ " + "; ".join(errors)
+    if system_error:
+        result += f"\n{_SYSTEM_ERROR_MESSAGE}"
     return result
 
 
@@ -658,16 +687,22 @@ def _assign_random_positions(
     session: "BattleSession",
     ally_data_list: list,
     faction: FactionType,
-) -> None:
-    """라운드 로빈 + 무작위 방식으로 아군을 열에 배치한다."""
+) -> list[str]:
+    """라운드 로빈 + 무작위 방식으로 아군을 열에 배치한다.
+
+    배치에 실패한 캐릭터(체력 0으로 배치 거부된 경우 등)는 조용히
+    건너뛰지 않고 오류 메시지로 반환한다 — 호출측이 이를 답글에 포함시켜
+    관리자가 문제를 바로 알 수 있게 하고, 원인을 고쳐 [배치/...]로
+    재시도할 수 있게 한다."""
     if not ally_data_list:
-        return
+        return []
 
     ctx = session.context
     remaining = list(ally_data_list)
     random.shuffle(remaining)
 
     counts = {col: len(ctx.position_map[faction][col]) for col in _VALID_COLUMNS}
+    errors: list[str] = []
 
     while remaining:
         min_count = min(counts.values())
@@ -686,8 +721,10 @@ def _assign_random_positions(
             try:
                 session.add_character(data, faction, col)
                 counts[col] += 1
-            except CommandValidationError:
-                pass
+            except CommandValidationError as e:
+                errors.append(f"{data.name}: {e}")
+
+    return errors
 
 
 def _make_phase_post_text(
@@ -852,40 +889,6 @@ def _cmd_investigation_battle(
     return AdminCommandResult("", game_post, set_practice_prep_from_game_post=True)
 
 
-def _assign_random_positions_practice(
-    context: PracticeBattlefieldContext,
-    data_list: list,
-    side: SideType,
-) -> None:
-    """연습 전투용 무작위 배치 헬퍼."""
-    from battle.objects.define import FactionType
-
-    faction = FactionType.ALLY if side == SideType.SIDE_1 else FactionType.ENEMY
-    remaining = list(data_list)
-    random.shuffle(remaining)
-    counts = {col: len(context.position_map[faction][col]) for col in _VALID_COLUMNS}
-
-    while remaining:
-        min_count = min(counts.values())
-        eligible = [
-            col
-            for col in _VALID_COLUMNS
-            if counts[col] == min_count and counts[col] < CHARACTER_PER_COLUMN
-        ]
-        if not eligible:
-            break
-        random.shuffle(eligible)
-        for col in eligible:
-            if not remaining:
-                break
-            data = remaining.pop()
-            try:
-                context.add_character(data, side, col)
-                counts[col] += 1
-            except CommandValidationError:
-                pass
-
-
 # ---------------------------------------------------------------------------
 # DM 전투 핸들러
 # ---------------------------------------------------------------------------
@@ -928,7 +931,9 @@ def _cmd_dm_battle_start(
     ally_data_list = [
         state.char_dict[acct] for acct in mentions if acct in state.char_dict
     ]
-    _assign_random_positions(session, ally_data_list, FactionType.ALLY)
+    errors.extend(
+        _assign_random_positions(session, ally_data_list, FactionType.ALLY)
+    )
 
     if not session.context.characters:
         reply_parts = ["◊ 배치에 모두 실패하여 전투를 시작하지 못했습니다."]

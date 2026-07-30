@@ -55,11 +55,15 @@ logger = logging.getLogger(__name__)
 ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
 
 _RE_MENTION = re.compile(r"@\S+")
+# 팀/열 번호를 [12]/[1-7]로 제한하지 않고 느슨하게 캡처한다 — 범위를 벗어난
+# 입력(예: [3팀/9열])도 일단 매칭시켜야 아래에서 명시적으로 검증하고 오류
+# 답글을 보낼 수 있다. 엄격하게 제한하면 형식이 살짝 어긋난 입력은 매칭
+# 자체가 안 돼 완전히 무시되어(무응답) 사용자가 재시도할 방법을 알 수 없다.
 _RE_DECLARATION = re.compile(
-    rf"\[([12]){whitespace_tolerant_literal('팀')}\s*/\s*([1-7])열?]"
+    rf"\[([^\[\]/]+){whitespace_tolerant_literal('팀')}\s*/\s*([^\[\]]+)]"
 )
 _RE_INVESTIGATION_DECLARATION = re.compile(
-    rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([1-7])열?]"
+    rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([^\[\]]+)]"
 )
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
     rf"\[{whitespace_tolerant_literal('상시전투')}]"
@@ -415,50 +419,77 @@ class MastodonBotListener(StreamListener):
                 # 상시전투: [아군/N열] 포지션 선언
                 m = _RE_INVESTIGATION_DECLARATION.search(text)
                 if m and acct in ps.expected_accts:
-                    col_n = int(m.group(1))
+                    col_str = m.group(1).strip()
                     try:
-                        column = BattlefieldColumnIndex.from_str(f"{col_n}열")
-                        ps.declared[acct] = (SideType.SIDE_1, column)
-                        logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
-                        if ps.all_declared():
-                            game_post_text = _start_investigation_battle(state)
-                            prev_post_id = ps.prep_post_id
-                            ps.prep_post_id = 0
-                            new_post = self._mastodon.status_post(
-                                _truncate(game_post_text),
-                                visibility=ps.visibility,
-                                in_reply_to_id=prev_post_id,
-                            )
-                            if state.practice is not None:
-                                state.practice.active_post_id = new_post["id"]
+                        column = BattlefieldColumnIndex.from_str(col_str)
                     except ValueError:
-                        pass
+                        self._reply(
+                            status_id,
+                            acct,
+                            visibility,
+                            f"◊ 입력된 열({col_str})을 인식할 수 없습니다. '1' 등 "
+                            "숫자만 입력하거나, '2열' 등 '○열' 형식을 사용해 "
+                            "주세요. 예: [아군/2열]",
+                        )
+                        return
+                    ps.declared[acct] = (SideType.SIDE_1, column)
+                    logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
+                    if ps.all_declared():
+                        game_post_text = _start_investigation_battle(state)
+                        prev_post_id = ps.prep_post_id
+                        ps.prep_post_id = 0
+                        new_post = self._mastodon.status_post(
+                            _truncate(game_post_text),
+                            visibility=ps.visibility,
+                            in_reply_to_id=prev_post_id,
+                        )
+                        if state.practice is not None:
+                            state.practice.active_post_id = new_post["id"]
             else:
                 # 대련: [N팀/N열] 포지션 선언
                 m = _RE_DECLARATION.search(text)
                 if m and acct in ps.expected_accts:
-                    side_n = int(m.group(1))
-                    col_n = int(m.group(2))
-                    side = SideType.SIDE_1 if side_n == 1 else SideType.SIDE_2
-                    try:
-                        column = BattlefieldColumnIndex.from_str(f"{col_n}열")
-                        ps.declared[acct] = (side, column)
-                        logger.info(
-                            "대련 포지션 선언: %s → %s %s", acct, side.value, column
+                    side_str = m.group(1).strip()
+                    if side_str not in ("1", "2"):
+                        self._reply(
+                            status_id,
+                            acct,
+                            visibility,
+                            f"◊ 입력된 팀 번호({side_str})를 인식할 수 없습니다. "
+                            "1팀 또는 2팀만 사용할 수 있습니다. 예: [1팀/2열]",
                         )
-                        if ps.all_declared() and ps.teams_valid():
-                            game_post_text = _start_practice_battle(state)
-                            prev_post_id = ps.prep_post_id
-                            ps.prep_post_id = 0
-                            new_post = self._mastodon.status_post(
-                                _truncate(game_post_text),
-                                visibility=ps.visibility,
-                                in_reply_to_id=prev_post_id,
-                            )
-                            if state.practice is not None:
-                                state.practice.active_post_id = new_post["id"]
+                        return
+                    side = SideType.SIDE_1 if side_str == "1" else SideType.SIDE_2
+
+                    col_str = m.group(2).strip()
+                    try:
+                        column = BattlefieldColumnIndex.from_str(col_str)
                     except ValueError:
-                        pass
+                        self._reply(
+                            status_id,
+                            acct,
+                            visibility,
+                            f"◊ 입력된 열({col_str})을 인식할 수 없습니다. '1' 등 "
+                            "숫자만 입력하거나, '2열' 등 '○열' 형식을 사용해 "
+                            "주세요. 예: [1팀/2열]",
+                        )
+                        return
+
+                    ps.declared[acct] = (side, column)
+                    logger.info(
+                        "대련 포지션 선언: %s → %s %s", acct, side.value, column
+                    )
+                    if ps.all_declared() and ps.teams_valid():
+                        game_post_text = _start_practice_battle(state)
+                        prev_post_id = ps.prep_post_id
+                        ps.prep_post_id = 0
+                        new_post = self._mastodon.status_post(
+                            _truncate(game_post_text),
+                            visibility=ps.visibility,
+                            in_reply_to_id=prev_post_id,
+                        )
+                        if state.practice is not None:
+                            state.practice.active_post_id = new_post["id"]
             return
 
         # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)
