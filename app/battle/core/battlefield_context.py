@@ -11,6 +11,7 @@ from battle.core.command_calculator import CommandPartCalculator
 from battle.core.commands.models import BattleLogEntry, CommandPartProcessResult
 from battle.exceptions import (
     CommandValidationError,
+    error_character_already_defeated,
     error_target_does_not_exist,
     error_too_many_characters,
 )
@@ -185,6 +186,12 @@ class BattlefieldContext:
         column_idx: BattlefieldColumnIndex,
     ):
         char_id = CharacterId(data.name)
+
+        # curr_hp가 비어 있으면(None) CombatStats가 max_hp로 채우므로 "체력
+        # 미기재"와 "체력 0"을 구분해서 후자만 막는다.
+        if data.curr_hp is not None and data.curr_hp <= 0:
+            raise CommandValidationError(error_character_already_defeated(char_id))
+
         skills = []
         for i in range(MAX_SKILL_SLOT_COUNT):
             if len(data.skill_id_list) <= i:
@@ -368,11 +375,34 @@ class BattlefieldContext:
                 CombatStatType.COST_PER_TURN
             ]
 
-    def on_finish_round(self) -> list[BattleLogEntry]:
+    def on_finish_round(self) -> tuple[list[BattleLogEntry], list[CharacterId]]:
         log_entries, _ = self.buff_container.on_round_end()
+        eliminated = self._remove_eliminated_characters()
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
-        return log_entries
+        return log_entries, eliminated
+
+    def _remove_eliminated_characters(self) -> list[CharacterId]:
+        """체력이 0 이하인 캐릭터를 필드에서 제거한다. 라운드 도중이 아니라
+        라운드 종료 시점에 한 번만 처리한다 — 도중에 즉시 제거하면 같은
+        라운드 안에서 그 캐릭터를 참조하는 다른 효과(광역기의 나머지 대상,
+        반응형 버프의 사거리/위치 조회 등)가 예기치 않게 실패할 수 있다.
+        그동안 체력 0인 캐릭터는 지금처럼 필드에 남아 있는 채로 정상 처리된다.
+
+        슬롯을 차지하지 않는 동료(및 동료를 보유한 캐릭터)는 제외한다 —
+        동료는 죽어도(curr_hp=0) companion_owners 등록을 유지한 채 남아
+        있다가 나중에 revive_companion()으로 재소환되는 별도 생애주기를
+        가지므로, remove_character()로 지우면 이 생애주기가 깨진다."""
+        eliminated = [
+            char_id
+            for char_id, char in self.characters.items()
+            if char.status.curr_hp <= 0
+            and char_id not in self.companion_owners
+            and self.find_companion_id(char_id) is None
+        ]
+        for char_id in eliminated:
+            self.remove_character(char_id)
+        return eliminated
 
     def on_battle_start(self) -> None:
         self.buff_container.on_battle_start()

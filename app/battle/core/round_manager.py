@@ -27,6 +27,7 @@ class RoundManager:
             CharacterId, list[CommandPartProcessResult]
         ] = {}
         self._last_round_end_log_entries: list[BattleLogEntry] = []
+        self._last_eliminated_characters: list[CharacterId] = []
 
     def get_enemy_declared_commands(self) -> dict[CharacterId, list[CharacterCommand]]:
         return self._enemy_command_list
@@ -44,6 +45,12 @@ class RoundManager:
         ON_ROUND_END 버프(DoT/HoT 등)의 결과를 반환한다. 답글용 game_post
         텍스트 조립에 쓰인다."""
         return self._last_round_end_log_entries
+
+    def get_last_eliminated_characters(self) -> list[CharacterId]:
+        """가장 최근 BUFF_UPDATE_AND_NEXT_ROUND_STANDBY 정산에서 체력 0으로
+        필드에서 제거된 캐릭터 목록을 반환한다. 답글용 game_post 텍스트
+        조립에 쓰인다."""
+        return self._last_eliminated_characters
 
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
@@ -73,7 +80,10 @@ class RoundManager:
             self._context.buff_container.on_enemy_post_action_resolved()
 
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
-            self._last_round_end_log_entries = self._context.on_finish_round()
+            (
+                self._last_round_end_log_entries,
+                self._last_eliminated_characters,
+            ) = self._context.on_finish_round()
             self._enemy_command_list.clear()
 
         else:

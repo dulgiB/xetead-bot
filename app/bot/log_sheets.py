@@ -145,9 +145,11 @@ def write_back_changed_hp(
     for name in changed_names:
         char_id = CharacterId(name)
         char = context.characters.get(char_id)
-        if char is None:
-            continue
-        update_character_curr_hp(spreadsheet, name, char.status.curr_hp)
+        # 라운드 종료 시점에 체력 0으로 필드에서 이미 제거된 대상이면(예:
+        # 라운드 종료 DoT로 인한 탈락) context.characters에 더 이상 없다 —
+        # 이 시점에 존재하지 않는다는 것 자체가 탈락을 의미하므로 0으로 기록한다.
+        curr_hp = char.status.curr_hp if char is not None else 0
+        update_character_curr_hp(spreadsheet, name, curr_hp)
 
 
 def upsert_field_row(

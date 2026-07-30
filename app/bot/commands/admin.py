@@ -24,7 +24,11 @@ from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
-from bot.battle_reply_text import format_battle_reply, format_round_end_log_entries
+from bot.battle_reply_text import (
+    format_battle_reply,
+    format_eliminated_characters,
+    format_round_end_log_entries,
+)
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import load_battle_data
@@ -379,12 +383,19 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             state.spreadsheet, state.session.context, round_end_log_entries
         )
 
+    eliminated_characters = (
+        state.session.manager.get_last_eliminated_characters()
+        if new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+        else None
+    )
+
     game_post = _make_phase_post_text(
         new_phase,
         state.session.round_n,
         state.session,
         post_action_results,
         round_end_log_entries,
+        eliminated_characters,
     )
 
     error_suffix = ("\n⚠️ " + "; ".join(errors)) if errors else ""
@@ -687,6 +698,7 @@ def _make_phase_post_text(
         dict[CharacterId, list[CommandPartProcessResult]]
     ] = None,
     round_end_log_entries: Optional[list[BattleLogEntry]] = None,
+    eliminated_characters: Optional[list[CharacterId]] = None,
 ) -> str:
     # 필드 현황은 게시물에 첨부되는 공개 필드 시트 이미지로 표시하므로, 이
     # 텍스트에는 str(session.context) 보드를 중복으로 넣지 않는다.
@@ -708,11 +720,18 @@ def _make_phase_post_text(
     if phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
         header = f"◊ [라운드 {round_n} 종료]"
         tail = "버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요."
-        body = format_round_end_log_entries(
-            session.context, round_end_log_entries or []
-        )
-        if body:
-            return f"{header}\n\n{body}\n\n{tail}"
+        body_blocks = [
+            block
+            for block in (
+                format_round_end_log_entries(
+                    session.context, round_end_log_entries or []
+                ),
+                format_eliminated_characters(eliminated_characters or []),
+            )
+            if block
+        ]
+        if body_blocks:
+            return f"{header}\n\n{'\n\n'.join(body_blocks)}\n\n{tail}"
         return f"{header}\n\n{tail}"
 
     return ""
@@ -960,6 +979,12 @@ def _cmd_dm_battle_advance_phase(
     if round_end_log_entries:
         write_back_changed_hp(state.spreadsheet, session.context, round_end_log_entries)
 
+    eliminated_characters = (
+        session.manager.get_last_eliminated_characters()
+        if new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+        else None
+    )
+
     winner = _check_dm_battle_wipe(dm_state)
     if winner is not None:
         end_text = _end_dm_battle(dm_state, state, winner)
@@ -971,7 +996,12 @@ def _cmd_dm_battle_advance_phase(
         )
 
     game_post = _make_phase_post_text(
-        new_phase, session.round_n, session, post_action_results, round_end_log_entries
+        new_phase,
+        session.round_n,
+        session,
+        post_action_results,
+        round_end_log_entries,
+        eliminated_characters,
     )
     game_post += f"\n\n{session.context}"
 

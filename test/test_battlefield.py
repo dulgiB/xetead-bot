@@ -133,6 +133,60 @@ def test_hp_does_not_go_below_zero(battle_setup):
     assert context.characters[enemy_id].status.curr_hp >= 0
 
 
+def test_add_character_with_zero_hp_raises(empty_context):
+    """체력이 0인 캐릭터를 필드에 추가하려 하면 CommandValidationError."""
+    with pytest.raises(CommandValidationError):
+        empty_context.add_character(
+            get_test_preset("탈락캐릭터", initial_hp=0),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+
+
+def test_eliminated_character_removed_at_round_end(battle_setup):
+    """체력이 0이 된 캐릭터는 라운드 종료 시점에 필드에서 자동으로 제거되고,
+    RoundManager가 그 목록을 노출해야 한다."""
+    context, manager = battle_setup
+    enemy_id = CharacterId("적군 1")
+    context.characters[enemy_id].status.curr_hp = 0
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert enemy_id not in context.characters
+    assert manager.get_last_eliminated_characters() == [enemy_id]
+
+
+def test_alive_character_not_removed_at_round_end(battle_setup):
+    """체력이 남아 있는 캐릭터는 라운드 종료 시점에 제거되지 않아야 한다."""
+    context, manager = battle_setup
+    enemy_id = CharacterId("적군 1")
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert enemy_id in context.characters
+    assert manager.get_last_eliminated_characters() == []
+
+
+def test_eliminated_companion_owner_not_removed(empty_context):
+    """동료를 보유한 캐릭터는 체력이 0이어도 라운드 종료 시 제거되지 않는다 —
+    재소환(revive_companion) 생애주기가 companion_owners 등록과
+    self.characters 존재를 함께 전제하므로, 소환자를 제거해 버리면 이
+    생애주기가 깨진다."""
+    owner_id = CharacterId("소환사")
+    empty_context.add_character(
+        get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    owner = empty_context.characters[owner_id]
+    empty_context._spawn_companion_character(owner, CharacterId("동료"), 50)
+    owner.status.curr_hp = 0
+
+    manager = RoundManager(empty_context)
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert owner_id in empty_context.characters
+    assert manager.get_last_eliminated_characters() == []
+
+
 def test_cost_deducted_after_action(battle_setup):
     """행동 후 코스트가 차감되어야 한다."""
     context, manager = battle_setup
