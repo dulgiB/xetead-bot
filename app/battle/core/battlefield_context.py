@@ -389,17 +389,26 @@ class BattlefieldContext:
         반응형 버프의 사거리/위치 조회 등)가 예기치 않게 실패할 수 있다.
         그동안 체력 0인 캐릭터는 지금처럼 필드에 남아 있는 채로 정상 처리된다.
 
-        슬롯을 차지하지 않는 동료(및 동료를 보유한 캐릭터)는 제외한다 —
-        동료는 죽어도(curr_hp=0) companion_owners 등록을 유지한 채 남아
-        있다가 나중에 revive_companion()으로 재소환되는 별도 생애주기를
-        가지므로, remove_character()로 지우면 이 생애주기가 깨진다."""
-        eliminated = [
-            char_id
-            for char_id, char in self.characters.items()
-            if char.status.curr_hp <= 0
-            and char_id not in self.companion_owners
-            and self.find_companion_id(char_id) is None
-        ]
+        동료(소환수)의 생애주기는 소환자(owner)에게 종속된다:
+        - 동료 자신의 체력이 0이 되는 것은 단독으로 탈락 처리하지 않는다 —
+          companion_owners 등록을 유지한 채 남아 있다가 나중에
+          revive_companion()으로 재소환되는 기존 규칙을 그대로 따른다.
+        - 반대로 소환자가 탈락하면, 그 순간부터 동료를 재소환할 주체 자체가
+          없어지므로 동료의 현재 체력과 무관하게 함께 제거한다.
+        """
+        eliminated: list[CharacterId] = []
+        for char_id, char in self.characters.items():
+            if char.status.curr_hp > 0:
+                continue
+            if char_id in self.companion_owners:
+                # 동료 자신의 탈락 — 단독으로는 처리하지 않는다.
+                continue
+
+            eliminated.append(char_id)
+            companion_id = self.find_companion_id(char_id)
+            if companion_id is not None and companion_id in self.characters:
+                eliminated.append(companion_id)
+
         for char_id in eliminated:
             self.remove_character(char_id)
         return eliminated

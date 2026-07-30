@@ -167,23 +167,45 @@ def test_alive_character_not_removed_at_round_end(battle_setup):
     assert manager.get_last_eliminated_characters() == []
 
 
-def test_eliminated_companion_owner_not_removed(empty_context):
-    """동료를 보유한 캐릭터는 체력이 0이어도 라운드 종료 시 제거되지 않는다 —
-    재소환(revive_companion) 생애주기가 companion_owners 등록과
-    self.characters 존재를 함께 전제하므로, 소환자를 제거해 버리면 이
-    생애주기가 깨진다."""
+def test_eliminated_owner_removes_companion_together(empty_context):
+    """소환자가 탈락하면, 동료의 현재 체력과 무관하게 동료도 함께 제거되어야
+    한다 — 소환자가 없으면 동료를 재소환할 주체 자체가 없어지기 때문이다."""
     owner_id = CharacterId("소환사")
+    companion_id = CharacterId("동료")
     empty_context.add_character(
         get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
     owner = empty_context.characters[owner_id]
-    empty_context._spawn_companion_character(owner, CharacterId("동료"), 50)
+    empty_context._spawn_companion_character(owner, companion_id, 50)
     owner.status.curr_hp = 0
+    # 동료는 아직 체력이 남아 있어도 소환자와 함께 제거되어야 한다.
+    assert empty_context.characters[companion_id].status.curr_hp > 0
+
+    manager = RoundManager(empty_context)
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert owner_id not in empty_context.characters
+    assert companion_id not in empty_context.characters
+    assert set(manager.get_last_eliminated_characters()) == {owner_id, companion_id}
+
+
+def test_eliminated_companion_alone_does_not_affect_owner(empty_context):
+    """동료 자신의 체력이 0이 되는 것은(소환자는 살아 있는 채로) 기존 규칙대로
+    단독으로 처리되지 않아야 한다 — 소환자도, 동료도 제거되면 안 된다."""
+    owner_id = CharacterId("소환사")
+    companion_id = CharacterId("동료")
+    empty_context.add_character(
+        get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    owner = empty_context.characters[owner_id]
+    empty_context._spawn_companion_character(owner, companion_id, 50)
+    empty_context.characters[companion_id].status.curr_hp = 0
 
     manager = RoundManager(empty_context)
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
 
     assert owner_id in empty_context.characters
+    assert companion_id in empty_context.characters
     assert manager.get_last_eliminated_characters() == []
 
 
