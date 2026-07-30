@@ -1,5 +1,6 @@
 import random
 import re
+import traceback
 from datetime import date
 from typing import TYPE_CHECKING, Optional
 
@@ -79,21 +80,29 @@ def _parse_item_args(raw: str) -> tuple[str, Optional[str], int]:
 # ---------------------------------------------------------------------------
 
 
-def handle_roll(acct: str, stat_name: str, state: "BotState") -> str:
+def handle_roll(
+    acct: str, stat_name: str, state: "BotState"
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[판정/스탯] → 1d6 + 스탯값 계산 후 결과 텍스트 반환."""
+    command_text = f"[판정/{stat_name}]"
     if stat_name not in NON_COMBAT_STATS:
-        return (
-            f"◊ 알 수 없는 스탯입니다. 사용 가능한 스탯: {'·'.join(NON_COMBAT_STATS)}"
-        )
+        msg = f"◊ 알 수 없는 스탯입니다. 사용 가능한 스탯: {'·'.join(NON_COMBAT_STATS)}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다."
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
     stat_type = NoncombatStatType(stat_name)
     stat_val = char_data.get_noncombat_stat(stat_type)
     dice = random.randint(1, 6)
-    return f"[{stat_name}] {dice}+{stat_val} → 「{dice + stat_val}」"
+    total = dice + stat_val
+    reply = f"[{stat_name}] {dice}+{stat_val} → 「{total}」"
+    return reply, NoncombatLogInfo(
+        command_text=command_text,
+        dice_roll=f"{dice}+{stat_val}",
+        result=f"「{total}」",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +182,7 @@ def handle_use_item(
         inventory.consume(user_name, item_name, count)
     except Exception as e:
         msg = f"◊ 아이템 사용 처리 중 오류가 발생했습니다: {e}"
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=str(e))
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=traceback.format_exc())
 
     result_text = f"{target_char_name}의 체력을 {heal_amount} 회복했습니다. ({prev_hp} → {new_hp})"
     reply = f"◊ '{item_name}' 사용: {result_text}"
@@ -231,7 +240,7 @@ def handle_transfer_item(
         inventory.grant(target_name, item_name, count)
     except Exception as e:
         msg = f"◊ 아이템 양도 처리 중 오류가 발생했습니다: {e}"
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=str(e))
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=traceback.format_exc())
 
     result_text = f"{user_name} → {target_name}에게 '{item_name}' {count}개 양도"
     reply = f"◊ 양도 완료: {result_text}"
@@ -243,25 +252,33 @@ def handle_transfer_item(
 # ---------------------------------------------------------------------------
 
 
-def handle_daily_quest_start(acct: str, state: "BotState") -> str:
+def handle_daily_quest_start(
+    acct: str, state: "BotState"
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[의뢰] → 오늘 이미 했으면 거절 / 아니면 랜덤 의뢰 내용 반환."""
+    command_text = "[의뢰]"
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다."
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
     today = date.today().isoformat()
     if char_data.daily_quest_date == today:
-        return "◊ 오늘 이미 의뢰를 수행했습니다. 내일 다시 도전해 주세요!"
+        msg = "◊ 오늘 이미 의뢰를 수행했습니다. 내일 다시 도전해 주세요!"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
         location, _, _, _ = load_location_and_investigation(state.spreadsheet)
         daily_quests = load_daily_quests(state.spreadsheet)
     except Exception as e:
-        return f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
 
     pool = [q for q in daily_quests if not q.location or q.location == location]
     if not pool:
-        return "◊ 현재 위치에서 받을 수 있는 의뢰가 없습니다."
+        msg = "◊ 현재 위치에서 받을 수 있는 의뢰가 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     quest = random.choice(pool)
 
@@ -269,10 +286,13 @@ def handle_daily_quest_start(acct: str, state: "BotState") -> str:
         quest_id=quest.id, bot_reply_post_id=0
     )
 
-    return (
+    reply = (
         f"{quest.description}\n"
         "어떻게 할까?\n"
         "(판정 방법: [판정/스탯] 형식으로 답글을 달아주세요.)"
+    )
+    return reply, NoncombatLogInfo(
+        command_text=command_text, result=f"의뢰 배정: {quest.name}"
     )
 
 
@@ -283,20 +303,23 @@ def finalize_daily_quest_mid(acct: str, post_id: int, state: "BotState") -> None
         mid.bot_reply_post_id = post_id
 
 
-def handle_daily_quest_roll(acct: str, stat_name: str, state: "BotState") -> str:
+def handle_daily_quest_roll(
+    acct: str, stat_name: str, state: "BotState"
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """일일 의뢰 판정 답글 → 굴림 결과 + 1G 지급 + 스프레드시트 업데이트."""
+    command_text = f"[판정/{stat_name}] (일일 의뢰)"
     if stat_name not in NON_COMBAT_STATS:
-        return (
-            f"◊ 알 수 없는 스탯입니다. 사용 가능한 스탯: {'·'.join(NON_COMBAT_STATS)}"
-        )
+        msg = f"◊ 알 수 없는 스탯입니다. 사용 가능한 스탯: {'·'.join(NON_COMBAT_STATS)}"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다."
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
     mid = state.noncombat.daily_quest_mid.get(acct)
     if mid is None:
-        return "◊ 진행 중인 의뢰가 없습니다."
+        msg = "◊ 진행 중인 의뢰가 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     stat_type = NoncombatStatType(stat_name)
     stat_val = char_data.get_noncombat_stat(stat_type)
@@ -322,12 +345,14 @@ def handle_daily_quest_roll(acct: str, stat_name: str, state: "BotState") -> str
 
     errors: list[str] = []
     save_succeeded = True
+    save_error_trace: Optional[str] = None
     try:
         update_character_gold_and_quest_date(
             state.spreadsheet, char_data.name, new_gold, today
         )
     except Exception as e:
         save_succeeded = False
+        save_error_trace = traceback.format_exc()
         errors.append(f"스프레드시트 저장 실패: {e}")
 
     # 저장에 실패하면 mid 상태를 남겨 두어 같은 게시물에 재시도할 수 있게 한다.
@@ -341,7 +366,12 @@ def handle_daily_quest_roll(acct: str, stat_name: str, state: "BotState") -> str
         result += "의뢰 결과 저장에 실패했습니다. 이 답글에 다시 답글로 재시도해 주세요."
     if errors:
         result += "\n◊ " + "; ".join(errors)
-    return result
+    return result, NoncombatLogInfo(
+        command_text=command_text,
+        dice_roll=f"{dice}+{stat_val}",
+        result=f"「{total}」 {judgment}" + ("" if save_succeeded else " (저장 실패)"),
+        error_trace=save_error_trace,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -349,27 +379,38 @@ def handle_daily_quest_roll(acct: str, stat_name: str, state: "BotState") -> str
 # ---------------------------------------------------------------------------
 
 
-def handle_investigation_start(acct: str, state: "BotState") -> str:
+def handle_investigation_start(
+    acct: str, state: "BotState"
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[상시조사] → 현위치 시트를 읽어 4개 선택지 메뉴 반환."""
+    command_text = "[상시조사]"
     nc = state.noncombat
 
     if nc.investigation_accepted.get(acct):
-        return "◊ 이번 구간에서 이미 의뢰를 수주했습니다."
+        msg = "◊ 이번 구간에서 이미 의뢰를 수주했습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
         location, investigation_active, venues, venue_desc = (
             load_location_and_investigation(state.spreadsheet)
         )
     except Exception as e:
-        return f"◊ 조사 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 조사 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
 
     if not investigation_active or not venues:
-        return "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
+        msg = "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
         general_quests = load_general_quests(state.spreadsheet)
     except Exception as e:
-        return f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
 
     # venue → quest_id 매핑 갱신 (location 우선 매칭, 없으면 location 무관)
     venue_to_quest: dict[str, str] = {}
@@ -390,7 +431,10 @@ def handle_investigation_start(acct: str, state: "BotState") -> str:
     for venue in venues:
         lines.append(f"▸ [{venue}]")
     lines.append(f"▸ {FREE_EXPLORE_LABEL} (자율 탐사)")
-    return "\n".join(lines)
+    reply = "\n".join(lines)
+    return reply, NoncombatLogInfo(
+        command_text=command_text, result=f"메뉴 제공: {', '.join(venues)}"
+    )
 
 
 def finalize_investigation_menu_post(
@@ -401,8 +445,9 @@ def finalize_investigation_menu_post(
 
 def handle_investigation_venue_choice(
     acct: str, venue_name: str, state: "BotState"
-) -> str:
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """장소 선택 → 일반 의뢰 시트를 읽어 개요 반환."""
+    command_text = f"[상시조사/{venue_name}]"
     nc = state.noncombat
 
     venue_name = resolve_matching_key(venue_name, nc.investigation_venue_to_quest.keys())
@@ -412,20 +457,26 @@ def handle_investigation_venue_choice(
         # 지워 [수락] 시 엉뚱한(예전) 의뢰가 수주되는 것을 방지한다.
         nc.investigation_acct_to_quest_id.pop(acct, None)
         if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
-            return "자유롭게 일대를 돌아다니며 정보를 수집할 수 있습니다."
-        return f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
+            msg = "자유롭게 일대를 돌아다니며 정보를 수집할 수 있습니다."
+            return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+        msg = f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
         general_quests = load_general_quests(state.spreadsheet)
     except Exception as e:
         nc.investigation_acct_to_quest_id.pop(acct, None)
-        return f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
 
     quest_dict = {q.id: q for q in general_quests}
     quest = quest_dict.get(quest_id)
     if quest is None:
         nc.investigation_acct_to_quest_id.pop(acct, None)
-        return "◊ 의뢰 정보를 찾을 수 없습니다."
+        msg = "◊ 의뢰 정보를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     existing = nc.quest_status.get(quest_id)
     if existing and existing.participants:
@@ -435,7 +486,10 @@ def handle_investigation_venue_choice(
         if desc:
             lines.append(desc)
         lines.append("자율 탐사를 진행할 수 있습니다.")
-        return "\n".join(lines)
+        reply = "\n".join(lines)
+        return reply, NoncombatLogInfo(
+            command_text=command_text, result=f"{venue_name}: 이미 수주된 의뢰"
+        )
 
     nc.investigation_acct_to_quest_id[acct] = quest_id
 
@@ -454,7 +508,10 @@ def handle_investigation_venue_choice(
     lines.append("이 의뢰를 수락할까?")
     lines.append("")
     lines.append("◊ 수락하려면 답글로 [수락]을 입력해 주세요.")
-    return "\n".join(lines)
+    reply = "\n".join(lines)
+    return reply, NoncombatLogInfo(
+        command_text=command_text, result=f"의뢰 개요 제공: {quest.name}"
+    )
 
 
 def finalize_investigation_overview_post(
@@ -467,15 +524,17 @@ def handle_investigation_accept(
     acct: str,
     state: "BotState",
     in_reply_to_id: Optional[int] = None,
-) -> str:
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[수락] → 의뢰 참여자 등록.
 
     자신의 탐사 흐름이거나, 이미 수락된 의뢰의 개요 게시물에 답글로 합류할 수 있다.
     """
+    command_text = "[수락]"
     nc = state.noncombat
 
     if nc.investigation_accepted.get(acct):
-        return "◊ 이번 구간에서 이미 의뢰를 수주했습니다."
+        msg = "◊ 이번 구간에서 이미 의뢰를 수주했습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     quest_id = nc.investigation_acct_to_quest_id.get(acct)
 
@@ -487,7 +546,8 @@ def handle_investigation_accept(
                 break
 
     if quest_id is None:
-        return "◊ 수락할 의뢰가 없습니다. 먼저 [상시조사]로 의뢰를 확인해 주세요."
+        msg = "◊ 수락할 의뢰가 없습니다. 먼저 [상시조사]로 의뢰를 확인해 주세요."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     # 의뢰 이름을 일반 의뢰 시트에서 실시간 조회
     quest_name = quest_id
@@ -510,4 +570,7 @@ def handle_investigation_accept(
         status.participants.append(acct)
 
     nc.investigation_accepted[acct] = quest_id
-    return f"◊ 수락 확인. 「{quest_name}」 의뢰를 수주했습니다."
+    reply = f"◊ 수락 확인. 「{quest_name}」 의뢰를 수주했습니다."
+    return reply, NoncombatLogInfo(
+        command_text=command_text, result=f"의뢰 수주: {quest_name}"
+    )

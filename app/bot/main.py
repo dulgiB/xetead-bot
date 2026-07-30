@@ -531,8 +531,9 @@ class MastodonBotListener(StreamListener):
         ):
             stat_name = parse_stat_name(text)
             if stat_name:
-                response = handle_daily_quest_roll(acct, stat_name, state)
-                self._reply(status_id, acct, visibility, response)
+                response, log_info = handle_daily_quest_roll(acct, stat_name, state)
+                reply_status = self._reply(status_id, acct, visibility, response)
+                _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
         # 7. 상시조사 메뉴 답글 (봇이 4개 선택지를 보낸 포스트에 대한 답글)
@@ -543,8 +544,11 @@ class MastodonBotListener(StreamListener):
             menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
             if menu_acct == acct:
                 venue_name = text.strip().strip("[]")
-                response = handle_investigation_venue_choice(acct, venue_name, state)
+                response, log_info = handle_investigation_venue_choice(
+                    acct, venue_name, state
+                )
                 post = self._reply(status_id, acct, visibility, response)
+                _persist_noncombat_log(state, log_info, str(post["id"]))
                 finalize_investigation_overview_post(acct, post["id"], state)
             return
 
@@ -554,28 +558,34 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id in nc.get_investigation_overview_post_ids()
             and _RE_ACCEPT.search(text)
         ):
-            response = handle_investigation_accept(acct, state, in_reply_to_id)
-            self._reply(status_id, acct, visibility, response)
+            response, log_info = handle_investigation_accept(
+                acct, state, in_reply_to_id
+            )
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
         # 9. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능)
         stat_name = parse_stat_name(text)
         if stat_name:
-            response = handle_roll(acct, stat_name, state)
-            self._reply(status_id, acct, visibility, response)
+            response, log_info = handle_roll(acct, stat_name, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
         # 10. [의뢰] — 일일 의뢰 시작
         if _RE_DAILY_QUEST_START.search(text):
-            response = handle_daily_quest_start(acct, state)
+            response, log_info = handle_daily_quest_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(post["id"]))
             finalize_daily_quest_mid(acct, post["id"], state)
             return
 
         # 11. [상시조사] — 상시조사 메뉴
         if _RE_INVESTIGATION_START.search(text):
-            response = handle_investigation_start(acct, state)
+            response, log_info = handle_investigation_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(post["id"]))
             finalize_investigation_menu_post(acct, post["id"], state)
             return
 
