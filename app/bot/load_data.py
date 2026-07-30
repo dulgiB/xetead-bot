@@ -16,6 +16,7 @@ from spreadsheets.models.quest import (
     DailyQuestResultMessageData,
     QuestData,
 )
+from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 logger = logging.getLogger(__name__)
 
@@ -308,7 +309,9 @@ def load_location_and_investigation(
 
     row = records[0]
     location = str(row.get("location", "") or "")
-    investigation_active = bool(row.get("investigation_active", False))
+    investigation_active = parse_spreadsheet_bool(
+        row.get("investigation_active", False)
+    )
     venue_pairs = [
         (str(row.get("venue_1", "") or ""), str(row.get("venue_1_desc", "") or "")),
         (str(row.get("venue_2", "") or ""), str(row.get("venue_2_desc", "") or "")),

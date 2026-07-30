@@ -15,6 +15,7 @@ import gspread
 
 from battle.core.commands.models import BattleLogEntry
 from battle.objects.models import CharacterId
+from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 from bot.load_data import update_character_curr_hp
 
@@ -178,7 +179,7 @@ def upsert_field_row(
 
     if row_idx is None and is_main:
         for i, row in enumerate(data_rows, start=2):
-            if row and len(row) > 1 and row[1].upper() == "TRUE":
+            if row and len(row) > 1 and parse_spreadsheet_bool(row[1]):
                 row_idx = i
                 break
 
