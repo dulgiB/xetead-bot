@@ -109,6 +109,29 @@ def _truncate(text: str) -> str:
     return text[: _MAX_POST_LENGTH - 1] + "…"
 
 
+def _apply_game_post_side_effects(
+    state: "BotState", result: AdminCommandResult, new_post_id: int
+) -> None:
+    """game_post_text가 실제로 게시된 후, 그 post_id를 필요한 상태에 반영한다.
+
+    reply_text 유무에 따라 게시 방식(첨부 미디어/가시성/답글 대상 등)은
+    다르지만, 게시가 끝난 뒤 post_id를 어디에 반영할지는 두 경로에서 항상
+    동일하므로 공용 헬퍼로 뽑았다.
+    """
+    if result.set_practice_prep_from_game_post and state.practice is not None:
+        state.practice.prep_post_id = new_post_id
+    if result.set_practice_active_post and state.practice is not None:
+        state.practice.active_post_id = new_post_id
+    if result.dm_battle_to_register is not None:
+        _register_dm_battle(state, result.dm_battle_to_register, new_post_id)
+    if state.session is not None and state.session.started:
+        state.active_phase_post_id = (
+            new_post_id
+            if state.session.current_phase in _COMMAND_PHASES
+            else None
+        )
+
+
 def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) -> None:
     """DmBattleState의 스레드 tip을 new_post_id로 옮긴다.
 
@@ -330,21 +353,7 @@ class MastodonBotListener(StreamListener):
                     post = self._reply(
                         status_id, acct, visibility, result.game_post_text
                     )
-                    new_post_id = post["id"]
-                    if result.set_practice_prep_from_game_post and state.practice is not None:
-                        state.practice.prep_post_id = new_post_id
-                    if result.set_practice_active_post and state.practice is not None:
-                        state.practice.active_post_id = new_post_id
-                    if result.dm_battle_to_register is not None:
-                        _register_dm_battle(
-                            state, result.dm_battle_to_register, new_post_id
-                        )
-                    if state.session is not None and state.session.started:
-                        state.active_phase_post_id = (
-                            new_post_id
-                            if state.session.current_phase in _COMMAND_PHASES
-                            else None
-                        )
+                    _apply_game_post_side_effects(state, result, post["id"])
             else:
                 # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
                 # 이미지는 페이즈 게시물에만 첨부한다). post_as_new_status면
@@ -391,25 +400,7 @@ class MastodonBotListener(StreamListener):
                     new_post = self._mastodon.status_post(
                         _truncate(post_text), **post_kwargs
                     )
-                    new_post_id = new_post["id"]
-
-                    if result.set_practice_prep_from_game_post and state.practice is not None:
-                        state.practice.prep_post_id = new_post_id
-
-                    if result.set_practice_active_post and state.practice is not None:
-                        state.practice.active_post_id = new_post_id
-
-                    if result.dm_battle_to_register is not None:
-                        _register_dm_battle(
-                            state, result.dm_battle_to_register, new_post_id
-                        )
-
-                    if state.session is not None and state.session.started:
-                        state.active_phase_post_id = (
-                            new_post_id
-                            if state.session.current_phase in _COMMAND_PHASES
-                            else None
-                        )
+                    _apply_game_post_side_effects(state, result, new_post["id"])
 
             return
 
