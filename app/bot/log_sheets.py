@@ -7,6 +7,7 @@
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
@@ -21,6 +22,8 @@ from bot.load_data import update_character_curr_hp
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -136,6 +139,14 @@ def write_back_changed_hp(
     """entries 중 대미지/회복이 발생한 대상의 curr_hp를 "캐릭터" 시트에 반영한다.
 
     본 전투 전용 — 대련/상시전투는 half-HP 임시 캐릭터라 호출하면 안 된다.
+
+    호출측(캐릭터 커맨드 처리, 페이즈 전환 등)은 이미 커맨드/버프 처리를
+    마친 뒤 이 함수를 호출한다 — 여기서 예외가 위로 전파되면 이미 끝난
+    처리의 응답 자체가 사라지고, 사용자가 재시도하면 같은 행동이 중복
+    적용되는 문제로 이어진다. 그래서 캐릭터별로 실패를 흡수하고 로깅만
+    하며(한 캐릭터가 실패해도 나머지는 계속 반영), 절대 위로 전파하지
+    않는다. 실패해도 라이브 세션 상태(context)는 이미 정확하므로, 다음
+    성공적인 write-back 시점에 시트도 자연히 다시 맞춰진다.
     """
     changed_names = {
         entry.target_name
@@ -149,7 +160,10 @@ def write_back_changed_hp(
         # 라운드 종료 DoT로 인한 탈락) context.characters에 더 이상 없다 —
         # 이 시점에 존재하지 않는다는 것 자체가 탈락을 의미하므로 0으로 기록한다.
         curr_hp = char.status.curr_hp if char is not None else 0
-        update_character_curr_hp(spreadsheet, name, curr_hp)
+        try:
+            update_character_curr_hp(spreadsheet, name, curr_hp)
+        except Exception:
+            logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
 
 
 def upsert_field_row(
