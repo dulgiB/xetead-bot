@@ -1,16 +1,11 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
+from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.define import BuffApplyTiming, ValueSourceType
-from battle.objects.models import (
-    BaseValueIndicator,
-    CharacterId,
-    DamageData,
-    FloatValueModifier,
-)
+from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.command_calculator import CommandPartCalculator
@@ -35,22 +30,18 @@ class BonusDamageOnHitEvent(BuffEvent):
         effect_seq_number: int,
     ) -> None:
         effect_data = calculator.data_by_effect[effect_seq_number]
-        new_items = []
-        for damage_data in effect_data.damage_data_list:
-            if damage_data.base.target_id == holder:
-                extra = DamageData(
-                    attacker_id=damage_data.base.attacker_id,
-                    target_id=holder,
-                    value=BaseValueIndicator(
-                        value_source=ValueSourceType.STAT_ATK,
-                        coefficient=FloatValueModifier(
-                            source_name=self.source_name,
-                            value=self.coefficient,
-                        ),
-                    ),
-                    is_magic_attack=damage_data.base.is_magic_attack,
-                )
-                new_items.append(DamageCalculateData(extra))
+        new_items = [
+            make_coefficient_damage_calc(
+                attacker_id=damage_data.base.attacker_id,
+                target_id=holder,
+                value_source=ValueSourceType.STAT_ATK,
+                source_name=self.source_name,
+                coefficient_value=self.coefficient,
+                is_magic_attack=damage_data.base.is_magic_attack,
+            )
+            for damage_data in effect_data.damage_data_list
+            if damage_data.base.target_id == holder
+        ]
         effect_data.damage_data_list.extend(new_items)
 
 

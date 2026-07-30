@@ -1,16 +1,11 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
+from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
-from battle.objects.models import (
-    BaseValueIndicator,
-    CharacterId,
-    DamageData,
-    FloatValueModifier,
-)
+from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.command_calculator import CommandPartCalculator
@@ -50,19 +45,14 @@ class DamagePerReferencedBuffStackEvent(BuffEvent):
         if stack <= 0:
             return
         calculator.data_by_effect[effect_seq_number].damage_data_list.append(
-            DamageCalculateData(
-                DamageData(
-                    attacker_id=attacker_or_target,
-                    target_id=holder,
-                    value=BaseValueIndicator(
-                        value_source=ValueSourceType.REFERENCED_BUFF_STACK,
-                        coefficient=FloatValueModifier(
-                            source_name="계수", value=self.coefficient * 100
-                        ),
-                        consumed_buff_id=self.reference_buff_id,
-                    ),
-                    triggers_given_damage_passives=False,
-                ),
+            make_coefficient_damage_calc(
+                attacker_id=attacker_or_target,
+                target_id=holder,
+                value_source=ValueSourceType.REFERENCED_BUFF_STACK,
+                source_name="계수",
+                coefficient_value=self.coefficient * 100,
+                consumed_buff_id=self.reference_buff_id,
+                triggers_given_damage_passives=False,
             )
         )
 

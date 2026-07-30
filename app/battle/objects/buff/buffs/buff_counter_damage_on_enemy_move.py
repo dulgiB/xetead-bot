@@ -1,16 +1,11 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
+from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
-from battle.objects.models import (
-    BaseValueIndicator,
-    CharacterId,
-    DamageData,
-    FloatValueModifier,
-)
+from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.command_calculator import CommandPartCalculator
@@ -49,23 +44,17 @@ class CounterDamageOnEnemyMoveEvent(BuffEvent):
         if stack <= 0:
             return
         calculator.data_by_effect[effect_seq_number].damage_data_list.append(
-            DamageCalculateData(
-                DamageData(
-                    attacker_id=holder,
-                    target_id=attacker_or_target,
-                    value=BaseValueIndicator(
-                        value_source=ValueSourceType.STAT_ATK_ROLL,
-                        coefficient=FloatValueModifier(
-                            source_name="계수",
-                            value=self.coefficient * stack,
-                            display_factors=(
-                                (f"{self.buff_label} 계수", self.coefficient),
-                                (self.reference_buff_id, stack * 100),
-                            ),
-                        ),
-                    ),
-                    triggers_given_damage_passives=False,
+            make_coefficient_damage_calc(
+                attacker_id=holder,
+                target_id=attacker_or_target,
+                value_source=ValueSourceType.STAT_ATK_ROLL,
+                source_name="계수",
+                coefficient_value=self.coefficient * stack,
+                display_factors=(
+                    (f"{self.buff_label} 계수", self.coefficient),
+                    (self.reference_buff_id, stack * 100),
                 ),
+                triggers_given_damage_passives=False,
             )
         )
 

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from utils.battle_helpers import is_reachable
 
@@ -11,9 +11,10 @@ if TYPE_CHECKING:
         BuffAddData,
         BuffBase,
     )
+    from battle.objects.buff.buff_events import BuffEvent
 
 from battle.objects.buff.buff_base import BuffDurationCounter
-from battle.objects.define import BuffApplyTiming, CombatStatType
+from battle.objects.define import BuffApplyTiming, CombatStatType, FactionType
 from battle.objects.models import BuffUid, CharacterId
 
 
@@ -96,6 +97,45 @@ class BuffContainer:
         buff_calculator.process(None)
         return build_log_entries(buff_calculator)
 
+    def _collect_reactive_event_pairs(
+        self,
+        timing: BuffApplyTiming,
+        required_faction: FactionType,
+        in_scope: Callable[[CharacterId], bool],
+    ) -> list[tuple["BuffEvent", CharacterId]]:
+        """timing이 일치하고, holder의 진영이 required_faction과 같으며,
+        in_scope(holder_id)가 True인 버프들의 (event, holder_id) 목록을
+        priority 순으로 정렬해 반환한다. "같은 열"/"사거리 내" 등 범위
+        판정 방식만 다른 반응형 트리거들(on_character_damaged 등)이 공유한다."""
+        event_pairs = [
+            (buff.create_event(), buff.applied_to)
+            for buff in self._buffs
+            if buff.timing == timing
+            and (holder_char := self._context.characters.get(buff.applied_to))
+            is not None
+            and holder_char.faction == required_faction
+            and in_scope(buff.applied_to)
+        ]
+        event_pairs.sort(key=lambda x: x[0].priority.value)
+        return event_pairs
+
+    def _apply_reactive_events(
+        self,
+        event_pairs: list[tuple["BuffEvent", CharacterId]],
+        attacker_or_target: CharacterId,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
+    ) -> None:
+        for event, holder in event_pairs:
+            if event.is_applied(self._context, holder, attacker_or_target):
+                event.apply(holder, attacker_or_target, calculator, effect_seq_number)
+
+    def _is_in_range_of(self, holder_id: CharacterId, target_pos) -> bool:
+        holder_char = self._context.characters[holder_id]
+        holder_pos = self._context.find_character_position(holder_id)
+        holder_range = holder_char.status[CombatStatType.RANGE]
+        return is_reachable(holder_pos, target_pos, holder_range)
+
     def on_enemy_move(
         self,
         moved_char_id: CharacterId,
@@ -158,26 +198,15 @@ class BuffContainer:
         self._context.damaged_this_round.add(damaged_char_id)
         damaged_pos = self._context.find_character_position(damaged_char_id)
 
-        event_pairs = []
-        for buff in self._buffs:
-            if buff.timing != BuffApplyTiming.ALLY_DAMAGED:
-                continue
-            holder_char = self._context.characters.get(buff.applied_to)
-            if holder_char is None:
-                continue
-            if holder_char.faction != damaged_char.faction:
-                continue
-            if self._context.find_character_position(buff.applied_to) != damaged_pos:
-                continue
-            event_pairs.append((buff.create_event(), buff.applied_to))
-
-        if not event_pairs:
-            return
-
-        event_pairs.sort(key=lambda x: x[0].priority.value)
-        for event, holder in event_pairs:
-            if event.is_applied(self._context, holder, damaged_char_id):
-                event.apply(holder, damaged_char_id, calculator, effect_seq_number)
+        event_pairs = self._collect_reactive_event_pairs(
+            BuffApplyTiming.ALLY_DAMAGED,
+            damaged_char.faction,
+            lambda holder_id: self._context.find_character_position(holder_id)
+            == damaged_pos,
+        )
+        self._apply_reactive_events(
+            event_pairs, damaged_char_id, calculator, effect_seq_number
+        )
 
     def on_ally_in_range_damaged(
         self,
@@ -199,26 +228,14 @@ class BuffContainer:
             return
         damaged_pos = self._context.find_character_position(damaged_char_id)
 
-        event_pairs = []
-        for buff in self._buffs:
-            if buff.timing != BuffApplyTiming.ALLY_IN_RANGE_DAMAGED:
-                continue
-            holder_char = self._context.characters.get(buff.applied_to)
-            if holder_char is None or holder_char.faction != damaged_char.faction:
-                continue
-            holder_pos = self._context.find_character_position(buff.applied_to)
-            holder_range = holder_char.status[CombatStatType.RANGE]
-            if not is_reachable(holder_pos, damaged_pos, holder_range):
-                continue
-            event_pairs.append((buff.create_event(), buff.applied_to))
-
-        if not event_pairs:
-            return
-
-        event_pairs.sort(key=lambda x: x[0].priority.value)
-        for event, holder in event_pairs:
-            if event.is_applied(self._context, holder, attacker_id):
-                event.apply(holder, attacker_id, calculator, effect_seq_number)
+        event_pairs = self._collect_reactive_event_pairs(
+            BuffApplyTiming.ALLY_IN_RANGE_DAMAGED,
+            damaged_char.faction,
+            lambda holder_id: self._is_in_range_of(holder_id, damaged_pos),
+        )
+        self._apply_reactive_events(
+            event_pairs, attacker_id, calculator, effect_seq_number
+        )
 
     def on_ally_in_range_attacked(
         self,
@@ -240,26 +257,14 @@ class BuffContainer:
             return
         attacker_pos = self._context.find_character_position(attacker_id)
 
-        event_pairs = []
-        for buff in self._buffs:
-            if buff.timing != BuffApplyTiming.ALLY_IN_RANGE_ATTACKED:
-                continue
-            holder_char = self._context.characters.get(buff.applied_to)
-            if holder_char is None or holder_char.faction != attacker_char.faction:
-                continue
-            holder_pos = self._context.find_character_position(buff.applied_to)
-            holder_range = holder_char.status[CombatStatType.RANGE]
-            if not is_reachable(holder_pos, attacker_pos, holder_range):
-                continue
-            event_pairs.append((buff.create_event(), buff.applied_to))
-
-        if not event_pairs:
-            return
-
-        event_pairs.sort(key=lambda x: x[0].priority.value)
-        for event, holder in event_pairs:
-            if event.is_applied(self._context, holder, target_id):
-                event.apply(holder, target_id, calculator, effect_seq_number)
+        event_pairs = self._collect_reactive_event_pairs(
+            BuffApplyTiming.ALLY_IN_RANGE_ATTACKED,
+            attacker_char.faction,
+            lambda holder_id: self._is_in_range_of(holder_id, attacker_pos),
+        )
+        self._apply_reactive_events(
+            event_pairs, target_id, calculator, effect_seq_number
+        )
 
     def on_battle_end(self) -> None:
         """전투 종료 시점에 모든 버프의 on_battle_end() 훅을 호출한다."""
