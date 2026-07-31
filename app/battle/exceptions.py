@@ -59,3 +59,7 @@ def error_item_not_usable_here() -> str:
 
 def error_skill_or_item_not_registered(name: str) -> str:
     return f"'{name}'은(는) 등록된 스킬도 아이템도 아닙니다."
+
+
+def error_character_already_defeated(char_id: CharacterId) -> str:
+    return f"'{char_id.name}'은(는) 이미 전투불능(체력 0) 상태이므로 전장에 배치할 수 없습니다."

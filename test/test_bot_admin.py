@@ -6,7 +6,13 @@ import contextlib
 import itertools
 from pathlib import Path
 
-from battle.objects.define import BattlefieldColumnIndex, FactionType  # noqa: E402
+from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
+from battle.objects.buff.models import BuffData  # noqa: E402
+from battle.objects.define import (  # noqa: E402
+    BattlefieldColumnIndex,
+    FactionType,
+    ValueType,
+)
 from battle.objects.models import CharacterId  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import SideType  # noqa: E402
@@ -20,7 +26,7 @@ from bot.commands.admin import (  # noqa: E402
     _cmd_battle_start,
     _cmd_continue_battle,
 )
-from bot.main import BotState, MastodonBotListener  # noqa: E402
+from bot.main import BotState, MastodonBotListener, _handle_practice_command  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
@@ -82,6 +88,53 @@ def test_battle_start_marks_round_start_for_field_image():
     result = _cmd_battle_start(state)
 
     assert result.attach_field_image is True
+
+
+def test_battle_start_reports_error_for_defeated_participant():
+    """참전 신청자 중 체력이 0인 캐릭터는 무작위 자동 배치 중 예전에는
+    조용히 사라졌다 — 이제는 오류로 보고되어 관리자가 알 수 있어야 하고,
+    나머지 참전 신청자는 정상적으로 배치되어야 한다."""
+    state = _make_state(pending_participants=["dead_acct", "alive_acct"])
+    state.char_dict = {
+        "dead_acct": get_test_preset("탈락캐릭터", initial_hp=0),
+        "alive_acct": get_test_preset("생존캐릭터"),
+    }
+
+    result = _cmd_battle_start(state)
+
+    assert state.session.started is True
+    assert CharacterId("생존캐릭터") in state.session.context.characters
+    assert CharacterId("탈락캐릭터") not in state.session.context.characters
+    assert "탈락캐릭터" in result.reply_text
+
+
+def test_advance_phase_system_error_is_generic_and_logged(monkeypatch, caplog):
+    """스프레드시트 저장/렌더링 실패는 원본 예외 메시지 대신 통일된
+    "◊ 시스템 오류입니다."로만 노출되고, 전체 트레이스는 서버 로그에
+    남아야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    _cmd_battle_start(state)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("시트 API 내부 세부사항")
+
+    monkeypatch.setattr(admin_module, "upsert_field_row", _boom)
+
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="bot.commands.admin"):
+        result = _cmd_advance_phase(state)
+
+    assert "◊ 시스템 오류입니다." in result.reply_text
+    assert "시트 API 내부 세부사항" not in result.reply_text
+    assert any(
+        "필드 시트 저장 실패" in record.message and record.exc_info is not None
+        for record in caplog.records
+    )
 
 
 def test_advance_phase_always_marks_field_image():
@@ -583,6 +636,113 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     round_call = mastodon.status_post_calls[-1]
     assert round_call["visibility"] == "unlisted"
     assert round_call["in_reply_to_id"] == active_post_id
+
+
+def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
+    """대련은 이미 공격으로 한쪽이 즉시 전멸하면 그 자리에서 승자를 선언하고
+    종료된다. 이 테스트는 그중 놓치기 쉬운 경로 하나를 확인한다 — 후공 차례
+    처리 중 ps.end_round()가 적용하는 라운드 종료 DoT로 전멸이 일어나는
+    경우도, 다음 라운드까지 기다리지 않고 그 즉시 종료되어야 한다(HP는
+    end_round() 이후에 다시 계산해야 한다)."""
+    dot_buff = BuffData(
+        id="맹독",
+        buff_class_name="BuffDamageOverTime",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER,
+        value=999,
+        condition_=None,
+        condition_value=None,
+        is_debuff=True,
+        description="",
+    )
+    ctx = PracticeBattlefieldContext(buff_dict={"맹독": dot_buff}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=CharacterId("A"), applied_to=CharacterId("B"), buff_id="맹독"
+        )
+    )
+
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
+    ps.start_round()
+
+    side_to_acct = {SideType.SIDE_1: "acct_a", SideType.SIDE_2: "acct_b"}
+    state = BotState(
+        char_dict={
+            "acct_a": get_test_preset("A"),
+            "acct_b": get_test_preset("B"),
+        },
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    first_acct = side_to_acct[ps.first_mover]
+    _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
+    assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
+
+    second_acct = side_to_acct[ps.second_mover]
+    _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+
+    assert "종료" in game_post
+    assert "승자: 1팀" in game_post
+    assert state.practice is None
+
+
+def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry(
+    monkeypatch,
+):
+    """[N팀/9열]처럼 열 번호가 범위를 벗어나면 예전에는 완전히 무응답이었다 —
+    이제는 본 전투와 동일하게 validation error를 답글로 보내고, 이후
+    올바른 형식으로 다시 보내면 정상적으로 선언이 성립해야 한다."""
+    state = _make_state()
+    char_dict = {
+        "swordsman_acct": get_test_preset("검사"),
+        "archer_acct": get_test_preset("궁수"),
+    }
+    name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
+    monkeypatch.setattr(
+        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[대련]",
+            visibility="unlisted",
+            extra_mentions=["swordsman_acct", "archer_acct"],
+        )
+    )
+    prep_post_id = state.practice.prep_post_id
+
+    listener.on_notification(
+        _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/9열]")
+    )
+
+    error_reply = mastodon.status_post_calls[-1]
+    assert "인식할 수 없습니다" in error_reply["status"]
+    assert "swordsman_acct" not in state.practice.declared
+
+    # 형식을 고쳐 재시도하면 정상적으로 선언이 성립해야 한다.
+    listener.on_notification(
+        _make_notification("swordsman_acct", 3, prep_post_id, "[1팀/3열]")
+    )
+    assert "swordsman_acct" in state.practice.declared
 
 
 def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):

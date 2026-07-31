@@ -10,7 +10,10 @@ from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
     handle_daily_quest_roll,
+    handle_daily_quest_start,
+    handle_investigation_accept,
     handle_investigation_venue_choice,
+    handle_roll,
     handle_transfer_item,
     handle_use_item,
     parse_transfer_item_args,
@@ -42,6 +45,34 @@ def _make_state(acct: str) -> BotState:
     return state
 
 
+def test_handle_roll_returns_log_info():
+    """[판정/스탯]은 예전에는 "로그_비전투"에 전혀 기록되지 않았다 — 이제는
+    항상 NoncombatLogInfo를 반환해야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+
+    result, log_info = handle_roll(acct, "육체", state)
+
+    assert "「" in result
+    assert log_info is not None
+    assert log_info.command_text == "[판정/육체]"
+    assert log_info.dice_roll
+    assert log_info.error_trace is None
+
+
+def test_handle_investigation_accept_returns_log_info():
+    """[수락]도 마찬가지로 NoncombatLogInfo를 반환해 로그에 남아야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    state.noncombat.investigation_acct_to_quest_id[acct] = "q1"
+
+    result, log_info = handle_investigation_accept(acct, state)
+
+    assert "수주했습니다" in result
+    assert log_info is not None
+    assert log_info.command_text == "[수락]"
+
+
 def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
     monkeypatch,
 ):
@@ -54,13 +85,15 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
         lambda *a, **k: saved_calls.append(a),
     )
 
-    result = handle_daily_quest_roll(acct, "육체", state)
+    result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
     assert "사례로 1G를 획득했다" in result
     assert acct not in state.noncombat.daily_quest_mid
     # 캐릭터 데이터는 매 커맨드마다 새로 읽으므로, 로컬 캐시가 아니라
     # 스프레드시트에 실제로 반영된 값(gold=11)을 검증한다.
     assert saved_calls == [(None, "동료", 11, saved_calls[0][3])]
+    assert log_info is not None
+    assert log_info.error_trace is None
 
 
 def test_daily_quest_roll_reports_failure_and_keeps_mid_when_save_fails(monkeypatch):
@@ -74,12 +107,14 @@ def test_daily_quest_roll_reports_failure_and_keeps_mid_when_save_fails(monkeypa
         noncombat_module, "update_character_gold_and_quest_date", _boom
     )
 
-    result = handle_daily_quest_roll(acct, "육체", state)
+    result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
     assert "사례로 1G를 획득했다" not in result
     assert "저장" in result
     assert acct in state.noncombat.daily_quest_mid
     assert state.noncombat_char_dict[acct].gold == 10
+    assert log_info is not None
+    assert log_info.error_trace is not None
 
 
 def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
@@ -113,10 +148,13 @@ def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
 
     # 2. 같은 메뉴에 존재하지 않는 장소를 다시 입력 → 실패 응답이지만
     #    이전에 저장된 quest_id는 지워져야 한다
-    result = handle_investigation_venue_choice(acct, "존재하지 않는 장소", state)
+    result, log_info = handle_investigation_venue_choice(
+        acct, "존재하지 않는 장소", state
+    )
 
     assert "이번 조사의 장소가 아닙니다" in result
     assert acct not in state.noncombat.investigation_acct_to_quest_id
+    assert log_info is not None
 
 
 # ---------------------------------------------------------------------------

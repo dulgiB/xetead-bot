@@ -55,11 +55,15 @@ logger = logging.getLogger(__name__)
 ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
 
 _RE_MENTION = re.compile(r"@\S+")
+# 팀/열 번호를 [12]/[1-7]로 제한하지 않고 느슨하게 캡처한다 — 범위를 벗어난
+# 입력(예: [3팀/9열])도 일단 매칭시켜야 아래에서 명시적으로 검증하고 오류
+# 답글을 보낼 수 있다. 엄격하게 제한하면 형식이 살짝 어긋난 입력은 매칭
+# 자체가 안 돼 완전히 무시되어(무응답) 사용자가 재시도할 방법을 알 수 없다.
 _RE_DECLARATION = re.compile(
-    rf"\[([12]){whitespace_tolerant_literal('팀')}\s*/\s*([1-7])열?]"
+    rf"\[([^\[\]/]+){whitespace_tolerant_literal('팀')}\s*/\s*([^\[\]]+)]"
 )
 _RE_INVESTIGATION_DECLARATION = re.compile(
-    rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([1-7])열?]"
+    rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([^\[\]]+)]"
 )
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
     rf"\[{whitespace_tolerant_literal('상시전투')}]"
@@ -107,6 +111,29 @@ def _truncate(text: str) -> str:
     if len(text) <= _MAX_POST_LENGTH:
         return text
     return text[: _MAX_POST_LENGTH - 1] + "…"
+
+
+def _apply_game_post_side_effects(
+    state: "BotState", result: AdminCommandResult, new_post_id: int
+) -> None:
+    """game_post_text가 실제로 게시된 후, 그 post_id를 필요한 상태에 반영한다.
+
+    reply_text 유무에 따라 게시 방식(첨부 미디어/가시성/답글 대상 등)은
+    다르지만, 게시가 끝난 뒤 post_id를 어디에 반영할지는 두 경로에서 항상
+    동일하므로 공용 헬퍼로 뽑았다.
+    """
+    if result.set_practice_prep_from_game_post and state.practice is not None:
+        state.practice.prep_post_id = new_post_id
+    if result.set_practice_active_post and state.practice is not None:
+        state.practice.active_post_id = new_post_id
+    if result.dm_battle_to_register is not None:
+        _register_dm_battle(state, result.dm_battle_to_register, new_post_id)
+    if state.session is not None and state.session.started:
+        state.active_phase_post_id = (
+            new_post_id
+            if state.session.current_phase in _COMMAND_PHASES
+            else None
+        )
 
 
 def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) -> None:
@@ -330,21 +357,7 @@ class MastodonBotListener(StreamListener):
                     post = self._reply(
                         status_id, acct, visibility, result.game_post_text
                     )
-                    new_post_id = post["id"]
-                    if result.set_practice_prep_from_game_post and state.practice is not None:
-                        state.practice.prep_post_id = new_post_id
-                    if result.set_practice_active_post and state.practice is not None:
-                        state.practice.active_post_id = new_post_id
-                    if result.dm_battle_to_register is not None:
-                        _register_dm_battle(
-                            state, result.dm_battle_to_register, new_post_id
-                        )
-                    if state.session is not None and state.session.started:
-                        state.active_phase_post_id = (
-                            new_post_id
-                            if state.session.current_phase in _COMMAND_PHASES
-                            else None
-                        )
+                    _apply_game_post_side_effects(state, result, post["id"])
             else:
                 # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
                 # 이미지는 페이즈 게시물에만 첨부한다). post_as_new_status면
@@ -391,25 +404,7 @@ class MastodonBotListener(StreamListener):
                     new_post = self._mastodon.status_post(
                         _truncate(post_text), **post_kwargs
                     )
-                    new_post_id = new_post["id"]
-
-                    if result.set_practice_prep_from_game_post and state.practice is not None:
-                        state.practice.prep_post_id = new_post_id
-
-                    if result.set_practice_active_post and state.practice is not None:
-                        state.practice.active_post_id = new_post_id
-
-                    if result.dm_battle_to_register is not None:
-                        _register_dm_battle(
-                            state, result.dm_battle_to_register, new_post_id
-                        )
-
-                    if state.session is not None and state.session.started:
-                        state.active_phase_post_id = (
-                            new_post_id
-                            if state.session.current_phase in _COMMAND_PHASES
-                            else None
-                        )
+                    _apply_game_post_side_effects(state, result, new_post["id"])
 
             return
 
@@ -424,50 +419,77 @@ class MastodonBotListener(StreamListener):
                 # 상시전투: [아군/N열] 포지션 선언
                 m = _RE_INVESTIGATION_DECLARATION.search(text)
                 if m and acct in ps.expected_accts:
-                    col_n = int(m.group(1))
+                    col_str = m.group(1).strip()
                     try:
-                        column = BattlefieldColumnIndex.from_str(f"{col_n}열")
-                        ps.declared[acct] = (SideType.SIDE_1, column)
-                        logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
-                        if ps.all_declared():
-                            game_post_text = _start_investigation_battle(state)
-                            prev_post_id = ps.prep_post_id
-                            ps.prep_post_id = 0
-                            new_post = self._mastodon.status_post(
-                                _truncate(game_post_text),
-                                visibility=ps.visibility,
-                                in_reply_to_id=prev_post_id,
-                            )
-                            if state.practice is not None:
-                                state.practice.active_post_id = new_post["id"]
+                        column = BattlefieldColumnIndex.from_str(col_str)
                     except ValueError:
-                        pass
+                        self._reply(
+                            status_id,
+                            acct,
+                            visibility,
+                            f"◊ 입력된 열({col_str})을 인식할 수 없습니다. '1' 등 "
+                            "숫자만 입력하거나, '2열' 등 '○열' 형식을 사용해 "
+                            "주세요. 예: [아군/2열]",
+                        )
+                        return
+                    ps.declared[acct] = (SideType.SIDE_1, column)
+                    logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
+                    if ps.all_declared():
+                        game_post_text = _start_investigation_battle(state)
+                        prev_post_id = ps.prep_post_id
+                        ps.prep_post_id = 0
+                        new_post = self._mastodon.status_post(
+                            _truncate(game_post_text),
+                            visibility=ps.visibility,
+                            in_reply_to_id=prev_post_id,
+                        )
+                        if state.practice is not None:
+                            state.practice.active_post_id = new_post["id"]
             else:
                 # 대련: [N팀/N열] 포지션 선언
                 m = _RE_DECLARATION.search(text)
                 if m and acct in ps.expected_accts:
-                    side_n = int(m.group(1))
-                    col_n = int(m.group(2))
-                    side = SideType.SIDE_1 if side_n == 1 else SideType.SIDE_2
-                    try:
-                        column = BattlefieldColumnIndex.from_str(f"{col_n}열")
-                        ps.declared[acct] = (side, column)
-                        logger.info(
-                            "대련 포지션 선언: %s → %s %s", acct, side.value, column
+                    side_str = m.group(1).strip()
+                    if side_str not in ("1", "2"):
+                        self._reply(
+                            status_id,
+                            acct,
+                            visibility,
+                            f"◊ 입력된 팀 번호({side_str})를 인식할 수 없습니다. "
+                            "1팀 또는 2팀만 사용할 수 있습니다. 예: [1팀/2열]",
                         )
-                        if ps.all_declared() and ps.teams_valid():
-                            game_post_text = _start_practice_battle(state)
-                            prev_post_id = ps.prep_post_id
-                            ps.prep_post_id = 0
-                            new_post = self._mastodon.status_post(
-                                _truncate(game_post_text),
-                                visibility=ps.visibility,
-                                in_reply_to_id=prev_post_id,
-                            )
-                            if state.practice is not None:
-                                state.practice.active_post_id = new_post["id"]
+                        return
+                    side = SideType.SIDE_1 if side_str == "1" else SideType.SIDE_2
+
+                    col_str = m.group(2).strip()
+                    try:
+                        column = BattlefieldColumnIndex.from_str(col_str)
                     except ValueError:
-                        pass
+                        self._reply(
+                            status_id,
+                            acct,
+                            visibility,
+                            f"◊ 입력된 열({col_str})을 인식할 수 없습니다. '1' 등 "
+                            "숫자만 입력하거나, '2열' 등 '○열' 형식을 사용해 "
+                            "주세요. 예: [1팀/2열]",
+                        )
+                        return
+
+                    ps.declared[acct] = (side, column)
+                    logger.info(
+                        "대련 포지션 선언: %s → %s %s", acct, side.value, column
+                    )
+                    if ps.all_declared() and ps.teams_valid():
+                        game_post_text = _start_practice_battle(state)
+                        prev_post_id = ps.prep_post_id
+                        ps.prep_post_id = 0
+                        new_post = self._mastodon.status_post(
+                            _truncate(game_post_text),
+                            visibility=ps.visibility,
+                            in_reply_to_id=prev_post_id,
+                        )
+                        if state.practice is not None:
+                            state.practice.active_post_id = new_post["id"]
             return
 
         # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)
@@ -540,8 +562,9 @@ class MastodonBotListener(StreamListener):
         ):
             stat_name = parse_stat_name(text)
             if stat_name:
-                response = handle_daily_quest_roll(acct, stat_name, state)
-                self._reply(status_id, acct, visibility, response)
+                response, log_info = handle_daily_quest_roll(acct, stat_name, state)
+                reply_status = self._reply(status_id, acct, visibility, response)
+                _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
         # 7. 상시조사 메뉴 답글 (봇이 4개 선택지를 보낸 포스트에 대한 답글)
@@ -552,8 +575,11 @@ class MastodonBotListener(StreamListener):
             menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
             if menu_acct == acct:
                 venue_name = text.strip().strip("[]")
-                response = handle_investigation_venue_choice(acct, venue_name, state)
+                response, log_info = handle_investigation_venue_choice(
+                    acct, venue_name, state
+                )
                 post = self._reply(status_id, acct, visibility, response)
+                _persist_noncombat_log(state, log_info, str(post["id"]))
                 finalize_investigation_overview_post(acct, post["id"], state)
             return
 
@@ -563,28 +589,34 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id in nc.get_investigation_overview_post_ids()
             and _RE_ACCEPT.search(text)
         ):
-            response = handle_investigation_accept(acct, state, in_reply_to_id)
-            self._reply(status_id, acct, visibility, response)
+            response, log_info = handle_investigation_accept(
+                acct, state, in_reply_to_id
+            )
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
         # 9. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능)
         stat_name = parse_stat_name(text)
         if stat_name:
-            response = handle_roll(acct, stat_name, state)
-            self._reply(status_id, acct, visibility, response)
+            response, log_info = handle_roll(acct, stat_name, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
         # 10. [의뢰] — 일일 의뢰 시작
         if _RE_DAILY_QUEST_START.search(text):
-            response = handle_daily_quest_start(acct, state)
+            response, log_info = handle_daily_quest_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(post["id"]))
             finalize_daily_quest_mid(acct, post["id"], state)
             return
 
         # 11. [상시조사] — 상시조사 메뉴
         if _RE_INVESTIGATION_START.search(text):
-            response = handle_investigation_start(acct, state)
+            response, log_info = handle_investigation_start(acct, state)
             post = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(post["id"]))
             finalize_investigation_menu_post(acct, post["id"], state)
             return
 
@@ -751,11 +783,11 @@ def _handle_practice_command(
         )
         return f"◊ {e}", None, battle_log
 
-    hp1 = ps.total_hp_by_side(SideType.SIDE_1)
-    hp2 = ps.total_hp_by_side(SideType.SIDE_2)
     battle_mode = "상시전투" if ps.is_investigation else "대련"
 
     if current_phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
+        hp1 = ps.total_hp_by_side(SideType.SIDE_1)
+        hp2 = ps.total_hp_by_side(SideType.SIDE_2)
         if hp1 == 0 or hp2 == 0:
             ps.end_round()
             winner_label = ps.side_label(ps.winner())
@@ -778,6 +810,11 @@ def _handle_practice_command(
 
     # SECOND_MOVER_ACTION
     ps.end_round()
+    # end_round()에서 ON_ROUND_END 버프(DoT/HoT)나 탈락 처리가 방금 일어날 수
+    # 있으므로, hp1/hp2는 end_round() 이후에 다시 계산해야 한다 — 그 전에
+    # 계산한 값을 그대로 쓰면 라운드 종료 시점에 발생한 전멸을 놓친다.
+    hp1 = ps.total_hp_by_side(SideType.SIDE_1)
+    hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
     if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
         winner_label = ps.side_label(ps.winner())

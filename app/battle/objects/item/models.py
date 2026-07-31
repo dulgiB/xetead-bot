@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Type
 from battle.objects.models import CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
 from battle.objects.skill.target_functions import SkillTargetRule
+from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -45,7 +46,9 @@ class ItemData:
             attack_range=data["range"],
             effect=effect,
             description=data.get("description", "") or "",
-            usable_outside_battle=bool(data.get("usable_outside_battle", False)),
+            usable_outside_battle=parse_spreadsheet_bool(
+                data.get("usable_outside_battle", False)
+            ),
         )
 
     def to_item_instance(

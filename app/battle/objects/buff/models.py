@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Optional, Type
 from battle.objects.buff.conditions import Condition
 from battle.objects.define import BuffCountDeductCondition, ValueType
 from battle.objects.models import CharacterId
+from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 if TYPE_CHECKING:
     from battle.objects.buff.buff_base import BuffBase
@@ -62,7 +63,7 @@ class BuffData:
             condition_value=data["condition_value"]
             if data["condition_value"]
             else None,
-            is_debuff=bool(data.get("is_debuff", False)),
+            is_debuff=parse_spreadsheet_bool(data.get("is_debuff", False)),
             description=data["description"],
             max_stack=int(data["max_stack"]) if data.get("max_stack") else None,
             reference_buff_id=data.get("reference_buff_id") or None,

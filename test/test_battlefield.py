@@ -133,6 +133,82 @@ def test_hp_does_not_go_below_zero(battle_setup):
     assert context.characters[enemy_id].status.curr_hp >= 0
 
 
+def test_add_character_with_zero_hp_raises(empty_context):
+    """체력이 0인 캐릭터를 필드에 추가하려 하면 CommandValidationError."""
+    with pytest.raises(CommandValidationError):
+        empty_context.add_character(
+            get_test_preset("탈락캐릭터", initial_hp=0),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+
+
+def test_eliminated_character_removed_at_round_end(battle_setup):
+    """체력이 0이 된 캐릭터는 라운드 종료 시점에 필드에서 자동으로 제거되고,
+    RoundManager가 그 목록을 노출해야 한다."""
+    context, manager = battle_setup
+    enemy_id = CharacterId("적군 1")
+    context.characters[enemy_id].status.curr_hp = 0
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert enemy_id not in context.characters
+    assert manager.get_last_eliminated_characters() == [enemy_id]
+
+
+def test_alive_character_not_removed_at_round_end(battle_setup):
+    """체력이 남아 있는 캐릭터는 라운드 종료 시점에 제거되지 않아야 한다."""
+    context, manager = battle_setup
+    enemy_id = CharacterId("적군 1")
+
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert enemy_id in context.characters
+    assert manager.get_last_eliminated_characters() == []
+
+
+def test_eliminated_owner_removes_companion_together(empty_context):
+    """소환자가 탈락하면, 동료의 현재 체력과 무관하게 동료도 함께 제거되어야
+    한다 — 소환자가 없으면 동료를 재소환할 주체 자체가 없어지기 때문이다."""
+    owner_id = CharacterId("소환사")
+    companion_id = CharacterId("동료")
+    empty_context.add_character(
+        get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    owner = empty_context.characters[owner_id]
+    empty_context._spawn_companion_character(owner, companion_id, 50)
+    owner.status.curr_hp = 0
+    # 동료는 아직 체력이 남아 있어도 소환자와 함께 제거되어야 한다.
+    assert empty_context.characters[companion_id].status.curr_hp > 0
+
+    manager = RoundManager(empty_context)
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert owner_id not in empty_context.characters
+    assert companion_id not in empty_context.characters
+    assert set(manager.get_last_eliminated_characters()) == {owner_id, companion_id}
+
+
+def test_eliminated_companion_alone_does_not_affect_owner(empty_context):
+    """동료 자신의 체력이 0이 되는 것은(소환자는 살아 있는 채로) 기존 규칙대로
+    단독으로 처리되지 않아야 한다 — 소환자도, 동료도 제거되면 안 된다."""
+    owner_id = CharacterId("소환사")
+    companion_id = CharacterId("동료")
+    empty_context.add_character(
+        get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    owner = empty_context.characters[owner_id]
+    empty_context._spawn_companion_character(owner, companion_id, 50)
+    empty_context.characters[companion_id].status.curr_hp = 0
+
+    manager = RoundManager(empty_context)
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert owner_id in empty_context.characters
+    assert companion_id in empty_context.characters
+    assert manager.get_last_eliminated_characters() == []
+
+
 def test_cost_deducted_after_action(battle_setup):
     """행동 후 코스트가 차감되어야 한다."""
     context, manager = battle_setup

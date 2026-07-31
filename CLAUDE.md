@@ -27,13 +27,10 @@ app/
         admin.py                 # AdminCommand 계열 (강제 이동/대미지/힐/버프 부여·제거)
     exceptions.py                # CommandValidationError, 검증 실패 메시지 생성 함수들
     logger.py                    # Logger, CommandResult (콘솔 디버그 로그)
-    main.py                      # 로컬 디버그 스크립트 (스프레드시트 → 전장 이미지 렌더링, 배치 실행용)
     practice/                    # 대련/상시전투 전용 축소 라운드 관리
       context.py                 # PracticeBattlefieldContext
       define.py                  # SideType, PracticeRoundPhase
       round_manager.py           # PracticeRoundManager
-    visualization/
-      renderer.py                # 전장 상태 → HTML/이미지 렌더링 (공개 필드 시트 캡처에 사용)
     objects/
       buff/
         buff_base.py             # BuffBase, BuffDurationCounter, BuffAddData
