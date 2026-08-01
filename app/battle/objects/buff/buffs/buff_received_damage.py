@@ -59,3 +59,12 @@ class BuffReceivedDamage(BuffBase):
             )
         else:
             raise ValueError(self.value_type)
+
+
+class BuffReceivedDamageMark(BuffReceivedDamage):
+    """BuffReceivedDamage와 동작은 완전히 동일하다 — BuffContainer가 버프를
+    (given_by, applied_to, buff_class_name)으로 식별하기 때문에, 같은
+    부여자가 같은 대상에게 BuffReceivedDamage 기반 디버프를 이미 걸어둔
+    상태에서 또 다른 BuffReceivedDamage 기반 디버프를 추가로 걸면 서로
+    같은 버프로 오인되어 값이 덮어써진다. 한 캐릭터가 이런 조합을 동시에
+    쓰는 경우 이 클래스를 대신 등록해 별도 식별자로 분리한다."""
