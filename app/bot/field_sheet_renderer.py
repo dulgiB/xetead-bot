@@ -244,7 +244,7 @@ def _format_buff_cell(
         display_lines.append(
             f"{icon} {label}{buff.duration.display_text(stack_count)}"
         )
-        description = context.get_buff_data_by_id(buff.id).description
+        description = buff.get_description(context)
         note_lines.append(f"[{label}] {description}")
 
     return "\n".join(display_lines), "\n".join(note_lines)
