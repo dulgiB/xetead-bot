@@ -35,6 +35,11 @@ class BuffAddData:
     gate_value_source: Optional[ValueSourceType] = None
     gate_value: Optional[int] = None
 
+    # 버프 시트의 고정 value 대신 이 값을 쓴다. 부여 시점에 계산한 수치를
+    # 그 버프의 수치에 그대로 스냅샷해야 하는 경우 전용(예: 다른 버프의
+    # 현재 스택 수 × 계수). None이면 버프 시트의 value를 그대로 쓴다.
+    value_override: Optional[int] = None
+
 
 @dataclass(frozen=True, eq=True)
 class BuffRemoveData:

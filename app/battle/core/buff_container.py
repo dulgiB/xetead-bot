@@ -41,11 +41,16 @@ class BuffContainer:
                 existing.stack_count = min(
                     buff_data.max_stack, existing.stack_count + add_event.stack_value
                 )
+            if add_event.value_override is not None:
+                existing.value = add_event.value_override
             return
 
         self._buffs.add(
             buff_data.to_buff_instance(
-                add_event.given_by, add_event.applied_to, add_event.stack_value
+                add_event.given_by,
+                add_event.applied_to,
+                add_event.stack_value,
+                value_override=add_event.value_override,
             )
         )
 
