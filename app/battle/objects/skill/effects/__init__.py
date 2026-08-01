@@ -2,6 +2,12 @@ from .effect_add_buff import SkillEffectAddBuff  # noqa: F401
 from .effect_add_buff_if_holder_has_formation_buff import (  # noqa: F401
     SkillEffectAddBuffIfHolderHasFormationBuff,
 )
+from .effect_add_buff_if_target_has_referenced_buff import (  # noqa: F401
+    SkillEffectAddBuffIfTargetHasReferencedBuff,
+)
+from .effect_add_buff_with_referenced_stack_value import (  # noqa: F401
+    SkillEffectAddBuffWithReferencedStackValue,
+)
 from .effect_consume_stack_for_damage import (  # noqa: F401
     SkillEffectConsumeStackForDamage,
 )
