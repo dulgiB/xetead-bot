@@ -309,6 +309,7 @@ def _cmd_battle_start(
             characters=build_field_characters(
                 state.session.context, include_hp=False
             ),
+            cache=state.sheet_cache,
         )
     except Exception:
         _log_system_error("필드 시트 저장")
@@ -360,6 +361,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             characters=build_field_characters(
                 state.session.context, include_hp=False
             ),
+            cache=state.sheet_cache,
         )
     except Exception:
         _log_system_error("필드 시트 저장")
@@ -393,7 +395,10 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             for entry in part_result.log_entries
         ]
         write_back_changed_hp(
-            state.spreadsheet, state.session.context, post_action_entries
+            state.spreadsheet,
+            state.session.context,
+            post_action_entries,
+            cache=state.sheet_cache,
         )
 
     round_end_log_entries = (
@@ -404,7 +409,10 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     if round_end_log_entries:
         # 라운드 종료 시 발동한 DoT/HoT 등도 "캐릭터"/"에너미" 시트에 반영한다.
         write_back_changed_hp(
-            state.spreadsheet, state.session.context, round_end_log_entries
+            state.spreadsheet,
+            state.session.context,
+            round_end_log_entries,
+            cache=state.sheet_cache,
         )
 
     eliminated_characters = (
@@ -455,6 +463,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             characters=build_field_characters(
                 state.session.context, include_hp=False
             ),
+            cache=state.sheet_cache,
         )
     except Exception:
         _log_system_error("필드 시트 저장")
@@ -505,7 +514,10 @@ def _cmd_end(state: "BotState") -> str:
     if battle_end_entries:
         try:
             write_back_changed_hp(
-                state.spreadsheet, state.session.context, battle_end_entries
+                state.spreadsheet,
+                state.session.context,
+                battle_end_entries,
+                cache=state.sheet_cache,
             )
         except Exception:
             _log_system_error("전투 종료 처리 HP 반영")
@@ -522,6 +534,7 @@ def _cmd_end(state: "BotState") -> str:
                 state.session.context, include_hp=False
             ),
             ended=True,
+            cache=state.sheet_cache,
         )
     except Exception:
         _log_system_error("필드 시트 저장")
@@ -656,7 +669,7 @@ def _cmd_proxy(
         state.session.process_command(command)
         new_results = state.session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
-        write_back_changed_hp(state.spreadsheet, state.session.context, entries)
+        write_back_changed_hp(state.spreadsheet, state.session.context, entries, cache=state.sheet_cache)
 
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -974,7 +987,7 @@ def _cmd_dm_battle_advance_phase(
             for part_result in part_results
             for entry in part_result.log_entries
         ]
-        write_back_changed_hp(state.spreadsheet, session.context, post_action_entries)
+        write_back_changed_hp(state.spreadsheet, session.context, post_action_entries, cache=state.sheet_cache)
 
     round_end_log_entries = (
         session.manager.get_last_round_end_log_entries()
@@ -982,7 +995,7 @@ def _cmd_dm_battle_advance_phase(
         else None
     )
     if round_end_log_entries:
-        write_back_changed_hp(state.spreadsheet, session.context, round_end_log_entries)
+        write_back_changed_hp(state.spreadsheet, session.context, round_end_log_entries, cache=state.sheet_cache)
 
     eliminated_characters = (
         session.manager.get_last_eliminated_characters()
@@ -1067,7 +1080,7 @@ def _cmd_dm_battle_proxy(
         session.process_command(command)
         new_results = session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
-        write_back_changed_hp(state.spreadsheet, session.context, entries)
+        write_back_changed_hp(state.spreadsheet, session.context, entries, cache=state.sheet_cache)
 
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -1130,7 +1143,7 @@ def _end_dm_battle(
         if (before := hp_before[char_id]) != char.status.curr_hp
     ]
     if battle_end_entries:
-        write_back_changed_hp(state.spreadsheet, session.context, battle_end_entries)
+        write_back_changed_hp(state.spreadsheet, session.context, battle_end_entries, cache=state.sheet_cache)
 
     state.dm_battles.pop(dm_state.active_post_id, None)
 
