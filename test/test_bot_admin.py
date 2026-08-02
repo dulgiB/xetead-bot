@@ -273,7 +273,7 @@ def test_investigation_battle_inline_placement_respects_faction_token(monkeypatc
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: (
+        lambda spreadsheet, cache=None: (
             {},
             {},
             {},
@@ -387,7 +387,7 @@ def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
         "load_char_data",
         lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
     )
-    monkeypatch.setattr(admin_module, "load_battle_data", lambda spreadsheet: (
+    monkeypatch.setattr(admin_module, "load_battle_data", lambda spreadsheet, cache=None: (
         {}, {}, {}, {}, None, state.char_dict, state.name_dict, state.noncombat_char_dict
     ))
     mastodon = _FakeMastodon()
@@ -604,7 +604,7 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -725,7 +725,7 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -777,7 +777,7 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -927,7 +927,7 @@ def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")

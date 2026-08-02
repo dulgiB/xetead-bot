@@ -26,8 +26,17 @@ logger = logging.getLogger(__name__)
 _UNFORMATTED = ValueRenderOption.unformatted
 
 
+def _worksheet(
+    spreadsheet: gspread.Spreadsheet, name: str, cache: Optional[SheetCache]
+) -> gspread.Worksheet:
+    """cache가 주어지면 그 인스턴스가 공유하는 시트 메타데이터를 재사용해
+    spreadsheet.worksheet(name)의 매번 새로운 메타데이터 조회를 피한다."""
+    return cache.worksheet(name) if cache is not None else spreadsheet.worksheet(name)
+
+
 def load_battle_data(
     spreadsheet: gspread.Spreadsheet,
+    cache: Optional[SheetCache] = None,
 ) -> tuple[
     dict[str, BuffData],
     dict[str, SkillData],
@@ -51,31 +60,38 @@ def load_battle_data(
       - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
       - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체)
       - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만)
+
+    `cache`가 주어지면(멘션 하나 처리 범위의 SheetCache) "버프"/"스킬_캐릭터"/
+    "스킬_에너미"/"스킬_패시브"/"버프_패시브"/"아이템"/"인벤토리"/"캐릭터"/"에너미"
+    9개 시트 조회가 시트 메타데이터를 인스턴스당 1회만 공유해서 쓴다 — 캐시가
+    없으면 gspread가 이름마다 매번 전체 메타데이터를 새로 읽어온다.
     """
     db = spreadsheet
 
-    buff_raw = db.worksheet("버프").get_all_records(value_render_option=_UNFORMATTED)
+    buff_raw = _worksheet(db, "버프", cache).get_all_records(
+        value_render_option=_UNFORMATTED
+    )
     buff_dict: dict[str, BuffData] = {r["id"]: BuffData.from_dict(r) for r in buff_raw}
 
-    char_skill_raw = db.worksheet("스킬_캐릭터").get_all_records(
+    char_skill_raw = _worksheet(db, "스킬_캐릭터", cache).get_all_records(
         value_render_option=_UNFORMATTED
     )
     skill_dict: dict[str, SkillData] = {
         r["id"]: SkillData.from_dict(r) for r in char_skill_raw
     }
     try:
-        enemy_skill_raw = db.worksheet("스킬_에너미").get_all_records(
+        enemy_skill_raw = _worksheet(db, "스킬_에너미", cache).get_all_records(
             value_render_option=_UNFORMATTED
         )
         skill_dict.update({r["id"]: SkillData.from_dict(r) for r in enemy_skill_raw})
     except gspread.exceptions.WorksheetNotFound:
         logger.warning("'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다.")
 
-    passive_buff_dict = load_passive_buff_data(db)
+    passive_buff_dict = load_passive_buff_data(db, cache=cache)
 
     passive_skill_dict: dict[str, PassiveSkillData] = {}
     try:
-        passive_skill_raw = db.worksheet("스킬_패시브").get_all_records(
+        passive_skill_raw = _worksheet(db, "스킬_패시브", cache).get_all_records(
             value_render_option=_UNFORMATTED
         )
         passive_skill_dict = {
@@ -86,10 +102,10 @@ def load_battle_data(
     except gspread.exceptions.WorksheetNotFound:
         logger.warning("'스킬_패시브' 시트를 찾을 수 없습니다. 패시브 스킬 없이 로드합니다.")
 
-    item_dict = load_item_data(db)
-    inventory = load_inventory(db)
+    item_dict = load_item_data(db, cache=cache)
+    inventory = load_inventory(db, cache=cache)
 
-    char_dict, name_dict, noncombat_char_dict = load_char_data(db)
+    char_dict, name_dict, noncombat_char_dict = load_char_data(db, cache=cache)
 
     return (
         buff_dict,
@@ -134,6 +150,7 @@ def load_all_data() -> tuple[
 
 def load_passive_buff_data(
     spreadsheet: gspread.Spreadsheet,
+    cache: Optional[SheetCache] = None,
 ) -> dict[str, PassiveBuffData]:
     """'버프_패시브' 시트를 읽어 id → PassiveBuffData dict를 반환한다.
 
@@ -141,7 +158,7 @@ def load_passive_buff_data(
     전용 데이터로, 지속시간/적층 등이 없는 '버프' 시트의 축소판이다.
     """
     try:
-        passive_buff_raw = spreadsheet.worksheet("버프_패시브").get_all_records(
+        passive_buff_raw = _worksheet(spreadsheet, "버프_패시브", cache).get_all_records(
             value_render_option=_UNFORMATTED
         )
     except gspread.exceptions.WorksheetNotFound:
@@ -153,10 +170,12 @@ def load_passive_buff_data(
     }
 
 
-def load_item_data(spreadsheet: gspread.Spreadsheet) -> dict[str, ItemData]:
+def load_item_data(
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
+) -> dict[str, ItemData]:
     """'아이템' 시트를 읽어 아이템 id → ItemData dict를 반환한다."""
     try:
-        item_raw = spreadsheet.worksheet("아이템").get_all_records(
+        item_raw = _worksheet(spreadsheet, "아이템", cache).get_all_records(
             value_render_option=_UNFORMATTED
         )
     except gspread.exceptions.WorksheetNotFound:
@@ -166,10 +185,17 @@ def load_item_data(spreadsheet: gspread.Spreadsheet) -> dict[str, ItemData]:
     return {r["id"]: ItemData.from_dict(r) for r in item_raw if r.get("id")}
 
 
-def load_inventory(spreadsheet: gspread.Spreadsheet) -> Inventory:
-    """'인벤토리' 시트를 읽어 (캐릭터 이름, 아이템 이름) → 개수 Inventory를 반환한다."""
+def load_inventory(
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
+) -> Inventory:
+    """'인벤토리' 시트를 읽어 (캐릭터 이름, 아이템 이름) → 개수 Inventory를 반환한다.
+
+    반환하는 Inventory는 이후 소비/지급 시 write-back을 위해 spreadsheet를 직접
+    들고 있다 — 그 write-back 경로는 이 함수의 캐시 대상이 아니다(전투 세션
+    내내 유지되는 객체라 멘션 하나 범위의 SheetCache와 수명이 맞지 않는다).
+    """
     try:
-        inventory_raw = spreadsheet.worksheet("인벤토리").get_all_records(
+        inventory_raw = _worksheet(spreadsheet, "인벤토리", cache).get_all_records(
             value_render_option=_UNFORMATTED
         )
     except gspread.exceptions.WorksheetNotFound:
@@ -282,33 +308,37 @@ def load_char_data(
 # ---------------------------------------------------------------------------
 
 
-def load_daily_quests(spreadsheet: gspread.Spreadsheet) -> list[DailyQuestData]:
+def load_daily_quests(
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
+) -> list[DailyQuestData]:
     """'일일 의뢰' 시트를 읽어 DailyQuestData 리스트를 반환한다."""
-    ws = spreadsheet.worksheet("일일 의뢰")
+    ws = _worksheet(spreadsheet, "일일 의뢰", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
     return [DailyQuestData.from_dict(r) for r in records if r.get("id")]
 
 
 def load_daily_quest_result_messages(
-    spreadsheet: gspread.Spreadsheet,
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
 ) -> list[DailyQuestResultMessageData]:
     """'일일 의뢰 결과 메시지' 시트를 읽어 DailyQuestResultMessageData 리스트를 반환한다."""
-    ws = spreadsheet.worksheet("일일 의뢰 결과 메시지")
+    ws = _worksheet(spreadsheet, "일일 의뢰 결과 메시지", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
     return [
         DailyQuestResultMessageData.from_dict(r) for r in records if r.get("message")
     ]
 
 
-def load_general_quests(spreadsheet: gspread.Spreadsheet) -> list[QuestData]:
+def load_general_quests(
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
+) -> list[QuestData]:
     """'일반 의뢰' 시트를 읽어 QuestData 리스트를 반환한다."""
-    ws = spreadsheet.worksheet("일반 의뢰")
+    ws = _worksheet(spreadsheet, "일반 의뢰", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
     return [QuestData.from_dict(r) for r in records if r.get("id")]
 
 
 def load_location_and_investigation(
-    spreadsheet: gspread.Spreadsheet,
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
 ) -> tuple[str, bool, list[str], dict[str, str]]:
     """'현위치' 시트(1행)에서 (현재_위치, 상시조사_활성, [venue1..3], {venue→지문}) 반환.
 
@@ -316,7 +346,7 @@ def load_location_and_investigation(
       location | investigation_active
       venue_1 | venue_1_desc | venue_2 | venue_2_desc | venue_3 | venue_3_desc
     """
-    ws = spreadsheet.worksheet("현위치")
+    ws = _worksheet(spreadsheet, "현위치", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
     if not records:
         return "", False, [], {}
@@ -341,22 +371,33 @@ def update_character_gold_and_quest_date(
     char_name: str,
     new_gold: int,
     today: str,
+    cache: Optional[SheetCache] = None,
 ) -> None:
     """캐릭터 시트에서 해당 캐릭터 행을 찾아 gold, daily_quest_date를 갱신한다."""
-    ws = spreadsheet.worksheet("캐릭터")
-    records = ws.get_all_records()
-    header = ws.row_values(1)
+    ws = _worksheet(spreadsheet, "캐릭터", cache)
+    values = (
+        cache.get_all_values("캐릭터")
+        if cache is not None
+        else ws.get_values(pad_values=True)
+    )
+    if not values:
+        raise RuntimeError("캐릭터 시트에 필수 컬럼이 없습니다: 헤더가 비어 있습니다")
+    header, rows = values[0], values[1:]
 
     try:
         gold_col = header.index("gold") + 1
         date_col = header.index("daily_quest_date") + 1
     except ValueError as e:
         raise RuntimeError(f"캐릭터 시트에 필수 컬럼이 없습니다: {e}") from e
+    name_col = header.index("name") if "name" in header else None
 
-    for idx, row in enumerate(records, start=2):
-        if row.get("name") == char_name:
+    for idx, row in enumerate(rows, start=2):
+        name = row[name_col] if name_col is not None and name_col < len(row) else None
+        if name == char_name:
             ws.update_cell(idx, gold_col, new_gold)
             ws.update_cell(idx, date_col, today)
+            if cache is not None:
+                cache.invalidate("캐릭터")
             return
 
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
@@ -366,6 +407,7 @@ def update_character_curr_hp(
     spreadsheet: gspread.Spreadsheet,
     char_name: str,
     new_curr_hp: int,
+    cache: Optional[SheetCache] = None,
 ) -> None:
     """'캐릭터' 또는 '에너미' 시트에서 해당 이름의 행을 찾아 curr_hp를 갱신한다.
 
@@ -373,19 +415,29 @@ def update_character_curr_hp(
     """
     for sheet_name in ("캐릭터", "에너미"):
         try:
-            ws = spreadsheet.worksheet(sheet_name)
+            ws = _worksheet(spreadsheet, sheet_name, cache)
         except gspread.exceptions.WorksheetNotFound:
             continue
 
-        records = ws.get_all_records()
-        header = ws.row_values(1)
-        if "curr_hp" not in header:
+        values = (
+            cache.get_all_values(sheet_name)
+            if cache is not None
+            else ws.get_values(pad_values=True)
+        )
+        if not values:
+            continue
+        header, rows = values[0], values[1:]
+        if "curr_hp" not in header or "name" not in header:
             continue
         hp_col = header.index("curr_hp") + 1
+        name_col = header.index("name")
 
-        for idx, row in enumerate(records, start=2):
-            if row.get("name") == char_name:
+        for idx, row in enumerate(rows, start=2):
+            name = row[name_col] if name_col < len(row) else None
+            if name == char_name:
                 ws.update_cell(idx, hp_col, new_curr_hp)
+                if cache is not None:
+                    cache.invalidate(sheet_name)
                 return
 
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다.")

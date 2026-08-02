@@ -204,7 +204,7 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
-    ) = load_battle_data(state.spreadsheet)
+    ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     state.session = BattleSession(
         buff_dict,
         skill_dict,
@@ -584,7 +584,7 @@ def _cmd_practice_prep(
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
-    ) = load_battle_data(state.spreadsheet)
+    ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     context = PracticeBattlefieldContext(buff_dict, skill_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
@@ -857,7 +857,7 @@ def _cmd_investigation_battle(
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
-    ) = load_battle_data(state.spreadsheet)
+    ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     context = PracticeBattlefieldContext(buff_dict, skill_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
@@ -927,7 +927,7 @@ def _cmd_dm_battle_start(
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
-    ) = load_battle_data(state.spreadsheet)
+    ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     session = BattleSession(
         buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
     )
