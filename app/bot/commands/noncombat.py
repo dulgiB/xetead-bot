@@ -140,8 +140,8 @@ def handle_use_item(
     target_char_name = target_name or user_name
 
     try:
-        item_dict = load_item_data(state.spreadsheet)
-        inventory = load_inventory(state.spreadsheet)
+        item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
+        inventory = load_inventory(state.spreadsheet, cache=state.sheet_cache)
     except Exception as e:
         msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -178,7 +178,9 @@ def handle_use_item(
     new_hp = min(target_data.max_hp, prev_hp + heal_amount)
 
     try:
-        update_character_curr_hp(state.spreadsheet, target_char_name, new_hp)
+        update_character_curr_hp(
+            state.spreadsheet, target_char_name, new_hp, cache=state.sheet_cache
+        )
         inventory.consume(user_name, item_name, count)
     except Exception as e:
         msg = f"◊ 아이템 사용 처리 중 오류가 발생했습니다: {e}"
@@ -219,8 +221,8 @@ def handle_transfer_item(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        item_dict = load_item_data(state.spreadsheet)
-        inventory = load_inventory(state.spreadsheet)
+        item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
+        inventory = load_inventory(state.spreadsheet, cache=state.sheet_cache)
     except Exception as e:
         msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -267,8 +269,10 @@ def handle_daily_quest_start(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        location, _, _, _ = load_location_and_investigation(state.spreadsheet)
-        daily_quests = load_daily_quests(state.spreadsheet)
+        location, _, _, _ = load_location_and_investigation(
+            state.spreadsheet, cache=state.sheet_cache
+        )
+        daily_quests = load_daily_quests(state.spreadsheet, cache=state.sheet_cache)
     except Exception as e:
         msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(
@@ -334,7 +338,9 @@ def handle_daily_quest_roll(
         success_type = DailyQuestSuccessType.CLOSE_SUCCESS
 
     try:
-        result_messages = load_daily_quest_result_messages(state.spreadsheet)
+        result_messages = load_daily_quest_result_messages(
+            state.spreadsheet, cache=state.sheet_cache
+        )
         pool = [m for m in result_messages if m.success_type == success_type]
         judgment = random.choice(pool).message if pool else success_type.value
     except Exception:
@@ -348,7 +354,7 @@ def handle_daily_quest_roll(
     save_error_trace: Optional[str] = None
     try:
         update_character_gold_and_quest_date(
-            state.spreadsheet, char_data.name, new_gold, today
+            state.spreadsheet, char_data.name, new_gold, today, cache=state.sheet_cache
         )
     except Exception as e:
         save_succeeded = False
@@ -392,7 +398,7 @@ def handle_investigation_start(
 
     try:
         location, investigation_active, venues, venue_desc = (
-            load_location_and_investigation(state.spreadsheet)
+            load_location_and_investigation(state.spreadsheet, cache=state.sheet_cache)
         )
     except Exception as e:
         msg = f"◊ 조사 정보를 불러오는 중 오류가 발생했습니다: {e}"
@@ -405,7 +411,7 @@ def handle_investigation_start(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        general_quests = load_general_quests(state.spreadsheet)
+        general_quests = load_general_quests(state.spreadsheet, cache=state.sheet_cache)
     except Exception as e:
         msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(
@@ -463,7 +469,7 @@ def handle_investigation_venue_choice(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        general_quests = load_general_quests(state.spreadsheet)
+        general_quests = load_general_quests(state.spreadsheet, cache=state.sheet_cache)
     except Exception as e:
         nc.investigation_acct_to_quest_id.pop(acct, None)
         msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
@@ -552,7 +558,7 @@ def handle_investigation_accept(
     # 의뢰 이름을 일반 의뢰 시트에서 실시간 조회
     quest_name = quest_id
     try:
-        general_quests = load_general_quests(state.spreadsheet)
+        general_quests = load_general_quests(state.spreadsheet, cache=state.sheet_cache)
         quest = next((q for q in general_quests if q.id == quest_id), None)
         if quest:
             quest_name = quest.name
