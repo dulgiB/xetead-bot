@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from typing import Optional
 
 import gspread
 from battle.objects.buff.models import BuffData, PassiveBuffData
@@ -17,6 +18,8 @@ from spreadsheets.models.quest import (
     QuestData,
 )
 from utils.spreadsheet_bool import parse_spreadsheet_bool
+
+from bot.sheet_cache import SheetCache
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +186,7 @@ def load_inventory(spreadsheet: gspread.Spreadsheet) -> Inventory:
 
 def load_char_data(
     spreadsheet: gspread.Spreadsheet,
+    cache: Optional[SheetCache] = None,
 ) -> tuple[
     dict[str, CombatCharacterDataFromSpreadsheet],
     dict[str, CombatCharacterDataFromSpreadsheet],
@@ -198,14 +202,21 @@ def load_char_data(
     mastodon_id가 있는 에너미(계정을 가진 에너미)는 char_dict에도 등록되어 본인 계정으로
     전투 커맨드를 입력할 수 있다.
 
+    `cache`가 주어지면(멘션 하나 처리 범위의 SheetCache) 실제 네트워크 읽기 대신
+    캐시된 값을 우선 사용한다 — 같은 멘션 처리 중 write_back_changed_hp() 등이
+    같은 시트를 또 읽어도 재사용된다.
+
     반환값: (char_dict, name_dict, noncombat_char_dict)
       - char_dict:           mastodon_id → CombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만, 캐릭터+에너미)
       - name_dict:           name → CombatCharacterDataFromSpreadsheet (전체, 캐릭터+에너미)
       - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만, 캐릭터만)
     """
-    char_raw = spreadsheet.worksheet("캐릭터").get_all_records(
-        value_render_option=_UNFORMATTED
-    )
+    if cache is not None:
+        char_raw = cache.get_all_records("캐릭터", value_render_option=_UNFORMATTED)
+    else:
+        char_raw = spreadsheet.worksheet("캐릭터").get_all_records(
+            value_render_option=_UNFORMATTED
+        )
     char_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {}
     name_dict: dict[str, CombatCharacterDataFromSpreadsheet] = {}
     noncombat_char_dict: dict[str, NoncombatCharacterDataFromSpreadsheet] = {}
@@ -233,9 +244,12 @@ def load_char_data(
             name_dict[name] = combat_data
 
     try:
-        enemy_raw = spreadsheet.worksheet("에너미").get_all_records(
-            value_render_option=_UNFORMATTED
-        )
+        if cache is not None:
+            enemy_raw = cache.get_all_records("에너미", value_render_option=_UNFORMATTED)
+        else:
+            enemy_raw = spreadsheet.worksheet("에너미").get_all_records(
+                value_render_option=_UNFORMATTED
+            )
     except gspread.exceptions.WorksheetNotFound:
         logger.warning("'에너미' 시트를 찾을 수 없습니다. 에너미 없이 로드합니다.")
         enemy_raw = []

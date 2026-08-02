@@ -46,6 +46,7 @@ from bot.load_data import load_all_data, load_char_data
 from bot.noncombat_state import NonCombatState
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
+from bot.sheet_cache import SheetCache
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -184,6 +185,7 @@ def _persist_battle_log(
                 characters=log_sheets.build_field_characters(
                     state.session.context, include_hp=False
                 ),
+                cache=state.sheet_cache,
             )
         elif (
             not battle_log.is_main
@@ -200,6 +202,7 @@ def _persist_battle_log(
                 characters=log_sheets.build_field_characters(
                     state.practice.context, include_hp=True
                 ),
+                cache=state.sheet_cache,
             )
         elif not battle_log.is_main:
             dm = admin_commands.find_dm_battle_by_field_id(state, battle_log.field_id)
@@ -213,6 +216,7 @@ def _persist_battle_log(
                     characters=log_sheets.build_field_characters(
                         dm.session.context, include_hp=False
                     ),
+                    cache=state.sheet_cache,
                 )
     except Exception:
         logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
@@ -259,6 +263,12 @@ class BotState:
     dm_battles: dict[int, DmBattleState] = field(
         default_factory=dict
     )  # key = 현재 스레드 tip 게시물 id
+    # 멘션 하나(on_notification 한 번) 처리 범위에서만 유효한 읽기 캐시
+    # (state.spreadsheet 대상 — field_spreadsheet는 render_public_field_sheet가
+    # 쓰기만 하고 읽지 않아 캐싱할 대상이 없다). on_notification 시작마다
+    # 새로 만들어 교체하므로, 이전 멘션에서 읽은 값이 다음 멘션까지 새어나가지
+    # 않는다.
+    sheet_cache: Optional[SheetCache] = None
 
 
 def reload_char_data(state: BotState) -> None:
@@ -267,7 +277,9 @@ def reload_char_data(state: BotState) -> None:
     캐릭터 명단은 세션 도중에도 바뀔 수 있으므로(참전 신청, 수정 중인 행 등),
     캐릭터 관련 커맨드가 들어올 때마다(멘션 수신 시) 매번 새로 읽는다.
     """
-    char_dict, name_dict, noncombat_char_dict = load_char_data(state.spreadsheet)
+    char_dict, name_dict, noncombat_char_dict = load_char_data(
+        state.spreadsheet, cache=state.sheet_cache
+    )
     state.char_dict = char_dict
     state.name_dict = name_dict
     state.noncombat_char_dict = noncombat_char_dict
@@ -310,6 +322,11 @@ class MastodonBotListener(StreamListener):
             command_text = _extract_command(status["content"])
             if not command_text:
                 return
+
+            # 이 멘션 하나를 처리하는 동안에만 유효한 읽기 캐시로 교체한다 —
+            # 커맨드 간에는 공유하지 않아, 전투 중 스프레드시트를 실시간으로
+            # 고쳐도 다음 멘션부터는 다시 최신 값을 읽는다.
+            self._state.sheet_cache = SheetCache(self._state.spreadsheet)
 
             reload_char_data(self._state)
 

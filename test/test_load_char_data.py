@@ -134,7 +134,9 @@ def test_reload_char_data_replaces_state_dicts(monkeypatch):
         field_spreadsheet=object(),
     )
     fresh = ({"acct": "new"}, {"새캐릭터": "new"}, {"acct": "new_noncombat"})
-    monkeypatch.setattr(main_module, "load_char_data", lambda spreadsheet: fresh)
+    monkeypatch.setattr(
+        main_module, "load_char_data", lambda spreadsheet, cache=None: fresh
+    )
 
     main_module.reload_char_data(state)
 
