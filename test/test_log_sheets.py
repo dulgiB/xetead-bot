@@ -59,12 +59,17 @@ class _FakeSpreadsheetForHpLookup:
             enemy_rows = [["name", "curr_hp"]] + [[n, "0"] for n in enemy_names]
             self._sheets["에너미"] = _FakeHpWorksheet(enemy_rows)
         self.worksheet_call_count = 0
+        self.fetch_sheet_metadata_call_count = 0
 
     def worksheet(self, name):
         self.worksheet_call_count += 1
         if name not in self._sheets:
             raise gspread.exceptions.WorksheetNotFound(name)
         return self._sheets[name]
+
+    def fetch_sheet_metadata(self):
+        self.fetch_sheet_metadata_call_count += 1
+        return {"sheets": [{"properties": {"title": name}} for name in self._sheets]}
 
 
 def test_write_back_changed_hp_absorbs_failure_and_continues():
@@ -135,7 +140,12 @@ def test_write_back_changed_hp_reuses_given_cache():
     이미 "캐릭터"/"에너미"를 UNFORMATTED로 읽어 둔 뒤라고 가정)."""
     ctx = _make_context_with_two_characters()
     spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
-    cache = SheetCache(spreadsheet)
+    cache = SheetCache(
+        spreadsheet,
+        worksheet_factory=lambda properties: spreadsheet.worksheet(
+            properties["title"]
+        ),
+    )
     # load_char_data()가 커맨드 처리 초반에 이미 채워 뒀을 캐시를 흉내낸다.
     cache.get_all_records("캐릭터", value_render_option=log_sheets._UNFORMATTED)
 
@@ -182,13 +192,15 @@ def test_upsert_field_row_invalidates_cache_after_write():
     class _FakeFieldSpreadsheet:
         def __init__(self, ws):
             self._ws = ws
+            self.id = "fake-field-spreadsheet-id"
+            self.client = None
 
-        def worksheet(self, name):
-            return self._ws
+        def fetch_sheet_metadata(self):
+            return {"sheets": [{"properties": {"title": "필드"}}]}
 
     ws = _FakeFieldWorksheet()
     spreadsheet = _FakeFieldSpreadsheet(ws)
-    cache = SheetCache(spreadsheet)
+    cache = SheetCache(spreadsheet, worksheet_factory=lambda properties: ws)
 
     log_sheets.upsert_field_row(
         spreadsheet, "field-1", is_main=True, round_n=1, phase="ALLY_ACTION",

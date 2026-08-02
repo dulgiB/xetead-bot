@@ -419,7 +419,7 @@ def test_malformed_notification_does_not_raise():
 
 
 @contextlib.contextmanager
-def _fake_capture(spreadsheet):
+def _fake_capture(spreadsheet, cache=None):
     yield Path("/tmp/fake-field.png")
 
 
@@ -441,7 +441,7 @@ def test_capture_field_media_ids_absorbs_exception(monkeypatch):
     이 실패가 답글 전송 자체를 막으면 안 된다."""
 
     @contextlib.contextmanager
-    def failing_capture(spreadsheet):
+    def failing_capture(spreadsheet, cache=None):
         raise RuntimeError("network boom")
         yield  # pragma: no cover
 
@@ -558,7 +558,7 @@ def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatc
     대체 표시해야 한다 (정보가 완전히 유실되면 안 되므로)."""
 
     @contextlib.contextmanager
-    def _failing_capture(spreadsheet):
+    def _failing_capture(spreadsheet, cache=None):
         raise RuntimeError("capture boom")
         yield  # pragma: no cover
 
