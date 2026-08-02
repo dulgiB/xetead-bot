@@ -524,6 +524,47 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     assert char_reply["status"].startswith("@ally_acct\n")
 
 
+def test_character_command_with_two_bracket_groups_is_rejected_with_explicit_error(
+    monkeypatch,
+):
+    """캐릭터 계정이 대괄호를 두 개로 나눠 보내면(예: '[A] [B]'), 파서의 탐욕적
+    매칭 때문에 하나만 조용히 처리되고 나머지가 사라지는 문제가 있었다 —
+    본 전투 경로에서도 사전에 걸러 명시적 에러를 내야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
+    monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    active_post_id = state.active_phase_post_id
+
+    listener.on_notification(
+        _make_notification(
+            "ally_acct", 3, active_post_id, "[공격/적 캐릭터] [공격/적 캐릭터]"
+        )
+    )
+
+    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
+    char_reply = reply_calls[-1]
+    assert "대괄호 커맨드를 하나만" in char_reply["status"]
+
+
 def test_ally_action_phase_post_attaches_field_image(monkeypatch):
     """필드 현황은 str 대신 이미지로만 표시하므로, 일반 페이즈 전환
     공개 게시물(아군 행동 등)에도 이미지가 붙어야 한다."""
@@ -708,6 +749,35 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
     assert "종료" in game_post
     assert "승자: 1팀" in game_post
     assert state.practice is None
+
+
+def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_error():
+    """캐릭터 계정이 대괄호를 두 개로 나눠 보내면(예: '[A] [B]'), 파서의 탐욕적
+    매칭 때문에 하나만 조용히 처리되고 나머지가 사라지는 문제가 있었다 —
+    대련/상시전투 경로에서도 사전에 걸러 명시적 에러를 내야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
+    ps.start_round()
+
+    state = BotState(
+        char_dict={"acct_a": get_test_preset("A")},
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    reply, game_post, battle_log = _handle_practice_command(
+        "acct_a", "[이동/2] [이동/3]", state
+    )
+
+    assert "대괄호 커맨드를 하나만" in reply
+    assert game_post is None
+    assert battle_log is None
 
 
 def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry(

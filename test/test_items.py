@@ -17,6 +17,7 @@ from battle.objects.models import CharacterId
 from battle.objects.skill.effects import SkillEffectDamage, SkillEffectHeal
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
+from bot.sheet_cache import SheetCache
 from helpers import get_test_preset
 from spreadsheets.inventory import Inventory
 
@@ -229,6 +230,9 @@ class _FakeWorksheet:
     def row_values(self, _row_num):
         return self._header
 
+    def get_values(self, value_render_option=None, pad_values=True):
+        return [self._header] + [list(row) for row in self._rows]
+
     def update_cell(self, row_idx, col_idx, value):
         self._rows[row_idx - 2][col_idx - 1] = value
 
@@ -240,9 +244,16 @@ class _FakeWorksheet:
 class _FakeSpreadsheet:
     def __init__(self, worksheet):
         self._worksheet = worksheet
+        self.id = "fake-inventory-spreadsheet-id"
+        self.client = None
+        self.fetch_sheet_metadata_call_count = 0
 
     def worksheet(self, _name):
         return self._worksheet
+
+    def fetch_sheet_metadata(self):
+        self.fetch_sheet_metadata_call_count += 1
+        return {"sheets": [{"properties": {"title": "인벤토리"}}]}
 
 
 def test_inventory_grant_updates_existing_row():
@@ -266,3 +277,33 @@ def test_inventory_grant_appends_new_row_when_recipient_has_no_history():
 
     assert ws.appended == [["아군 2", "포션", 3]]
     assert inv.get_count("아군 2", "포션") == 3
+
+
+def test_inventory_write_back_uses_cache_when_set():
+    """`cache`가 설정돼 있으면(handle_character_command 등이 매 멘션마다
+    갱신) 시트 메타데이터 조회를 캐시가 공유해야 하고, 쓰기 직후 캐시가
+    무효화돼 바로 다음 읽기(같은 멘션 안의 양도처럼 consume→grant 연속 호출)가
+    낡은 값을 보지 않아야 한다."""
+    ws = _FakeWorksheet(
+        ["character_name", "item_id", "count"],
+        [["아군 1", "포션", "3"], ["아군 2", "포션", "0"]],
+    )
+    spreadsheet = _FakeSpreadsheet(ws)
+    cache = SheetCache(
+        spreadsheet,
+        worksheet_factory=lambda properties: ws,
+    )
+    inv = Inventory({("아군 1", "포션"): 3, ("아군 2", "포션"): 0}, spreadsheet)
+    inv.cache = cache
+
+    # 양도: 소비 후 지급 — 두 호출 모두 캐시를 거치지만 메타데이터는 1회만.
+    inv.consume("아군 1", "포션", 1)
+    inv.grant("아군 2", "포션", 1)
+
+    assert spreadsheet.fetch_sheet_metadata_call_count == 1
+    assert ws._rows[0] == ["아군 1", "포션", 2]
+    assert ws._rows[1] == ["아군 2", "포션", 1]
+
+    # consume이 쓴 뒤 캐시가 무효화되지 않았다면 grant가 낡은(변경 전) 값을
+    # 읽어 "아군 2" 행을 못 찾거나 잘못된 행을 갱신했을 것이다 — 실제로는
+    # 정확한 행(두 번째)이 갱신됐으므로 무효화가 정상 동작한 것이다.

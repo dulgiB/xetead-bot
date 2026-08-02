@@ -292,6 +292,9 @@ class _FakeWorksheet:
     def row_values(self, _row_num):
         return self._header
 
+    def get_values(self, value_render_option=None, pad_values=True):
+        return [self._header] + [list(row) for row in self._rows]
+
     def update_cell(self, row_idx, col_idx, value):
         self._rows[row_idx - 2][col_idx - 1] = value
 

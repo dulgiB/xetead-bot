@@ -191,8 +191,13 @@ def load_inventory(
     """'인벤토리' 시트를 읽어 (캐릭터 이름, 아이템 이름) → 개수 Inventory를 반환한다.
 
     반환하는 Inventory는 이후 소비/지급 시 write-back을 위해 spreadsheet를 직접
-    들고 있다 — 그 write-back 경로는 이 함수의 캐시 대상이 아니다(전투 세션
-    내내 유지되는 객체라 멘션 하나 범위의 SheetCache와 수명이 맞지 않는다).
+    들고 있다. 이 함수가 받은 `cache`는 여기서 딱 한 번의 초기 로드에만
+    쓰인다 — Inventory는 전투 세션 내내 유지되는 객체라 멘션 하나 범위의
+    SheetCache를 생성자에서 붙박이로 들고 있으면 다음 멘션부터 낡은
+    캐시(과거 스냅샷)를 계속 재사용하는 문제가 생긴다. 그래서 Inventory는
+    별도의 `cache` 속성을 두고, 실제로 그 인벤토리를 다루는 호출측이 매
+    멘션마다 최신 SheetCache로 갱신한다(handle_character_command,
+    handle_use_item 등 — `inventory.cache = state.sheet_cache`).
     """
     try:
         inventory_raw = _worksheet(spreadsheet, "인벤토리", cache).get_all_records(
