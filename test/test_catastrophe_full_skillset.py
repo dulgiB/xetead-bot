@@ -380,6 +380,22 @@ class TestCost2Skill:
             b.id == "도발" for b in ctx.buff_container.get_buffs_by(target, None)
         )
 
+    def test_taunt_log_entry_not_emitted_below_threshold(self):
+        """게이트에 막혀 실제로는 부여되지 않은 버프를 "[버프] 부여" 로그로
+        남기면 안 된다 — 답글이 실제 게임 상태와 어긋나게 된다."""
+        ctx, manager, caster, target = self._make_ready_context()
+        ctx.buff_container.add(
+            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2)
+        )
+
+        before = len(ctx.results)
+        manager.process_command(
+            parse_character_command(caster, "[Cost2Skill/적군]", ctx)
+        )
+        new_entries = [e for r in ctx.results[before:] for e in r.log_entries]
+
+        assert not any("도발" in e.result for e in new_entries)
+
     def test_requested_consumption_clamps_to_available_stack(self):
         """cap 5보다 적게 보유(3스택)해도 실패 없이 있는 만큼만 소모된다."""
         ctx, manager, caster, target = self._make_ready_context()
