@@ -20,11 +20,13 @@ PDF로 받은 뒤 PyMuPDF로 래스터화하고 흰 여백을 잘라낸다:
 import contextlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Iterator
+from typing import Iterator, Optional
 
 import fitz
 import gspread
 from PIL import Image, ImageChops
+
+from bot.sheet_cache import SheetCache
 
 _FIELD_SHEET = "필드"
 _EXPORT_RANGE = "A1:M28"
@@ -71,13 +73,17 @@ def _rasterize_and_crop(pdf_path: Path, png_path: Path) -> None:
 def capture_field_sheet_image(
     spreadsheet: gspread.Spreadsheet,
     range_a1: str = _EXPORT_RANGE,
+    cache: Optional[SheetCache] = None,
 ) -> Iterator[Path]:
     """"필드" 시트의 현재 상태를 PNG로 캡처해 임시 파일 경로를 넘겨준다.
 
     인증은 별도로 만들지 않고 `spreadsheet`가 이미 들고 있는 gspread 인증
     세션(`spreadsheet.client.session`, `AuthorizedSession`)을 재사용한다.
     """
-    gid = spreadsheet.worksheet(_FIELD_SHEET).id
+    ws = cache.worksheet(_FIELD_SHEET) if cache is not None else spreadsheet.worksheet(
+        _FIELD_SHEET
+    )
+    gid = ws.id
     response = spreadsheet.client.session.get(
         _export_url(spreadsheet.id, gid, range_a1)
     )

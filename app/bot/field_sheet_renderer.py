@@ -38,6 +38,7 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId
+from bot.sheet_cache import SheetCache
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -83,8 +84,11 @@ def render_public_field_sheet(
     phase: str,
     enemy_declared: dict[CharacterId, list[CharacterCommand]],
     battle_name: Optional[str] = None,
+    cache: Optional[SheetCache] = None,
 ) -> None:
-    ws = spreadsheet.worksheet(_FIELD_SHEET)
+    ws = cache.worksheet(_FIELD_SHEET) if cache is not None else spreadsheet.worksheet(
+        _FIELD_SHEET
+    )
 
     enemy_grid, enemy_declare_grid, notes = _build_faction_block(
         context,

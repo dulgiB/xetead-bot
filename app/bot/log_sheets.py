@@ -93,10 +93,15 @@ def _now() -> str:
 
 
 def _get_or_create_worksheet(
-    spreadsheet: gspread.Spreadsheet, name: str, headers: list[str]
+    spreadsheet: gspread.Spreadsheet,
+    name: str,
+    headers: list[str],
+    cache: Optional[SheetCache] = None,
 ) -> gspread.Worksheet:
     try:
-        return spreadsheet.worksheet(name)
+        return cache.worksheet(name) if cache is not None else spreadsheet.worksheet(
+            name
+        )
     except gspread.WorksheetNotFound:
         ws = spreadsheet.add_worksheet(name, rows=100, cols=len(headers))
         ws.append_row(headers)
@@ -248,7 +253,7 @@ def upsert_field_row(
     같은 커맨드 처리 중 upsert_field_row가 다시 호출됐을 때 방금 쓴 내용을
     못 보고 중복 삽입하는 것을 막기 위함이다.
     """
-    ws = _get_or_create_worksheet(spreadsheet, _FIELD_SHEET, _FIELD_HEADERS)
+    ws = _get_or_create_worksheet(spreadsheet, _FIELD_SHEET, _FIELD_HEADERS, cache=cache)
     if cache is not None:
         all_values = cache.get_all_values(_FIELD_SHEET)
     else:
@@ -318,6 +323,7 @@ def append_battle_log(
     entries: list[BattleLogEntry],
     reply_ref: str = "",
     error_trace: Optional[str] = None,
+    cache: Optional[SheetCache] = None,
 ) -> None:
     """커맨드 정산 결과를 로그_전투에 기록한다.
 
@@ -325,7 +331,7 @@ def append_battle_log(
     entries가 있으면 대상별로 행을 하나씩 추가한다.
     """
     ws = _get_or_create_worksheet(
-        spreadsheet, _BATTLE_LOG_SHEET, _BATTLE_LOG_HEADERS
+        spreadsheet, _BATTLE_LOG_SHEET, _BATTLE_LOG_HEADERS, cache=cache
     )
     timestamp = _now()
 
@@ -375,9 +381,10 @@ def append_noncombat_log(
     result: str = "",
     error_trace: Optional[str] = None,
     reply_ref: str = "",
+    cache: Optional[SheetCache] = None,
 ) -> None:
     ws = _get_or_create_worksheet(
-        spreadsheet, _NONCOMBAT_LOG_SHEET, _NONCOMBAT_LOG_HEADERS
+        spreadsheet, _NONCOMBAT_LOG_SHEET, _NONCOMBAT_LOG_HEADERS, cache=cache
     )
     ws.append_row(
         [

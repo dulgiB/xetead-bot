@@ -323,6 +323,7 @@ def _cmd_battle_start(
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
+            cache=state.field_sheet_cache,
         )
     except Exception:
         _log_system_error("공개 필드 시트 렌더링")
@@ -375,6 +376,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             phase=new_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
+            cache=state.field_sheet_cache,
         )
     except Exception:
         _log_system_error("공개 필드 시트 렌더링")
@@ -477,6 +479,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             phase=new_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
+            cache=state.field_sheet_cache,
         )
     except Exception:
         _log_system_error("공개 필드 시트 렌더링")
@@ -548,6 +551,7 @@ def _cmd_end(state: "BotState") -> str:
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
+            cache=state.field_sheet_cache,
         )
     except Exception:
         _log_system_error("공개 필드 시트 렌더링")
