@@ -499,17 +499,21 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.practice.active_post_id
         ):
             practice_visibility = state.practice.visibility
-            prev_post_id = state.practice.active_post_id
             reply, game_post, battle_log = _handle_practice_command(
                 acct, text, state
             )
             reply_status = self._reply(status_id, acct, visibility, reply)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
+                # 캐릭터의 커맨드 답글(reply_status) 바로 다음에 이어 붙여야
+                # 스레드가 갈라지지 않는다 — 예전 라운드 공지(active_post_id,
+                # 이 캐릭터 커맨드의 in_reply_to_id였던 게시물)에 다시 답글로
+                # 달면, 캐릭터의 커맨드 답글과 다음 라운드 공지가 같은 부모의
+                # 형제 게시물이 되어 스레드가 두 갈래로 갈라진다.
                 new_post = self._mastodon.status_post(
                     _truncate(game_post),
                     visibility=practice_visibility,
-                    in_reply_to_id=prev_post_id,
+                    in_reply_to_id=reply_status["id"],
                 )
                 if state.practice is not None:
                     state.practice.active_post_id = new_post["id"]
