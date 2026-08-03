@@ -161,7 +161,7 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
     표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
     누락된다."""
-    monkeypatch.setattr(log_sheets, "update_character_curr_hp", lambda *a, **k: None)
+    monkeypatch.setattr(log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {})
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -186,11 +186,23 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
     """적 공격 정산(ENEMY_POST_ACTION) 시 발생한 대미지도 "캐릭터" 시트에
     반영되어야 한다 — 이전에는 개별 캐릭터 커맨드/프록시에서만 write-back이
     호출되고 POST_ACTION 정산 자체는 반영되지 않는 갭이 있었다."""
-    recorded_hp: dict = {}
+
+    class _RecordingWorksheet:
+        def __init__(self, row_to_name: dict[int, str]):
+            self._row_to_name = row_to_name
+            self.recorded_hp: dict = {}
+
+        def update_cell(self, row, col, value):
+            self.recorded_hp[self._row_to_name[row]] = value
+
+    ws = _RecordingWorksheet({2: "유효 캐릭터", 3: "적 캐릭터"})
     monkeypatch.setattr(
         log_sheets,
-        "update_character_curr_hp",
-        lambda spreadsheet, name, hp: recorded_hp.__setitem__(name, hp),
+        "_load_hp_write_targets",
+        lambda spreadsheet, cache=None: {
+            "유효 캐릭터": (ws, 2, 1),
+            "적 캐릭터": (ws, 3, 1),
+        },
     )
     state = _make_state(
         pending_placements=[
@@ -208,7 +220,7 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
     _cmd_advance_phase(state)  # → 아군 행동
     _cmd_advance_phase(state)  # → 적 공격 정산
 
-    assert "유효 캐릭터" in recorded_hp
+    assert "유효 캐릭터" in ws.recorded_hp
 
 
 def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
@@ -261,7 +273,7 @@ def test_investigation_battle_inline_placement_respects_faction_token(monkeypatc
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: (
+        lambda spreadsheet, cache=None: (
             {},
             {},
             {},
@@ -333,7 +345,7 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
     )
 
     context = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
@@ -373,9 +385,9 @@ def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
     )
-    monkeypatch.setattr(admin_module, "load_battle_data", lambda spreadsheet: (
+    monkeypatch.setattr(admin_module, "load_battle_data", lambda spreadsheet, cache=None: (
         {}, {}, {}, {}, None, state.char_dict, state.name_dict, state.noncombat_char_dict
     ))
     mastodon = _FakeMastodon()
@@ -407,7 +419,7 @@ def test_malformed_notification_does_not_raise():
 
 
 @contextlib.contextmanager
-def _fake_capture(spreadsheet):
+def _fake_capture(spreadsheet, cache=None):
     yield Path("/tmp/fake-field.png")
 
 
@@ -429,7 +441,7 @@ def test_capture_field_media_ids_absorbs_exception(monkeypatch):
     이 실패가 답글 전송 자체를 막으면 안 된다."""
 
     @contextlib.contextmanager
-    def failing_capture(spreadsheet):
+    def failing_capture(spreadsheet, cache=None):
         raise RuntimeError("network boom")
         yield  # pragma: no cover
 
@@ -450,7 +462,7 @@ def test_round_start_game_post_attaches_field_image(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
     mastodon = _FakeMastodon()
@@ -486,7 +498,7 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
     monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
@@ -565,7 +577,7 @@ def test_ally_action_phase_post_attaches_field_image(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
     mastodon = _FakeMastodon()
@@ -587,7 +599,7 @@ def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatc
     대체 표시해야 한다 (정보가 완전히 유실되면 안 되므로)."""
 
     @contextlib.contextmanager
-    def _failing_capture(spreadsheet):
+    def _failing_capture(spreadsheet, cache=None):
         raise RuntimeError("capture boom")
         yield  # pragma: no cover
 
@@ -600,7 +612,7 @@ def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatc
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _failing_capture)
     mastodon = _FakeMastodon()
@@ -631,12 +643,12 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     }
     name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -787,12 +799,12 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
     }
     name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -831,7 +843,7 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
     하므로 attack_range를 전체 열 폭(7)으로 넉넉히 잡는다 — 그렇지 않으면
     무작위 배치 결과에 따라 사거리 밖 판정으로 테스트가 간헐적으로 실패한다.
     """
-    monkeypatch.setattr(log_sheets, "update_character_curr_hp", lambda *a, **k: None)
+    monkeypatch.setattr(log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {})
     state = _make_state()
     char_dict = {"player_acct": get_test_preset("전사", attack_range=7)}
     name_dict = {
@@ -839,12 +851,12 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
         "고블린": get_test_preset("고블린", max_hp=enemy_max_hp),
     }
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -1055,7 +1067,7 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
 def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
     """두 개의 DM 전투가 동시에 진행되어도 서로의 상태(적/아군 배치, 라운드)가
     섞이면 안 된다 — state.dm_battles는 여러 인스턴스를 동시에 관리해야 한다."""
-    monkeypatch.setattr(log_sheets, "update_character_curr_hp", lambda *a, **k: None)
+    monkeypatch.setattr(log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {})
     state = _make_state()
     char_dict = {
         "player1_acct": get_test_preset("전사1"),
@@ -1068,12 +1080,12 @@ def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
         "오크": get_test_preset("오크"),
     }
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet: (char_dict, name_dict, {})
+        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")

@@ -127,7 +127,7 @@ def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
     monkeypatch.setattr(
         noncombat_module,
         "load_general_quests",
-        lambda spreadsheet: [
+        lambda spreadsheet, cache=None: [
             QuestData(
                 id="q1",
                 name="퀘스트1",
@@ -217,15 +217,15 @@ def test_use_item_heals_self_and_consumes_inventory(monkeypatch, potion_item):
     recorded_hp: dict = {}
 
     monkeypatch.setattr(
-        noncombat_module, "load_item_data", lambda spreadsheet: {"포션": potion_item}
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {"포션": potion_item}
     )
     monkeypatch.setattr(
-        noncombat_module, "load_inventory", lambda spreadsheet: inventory
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
     )
     monkeypatch.setattr(
         noncombat_module,
         "update_character_curr_hp",
-        lambda spreadsheet, name, hp: recorded_hp.__setitem__(name, hp),
+        lambda spreadsheet, name, hp, cache=None: recorded_hp.__setitem__(name, hp),
     )
 
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
@@ -242,12 +242,12 @@ def test_use_item_rejects_unsupported_effect_type(monkeypatch, bomb_item):
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
     monkeypatch.setattr(
-        noncombat_module, "load_item_data", lambda spreadsheet: {"폭탄": bomb_item}
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {"폭탄": bomb_item}
     )
     monkeypatch.setattr(
         noncombat_module,
         "load_inventory",
-        lambda spreadsheet: Inventory({("동료", "폭탄"): 1}),
+        lambda spreadsheet, cache=None: Inventory({("동료", "폭탄"): 1}),
     )
 
     reply, log_info = handle_use_item(acct, "폭탄", None, 1, state)
@@ -265,12 +265,12 @@ def test_use_item_rejects_when_not_usable_outside_battle(monkeypatch, potion_ite
     monkeypatch.setattr(
         noncombat_module,
         "load_item_data",
-        lambda spreadsheet: {"포션": battle_only_potion},
+        lambda spreadsheet, cache=None: {"포션": battle_only_potion},
     )
     monkeypatch.setattr(
         noncombat_module,
         "load_inventory",
-        lambda spreadsheet: Inventory({("동료", "포션"): 1}),
+        lambda spreadsheet, cache=None: Inventory({("동료", "포션"): 1}),
     )
 
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
@@ -283,10 +283,10 @@ def test_use_item_rejects_when_insufficient_inventory(monkeypatch, potion_item):
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
     monkeypatch.setattr(
-        noncombat_module, "load_item_data", lambda spreadsheet: {"포션": potion_item}
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {"포션": potion_item}
     )
     monkeypatch.setattr(
-        noncombat_module, "load_inventory", lambda spreadsheet: Inventory({})
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: Inventory({})
     )
 
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
@@ -301,10 +301,10 @@ def test_transfer_item_moves_between_characters(monkeypatch, potion_item):
     inventory = Inventory({("동료", "포션"): 3})
 
     monkeypatch.setattr(
-        noncombat_module, "load_item_data", lambda spreadsheet: {"포션": potion_item}
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {"포션": potion_item}
     )
     monkeypatch.setattr(
-        noncombat_module, "load_inventory", lambda spreadsheet: inventory
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
     )
 
     reply, log_info = handle_transfer_item(acct, "포션", "동료2", 2, state)

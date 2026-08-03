@@ -46,6 +46,7 @@ from bot.load_data import load_all_data, load_char_data
 from bot.noncombat_state import NonCombatState
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
+from bot.sheet_cache import SheetCache
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -172,6 +173,7 @@ def _persist_battle_log(
             battle_log.entries,
             reply_ref=reply_ref,
             error_trace=battle_log.error_trace,
+            cache=state.sheet_cache,
         )
 
         if battle_log.is_main and state.session is not None:
@@ -184,6 +186,7 @@ def _persist_battle_log(
                 characters=log_sheets.build_field_characters(
                     state.session.context, include_hp=False
                 ),
+                cache=state.sheet_cache,
             )
         elif (
             not battle_log.is_main
@@ -200,6 +203,7 @@ def _persist_battle_log(
                 characters=log_sheets.build_field_characters(
                     state.practice.context, include_hp=True
                 ),
+                cache=state.sheet_cache,
             )
         elif not battle_log.is_main:
             dm = admin_commands.find_dm_battle_by_field_id(state, battle_log.field_id)
@@ -213,6 +217,7 @@ def _persist_battle_log(
                     characters=log_sheets.build_field_characters(
                         dm.session.context, include_hp=False
                     ),
+                    cache=state.sheet_cache,
                 )
     except Exception:
         logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
@@ -233,6 +238,7 @@ def _persist_noncombat_log(
             result=log_info.result,
             error_trace=log_info.error_trace,
             reply_ref=reply_ref,
+            cache=state.sheet_cache,
         )
     except Exception:
         logger.exception("비전투 로그 기록 실패")
@@ -259,6 +265,15 @@ class BotState:
     dm_battles: dict[int, DmBattleState] = field(
         default_factory=dict
     )  # key = 현재 스레드 tip 게시물 id
+    # 멘션 하나(on_notification 한 번) 처리 범위에서만 유효한 읽기 캐시.
+    # sheet_cache는 state.spreadsheet(캐릭터/에너미/필드/로그 시트), field_sheet_cache는
+    # state.field_spreadsheet(공개용 "필드" 시트, 별도 스프레드시트) 대상이다 — 둘 다
+    # render/upsert/캡처가 매번 spreadsheet.worksheet(name)을 직접 부르면 그때마다
+    # 전체 시트 메타데이터를 새로 읽어오므로(gspread에 이름별 캐싱이 없다) 분리해서
+    # 캐싱한다. on_notification 시작마다 둘 다 새로 만들어 교체하므로, 이전 멘션에서
+    # 읽은 값이 다음 멘션까지 새어나가지 않는다.
+    sheet_cache: Optional[SheetCache] = None
+    field_sheet_cache: Optional[SheetCache] = None
 
 
 def reload_char_data(state: BotState) -> None:
@@ -267,7 +282,9 @@ def reload_char_data(state: BotState) -> None:
     캐릭터 명단은 세션 도중에도 바뀔 수 있으므로(참전 신청, 수정 중인 행 등),
     캐릭터 관련 커맨드가 들어올 때마다(멘션 수신 시) 매번 새로 읽는다.
     """
-    char_dict, name_dict, noncombat_char_dict = load_char_data(state.spreadsheet)
+    char_dict, name_dict, noncombat_char_dict = load_char_data(
+        state.spreadsheet, cache=state.sheet_cache
+    )
     state.char_dict = char_dict
     state.name_dict = name_dict
     state.noncombat_char_dict = noncombat_char_dict
@@ -287,7 +304,9 @@ class MastodonBotListener(StreamListener):
         게시되며, 이 실패가 전투 진행 자체를 막지 않는다.
         """
         try:
-            with capture_field_sheet_image(state.field_spreadsheet) as image_path:
+            with capture_field_sheet_image(
+                state.field_spreadsheet, cache=state.field_sheet_cache
+            ) as image_path:
                 media = self._mastodon.media_post(str(image_path), mime_type="image/png")
                 return [media["id"]]
         except Exception:
@@ -310,6 +329,12 @@ class MastodonBotListener(StreamListener):
             command_text = _extract_command(status["content"])
             if not command_text:
                 return
+
+            # 이 멘션 하나를 처리하는 동안에만 유효한 읽기 캐시로 교체한다 —
+            # 커맨드 간에는 공유하지 않아, 전투 중 스프레드시트를 실시간으로
+            # 고쳐도 다음 멘션부터는 다시 최신 값을 읽는다.
+            self._state.sheet_cache = SheetCache(self._state.spreadsheet)
+            self._state.field_sheet_cache = SheetCache(self._state.field_spreadsheet)
 
             reload_char_data(self._state)
 

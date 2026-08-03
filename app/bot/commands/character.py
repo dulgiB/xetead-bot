@@ -64,10 +64,13 @@ def handle_character_command(
             return "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]", None
 
         before = len(session.context.results)
+        session.context.inventory.cache = state.sheet_cache
         session.process_command(command)
         new_results = session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
-        write_back_changed_hp(state.spreadsheet, session.context, entries)
+        write_back_changed_hp(
+            state.spreadsheet, session.context, entries, cache=state.sheet_cache
+        )
 
         battle_log = BattleCommandLog(
             field_id=field_id,
