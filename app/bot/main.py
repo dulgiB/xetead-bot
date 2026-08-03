@@ -392,8 +392,8 @@ class MastodonBotListener(StreamListener):
                         _truncate(result.reply_text), visibility="public"
                     )
                 else:
-                    reply_status = self._reply(
-                        status_id, acct, visibility, result.reply_text,
+                    reply_status = self._reply_with_calc(
+                        status_id, acct, visibility, result.reply_text, result.calc_text,
                     )
                 _persist_battle_log(
                     state, result.battle_log, str(reply_status["id"])
@@ -530,10 +530,12 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.practice.active_post_id
         ):
             practice_visibility = state.practice.visibility
-            reply, game_post, battle_log = _handle_practice_command(
+            reply, calc_text, game_post, battle_log = _handle_practice_command(
                 acct, text, state
             )
-            reply_status = self._reply(status_id, acct, visibility, reply)
+            reply_status = self._reply_with_calc(
+                status_id, acct, visibility, reply, calc_text
+            )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
                 # 캐릭터의 커맨드 답글(reply_status) 바로 다음에 이어 붙여야
@@ -565,20 +567,24 @@ class MastodonBotListener(StreamListener):
             state.active_phase_post_id is not None
             and in_reply_to_id == state.active_phase_post_id
         ):
-            response, battle_log = handle_character_command(
+            response, calc_text, battle_log = handle_character_command(
                 acct, text, state, state.session, str(state.preparation_status_id)
             )
-            reply_status = self._reply(status_id, acct, visibility, response)
+            reply_status = self._reply_with_calc(
+                status_id, acct, visibility, response, calc_text
+            )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             return
 
         # 5.5. DM 전투 중 캐릭터 커맨드 (해당 스레드의 tip 게시물에 대한 답글)
         if in_reply_to_id is not None and in_reply_to_id in state.dm_battles:
             dm_state = state.dm_battles[in_reply_to_id]
-            reply, end_post_text, battle_log = _handle_dm_battle_command(
+            reply, calc_text, end_post_text, battle_log = _handle_dm_battle_command(
                 acct, text, state, dm_state
             )
-            reply_status = self._reply(status_id, acct, visibility, reply)
+            reply_status = self._reply_with_calc(
+                status_id, acct, visibility, reply, calc_text
+            )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if end_post_text is not None:
                 self._mastodon.status_post(
@@ -692,6 +698,28 @@ class MastodonBotListener(StreamListener):
             media_ids=media_ids or None,
         )
 
+    def _reply_with_calc(
+        self,
+        in_reply_to_id: int,
+        acct: str,
+        visibility: str,
+        text: str,
+        calc_text: str,
+    ) -> dict:
+        """답글을 보내고, 계산식(calc_text)이 있으면 가독성을 위해 그 답글에
+        이어 접힌(CW) 후속 게시물로 따로 보낸다. 반환값은 (CW 게시물이 아닌)
+        본문 답글의 status dict다 — 다음 게시물이 스레드를 이어가려면 이
+        답글에 답글로 달려야 하기 때문이다."""
+        reply_status = self._reply(in_reply_to_id, acct, visibility, text)
+        if calc_text:
+            self._mastodon.status_post(
+                f"@{acct}\n{_truncate(calc_text)}",
+                in_reply_to_id=reply_status["id"],
+                visibility=visibility,
+                spoiler_text="계산식",
+            )
+        return reply_status
+
 
 def _start_investigation_battle(state: "BotState") -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
@@ -759,27 +787,27 @@ def _start_practice_battle(state: "BotState") -> str:
 
 def _handle_practice_command(
     acct: str, text: str, state: "BotState"
-) -> tuple[str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
+) -> tuple[str, str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
     """
     대련/상시전투 중 캐릭터 커맨드를 처리한다.
-    반환값: (reply_text, game_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text, calc_text, game_post_text_or_None, battle_log_or_None)
     """
     ps = state.practice
     if ps is None:
-        return "◊ 진행 중인 대련/상시전투가 없습니다.", None, None
+        return "◊ 진행 중인 대련/상시전투가 없습니다.", "", None, None
 
     if acct not in state.char_dict:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None, None
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", "", None, None
 
     char_data = state.char_dict[acct]
     char_id = CharacterId(char_data.name)
 
     if char_id not in ps.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", None, None
+        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None, None
 
     current_phase = ps.phase
     if current_phase is None:
-        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", None, None
+        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", "", None, None
 
     field_id = str(ps.prep_post_id)
     round_n = ps.round_n
@@ -789,6 +817,7 @@ def _handle_practice_command(
             "◊ 한 메시지에는 대괄호 커맨드를 하나만 입력할 수 있습니다. "
             "여러 스킬/아이템을 한 번에 쓰려면 '[스킬A/대상 - 스킬B]'처럼 "
             "하이픈으로 이어서 한 대괄호 안에 작성해 주세요.",
+            "",
             None,
             None,
         )
@@ -798,6 +827,7 @@ def _handle_practice_command(
         if command is None:
             return (
                 "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]",
+                "",
                 None,
                 None,
             )
@@ -815,7 +845,9 @@ def _handle_practice_command(
             is_main=False,
             entries=entries,
         )
-        reply_text = format_battle_reply(ps.context, char_id, result.part_results)
+        reply_text, calc_text = format_battle_reply(
+            ps.context, char_id, result.part_results
+        )
     except CommandValidationError as e:
         battle_log = log_sheets.BattleCommandLog(
             field_id=field_id,
@@ -825,7 +857,7 @@ def _handle_practice_command(
             is_main=False,
             error_trace=traceback.format_exc(),
         )
-        return f"◊ {e}", None, battle_log
+        return f"◊ {e}", "", None, battle_log
 
     battle_mode = "상시전투" if ps.is_investigation else "대련"
 
@@ -841,7 +873,7 @@ def _handle_practice_command(
                 f"{ps.context}"
             )
             state.practice = None
-            return reply_text, game_post, battle_log
+            return reply_text, calc_text, game_post, battle_log
 
         ps.advance_to_second_mover()
         second_label = ps.side_label(ps.second_mover)
@@ -850,7 +882,7 @@ def _handle_practice_command(
             f"후공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
             f"{ps.context}"
         )
-        return reply_text, game_post, battle_log
+        return reply_text, calc_text, game_post, battle_log
 
     # SECOND_MOVER_ACTION
     ps.end_round()
@@ -868,7 +900,7 @@ def _handle_practice_command(
             f"{ps.context}"
         )
         state.practice = None
-        return reply_text, game_post, battle_log
+        return reply_text, calc_text, game_post, battle_log
 
     ps.start_round()
     mover_label = ps.side_label(ps.first_mover)
@@ -877,31 +909,31 @@ def _handle_practice_command(
         f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
         f"{ps.context}"
     )
-    return reply_text, game_post, battle_log
+    return reply_text, calc_text, game_post, battle_log
 
 
 def _handle_dm_battle_command(
     acct: str, text: str, state: "BotState", dm_state: DmBattleState
-) -> tuple[str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
+) -> tuple[str, str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
     """
     DM 전투 중 캐릭터 커맨드를 처리한다. handle_character_command를 그대로
     재사용하되, DM 전투는 스레드 답글이 유일한 실시간 확인 수단이므로 매
     답글에 현재 필드 상태(str(context))를 덧붙이고, 처리 후 전멸 여부를
     확인해 전멸 시 전투를 종료한다.
 
-    반환값: (reply_text, end_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text, calc_text, end_post_text_or_None, battle_log_or_None)
     """
-    response, battle_log = handle_character_command(
+    response, calc_text, battle_log = handle_character_command(
         acct, text, state, dm_state.session, dm_state.field_id
     )
     response = f"{response}\n\n{dm_state.session.context}"
 
     winner = admin_commands._check_dm_battle_wipe(dm_state)
     if winner is None:
-        return response, None, battle_log
+        return response, calc_text, None, battle_log
 
     end_post_text = admin_commands._end_dm_battle(dm_state, state, winner)
-    return response, end_post_text, battle_log
+    return response, calc_text, end_post_text, battle_log
 
 
 def main() -> None:

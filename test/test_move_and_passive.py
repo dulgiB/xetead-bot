@@ -291,7 +291,7 @@ def test_voluntary_enemy_move_reaction_damage_bundles_into_move_reply():
     before = len(ctx.results)
     cmd = parse_character_command(enemy_id, "[이동/2]", ctx)
     manager.process_command(cmd)
-    reply = format_battle_reply(ctx, enemy_id, ctx.results[before:])
+    reply, _calc = format_battle_reply(ctx, enemy_id, ctx.results[before:])
 
     assert reply == "【이동 ▸ 2열】\n적군 1 | -10 → 90/100"
 
