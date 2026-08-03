@@ -32,7 +32,7 @@ from bot.battle_reply_text import (
 )
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
-from bot.load_data import load_battle_data
+from bot.load_data import load_battle_data, reveal_declared_enemy_skills
 from bot.log_sheets import (
     BattleCommandLog,
     build_field_characters,
@@ -668,6 +668,7 @@ def _cmd_proxy(
     field_id = str(state.preparation_status_id)
     round_n = state.session.round_n
     phase = state.session.current_phase
+    is_enemy_declare = state.session.context.characters[char_id].faction == FactionType.ENEMY
 
     try:
         command = parse_character_command(char_id, cmd_str, state.session.context)
@@ -688,7 +689,13 @@ def _cmd_proxy(
             command_text=cmd_str,
             entries=entries,
         )
-        reply_text = _format_named_reply(state.session.context, char_id, new_results)
+        reply_text = _format_named_reply(
+            state.session.context, char_id, new_results, show_skill_preview=is_enemy_declare
+        )
+        if is_enemy_declare:
+            reveal_declared_enemy_skills(
+                state.spreadsheet, state.session.context, command, cache=state.sheet_cache
+            )
         return reply_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
@@ -801,6 +808,8 @@ def _format_named_reply(
     context: "BattlefieldContext",
     char_id: CharacterId,
     part_results: list[CommandPartProcessResult],
+    *,
+    show_skill_preview: bool = False,
 ) -> str:
     """part_results를 커맨드(파트) 하나당 "{이름} 【헤더】/계산식" 블록으로
     조립한다. 여러 파트가 있으면 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
@@ -811,7 +820,9 @@ def _format_named_reply(
     """
     blocks = []
     for part_result in part_results:
-        block = format_battle_reply(context, char_id, [part_result])
+        block = format_battle_reply(
+            context, char_id, [part_result], show_skill_preview=show_skill_preview
+        )
         if block:
             blocks.append(f"{char_id.name} {block}")
     return "\n\n".join(blocks)
@@ -1091,6 +1102,7 @@ def _cmd_dm_battle_proxy(
     field_id = dm_state.field_id
     round_n = session.round_n
     phase = session.current_phase
+    is_enemy_declare = session.context.characters[char_id].faction == FactionType.ENEMY
 
     try:
         command = parse_character_command(char_id, cmd_str, session.context)
@@ -1111,7 +1123,13 @@ def _cmd_dm_battle_proxy(
             command_text=cmd_str,
             entries=entries,
         )
-        reply_text = _format_named_reply(session.context, char_id, new_results)
+        reply_text = _format_named_reply(
+            session.context, char_id, new_results, show_skill_preview=is_enemy_declare
+        )
+        if is_enemy_declare:
+            reveal_declared_enemy_skills(
+                state.spreadsheet, session.context, command, cache=state.sheet_cache
+            )
         return f"{reply_text}\n\n{session.context}", battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(

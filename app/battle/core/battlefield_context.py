@@ -1,5 +1,6 @@
 import copy
 import math
+from dataclasses import replace
 from typing import Optional
 
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -504,6 +505,14 @@ class BattlefieldContext:
 
     def get_skill_data_by_id(self, skill_id: str) -> SkillData:
         return self._skill_dictionary[skill_id]
+
+    def mark_skill_revealed(self, skill_id: str) -> None:
+        """이 전투 세션 안에서 즉시 스킬을 공개 상태로 전환한다(스프레드시트
+        write-back은 호출측 bot 레이어 책임). 이미 공개된 스킬이면 아무 것도
+        하지 않는다."""
+        data = self._skill_dictionary[skill_id]
+        if not data.revealed:
+            self._skill_dictionary[skill_id] = replace(data, revealed=True)
 
     @property
     def allow_item_usage(self) -> bool:

@@ -15,6 +15,7 @@ from battle.objects.define import (
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
 from battle.objects.skill.define import SkillValueType
 from battle.objects.skill.target_functions import SkillTargetRule
+from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -211,6 +212,10 @@ class SkillData:
     cost: int
     effects: list[SkillEffectBase]
     description: str
+    # 에너미 스킬 전용: 아직 한 번도 선언된 적 없는 스킬의 설명을 답글에서
+    # 블라인드 처리할지 여부. "스킬_에너미" 시트의 is_revealed 체크박스
+    # 컬럼에서 온다. 컬럼이 없는 시트(스킬_캐릭터 등)는 항상 True(공개).
+    revealed: bool = True
 
     @classmethod
     def from_dict(cls, data: dict[str, str | int]) -> "SkillData":
@@ -227,6 +232,7 @@ class SkillData:
             cost=data["cost"],
             effects=skill_effects,
             description=data["description"],
+            revealed=parse_spreadsheet_bool(data.get("is_revealed", True)),
         )
 
     def to_skill_instance(

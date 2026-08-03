@@ -551,3 +551,119 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
         "적군 1 | -15 → 85/100\n"
         "↳ 3[Mark] × 5"
     )
+
+
+# ── 적 스킬 선언 예고(블라인드/공개) ────────────────────────────────────────
+
+
+def _declare_enemy_skill(ctx: BattlefieldContext, skill_id: str, cmd_str: str) -> list:
+    """RoundManager 기본 페이즈(ENEMY_PRE_ACTION)에서 적군 캐릭터로 스킬을
+    선언하고 그 커맨드가 만든 CommandPartProcessResult 목록을 반환한다."""
+    manager = RoundManager(ctx)
+    caster_id = CharacterId("적군 1")
+    before = len(ctx.results)
+    cmd = parse_character_command(caster_id, cmd_str, ctx)
+    manager.process_command(cmd)
+    return caster_id, ctx.results[before:]
+
+
+def test_enemy_skill_preview_shows_description_when_revealed():
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        description="대상에게 고정 피해를 준다.",
+        revealed=True,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    ctx.add_character(
+        get_test_preset("적군 1", skill_1_id="스킬_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+
+    caster_id, new_results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
+    reply = format_battle_reply(ctx, caster_id, new_results, show_skill_preview=True)
+
+    assert reply == "【스킬_1 ▸ 아군 1】\n↳ 대상에게 고정 피해를 준다."
+
+
+def test_enemy_skill_preview_blinds_description_when_not_revealed():
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        description="대상에게 고정 피해를 준다.",
+        revealed=False,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    ctx.add_character(
+        get_test_preset("적군 1", skill_1_id="스킬_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+
+    caster_id, new_results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
+    reply = format_battle_reply(ctx, caster_id, new_results, show_skill_preview=True)
+
+    assert reply == "【스킬_1 ▸ 아군 1】\n↳ [효과 미확인]"
+
+
+def test_skill_preview_omitted_when_show_skill_preview_is_false():
+    """show_skill_preview 기본값(False)은 기존 동작대로 예고 줄을 붙이지 않는다."""
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        description="대상에게 고정 피해를 준다.",
+        revealed=False,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    ctx.add_character(
+        get_test_preset("적군 1", skill_1_id="스킬_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+
+    caster_id, new_results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
+    reply = format_battle_reply(ctx, caster_id, new_results)
+
+    assert reply == "【스킬_1 ▸ 아군 1】"
+
+
+def test_mark_skill_revealed_updates_skill_dict_in_place():
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        description="",
+        revealed=False,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+
+    ctx.mark_skill_revealed("스킬_1")
+
+    assert ctx.get_skill_data_by_id("스킬_1").revealed is True
+
+
+def test_mark_skill_revealed_is_noop_when_already_revealed():
+    """이미 공개된 스킬은 다시 마킹해도 SkillData 인스턴스를 새로 만들지 않는다."""
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        description="",
+        revealed=True,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+
+    ctx.mark_skill_revealed("스킬_1")
+
+    assert ctx.get_skill_data_by_id("스킬_1") is skill

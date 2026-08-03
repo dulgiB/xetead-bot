@@ -7,6 +7,7 @@ from battle.exceptions import CommandValidationError
 from battle.objects.models import CharacterId
 
 from bot.battle_reply_text import format_battle_reply
+from bot.load_data import reveal_declared_enemy_skills
 from bot.log_sheets import BattleCommandLog, write_back_changed_hp
 
 if TYPE_CHECKING:
@@ -42,10 +43,11 @@ def handle_character_command(
 
     phase = session.current_phase
     char = session.context.characters[char_id]
+    is_enemy_declare = char.faction.value == "적군"
 
     if char.faction.value == "아군" and phase != RoundPhaseType.ALLY_ACTION:
         return "◊ 지금은 아군 행동 단계가 아닙니다.", None
-    if char.faction.value == "적군" and phase != RoundPhaseType.ENEMY_PRE_ACTION:
+    if is_enemy_declare and phase != RoundPhaseType.ENEMY_PRE_ACTION:
         return "◊ 지금은 적군 행동 선언 단계가 아닙니다.", None
 
     round_n = session.round_n
@@ -79,7 +81,13 @@ def handle_character_command(
             command_text=text,
             entries=entries,
         )
-        reply_text = format_battle_reply(session.context, char_id, new_results)
+        reply_text = format_battle_reply(
+            session.context, char_id, new_results, show_skill_preview=is_enemy_declare
+        )
+        if is_enemy_declare:
+            reveal_declared_enemy_skills(
+                state.spreadsheet, session.context, command, cache=state.sheet_cache
+            )
         return reply_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(

@@ -4,7 +4,14 @@ os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 
 import gspread  # noqa: E402
 
+from battle.core.battlefield_context import BattlefieldContext  # noqa: E402
+from battle.core.commands.models import CharacterCommand, CommandPart  # noqa: E402
+from battle.objects.define import ActionType  # noqa: E402
+from battle.objects.models import CharacterId  # noqa: E402
+from battle.objects.skill.models import SkillData  # noqa: E402
 from bot.load_data import (  # noqa: E402
+    mark_enemy_skill_revealed,
+    reveal_declared_enemy_skills,
     update_character_curr_hp,
     update_character_gold_and_quest_date,
 )
@@ -125,3 +132,110 @@ def test_update_character_gold_and_quest_date_raises_when_not_found():
         assert False, "예외가 발생해야 한다"
     except RuntimeError:
         pass
+
+
+def test_mark_enemy_skill_revealed_writes_true_to_matching_row():
+    rows = [["id", "is_revealed"], ["스킬_1", ""], ["스킬_2", "TRUE"]]
+    spreadsheet = _FakeSpreadsheet({"스킬_에너미": rows})
+
+    mark_enemy_skill_revealed(spreadsheet, "스킬_1")
+
+    assert (2, 2, True) in spreadsheet.worksheet("스킬_에너미").written
+
+
+def test_mark_enemy_skill_revealed_noop_when_column_missing():
+    """is_revealed 컬럼이 아직 시트에 추가되기 전에도 예외 없이 넘어가야 한다."""
+    rows = [["id"], ["스킬_1"]]
+    spreadsheet = _FakeSpreadsheet({"스킬_에너미": rows})
+
+    mark_enemy_skill_revealed(spreadsheet, "스킬_1")
+
+    assert spreadsheet.worksheet("스킬_에너미").written == []
+
+
+def test_mark_enemy_skill_revealed_noop_when_sheet_missing():
+    """'스킬_에너미' 시트 자체가 없어도 WorksheetNotFound를 삼키고 조용히 넘어가야 한다."""
+    spreadsheet = _FakeSpreadsheet({})
+
+    mark_enemy_skill_revealed(spreadsheet, "스킬_1")
+
+
+def _skill_command(skill_id: str) -> CharacterCommand:
+    return CharacterCommand(
+        user_id=CharacterId("적군 1"),
+        parts=[CommandPart(type_=ActionType.SKILL, skill_id=skill_id, targets=[])],
+    )
+
+
+def test_reveal_declared_enemy_skills_updates_context_and_sheet():
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[],
+        description="",
+        revealed=False,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    rows = [["id", "is_revealed"], ["스킬_1", ""]]
+    spreadsheet = _FakeSpreadsheet({"스킬_에너미": rows})
+
+    reveal_declared_enemy_skills(spreadsheet, ctx, _skill_command("스킬_1"))
+
+    assert ctx.get_skill_data_by_id("스킬_1").revealed is True
+    assert (2, 2, True) in spreadsheet.worksheet("스킬_에너미").written
+
+
+def test_reveal_declared_enemy_skills_skips_already_revealed_skill():
+    """이미 공개된 스킬은 시트에 다시 쓰지 않는다."""
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[],
+        description="",
+        revealed=True,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    rows = [["id", "is_revealed"], ["스킬_1", "TRUE"]]
+    spreadsheet = _FakeSpreadsheet({"스킬_에너미": rows})
+
+    reveal_declared_enemy_skills(spreadsheet, ctx, _skill_command("스킬_1"))
+
+    assert spreadsheet.worksheet("스킬_에너미").written == []
+
+
+def test_reveal_declared_enemy_skills_reads_sheet_once_for_multiple_skills():
+    """한 커맨드(하이픈으로 이어붙인 복수 스킬)에 아직 공개되지 않은 스킬이
+    여러 개 있어도 '스킬_에너미' 시트는 한 번만 읽어야 한다 — 스킬마다 개별
+    write-back 후 캐시를 무효화하면 뒤이은 스킬이 매번 재조회하게 된다."""
+    skill_a = SkillData(
+        id="스킬_A", target_rule="SkillTargetRuleNamed", target_count=1, cost=0,
+        effects=[], description="", revealed=False,
+    )
+    skill_b = SkillData(
+        id="스킬_B", target_rule="SkillTargetRuleNamed", target_count=1, cost=0,
+        effects=[], description="", revealed=False,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_A": skill_a, "스킬_B": skill_b})
+    command = CharacterCommand(
+        user_id=CharacterId("적군 1"),
+        parts=[
+            CommandPart(type_=ActionType.SKILL, skill_id="스킬_A", targets=[]),
+            CommandPart(type_=ActionType.SKILL, skill_id="스킬_B", targets=[]),
+        ],
+    )
+    rows = [["id", "is_revealed"], ["스킬_A", ""], ["스킬_B", ""]]
+    spreadsheet = _FakeSpreadsheet({"스킬_에너미": rows})
+    cache = _make_cache(spreadsheet)
+
+    reveal_declared_enemy_skills(spreadsheet, ctx, command, cache=cache)
+
+    ws = spreadsheet.worksheet("스킬_에너미")
+    assert ws.get_values_call_count == 1
+    assert (2, 2, True) in ws.written
+    assert (3, 2, True) in ws.written
+    assert ctx.get_skill_data_by_id("스킬_A").revealed is True
+    assert ctx.get_skill_data_by_id("스킬_B").revealed is True

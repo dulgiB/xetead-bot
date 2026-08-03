@@ -1,10 +1,11 @@
 import json
 import logging
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import gspread
 from battle.objects.buff.models import BuffData, PassiveBuffData
+from battle.objects.define import ActionType
 from battle.objects.item.models import ItemData
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
@@ -20,6 +21,10 @@ from spreadsheets.models.quest import (
 from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 from bot.sheet_cache import SheetCache
+
+if TYPE_CHECKING:
+    from battle.core.battlefield_context import BattlefieldContext
+    from battle.core.commands.models import CharacterCommand
 
 logger = logging.getLogger(__name__)
 
@@ -446,3 +451,102 @@ def update_character_curr_hp(
                 return
 
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다.")
+
+
+def _load_enemy_skill_sheet(
+    spreadsheet: gspread.Spreadsheet,
+    cache: Optional[SheetCache] = None,
+) -> Optional[tuple[gspread.Worksheet, list[str], list[list]]]:
+    """'스킬_에너미' 시트의 (worksheet, header, rows)를 반환한다. 시트 자체가
+    없거나 is_revealed 컬럼이 아직 추가되지 않았으면 None을 반환한다 — 이
+    컬럼은 나중에 스프레드시트에 수동으로 추가되는 것을 전제하므로, 추가되기
+    전에도 호출측이 조용히 넘어갈 수 있어야 한다."""
+    try:
+        ws = _worksheet(spreadsheet, "스킬_에너미", cache)
+    except gspread.exceptions.WorksheetNotFound:
+        return None
+
+    values = (
+        cache.get_all_values("스킬_에너미")
+        if cache is not None
+        else ws.get_values(pad_values=True)
+    )
+    if not values:
+        return None
+    header, rows = values[0], values[1:]
+    if "id" not in header or "is_revealed" not in header:
+        return None
+    return ws, header, rows
+
+
+def mark_enemy_skill_revealed(
+    spreadsheet: gspread.Spreadsheet,
+    skill_id: str,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """'스킬_에너미' 시트에서 skill_id 행을 찾아 is_revealed를 TRUE로 갱신한다."""
+    loaded = _load_enemy_skill_sheet(spreadsheet, cache)
+    if loaded is None:
+        return
+    ws, header, rows = loaded
+    id_col = header.index("id")
+    revealed_col = header.index("is_revealed") + 1
+
+    for idx, row in enumerate(rows, start=2):
+        if id_col < len(row) and row[id_col] == skill_id:
+            ws.update_cell(idx, revealed_col, True)
+            if cache is not None:
+                cache.invalidate("스킬_에너미")
+            return
+
+
+def reveal_declared_enemy_skills(
+    spreadsheet: gspread.Spreadsheet,
+    context: "BattlefieldContext",
+    command: "CharacterCommand",
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """적이 PRE 페이즈에 선언한 커맨드에 포함된 스킬 중 아직 공개되지 않은
+    것이 있으면 공개 상태로 전환한다. 같은 전투 세션 안에서 즉시 반영되도록
+    `context.mark_skill_revealed()`로 skill_dict를 갱신하고, 다음 전투부터도
+    공개 상태가 유지되도록 '스킬_에너미' 시트에도 write-back한다.
+
+    호출측은 이 함수를 부르기 *전에* 이미 블라인드 상태 그대로 답글 텍스트를
+    만들어 둬야 한다 — 이번 선언 자체는 블라인드로 예고되고, 다음 선언부터
+    공개되는 것이 의도된 동작이다.
+
+    한 커맨드 안에 아직 공개되지 않은 스킬이 여러 개(하이픈으로 이어붙인
+    복수 스킬) 있어도 시트는 한 번만 읽는다 — 스킬마다 개별적으로 다시
+    읽으면 먼저 처리한 스킬의 write-back이 캐시를 무효화해, 뒤이은 스킬마다
+    캐시 미스로 시트를 통째로 재조회하는 불필요한 API 호출이 반복된다.
+    """
+    skill_ids_to_reveal: list[str] = []
+    for part in command.parts:
+        if part.type_ != ActionType.SKILL or part.skill_id is None:
+            continue
+        skill_data = context.get_skill_data_by_id(part.skill_id)
+        if skill_data.revealed:
+            continue
+        context.mark_skill_revealed(part.skill_id)
+        skill_ids_to_reveal.append(part.skill_id)
+
+    if not skill_ids_to_reveal:
+        return
+
+    loaded = _load_enemy_skill_sheet(spreadsheet, cache)
+    if loaded is None:
+        return
+    ws, header, rows = loaded
+    id_col = header.index("id")
+    revealed_col = header.index("is_revealed") + 1
+
+    remaining = set(skill_ids_to_reveal)
+    for idx, row in enumerate(rows, start=2):
+        if not remaining:
+            break
+        if id_col < len(row) and row[id_col] in remaining:
+            ws.update_cell(idx, revealed_col, True)
+            remaining.discard(row[id_col])
+
+    if cache is not None:
+        cache.invalidate("스킬_에너미")
