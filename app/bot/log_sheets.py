@@ -217,11 +217,21 @@ def write_back_changed_hp(
         curr_hp = char.status.curr_hp if char is not None else 0
         target = targets.get(name)
         if target is None:
-            logger.error(
-                "'%s'을 캐릭터/에너미 시트에서 찾을 수 없어 체력(%s) 반영 실패",
-                name,
-                curr_hp,
-            )
+            if char_id in context.companion_owners:
+                # 소환된 동료는 애초에 "캐릭터"/"에너미" 시트에 자기 행이
+                # 없다 — 못 찾는 게 정상이므로 에러가 아니라 디버그 로그만
+                # 남긴다.
+                logger.debug(
+                    "'%s'은(는) 소환된 동료라 시트에 반영할 행이 없어 건너뜁니다 (체력 %s)",
+                    name,
+                    curr_hp,
+                )
+            else:
+                logger.error(
+                    "'%s'을 캐릭터/에너미 시트에서 찾을 수 없어 체력(%s) 반영 실패",
+                    name,
+                    curr_hp,
+                )
             continue
         ws, row, hp_col = target
         try:
