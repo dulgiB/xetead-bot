@@ -670,6 +670,7 @@ def _cmd_proxy(
             return "◊ 커맨드 형식을 인식할 수 없습니다.", None
 
         before = len(state.session.context.results)
+        state.session.context.inventory.cache = state.sheet_cache
         state.session.process_command(command)
         new_results = state.session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
@@ -1081,6 +1082,7 @@ def _cmd_dm_battle_proxy(
             return "◊ 커맨드 형식을 인식할 수 없습니다.", None
 
         before = len(session.context.results)
+        session.context.inventory.cache = state.sheet_cache
         session.process_command(command)
         new_results = session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]

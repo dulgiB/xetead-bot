@@ -142,6 +142,7 @@ def handle_use_item(
     try:
         item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
         inventory = load_inventory(state.spreadsheet, cache=state.sheet_cache)
+        inventory.cache = state.sheet_cache
     except Exception as e:
         msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -223,6 +224,7 @@ def handle_transfer_item(
     try:
         item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
         inventory = load_inventory(state.spreadsheet, cache=state.sheet_cache)
+        inventory.cache = state.sheet_cache
     except Exception as e:
         msg = f"◊ 아이템 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
