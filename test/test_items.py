@@ -213,6 +213,31 @@ def test_practice_battle_blocks_item():
         manager.process_command(cmd)
 
 
+def test_practice_battle_blocks_item_with_specific_message(item_potion):
+    """PracticeBattlefieldContext에 item_dict를 넘기지 않으면(예: 위 테스트처럼
+    빈 dict) 파서가 "포션"을 스킬도 아이템도 아닌 것으로 오인해 부정확한
+    에러("등록된 스킬도 아이템도 아닙니다")를 낸다. item_dict를 제대로
+    넘기면 이름은 정상 인식되고, 실제 사용 차단은 allow_item_usage 검증에서
+    "이 전투에서는 아이템을 사용할 수 없습니다."라는 정확한 메시지로
+    일어나야 한다."""
+    ctx = PracticeBattlefieldContext(
+        buff_dict={}, skill_dict={}, item_dict={"포션": item_potion}
+    )
+    manager = RoundManager(ctx)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
+    )
+    ctx.add_character(
+        get_test_preset("전사"), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+
+    cmd = parse_character_command(CharacterId("전사"), "[포션]", ctx)
+    with pytest.raises(CommandValidationError, match="이 전투에서는 아이템을 사용할 수 없습니다"):
+        manager.process_command(cmd)
+
+
 # ── 인벤토리 양도 ──────────────────────────────────────────────────────────────
 
 

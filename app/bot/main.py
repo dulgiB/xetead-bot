@@ -8,7 +8,7 @@ from typing import Optional
 
 import gspread
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.parser import parse_character_command
+from battle.core.commands.parser import count_bracket_groups, parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
@@ -422,8 +422,14 @@ class MastodonBotListener(StreamListener):
                     ):
                         post_text = f"{post_text}\n\n{state.session.context}"
                     post_kwargs: dict = {"media_ids": game_media_ids or None}
-                    if result.game_post_in_reply_to is not None:
-                        post_kwargs["in_reply_to_id"] = result.game_post_in_reply_to
+                    if result.game_post_reply_to_confirmation:
+                        # 이전 페이즈 공지(admin의 [진행] 요청이 답글로 달렸던
+                        # 그 게시물)에 다시 답글로 달면, 방금 위에서 보낸
+                        # 확인 답글(reply_status)과 이 게시물이 같은 부모의
+                        # 형제가 되어 스레드가 갈라진다 — 확인 답글 뒤에
+                        # 이어야 [이전 공지] ← [admin 요청] ← [확인 답글] ←
+                        # [이 공지] 순으로 선형으로 이어진다.
+                        post_kwargs["in_reply_to_id"] = reply_status["id"]
                     if result.game_post_visibility is not None:
                         post_kwargs["visibility"] = result.game_post_visibility
                     new_post = self._mastodon.status_post(
@@ -524,17 +530,21 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.practice.active_post_id
         ):
             practice_visibility = state.practice.visibility
-            prev_post_id = state.practice.active_post_id
             reply, game_post, battle_log = _handle_practice_command(
                 acct, text, state
             )
             reply_status = self._reply(status_id, acct, visibility, reply)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
+                # 캐릭터의 커맨드 답글(reply_status) 바로 다음에 이어 붙여야
+                # 스레드가 갈라지지 않는다 — 예전 라운드 공지(active_post_id,
+                # 이 캐릭터 커맨드의 in_reply_to_id였던 게시물)에 다시 답글로
+                # 달면, 캐릭터의 커맨드 답글과 다음 라운드 공지가 같은 부모의
+                # 형제 게시물이 되어 스레드가 두 갈래로 갈라진다.
                 new_post = self._mastodon.status_post(
                     _truncate(game_post),
                     visibility=practice_visibility,
-                    in_reply_to_id=prev_post_id,
+                    in_reply_to_id=reply_status["id"],
                 )
                 if state.practice is not None:
                     state.practice.active_post_id = new_post["id"]
@@ -676,7 +686,7 @@ class MastodonBotListener(StreamListener):
         media_ids: Optional[list] = None,
     ) -> dict:
         return self._mastodon.status_post(
-            f"@{acct} {_truncate(text)}",
+            f"@{acct}\n{_truncate(text)}",
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
             media_ids=media_ids or None,
@@ -773,6 +783,15 @@ def _handle_practice_command(
 
     field_id = str(ps.prep_post_id)
     round_n = ps.round_n
+
+    if count_bracket_groups(text) >= 2:
+        return (
+            "◊ 한 메시지에는 대괄호 커맨드를 하나만 입력할 수 있습니다. "
+            "여러 스킬/아이템을 한 번에 쓰려면 '[스킬A/대상 - 스킬B]'처럼 "
+            "하이픈으로 이어서 한 대괄호 안에 작성해 주세요.",
+            None,
+            None,
+        )
 
     try:
         command = parse_character_command(char_id, text, ps.context)

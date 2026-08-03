@@ -2,7 +2,7 @@ import traceback
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.parser import parse_character_command
+from battle.core.commands.parser import count_bracket_groups, parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.models import CharacterId
 
@@ -49,6 +49,14 @@ def handle_character_command(
         return "◊ 지금은 적군 행동 선언 단계가 아닙니다.", None
 
     round_n = session.round_n
+
+    if count_bracket_groups(text) >= 2:
+        return (
+            "◊ 한 메시지에는 대괄호 커맨드를 하나만 입력할 수 있습니다. "
+            "여러 스킬/아이템을 한 번에 쓰려면 '[스킬A/대상 - 스킬B]'처럼 "
+            "하이픈으로 이어서 한 대괄호 안에 작성해 주세요.",
+            None,
+        )
 
     try:
         command = parse_character_command(char_id, text, session.context)

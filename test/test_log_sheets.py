@@ -121,6 +121,58 @@ def test_write_back_changed_hp_writes_zero_for_eliminated_character():
     assert (2, 2, 0) in ws.written
 
 
+def test_write_back_changed_hp_logs_companion_miss_at_debug_not_error(caplog):
+    """소환된 동료는 애초에 "캐릭터"/"에너미" 시트에 자기 행이 없어 시트
+    반영을 건너뛰는 게 정상 동작이다 — 실제 문제가 있는 캐릭터 누락과
+    달리 ERROR가 아니라 DEBUG로만 남아야 한다."""
+    import logging
+
+    ctx = _make_context_with_two_characters()
+    ctx.add_character(
+        get_test_preset("동료"), FactionType.ALLY, BattlefieldColumnIndex(2)
+    )
+    ctx.companion_owners[CharacterId("동료")] = CharacterId("아군1")
+    spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])  # "동료" 행 없음
+
+    entries = [
+        BattleLogEntry(
+            target_name="동료", kind=BattleLogEntryKind.DAMAGE, result="대미지 5", value=5
+        ),
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger="bot.log_sheets"):
+        log_sheets.write_back_changed_hp(spreadsheet, ctx, entries)
+
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+    assert any(
+        r.levelno == logging.DEBUG and "동료" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_write_back_changed_hp_still_logs_error_for_non_companion_miss(caplog):
+    """소환된 동료가 아닌 일반 캐릭터가 시트에서 안 찾아지는 건 여전히 실제
+    문제이므로 ERROR로 남아야 한다(위 동료 케이스와 구분)."""
+    import logging
+
+    ctx = _make_context_with_two_characters()
+    spreadsheet = _FakeSpreadsheetForHpLookup(["아군1"])  # "아군2" 행 없음
+
+    entries = [
+        BattleLogEntry(
+            target_name="아군2", kind=BattleLogEntryKind.DAMAGE, result="대미지 5", value=5
+        ),
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger="bot.log_sheets"):
+        log_sheets.write_back_changed_hp(spreadsheet, ctx, entries)
+
+    assert any(
+        r.levelno == logging.ERROR and "아군2" in r.getMessage()
+        for r in caplog.records
+    )
+
+
 def test_load_hp_write_targets_reads_each_sheet_only_once():
     """바뀐 캐릭터가 여러 명이어도 시트 읽기는 시트당 1회로 고정되어야 한다."""
     spreadsheet = _FakeSpreadsheetForHpLookup(

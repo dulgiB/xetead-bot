@@ -24,13 +24,26 @@ if TYPE_CHECKING:
 
 kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{HangulJamoExtendedA}\p{HangulJamoExtendedB}"
 # 캐릭터/스킬/아이템 id에 언더스코어가 포함되는 경우(예: "스킬_1")가 있어
-# 이름·대상에 쓰이는 문자 집합에도 언더스코어를 포함한다.
-name_charset = rf"{kr_charset}0-9A-Za-z_"
+# 이름·대상에 쓰이는 문자 집합에도 언더스코어를 포함한다. 마찬가지로
+# "!"가 들어간 스킬명(예: "스킬_1!")도 있어 함께 포함한다.
+name_charset = rf"{kr_charset}0-9A-Za-z_!"
 
 _이동 = whitespace_tolerant_literal("이동")
 _공격 = whitespace_tolerant_literal("공격")
 
 command_base_format = regex.compile(r".*\[\s*(?P<command>.+)\s*].*")
+
+# command_base_format의 두 .* 가 모두 탐욕적이라, 대괄호 그룹이 여러 개인
+# 입력("[A] [B]")은 마지막 그룹만 command로 캡처되고 앞쪽은 조용히 버려진다
+# (에러도 없이). 캐릭터 계정 멘션에서는 이 상태로 파서에 넘기지 말고
+# count_bracket_groups()로 미리 걸러 명시적 에러를 내야 한다 — 여러 파트는
+# "[A - B]"처럼 하이픈으로 이어 한 대괄호 안에 작성하는 것이 올바른 문법이다.
+_bracket_group = regex.compile(r"\[[^\[\]]*]")
+
+
+def count_bracket_groups(input_str: str) -> int:
+    """입력 텍스트에 포함된 완결된 대괄호 그룹([...]) 개수를 센다."""
+    return len(_bracket_group.findall(input_str))
 
 # 이동 :: 이동/1 또는 이동/1열
 command_format_move = regex.compile(rf"^\s*{_이동}\s*/\s*(?P<pos>[1-7]열?)\s*$")

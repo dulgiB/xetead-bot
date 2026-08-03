@@ -35,6 +35,14 @@ _CROP_PADDING = 10
 
 
 def _export_url(spreadsheet_id: str, gid: int, range_a1: str) -> str:
+    """`printnotes=false`가 없으면, 셀 메모(버프 설명 등)가 붙은 칸마다
+    Google Sheets가 PDF에 각주 참조 번호("[N]")를 자동으로 찍는다. 이
+    각주 번호가 가리키는 설명 목록은 내보내는 range 바깥(각주 전용
+    페이지)에 나오므로, 좁은 range만 캡처하는 이 흐름에서는 번호만 남고
+    무엇을 가리키는지는 잘려서 보이지 않는 채로 이미지에 남는다. 메모
+    자체(스프레드시트를 직접 열었을 때 보이는 호버 설명)는 그대로 두고
+    인쇄 시에만 생략해야 하므로, 셀 메모를 지우는 대신 이 파라미터로
+    막는다."""
     return (
         f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/export"
         f"?format=pdf&gid={gid}&range={range_a1}"
@@ -42,6 +50,7 @@ def _export_url(spreadsheet_id: str, gid: int, range_a1: str) -> str:
         f"&top_margin=0.05&bottom_margin=0.05&left_margin=0.05&right_margin=0.05"
         f"&gridlines=false&printtitle=false&sheetnames=false&pagenumbers=false"
         f"&horizontal_alignment=CENTER&vertical_alignment=TOP&attachment=false"
+        f"&printnotes=false"
     )
 
 

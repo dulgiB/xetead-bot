@@ -194,9 +194,21 @@ class PassiveSkillWrapperBuff(BuffBase):
             else None
         )
         obj.is_debuff = False
+        # object.__new__()로 BuffBase.__init__을 우회하므로 적층 관련
+        # 속성이 설정되지 않는다 — 패시브 스킬은 자체 스택 시스템이 없으므로
+        # 적층 불가(max_stack=None)로 고정하고, stack_count는 표시용
+        # 기본값(사용되지 않지만 접근 시 AttributeError를 막기 위함)만 둔다.
+        obj.max_stack = None
+        obj.stack_count = 1
         obj._passive_data = passive_data
         obj._role = role
         return obj
+
+    def get_description(self, context: "BattlefieldContext") -> str:
+        """패시브 스킬은 "버프" 시트가 아니라 "스킬_패시브" 시트에서 온
+        데이터라 context.get_buff_data_by_id(self.id)로 조회할 수 없다
+        (KeyError) — 이미 들고 있는 PassiveSkillData의 설명을 그대로 쓴다."""
+        return self._passive_data.description
 
     @property
     def timing(self) -> BuffApplyTiming:

@@ -519,6 +519,50 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     char_reply = reply_calls[-1]
     assert char_reply["media_ids"] is None
     assert "공격" in char_reply["status"]
+    # "@계정 커맨드파트헤더"처럼 멘션 바로 뒤에 내용이 붙으면 가독성이
+    # 나빠지므로, 멘션 다음은 줄바꿈으로 시작해야 한다.
+    assert char_reply["status"].startswith("@ally_acct\n")
+
+
+def test_character_command_with_two_bracket_groups_is_rejected_with_explicit_error(
+    monkeypatch,
+):
+    """캐릭터 계정이 대괄호를 두 개로 나눠 보내면(예: '[A] [B]'), 파서의 탐욕적
+    매칭 때문에 하나만 조용히 처리되고 나머지가 사라지는 문제가 있었다 —
+    본 전투 경로에서도 사전에 걸러 명시적 에러를 내야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
+    monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    active_post_id = state.active_phase_post_id
+
+    listener.on_notification(
+        _make_notification(
+            "ally_acct", 3, active_post_id, "[공격/적 캐릭터] [공격/적 캐릭터]"
+        )
+    )
+
+    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
+    char_reply = reply_calls[-1]
+    assert "대괄호 커맨드를 하나만" in char_reply["status"]
 
 
 def test_ally_action_phase_post_attaches_field_image(monkeypatch):
@@ -640,14 +684,20 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
         if state.practice.first_mover.value == "1팀"
         else ("archer_acct", "검사")
     )
+    calls_before_action = len(mastodon.status_post_calls)
     listener.on_notification(
         _make_notification(
             first_acct, 4, active_post_id, f"[공격/{second_name}]"
         )
     )
+    # 캐릭터의 커맨드 답글이 이 액션으로 발생하는 첫 번째 게시물이다 — 다음
+    # 라운드 공지는 예전 라운드 공지(active_post_id)가 아니라 이 답글에
+    # 이어져야 스레드가 갈라지지 않는다.
+    char_reply_id = 9000 + calls_before_action
     round_call = mastodon.status_post_calls[-1]
     assert round_call["visibility"] == "unlisted"
-    assert round_call["in_reply_to_id"] == active_post_id
+    assert round_call["in_reply_to_id"] == char_reply_id
+    assert round_call["in_reply_to_id"] != active_post_id
 
 
 def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
@@ -705,6 +755,35 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
     assert "종료" in game_post
     assert "승자: 1팀" in game_post
     assert state.practice is None
+
+
+def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_error():
+    """캐릭터 계정이 대괄호를 두 개로 나눠 보내면(예: '[A] [B]'), 파서의 탐욕적
+    매칭 때문에 하나만 조용히 처리되고 나머지가 사라지는 문제가 있었다 —
+    대련/상시전투 경로에서도 사전에 걸러 명시적 에러를 내야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
+    ps.start_round()
+
+    state = BotState(
+        char_dict={"acct_a": get_test_preset("A")},
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    reply, game_post, battle_log = _handle_practice_command(
+        "acct_a", "[이동/2] [이동/3]", state
+    )
+
+    assert "대괄호 커맨드를 하나만" in reply
+    assert game_post is None
+    assert battle_log is None
 
 
 def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry(
@@ -818,6 +897,35 @@ def test_dm_battle_start_places_enemy_by_command_and_allies_by_mention(monkeypat
     assert dm_state.session.started is True
 
 
+def test_dm_battle_start_silently_accepts_faction_prefixed_column(monkeypatch):
+    """DM 전투의 [배치/이름/열]은 진영 지정이 없는 문법이지만(배치 대상이
+    항상 적군으로 고정), 본 전투 문법인 [배치/이름/적군 N열]을 실수로 그대로
+    써도 에러 없이 "적군" 부분을 무시하고 열만 적용해야 한다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/적군 1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+
+    assert len(state.dm_battles) == 1
+    dm_state = next(iter(state.dm_battles.values()))
+    goblin_id = CharacterId("고블린")
+    assert goblin_id in dm_state.session.context.characters
+    assert (
+        dm_state.session.context.find_character_position(goblin_id)
+        == BattlefieldColumnIndex.from_str("1열")
+    )
+
+
 def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     """DM 전투의 모든 게시물은 최초 [전투 발생] DM의 visibility를 따르고 서로
     답글로 이어지며, 아군 커맨드로 적이 전멸하면 admin의 [진행] 없이 즉시
@@ -850,13 +958,18 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     assert "고블린" in name_dict  # sanity
     assert str(dm_state.session.context) in proxy_reply["status"]
 
-    # admin이 [진행]으로 ALLY_ACTION 진입 — 이전 게시물에 답글로 이어져야 함
+    # admin이 [진행]으로 ALLY_ACTION 진입 — admin에게 보낸 확인 답글 뒤에
+    # 이어져야 한다(이전 공지에 다시 답글로 달면 확인 답글과 형제가 되어
+    # 스레드가 갈라진다).
+    calls_before_advance = len(mastodon.status_post_calls)
     listener.on_notification(
         _make_notification("test-admin", 3, pre_post_id, "[진행]")
     )
+    confirmation_id = 9000 + calls_before_advance
     ally_call = mastodon.status_post_calls[-1]
     assert ally_call["visibility"] == "direct"
-    assert ally_call["in_reply_to_id"] == pre_post_id
+    assert ally_call["in_reply_to_id"] == confirmation_id
+    assert ally_call["in_reply_to_id"] != pre_post_id
     active_post_id = dm_state.active_post_id
     assert active_post_id != pre_post_id
 
@@ -871,6 +984,51 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     assert "전투 종료" in end_call["status"]
     assert "아군" in end_call["status"]
     assert state.dm_battles == {}
+
+
+def test_dm_battle_phase_posts_chain_off_confirmation_not_stale_post(monkeypatch):
+    """DM 전투의 관리자 주도 페이즈 전환([진행] 정산/라운드 종료, [전투 속행])도
+    대련과 같은 패턴으로 스레드가 갈라지지 않아야 한다 — 각 페이즈 공지는
+    admin에게 보낸 확인 답글 뒤에 이어져야지, 이전 페이즈 공지에 다시
+    답글로 달려 확인 답글과 형제가 되면 안 된다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch, enemy_max_hp=100
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin", 1, 0, "[전투 발생][배치/고블린/1열]",
+            visibility="direct", extra_mentions=["player_acct"],
+        )
+    )
+    dm_state = next(iter(state.dm_battles.values()))
+    tip = dm_state.active_post_id
+
+    def advance(status_id, text):
+        nonlocal tip
+        calls_before = len(mastodon.status_post_calls)
+        listener.on_notification(_make_notification("test-admin", status_id, tip, text))
+        confirmation_id = 9000 + calls_before
+        game_post_call = mastodon.status_post_calls[-1]
+        assert game_post_call["in_reply_to_id"] == confirmation_id
+        assert game_post_call["in_reply_to_id"] != tip
+        tip = dm_state.active_post_id
+
+    # [진행] → ALLY_ACTION
+    advance(2, "[진행]")
+
+    # 아군 커맨드(고블린을 전멸시키지 않을 정도로만 공격) — 별도 game_post 없음
+    listener.on_notification(_make_notification("player_acct", 3, tip, "[공격/고블린]"))
+    tip = dm_state.active_post_id
+
+    # [진행] → ENEMY_POST_ACTION (정산)
+    advance(4, "[진행]")
+
+    # [진행] → 라운드 종료
+    advance(5, "[진행]")
+
+    # [전투 속행] → 다음 라운드 시작
+    advance(6, "[전투 속행]")
 
 
 def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):

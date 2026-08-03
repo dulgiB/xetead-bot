@@ -154,6 +154,11 @@ class BuffBase(abc.ABC):
         달라지는 버프(도발 등)는 오버라이드해서 부여자 이름을 덧붙인다."""
         return self.id
 
+    def get_description(self, context: "BattlefieldContext") -> str:
+        """버프 설명 텍스트. 기본은 "버프" 시트에서 id로 조회. 시트에
+        등록되지 않은 버프(패시브 스킬 래핑 등)는 오버라이드해야 한다."""
+        return context.get_buff_data_by_id(self.id).description
+
     def get_sacrifice_override(self) -> Optional[CharacterId]:
         return None
 

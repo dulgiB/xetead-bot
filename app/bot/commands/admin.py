@@ -104,9 +104,14 @@ class AdminCommandResult:
     # game_post_text가 게시된 후 그 post_id를 이 DmBattleState의 active_post_id로
     # 쓰고 state.dm_battles에 등록한다 (DM 전투 전용)
     dm_battle_to_register: Optional["DmBattleState"] = None
-    # game_post_text를 이 post_id에 대한 답글로 게시한다(스레드 연결). None이면
-    # 기존처럼 독립 게시물로 게시한다 — 본 전투는 건드리지 않고 DM 전투만 사용
-    game_post_in_reply_to: Optional[int] = None
+    # True이면 game_post_text를 admin에게 보낸 확인 답글(reply_text가 게시된
+    # 바로 그 게시물) 뒤에 이어 붙인다 — 스레드가 [이전 라운드 공지] ←
+    # [admin의 진행 요청] ← [확인 답글] ← [다음 라운드 공지]처럼 선형으로
+    # 이어지게 하기 위함이다. 이전 라운드 공지(dm_state.active_post_id)에
+    # 다시 답글로 달면 확인 답글과 다음 라운드 공지가 같은 부모의 형제
+    # 게시물이 되어 스레드가 두 갈래로 갈라진다. False면 기존처럼 독립
+    # 게시물로 게시한다 — 본 전투는 건드리지 않고 DM 전투만 사용.
+    game_post_reply_to_confirmation: bool = False
     # game_post_text 게시 시 강제할 visibility. None이면 계정 기본값을 따른다
     # (DM 전투는 세션 내내 최초 개시 멘션의 visibility로 고정)
     game_post_visibility: Optional[str] = None
@@ -579,13 +584,13 @@ def _cmd_practice_prep(
         buff_dict,
         skill_dict,
         _passive_skill_dict,
-        _item_dict,
+        item_dict,
         _inventory,
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
-    context = PracticeBattlefieldContext(buff_dict, skill_dict)
+    context = PracticeBattlefieldContext(buff_dict, skill_dict, item_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,
@@ -853,13 +858,13 @@ def _cmd_investigation_battle(
         buff_dict,
         skill_dict,
         _passive_skill_dict,
-        _item_dict,
+        item_dict,
         _inventory,
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
-    context = PracticeBattlefieldContext(buff_dict, skill_dict)
+    context = PracticeBattlefieldContext(buff_dict, skill_dict, item_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,
@@ -912,6 +917,15 @@ def _cmd_investigation_battle(
 # ---------------------------------------------------------------------------
 
 
+def _dm_battle_column_token(raw: str) -> str:
+    """DM 전투의 [배치/이름/열] 문법은 진영 지정이 없다(배치 대상이 항상
+    적군으로 고정이라 무의미하기 때문) — 본 전투 문법인 [배치/이름/적군 N열]을
+    실수로 그대로 써도(예: "적군 4열") 에러 없이 마지막 토큰(열 표기)만
+    조용히 취한다."""
+    parts = raw.split()
+    return parts[-1] if parts else raw
+
+
 def _cmd_dm_battle_start(
     text: str, mentions: list[str], state: "BotState", visibility: str
 ) -> AdminCommandResult:
@@ -941,7 +955,9 @@ def _cmd_dm_battle_start(
             errors.append(f"지정된 캐릭터({name})를 찾을 수 없습니다.")
             continue
         try:
-            column = BattlefieldColumnIndex.from_str(m.group(2).strip())
+            column = BattlefieldColumnIndex.from_str(
+                _dm_battle_column_token(m.group(2).strip())
+            )
             session.add_character(data, FactionType.ENEMY, column)
         except (ValueError, CommandValidationError) as e:
             errors.append(str(e))
@@ -1014,7 +1030,7 @@ def _cmd_dm_battle_advance_phase(
         return AdminCommandResult(
             "◊ 페이즈 전환 처리 완료",
             end_text,
-            game_post_in_reply_to=dm_state.active_post_id,
+            game_post_reply_to_confirmation=True,
             game_post_visibility=dm_state.visibility,
         )
 
@@ -1032,7 +1048,7 @@ def _cmd_dm_battle_advance_phase(
         f"◊ 페이즈 전환: {new_phase.value}",
         game_post,
         dm_battle_to_register=dm_state,
-        game_post_in_reply_to=dm_state.active_post_id,
+        game_post_reply_to_confirmation=True,
         game_post_visibility=dm_state.visibility,
     )
 
@@ -1054,7 +1070,7 @@ def _cmd_dm_battle_continue(
         f"◊ 라운드 {session.round_n} 시작",
         game_post,
         dm_battle_to_register=dm_state,
-        game_post_in_reply_to=dm_state.active_post_id,
+        game_post_reply_to_confirmation=True,
         game_post_visibility=dm_state.visibility,
     )
 
