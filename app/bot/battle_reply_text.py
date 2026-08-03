@@ -41,10 +41,10 @@ def format_battle_reply(
 
 def format_eliminated_characters(eliminated: list[CharacterId]) -> str:
     """라운드 종료 시 체력 0으로 필드에서 제거된 캐릭터 목록을
-    "【탈락】\n▹ {이름} | 탈락" 블록으로 조립한다. 없으면 빈 문자열."""
+    "【탈락】\n▹ {이름}" 블록으로 조립한다. 없으면 빈 문자열."""
     if not eliminated:
         return ""
-    lines = "\n".join(f"▹ {char_id.name} | 탈락" for char_id in eliminated)
+    lines = "\n".join(f"▹ {char_id.name}" for char_id in eliminated)
     return f"【탈락】\n{lines}"
 
 
