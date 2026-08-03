@@ -422,8 +422,14 @@ def update_character_gold_and_quest_date(
     for idx, row in enumerate(rows, start=2):
         name = row[name_col] if name_col is not None and name_col < len(row) else None
         if name == char_name:
-            ws.update_cell(idx, gold_col, new_gold)
-            ws.update_cell(idx, date_col, today)
+            # update_cell()은 항상 USER_ENTERED로 기록해 "YYYY-MM-DD" 형식의
+            # today 값이 Sheets에 의해 날짜 타입(내부 시리얼 넘버)으로 자동
+            # 변환된다. daily_quest_date는 handle_daily_quest_start()에서
+            # 문자열 그대로 재비교하므로, 그 값이 날짜로 변환되면 "오늘 이미
+            # 했음" 판정이 다시는 참이 되지 않아 1일 1회 제한이 무력화된다.
+            # update()의 기본값 raw=True(ValueInputOption.raw)로 그대로 저장한다.
+            ws.update([[new_gold]], gspread.utils.rowcol_to_a1(idx, gold_col))
+            ws.update([[today]], gspread.utils.rowcol_to_a1(idx, date_col))
             if cache is not None:
                 cache.invalidate("캐릭터")
             return
