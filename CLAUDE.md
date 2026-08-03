@@ -218,6 +218,25 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 패시브 스킬(`PassiveSkillData.effects`)도 같은 `SkillEffectBase` 구현체를
 재사용하며, 최대 `MAX_PASSIVE_EFFECT_COUNT`(2)개까지 정의 가능하다.
 
+### 에너미 스킬 예고 블라인드 (`SkillData.revealed`)
+
+본 전투/DM 전투(`RoundPhaseType.ENEMY_PRE_ACTION`이 있는 두 경로)에서 에너미가
+스킬을 선언하면 답글에 `↳ {description}` 형태로 효과를 미리 예고한다
+(`bot/battle_reply_text.py`의 `format_battle_reply(..., show_skill_preview=True)`).
+아직 한 번도 선언된 적 없는 스킬(`SkillData.revealed == False`, "스킬_에너미"
+시트 `is_revealed` 컬럼)은 설명 대신 `[효과 미확인]`으로 블라인드 처리된다.
+
+선언 시점에는 그 값 그대로(블라인드면 블라인드로) 답글을 만들고, 그 *다음에*
+`bot/load_data.py`의 `reveal_declared_enemy_skills()`가 이번에 선언된 스킬을
+공개 상태로 전환한다 — `BattlefieldContext.mark_skill_revealed()`로 같은
+전투 세션의 `skill_dict`를 즉시 갱신하고, "스킬_에너미" 시트에도 write-back해
+다음 전투부터도 공개 상태가 유지되게 한다. 즉 이번 선언 자체는 블라인드로
+예고되고, 같은 스킬의 다음 선언부터 설명이 노출된다. 공개 여부는 에너미별이
+아니라 스킬 id 단위 전역 상태다(스킬 데이터 자체가 에너미별이 아니라 id로
+공유되므로).
+
+대련/상시전투(`PracticeRoundManager`)는 페이즈 구조가 달라 이 기능 대상이 아니다.
+
 ---
 
 ## 패시브 스킬 시스템
