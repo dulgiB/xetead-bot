@@ -1,10 +1,11 @@
 import json
 import logging
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import gspread
 from battle.objects.buff.models import BuffData, PassiveBuffData
+from battle.objects.define import ActionType
 from battle.objects.item.models import ItemData
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
@@ -20,6 +21,10 @@ from spreadsheets.models.quest import (
 from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 from bot.sheet_cache import SheetCache
+
+if TYPE_CHECKING:
+    from battle.core.battlefield_context import BattlefieldContext
+    from battle.core.commands.models import CharacterCommand
 
 logger = logging.getLogger(__name__)
 
@@ -446,3 +451,65 @@ def update_character_curr_hp(
                 return
 
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다.")
+
+
+def mark_enemy_skill_revealed(
+    spreadsheet: gspread.Spreadsheet,
+    skill_id: str,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """'스킬_에너미' 시트에서 skill_id 행을 찾아 is_revealed를 TRUE로 갱신한다.
+
+    시트 자체가 없거나 is_revealed 컬럼이 아직 추가되지 않았으면 조용히
+    넘어간다 — 이 컬럼은 나중에 스프레드시트에 수동으로 추가되는 것을
+    전제하므로, 추가되기 전에도 코드가 깨지면 안 된다.
+    """
+    try:
+        ws = _worksheet(spreadsheet, "스킬_에너미", cache)
+    except gspread.exceptions.WorksheetNotFound:
+        return
+
+    values = (
+        cache.get_all_values("스킬_에너미")
+        if cache is not None
+        else ws.get_values(pad_values=True)
+    )
+    if not values:
+        return
+    header, rows = values[0], values[1:]
+    if "id" not in header or "is_revealed" not in header:
+        return
+    id_col = header.index("id")
+    revealed_col = header.index("is_revealed") + 1
+
+    for idx, row in enumerate(rows, start=2):
+        if id_col < len(row) and row[id_col] == skill_id:
+            ws.update_cell(idx, revealed_col, True)
+            if cache is not None:
+                cache.invalidate("스킬_에너미")
+            return
+
+
+def reveal_declared_enemy_skills(
+    spreadsheet: gspread.Spreadsheet,
+    context: "BattlefieldContext",
+    command: "CharacterCommand",
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """적이 PRE 페이즈에 선언한 커맨드에 포함된 스킬 중 아직 공개되지 않은
+    것이 있으면 공개 상태로 전환한다. 같은 전투 세션 안에서 즉시 반영되도록
+    `context.mark_skill_revealed()`로 skill_dict를 갱신하고, 다음 전투부터도
+    공개 상태가 유지되도록 '스킬_에너미' 시트에도 write-back한다.
+
+    호출측은 이 함수를 부르기 *전에* 이미 블라인드 상태 그대로 답글 텍스트를
+    만들어 둬야 한다 — 이번 선언 자체는 블라인드로 예고되고, 다음 선언부터
+    공개되는 것이 의도된 동작이다.
+    """
+    for part in command.parts:
+        if part.type_ != ActionType.SKILL or part.skill_id is None:
+            continue
+        skill_data = context.get_skill_data_by_id(part.skill_id)
+        if skill_data.revealed:
+            continue
+        context.mark_skill_revealed(part.skill_id)
+        mark_enemy_skill_revealed(spreadsheet, part.skill_id, cache=cache)
