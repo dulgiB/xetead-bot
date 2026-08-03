@@ -64,6 +64,22 @@ class CompanionGuardianEvent(BuffEvent):
             for damage_calc in effect_data.damage_data_list:
                 if damage_calc.base.target_id != holder:
                     continue
+                # holder와 동료가 "같은 대미지"를 절반씩 나눠 받아야 한다.
+                # damage_calc.base.value가 STAT_ATK_ROLL처럼 매 get_value() 호출마다
+                # 다시 굴리는 소스이면, 아래에서 holder/동료 몫을 각자 별도
+                # DamageCalculateData로 처리할 때 서로 다른 주사위 값이 나와
+                # 분담이 아니라 우연에 따라 손해/이득을 볼 수 있다. 분담 전에
+                # 값을 한 번만 확정해 양쪽이 그 값을 공유하게 만든다.
+                resolved_value = replace(
+                    damage_calc.base.value,
+                    value=damage_calc.base.value.get_value(
+                        damage_calc.base.attacker_id,
+                        holder,
+                        calculator,
+                        effect_seq_number,
+                    ),
+                )
+                damage_calc.base = replace(damage_calc.base, value=resolved_value)
                 damage_calc.received_modifiers.append(split_modifier)
                 shared_calcs.append(
                     DamageCalculateData(
