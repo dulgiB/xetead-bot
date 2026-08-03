@@ -397,8 +397,14 @@ class MastodonBotListener(StreamListener):
                     ):
                         post_text = f"{post_text}\n\n{state.session.context}"
                     post_kwargs: dict = {"media_ids": game_media_ids or None}
-                    if result.game_post_in_reply_to is not None:
-                        post_kwargs["in_reply_to_id"] = result.game_post_in_reply_to
+                    if result.game_post_reply_to_confirmation:
+                        # 이전 페이즈 공지(admin의 [진행] 요청이 답글로 달렸던
+                        # 그 게시물)에 다시 답글로 달면, 방금 위에서 보낸
+                        # 확인 답글(reply_status)과 이 게시물이 같은 부모의
+                        # 형제가 되어 스레드가 갈라진다 — 확인 답글 뒤에
+                        # 이어야 [이전 공지] ← [admin 요청] ← [확인 답글] ←
+                        # [이 공지] 순으로 선형으로 이어진다.
+                        post_kwargs["in_reply_to_id"] = reply_status["id"]
                     if result.game_post_visibility is not None:
                         post_kwargs["visibility"] = result.game_post_visibility
                     new_post = self._mastodon.status_post(
