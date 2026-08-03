@@ -651,7 +651,7 @@ class MastodonBotListener(StreamListener):
         media_ids: Optional[list] = None,
     ) -> dict:
         return self._mastodon.status_post(
-            f"@{acct} {_truncate(text)}",
+            f"@{acct}\n{_truncate(text)}",
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
             media_ids=media_ids or None,

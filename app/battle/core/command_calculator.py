@@ -652,6 +652,11 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                 )
             )
         for buff_add in effect_data.buff_add_data_list:
+            # _process_buff_add()와 동일한 게이트를 다시 통과시킨다 — 그러지
+            # 않으면 조건부 버프(예: ConsumedBuffStackCountCondition)가 게이트에
+            # 막혀 실제로는 부여되지 않았는데도 "[버프] 부여" 로그가 남는다.
+            if not calculator._buff_add_gate_passes(buff_add, idx):
+                continue
             entries.append(build_buff_add_log_entry(context, buff_add))
         for target_id, message in effect_data.nullified_effect_list:
             entries.append(

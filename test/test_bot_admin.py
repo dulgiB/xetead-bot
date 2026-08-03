@@ -507,6 +507,9 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     char_reply = reply_calls[-1]
     assert char_reply["media_ids"] is None
     assert "공격" in char_reply["status"]
+    # "@계정 커맨드파트헤더"처럼 멘션 바로 뒤에 내용이 붙으면 가독성이
+    # 나빠지므로, 멘션 다음은 줄바꿈으로 시작해야 한다.
+    assert char_reply["status"].startswith("@ally_acct\n")
 
 
 def test_ally_action_phase_post_attaches_field_image(monkeypatch):
