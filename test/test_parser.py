@@ -2,7 +2,7 @@ import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_processors import try_expansion_if_valid
 from battle.core.commands.models import CharacterCommand, CommandPart
-from battle.core.commands.parser import parse_character_command
+from battle.core.commands.parser import count_bracket_groups, parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
@@ -194,3 +194,29 @@ def test_parse_invalid(input_str: str, ctx):
         parsed = parse_character_command(_USER, input_str, ctx)
         if parsed:
             try_expansion_if_valid(ctx, parsed)
+
+
+@pytest.mark.parametrize(
+    "input_str, expected_count",
+    [
+        ("단순 지문", 0),
+        ("[공격/대상]", 1),
+        ("[스킬1/대상1 - 스킬2/대상2]", 1),  # 여러 파트를 올바르게 하이픈으로 묶은 경우
+        ("[공격/대상] [스킬1]", 2),
+        ("[공격/대상]-[스킬1]", 2),  # 대괄호를 나눈 채 하이픈만 바깥에 붙인 경우도 잘못된 형식
+    ],
+)
+def test_count_bracket_groups(input_str: str, expected_count: int):
+    assert count_bracket_groups(input_str) == expected_count
+
+
+def test_multiple_bracket_groups_silently_drops_earlier_ones_without_hyphen(ctx):
+    """command_base_format의 두 .*가 모두 탐욕적이라, 대괄호를 하이픈 없이
+    두 개로 나눠 보내면 마지막 대괄호만 캡처되고 앞쪽은 에러 없이 조용히
+    사라진다 — count_bracket_groups()로 호출측이 미리 걸러야 하는 이유의
+    회귀 테스트다."""
+    result = parse_character_command(_USER, "[공격/대상] [스킬1]", ctx)
+    assert result == CharacterCommand(
+        user_id=_USER,
+        parts=[CommandPart(type_=ActionType.SKILL, skill_id="스킬1", targets=[])],
+    )
