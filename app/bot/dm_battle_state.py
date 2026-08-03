@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from bot.session import BattleSession
 
@@ -27,3 +27,9 @@ class DmBattleState:
     # 페이즈 전환 게시물이 이 값을 그대로 따르게 한다. 개별 캐릭터 커맨드
     # 답글은 원본 메시지의 visibility를 그대로 따르므로 이 필드가 필요 없다.
     visibility: str = "direct"
+
+    # 이 DM 전투에 실제 계정으로 참여 중인 캐릭터의 mastodon acct 목록.
+    # visibility가 "direct"인 스레드는 각 게시물 자체에 명시적으로 멘션된
+    # 계정만 볼 수 있으므로, 페이즈 전환/정산/종료 게시물에도 매번 이
+    # 목록을 멘션으로 붙여야 참가자가 스레드를 계속 볼 수 있다.
+    mentions: list[str] = field(default_factory=list)

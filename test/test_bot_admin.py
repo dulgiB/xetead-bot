@@ -989,6 +989,46 @@ def test_dm_battle_start_places_enemy_by_command_and_allies_by_mention(monkeypat
     assert dm_state.session.started is True
 
 
+def test_dm_battle_game_posts_mention_participants_so_they_remain_visible(monkeypatch):
+    """DM 전투는 visibility="direct"라 그 게시물 자체에 명시적으로 멘션된
+    계정만 볼 수 있다 — 전투 시작/페이즈 전환/종료 게시물이 [전투 발생]에
+    함께 멘션됐던 참가자를 다시 멘션하지 않으면, 참가자 본인은 자기 턴
+    게시물을 서버에서 아예 조회할 수 없어(404) 답글도 달 수 없게 된다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch, enemy_max_hp=1
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+    start_call = mastodon.status_post_calls[-1]
+    assert "@player_acct" in start_call["status"]
+
+    dm_state = next(iter(state.dm_battles.values()))
+    pre_post_id = dm_state.active_post_id
+
+    listener.on_notification(
+        _make_notification("test-admin", 2, pre_post_id, "[진행]")
+    )
+    ally_call = mastodon.status_post_calls[-1]
+    assert "@player_acct" in ally_call["status"]
+
+    active_post_id = dm_state.active_post_id
+    listener.on_notification(
+        _make_notification("player_acct", 3, active_post_id, "[공격/고블린]")
+    )
+    end_call = mastodon.status_post_calls[-1]
+    assert "전투 종료" in end_call["status"]
+    assert "@player_acct" in end_call["status"]
+
+
 def test_dm_battle_start_silently_accepts_faction_prefixed_column(monkeypatch):
     """DM 전투의 [배치/이름/열]은 진영 지정이 없는 문법이지만(배치 대상이
     항상 적군으로 고정), 본 전투 문법인 [배치/이름/적군 N열]을 실수로 그대로
