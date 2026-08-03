@@ -205,3 +205,37 @@ def test_reveal_declared_enemy_skills_skips_already_revealed_skill():
     reveal_declared_enemy_skills(spreadsheet, ctx, _skill_command("스킬_1"))
 
     assert spreadsheet.worksheet("스킬_에너미").written == []
+
+
+def test_reveal_declared_enemy_skills_reads_sheet_once_for_multiple_skills():
+    """한 커맨드(하이픈으로 이어붙인 복수 스킬)에 아직 공개되지 않은 스킬이
+    여러 개 있어도 '스킬_에너미' 시트는 한 번만 읽어야 한다 — 스킬마다 개별
+    write-back 후 캐시를 무효화하면 뒤이은 스킬이 매번 재조회하게 된다."""
+    skill_a = SkillData(
+        id="스킬_A", target_rule="SkillTargetRuleNamed", target_count=1, cost=0,
+        effects=[], description="", revealed=False,
+    )
+    skill_b = SkillData(
+        id="스킬_B", target_rule="SkillTargetRuleNamed", target_count=1, cost=0,
+        effects=[], description="", revealed=False,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_A": skill_a, "스킬_B": skill_b})
+    command = CharacterCommand(
+        user_id=CharacterId("적군 1"),
+        parts=[
+            CommandPart(type_=ActionType.SKILL, skill_id="스킬_A", targets=[]),
+            CommandPart(type_=ActionType.SKILL, skill_id="스킬_B", targets=[]),
+        ],
+    )
+    rows = [["id", "is_revealed"], ["스킬_A", ""], ["스킬_B", ""]]
+    spreadsheet = _FakeSpreadsheet({"스킬_에너미": rows})
+    cache = _make_cache(spreadsheet)
+
+    reveal_declared_enemy_skills(spreadsheet, ctx, command, cache=cache)
+
+    ws = spreadsheet.worksheet("스킬_에너미")
+    assert ws.get_values_call_count == 1
+    assert (2, 2, True) in ws.written
+    assert (3, 2, True) in ws.written
+    assert ctx.get_skill_data_by_id("스킬_A").revealed is True
+    assert ctx.get_skill_data_by_id("스킬_B").revealed is True
