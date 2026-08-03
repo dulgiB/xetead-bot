@@ -24,12 +24,21 @@ from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData, PassiveBuffData
-from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
+from battle.objects.define import (
+    ActionType,
+    BattlefieldColumnIndex,
+    FactionType,
+    ValueSourceType,
+    ValueType,
+)
+from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
+from battle.objects.skill.effects import SkillEffectDamage
 from battle.objects.skill.models import SkillData
 from bot.battle_reply_text import format_battle_reply
 from helpers import get_test_preset
+from spreadsheets.inventory import Inventory
 
 
 def _buff_dict() -> dict[str, BuffData]:
@@ -248,11 +257,18 @@ def _passive_skill_dict() -> dict[str, PassiveSkillData]:
     }
 
 
-def _make_context(*, milestone_n: int = 0) -> BattlefieldContext:
+def _make_context(
+    *,
+    milestone_n: int = 0,
+    item_dict: dict[str, ItemData] | None = None,
+    inventory: Inventory | None = None,
+) -> BattlefieldContext:
     return BattlefieldContext(
         buff_dict=_buff_dict(),
         skill_dict=_skill_dict(),
         passive_skill_dict=_passive_skill_dict(),
+        item_dict=item_dict,
+        inventory=inventory,
         milestone_n=milestone_n,
     )
 
@@ -301,6 +317,41 @@ class TestPassiveSkill:
 
         assert ctx.get_buff_stack(target, "Mark") == 1
         assert ctx.get_buff_stack(caster, "Mark") == 0
+
+    def test_does_not_grant_mark_when_damage_dealt_via_item(self):
+        """ "기본 공격/스킬로"라는 설명대로, 대미지를 주는 아이템 사용은
+        직접 행동이 아니므로 [Mark]가 부여되면 안 된다."""
+        item_bomb = ItemData(
+            id="폭탄",
+            target_rule="SkillTargetRuleNamed",
+            cost=1,
+            attack_range=1,
+            effect=SkillEffectDamage(
+                ValueSourceType.FIXED, 50, ValueType.INTEGER, None, None
+            ),
+        )
+        ctx = _make_context(
+            item_dict={"폭탄": item_bomb},
+            inventory=Inventory({("MarkStacker", "폭탄"): 1}),
+        )
+        manager = _setup_ally_phase(ctx)
+        caster = CharacterId("MarkStacker")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("MarkStacker", atk=100, passive_skill_id="PassiveSkill"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+
+        manager.process_command(parse_character_command(caster, "[폭탄/적군]", ctx))
+
+        assert ctx.characters[target].status.curr_hp == 1000 - 50
+        assert ctx.get_buff_stack(target, "Mark") == 0
 
     def test_does_not_grant_mark_when_holder_is_hit(self):
         """홀더가 맞기만 했을 때는(홀더가 공격자가 아닐 때) [Mark]가 부여되지 않는다."""

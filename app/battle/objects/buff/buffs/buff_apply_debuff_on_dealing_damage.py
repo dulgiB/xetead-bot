@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from battle.objects.buff.buff_base import BuffAddData, BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming
+from battle.objects.define import ActionType, BuffApplyTiming
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -17,7 +17,9 @@ class ApplyDebuffOnDealingDamageEvent(BuffEvent):
 
     ON_ACTION은 공격자/피격자 양쪽에서 호출되므로, 직접 damage_data_list를
     훑어 attacker_id == holder인 항목만 골라야 방향(내가 때릴 때만)을
-    보장할 수 있다(BonusDamageOnHitEvent와 동일한 패턴).
+    보장할 수 있다(BonusDamageOnHitEvent와 동일한 패턴). "기본 공격이나
+    스킬로"라는 설명대로 ActionType.USE_ITEM(대미지를 주는 아이템 사용)은
+    제외한다.
     """
 
     reference_buff_id: str
@@ -34,6 +36,9 @@ class ApplyDebuffOnDealingDamageEvent(BuffEvent):
         effect_seq_number: int,
     ) -> None:
         from battle.core.command_calculator import build_buff_add_log_entry
+
+        if calculator.action_type == ActionType.USE_ITEM:
+            return
 
         effect_data = calculator.data_by_effect[effect_seq_number]
         for damage_data in effect_data.damage_data_list:
