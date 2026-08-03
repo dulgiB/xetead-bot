@@ -8,7 +8,7 @@ from typing import Optional
 
 import gspread
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.parser import parse_character_command
+from battle.core.commands.parser import count_bracket_groups, parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
@@ -748,6 +748,15 @@ def _handle_practice_command(
 
     field_id = str(ps.prep_post_id)
     round_n = ps.round_n
+
+    if count_bracket_groups(text) >= 2:
+        return (
+            "◊ 한 메시지에는 대괄호 커맨드를 하나만 입력할 수 있습니다. "
+            "여러 스킬/아이템을 한 번에 쓰려면 '[스킬A/대상 - 스킬B]'처럼 "
+            "하이픈으로 이어서 한 대괄호 안에 작성해 주세요.",
+            None,
+            None,
+        )
 
     try:
         command = parse_character_command(char_id, text, ps.context)
