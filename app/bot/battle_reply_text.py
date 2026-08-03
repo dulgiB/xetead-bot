@@ -127,10 +127,10 @@ def _format_part(
 
     calc_lines = []
     for entry in log_entries:
-        line, calc = _format_entry(context, entry)
-        body_lines.append(line)
+        line, calc, delta = _format_entry(context, entry)
+        body_lines.append(f"▹ {line}")
         if calc:
-            calc_lines.append(f"{entry.target_name} | {calc}")
+            calc_lines.append(f"▹ {entry.target_name} | {calc} → 「{delta}」")
 
     body = header if not body_lines else header + "\n" + "\n".join(body_lines)
     calc_block = f"{header}\n" + "\n".join(calc_lines) if calc_lines else ""
@@ -192,8 +192,9 @@ def _target_name(target: object) -> str:
 
 def _format_entry(
     context: "BattlefieldContext", entry: BattleLogEntry
-) -> tuple[str, Optional[str]]:
-    """(본문 줄, 계산식 또는 None)을 반환한다."""
+) -> tuple[str, Optional[str], Optional[str]]:
+    """(본문 줄, 계산식 또는 None, 계산식에 표시할 최종 값 또는 None)을
+    반환한다. 세 번째 값은 계산식이 있을 때만 의미가 있다."""
     if entry.kind == BattleLogEntryKind.DAMAGE:
         return _format_damage_or_heal(entry, sign="-")
     if entry.kind == BattleLogEntryKind.HEAL:
@@ -201,26 +202,27 @@ def _format_entry(
     if entry.kind == BattleLogEntryKind.MOVE:
         target_id = CharacterId(entry.target_name)
         position = context.find_character_position(target_id)
-        return f"{entry.target_name} | {position}열로 이동", None
+        return f"{entry.target_name} | {position}열로 이동", None, None
     # BUFF_ADD/BUFF_REMOVE/DEBUFF_CLEAR는 이미 build_log_entries()가 만들어 둔
     # result 문자열을 그대로 쓴다.
-    return f"{entry.target_name} | {entry.result}", None
+    return f"{entry.target_name} | {entry.result}", None, None
 
 
 def _format_entry_inline(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
-    line, calc = _format_entry(context, entry)
+    line, calc, _delta = _format_entry(context, entry)
     return f"{line}\n↳ {calc}" if calc else line
 
 
 def _format_damage_or_heal(
     entry: BattleLogEntry, *, sign: str
-) -> tuple[str, Optional[str]]:
+) -> tuple[str, Optional[str], Optional[str]]:
     # entry.hp_after/max_hp는 이 대미지/회복이 적용된 "그 시점"의 스냅샷이다.
     # 같은 커맨드에서 같은 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상),
     # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
+    delta = f"{sign}{entry.value}"
     if entry.hp_after is None:
         # 대미지로 사망해 전장에서 제거된 경우 등 — 잔여 체력을 보여줄 수 없다.
-        line = f"{entry.target_name} | {sign}{entry.value}"
+        line = f"{entry.target_name} | {delta}"
     else:
-        line = f"{entry.target_name} | {sign}{entry.value} → {entry.hp_after}/{entry.max_hp}"
-    return line, entry.roll_display
+        line = f"{entry.target_name} | {delta} → {entry.hp_after}/{entry.max_hp}"
+    return line, entry.roll_display, delta

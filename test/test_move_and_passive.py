@@ -293,7 +293,7 @@ def test_voluntary_enemy_move_reaction_damage_bundles_into_move_reply():
     manager.process_command(cmd)
     reply, _calc = format_battle_reply(ctx, enemy_id, ctx.results[before:])
 
-    assert reply == "【이동 ▸ 2열】\n적군 1 | -10 → 90/100"
+    assert reply == "【이동 ▸ 2열】\n▹ 적군 1 | -10 → 90/100"
 
 
 def test_forced_move_also_triggers_passive(pull_skill):
