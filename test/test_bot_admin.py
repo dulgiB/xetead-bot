@@ -684,14 +684,20 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
         if state.practice.first_mover.value == "1팀"
         else ("archer_acct", "검사")
     )
+    calls_before_action = len(mastodon.status_post_calls)
     listener.on_notification(
         _make_notification(
             first_acct, 4, active_post_id, f"[공격/{second_name}]"
         )
     )
+    # 캐릭터의 커맨드 답글이 이 액션으로 발생하는 첫 번째 게시물이다 — 다음
+    # 라운드 공지는 예전 라운드 공지(active_post_id)가 아니라 이 답글에
+    # 이어져야 스레드가 갈라지지 않는다.
+    char_reply_id = 9000 + calls_before_action
     round_call = mastodon.status_post_calls[-1]
     assert round_call["visibility"] == "unlisted"
-    assert round_call["in_reply_to_id"] == active_post_id
+    assert round_call["in_reply_to_id"] == char_reply_id
+    assert round_call["in_reply_to_id"] != active_post_id
 
 
 def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
