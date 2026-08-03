@@ -41,10 +41,10 @@ def format_battle_reply(
 
 def format_eliminated_characters(eliminated: list[CharacterId]) -> str:
     """라운드 종료 시 체력 0으로 필드에서 제거된 캐릭터 목록을
-    "【탈락】\n{이름} | 탈락" 블록으로 조립한다. 없으면 빈 문자열."""
+    "【탈락】\n▹ {이름} | 탈락" 블록으로 조립한다. 없으면 빈 문자열."""
     if not eliminated:
         return ""
-    lines = "\n".join(f"{char_id.name} | 탈락" for char_id in eliminated)
+    lines = "\n".join(f"▹ {char_id.name} | 탈락" for char_id in eliminated)
     return f"【탈락】\n{lines}"
 
 
@@ -138,6 +138,9 @@ def _target_name(target: object) -> str:
 
 
 def _format_entry(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
+    """캐릭터 이름으로 시작하는 결과 줄 하나를 "▹ "로 시작하는 불릿 형태로
+    조립한다 — 여러 캐릭터/효과 줄이 나열될 때도 한눈에 구분되게 하기
+    위함이다."""
     if entry.kind == BattleLogEntryKind.DAMAGE:
         return _format_damage_or_heal(entry, sign="-")
     if entry.kind == BattleLogEntryKind.HEAL:
@@ -145,10 +148,10 @@ def _format_entry(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
     if entry.kind == BattleLogEntryKind.MOVE:
         target_id = CharacterId(entry.target_name)
         position = context.find_character_position(target_id)
-        return f"{entry.target_name} | {position}열로 이동"
+        return f"▹ {entry.target_name} | {position}열로 이동"
     # BUFF_ADD/BUFF_REMOVE/DEBUFF_CLEAR는 이미 build_log_entries()가 만들어 둔
     # result 문자열을 그대로 쓴다.
-    return f"{entry.target_name} | {entry.result}"
+    return f"▹ {entry.target_name} | {entry.result}"
 
 
 def _format_damage_or_heal(entry: BattleLogEntry, *, sign: str) -> str:
@@ -157,9 +160,9 @@ def _format_damage_or_heal(entry: BattleLogEntry, *, sign: str) -> str:
     # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
     if entry.hp_after is None:
         # 대미지로 사망해 전장에서 제거된 경우 등 — 잔여 체력을 보여줄 수 없다.
-        line = f"{entry.target_name} | {sign}{entry.value}"
+        line = f"▹ {entry.target_name} | {sign}{entry.value}"
     else:
-        line = f"{entry.target_name} | {sign}{entry.value} → {entry.hp_after}/{entry.max_hp}"
+        line = f"▹ {entry.target_name} | {sign}{entry.value} → {entry.hp_after}/{entry.max_hp}"
     if entry.roll_display:
         line += f"\n↳ {entry.roll_display}"
     return line

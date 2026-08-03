@@ -63,7 +63,7 @@ def test_attack_command_shows_damage_and_calculation():
     lines = reply.splitlines()
     assert lines[0] == "【공격 ▸ 적군 1】"
     target = ctx.characters[CharacterId("적군 1")]
-    assert lines[1] == f"적군 1 | -{100 - target.status.curr_hp} → {target.status.curr_hp}/100"
+    assert lines[1] == f"▹ 적군 1 | -{100 - target.status.curr_hp} → {target.status.curr_hp}/100"
     assert lines[2].startswith("↳ ")
 
 
@@ -87,7 +87,7 @@ def test_fixed_damage_skill_omits_calculation_line():
 
     reply = _run(ctx, manager, caster_id, "[강타/적군 1]")
 
-    assert reply == "【강타 ▸ 적군 1】\n적군 1 | -20 → 80/100"
+    assert reply == "【강타 ▸ 적군 1】\n▹ 적군 1 | -20 → 80/100"
 
 
 def test_self_targeted_skill_header_uses_caster_name():
@@ -121,7 +121,7 @@ def test_self_targeted_skill_header_uses_caster_name():
 
     reply = _run(ctx, manager, caster_id, "[집중하기]")
 
-    assert reply == "【집중하기 ▸ 아군 1】\n아군 1 | [집중] 부여 (2턴)"
+    assert reply == "【집중하기 ▸ 아군 1】\n▹ 아군 1 | [집중] 부여 (2턴)"
 
 
 def test_skill_with_damage_and_debuff_clear_combines_lines_in_effect_order():
@@ -163,8 +163,8 @@ def test_skill_with_damage_and_debuff_clear_combines_lines_in_effect_order():
 
     assert reply == (
         "【정화 일격 ▸ 적군 1】\n"
-        "적군 1 | -10 → 90/100\n"
-        "적군 1 | 모든 디버프 제거"
+        "▹ 적군 1 | -10 → 90/100\n"
+        "▹ 적군 1 | 모든 디버프 제거"
     )
 
 
@@ -190,7 +190,7 @@ def test_item_command_header_uses_item_name():
 
     reply = _run(ctx, manager, caster_id, "[포션]")
 
-    assert reply == "【포션 ▸ 아군 1】\n아군 1 | +15 → 65/100"
+    assert reply == "【포션 ▸ 아군 1】\n▹ 아군 1 | +15 → 65/100"
 
 
 def test_multiple_parts_are_joined_by_blank_line():
@@ -216,7 +216,7 @@ def test_multiple_parts_are_joined_by_blank_line():
         "【이동 ▸ 3열】\n"
         "\n"
         "【찌르기 ▸ 적군 1】\n"
-        "적군 1 | -5 → 95/100"
+        "▹ 적군 1 | -5 → 95/100"
     )
 
 
@@ -262,7 +262,7 @@ def test_move_effect_inside_skill_shows_target_and_position():
     reply = _run(ctx, manager, caster_id, "[당기기/적군 1]")
 
     # 적군 1은 4열(BattlefieldColumnIndex(3))에서 시전자(1열) 쪽으로 1칸 이동 → 3열.
-    assert reply == "【당기기 ▸ 적군 1】\n적군 1 | 3열로 이동"
+    assert reply == "【당기기 ▸ 적군 1】\n▹ 적군 1 | 3열로 이동"
 
 
 def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
@@ -300,8 +300,8 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
 
     assert reply == (
         "【저주 방출 ▸ 적군 1】\n"
-        "아군 1 | [저주]×2 소모 → 최종 1\n"
-        "적군 1 | -2 → 98/100\n"
+        "▹ 아군 1 | [저주]×2 소모 → 최종 1\n"
+        "▹ 적군 1 | -2 → 98/100\n"
         "↳ 2[저주] × 1"
     )
 
@@ -348,8 +348,8 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
     # STAT_ATK(다이스 없음) 6 × 1.5[계수] = 9, 스택 소모 5 × 3[계수] = 15 → 합계 24
     assert reply == (
         "【이중 타격 ▸ 적군 1】\n"
-        "아군 1 | [저주]×5 소모 → 최종 0\n"
-        "적군 1 | -24 → 76/100\n"
+        "▹ 아군 1 | [저주]×5 소모 → 최종 0\n"
+        "▹ 적군 1 | -24 → 76/100\n"
         "↳ 6 × 1.5[계수] + 5[저주] × 3"
     )
 
@@ -381,7 +381,7 @@ def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
 
     assert reply == (
         "【연타 ▸ 적군 1】\n"
-        "적군 1 | -15 → 85/100\n"
+        "▹ 적군 1 | -15 → 85/100\n"
         "↳ 10 + 5"
     )
 
@@ -437,7 +437,7 @@ def test_round_end_dot_produces_round_end_processing_block():
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
     body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
 
-    assert body == "【라운드 종료 처리 ▸ 적군 1】\n적군 1 | -10 → 90/100"
+    assert body == "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | -10 → 90/100"
 
 
 def test_round_end_hot_uses_plus_sign():
@@ -453,7 +453,7 @@ def test_round_end_hot_uses_plus_sign():
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
     body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
 
-    assert body == "【라운드 종료 처리 ▸ 아군 1】\n아군 1 | +7 → 57/100"
+    assert body == "【라운드 종료 처리 ▸ 아군 1】\n▹ 아군 1 | +7 → 57/100"
 
 
 def test_round_end_groups_multiple_targets_into_separate_blocks():
@@ -478,9 +478,9 @@ def test_round_end_groups_multiple_targets_into_separate_blocks():
 
     assert body == (
         "【라운드 종료 처리 ▸ 적군 1】\n"
-        "적군 1 | -10 → 90/100\n\n"
+        "▹ 적군 1 | -10 → 90/100\n\n"
         "【라운드 종료 처리 ▸ 아군 1】\n"
-        "아군 1 | +7 → 57/100"
+        "▹ 아군 1 | +7 → 57/100"
     )
 
 
@@ -548,7 +548,7 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
 
     assert body == (
         "【라운드 종료 처리 ▸ 적군 1】\n"
-        "적군 1 | -15 → 85/100\n"
+        "▹ 적군 1 | -15 → 85/100\n"
         "↳ 3[Mark] × 5"
     )
 
