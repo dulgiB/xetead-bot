@@ -80,3 +80,67 @@ def test_write_back_changed_hp_writes_zero_for_eliminated_character(monkeypatch)
     log_sheets.write_back_changed_hp(None, ctx, entries)
 
     assert written == [("아군1", 0)]
+
+
+def test_write_back_changed_hp_logs_companion_miss_at_debug_not_error(
+    monkeypatch, caplog
+):
+    """소환된 동료는 애초에 "캐릭터"/"에너미" 시트에 자기 행이 없어 시트
+    반영을 건너뛰는 게 정상 동작이다 — 실제 문제가 있는 캐릭터 누락과
+    달리 ERROR가 아니라 DEBUG로만 남아야 한다."""
+    import logging
+
+    ctx = _make_context_with_two_characters()
+    ctx.add_character(
+        get_test_preset("동료"), FactionType.ALLY, BattlefieldColumnIndex(2)
+    )
+    ctx.companion_owners[CharacterId("동료")] = CharacterId("아군1")
+
+    def _fake_update(spreadsheet, name, curr_hp):
+        raise RuntimeError(f"캐릭터 '{name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다.")
+
+    monkeypatch.setattr(log_sheets, "update_character_curr_hp", _fake_update)
+
+    entries = [
+        BattleLogEntry(
+            target_name="동료", kind=BattleLogEntryKind.DAMAGE, result="대미지 5", value=5
+        ),
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger="bot.log_sheets"):
+        log_sheets.write_back_changed_hp(None, ctx, entries)
+
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+    assert any(
+        r.levelno == logging.DEBUG and "동료" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_write_back_changed_hp_still_logs_error_for_non_companion_miss(
+    monkeypatch, caplog
+):
+    """소환된 동료가 아닌 일반 캐릭터가 시트에서 안 찾아지는 건 여전히 실제
+    문제이므로 ERROR로 남아야 한다(위 동료 케이스와 구분)."""
+    import logging
+
+    ctx = _make_context_with_two_characters()
+
+    def _fake_update(spreadsheet, name, curr_hp):
+        raise RuntimeError(f"캐릭터 '{name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다.")
+
+    monkeypatch.setattr(log_sheets, "update_character_curr_hp", _fake_update)
+
+    entries = [
+        BattleLogEntry(
+            target_name="아군2", kind=BattleLogEntryKind.DAMAGE, result="대미지 5", value=5
+        ),
+    ]
+
+    with caplog.at_level(logging.DEBUG, logger="bot.log_sheets"):
+        log_sheets.write_back_changed_hp(None, ctx, entries)
+
+    assert any(
+        r.levelno == logging.ERROR and "아군2" in r.getMessage()
+        for r in caplog.records
+    )

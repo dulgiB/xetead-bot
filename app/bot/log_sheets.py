@@ -163,7 +163,17 @@ def write_back_changed_hp(
         try:
             update_character_curr_hp(spreadsheet, name, curr_hp)
         except Exception:
-            logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
+            if char_id in context.companion_owners:
+                # 소환된 동료는 애초에 "캐릭터"/"에너미" 시트에 자기 행이
+                # 없다 — 못 찾는 게 정상이므로 에러가 아니라 디버그 로그만
+                # 남긴다.
+                logger.debug(
+                    "'%s'은(는) 소환된 동료라 시트에 반영할 행이 없어 건너뜁니다 (체력 %s)",
+                    name,
+                    curr_hp,
+                )
+            else:
+                logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
 
 
 def upsert_field_row(
