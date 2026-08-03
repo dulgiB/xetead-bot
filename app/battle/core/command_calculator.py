@@ -477,6 +477,14 @@ class CommandPartCalculator:
                 if d.result_value is not None
             )
             return total >= (data.gate_value or 0)
+        if data.gate_value_source == ValueSourceType.GIVEN_HEAL:
+            total = sum(
+                d.result_value
+                for effect in self.data_by_effect[: effect_seq_number + 1]
+                for d in effect.heal_data_list
+                if d.result_value is not None
+            )
+            return total >= (data.gate_value or 0)
         return True
 
     def _process_buff_add(

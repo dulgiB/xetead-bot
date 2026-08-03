@@ -383,6 +383,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `BuffAtk`                                | 공격력 수치 증가/감소                                 |
 | `BuffGivenDamage`                        | 주는 대미지 배율 변경                                 |
 | `BuffReceivedDamage`                      | 받는 대미지 배율 변경                                 |
+| `BuffReceivedDamageMark`                  | `BuffReceivedDamage`와 동작 동일, 별도 클래스(같은 부여자가 같은 대상에게 `BuffReceivedDamage` 기반 디버프를 동시에 걸 때 식별 충돌 방지용) |
 | `BuffGivenAndReceivedDamage`              | 주는 대미지와 받는 대미지를 함께 변경 (트레이드오프)                |
 | `BuffGivenDamageAgainstDebuff`            | 디버프가 걸린 대상을 공격하면 주는 대미지 증가                    |
 | `BuffGivenHeal`                           | 주는 회복량 배율 변경                                 |
@@ -405,6 +406,8 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `BuffCounterDamageOnAllyInRangeDamaged`   | 사거리 내 아군이 피격 시 공격자에게 반격 대미지                  |
 | `BuffCounterDamageOnMarkedAllyAttack`     | 사거리 내에서 특정 버프를 보유한 아군이 공격하면 같은 대상에게 추가 대미지  |
 | `BuffCounterDamageOnEnemyMove`            | 사거리 내 적이 이동할 때마다 반격 대미지 (대상 디버프 스택에 비례)     |
+| `BuffHealAndBuffStackOnDealingDamage`     | 대미지를 줄 때마다 그 대미지의 %만큼 자가 회복 + 조건 충족 시 참조 버프 1스택 부여 (버프_패시브 전용) |
+| `BuffReduceCostNextRound`                 | 다음 라운드 시작 시 1회, 코스트를 지정한 만큼 감소             |
 
 ### 도발 상세
 

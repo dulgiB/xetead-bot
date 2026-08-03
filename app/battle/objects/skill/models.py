@@ -46,6 +46,12 @@ class SkillEffectBase(abc.ABC):
     # 평가할 수 없으므로 BuffAddData에 실어 CommandPartCalculator._buff_add_gate_passes()에서 판정한다.
     gate_value_source: Optional[ValueSourceType] = None
     gate_value: Optional[int] = None
+    # 다른 버프의 id를 참조해야 하는 효과 전용(예: holder가 보유한 다른 버프의
+    # 스택 수를 새 버프의 수치로 스냅샷). BuffData.reference_buff_id와 동일한 목적.
+    reference_buff_id: Optional[str] = None
+    # 대상이 이미 보유하고 있어야 하는 버프 id(선행 디버프 존재를 요구하는
+    # 콤보용 게이트). buff_id(이 효과가 부여/조회하는 버프)와는 별개다.
+    required_target_buff_id: Optional[str] = None
 
     @property
     def condition(self) -> Optional["Condition"]:
@@ -170,6 +176,9 @@ def parse_skill_effect(
         condition_class_name = None
         condition_value = None
 
+    reference_buff_id = data.get(f"reference_buff_id_{index}") or None
+    required_target_buff_id = data.get(f"required_target_buff_id_{index}") or None
+
     return effect(
         value_source=value_source,
         value=value,
@@ -183,6 +192,8 @@ def parse_skill_effect(
         condition_value=condition_value,
         gate_value_source=gate_value_source,
         gate_value=gate_value,
+        reference_buff_id=reference_buff_id,
+        required_target_buff_id=required_target_buff_id,
     )
 
 

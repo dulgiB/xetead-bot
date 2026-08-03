@@ -80,16 +80,23 @@ class BuffData:
         return None
 
     def to_buff_instance(
-        self, given_by: CharacterId, applied_to: CharacterId, initial_stack: int = 1
+        self,
+        given_by: CharacterId,
+        applied_to: CharacterId,
+        initial_stack: int = 1,
+        value_override: Optional[int] = None,
     ) -> "BuffBase":
         buff_module = importlib.import_module("battle.objects.buff.buffs")
         buff_class: Type["BuffBase"] = getattr(buff_module, self.buff_class_name)
-        return buff_class(
+        instance = buff_class(
             given_by=given_by,
             applied_to=applied_to,
             data=self,
             initial_stack=initial_stack,
         )
+        if value_override is not None:
+            instance.value = value_override
+        return instance
 
 
 @dataclass

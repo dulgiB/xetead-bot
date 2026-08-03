@@ -369,11 +369,15 @@ class BattlefieldContext:
     def on_start_round(self):
         self.moved_this_round = set()
         self.damaged_this_round = set()
-        self.buff_container.on_round_start()
+        # 코스트 전액 회복을 ON_ROUND_START 버프보다 먼저 처리해야, "다음
+        # 라운드 코스트 감소" 같은 ON_ROUND_START 버프가 회복 직후의
+        # remaining_cost를 실제로 깎을 수 있다(먼저 버프를 처리하면 뒤이은
+        # 전액 회복이 그 감소를 그대로 덮어써 버린다).
         for character in self.characters.values():
             character.status.remaining_cost = character.status[
                 CombatStatType.COST_PER_TURN
             ]
+        self.buff_container.on_round_start()
 
     def on_finish_round(self) -> tuple[list[BattleLogEntry], list[CharacterId]]:
         log_entries, _ = self.buff_container.on_round_end()

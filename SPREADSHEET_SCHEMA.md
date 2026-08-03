@@ -110,6 +110,8 @@
 | `buff_stack_cap_N`          | (선택) 적층형 버프 부여/제거 시 한 번에 적용할 스택 상한                                        |
 | `condition_N`               | (선택) 이 effect가 발동하는 조건 클래스명 ([Condition 클래스 참고](#condition-클래스-참고)). `ConsumedBuffStackCountCondition`은 예외적으로 지연 게이트(`gate_value_source`/`gate_value`)로 변환되어 커맨드 처리 중간값을 참조한다 |
 | `condition_value_N`         | (선택) `condition_N`이 참조하는 정수값                                                |
+| `reference_buff_id_N`       | (선택) 다른 버프 id를 참조해야 하는 효과 전용(예: holder가 보유한 다른 버프의 스택 수를 새 버프의 수치로 스냅샷). `BuffData.reference_buff_id`와 동일한 목적                |
+| `required_target_buff_id_N` | (선택) 대상이 이미 보유하고 있어야 이 effect가 적용되는 버프 id(선행 디버프 존재를 요구하는 콤보용 게이트). `buff_id_N`(이 effect가 부여/조회하는 버프)과는 별개다 |
 
 `effect_N` 컬럼이 비어 있으면 그 순번의 효과는 없는 것으로 처리된다(아이템은
 `effect_0`이 비어 있으면 로드 자체가 실패한다).
@@ -165,6 +167,8 @@
 | `SkillEffectHeal`                                | 회복                                                                |
 | `SkillEffectMove`                                | 이동                                                                |
 | `SkillEffectAddBuff`                             | 대상에게 버프 부여                                                       |
+| `SkillEffectAddBuffIfTargetHasReferencedBuff`    | 대상이 reference_buff_id 버프를 이미 보유하고 있을 때만 buff_id 버프 부여(선행 디버프 요구 콤보) |
+| `SkillEffectAddBuffWithReferencedStackValue`     | holder의 reference_buff_id 버프 스택 수 × value%를 스냅샷한 수치로 buff_id 버프 부여. required_target_buff_id가 있으면 그 버프를 보유하고 아직 buff_id가 없는 대상에게만 |
 | `SkillEffectRemoveDebuffs`                       | 대상의 패시브가 아닌 디버프를 전부 제거                                         |
 | `SkillEffectAddBuffIfHolderHasFormationBuff`     | 시전자가 [Formation] 버프를 보유한 상태일 때만 대상에게 버프 부여                     |
 | `SkillEffectShieldOrReflectIfTargetHasFormationBuff` | 대상이 [Formation] 보유 시 대체 버프(보통 [반사]), 아니면 기본 버프(보통 [방어막]) 부여 |
