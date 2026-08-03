@@ -25,9 +25,16 @@ def format_battle_reply(
     context: "BattlefieldContext",
     caster_id: CharacterId,
     part_results: list[CommandPartProcessResult],
+    *,
+    show_skill_preview: bool = False,
 ) -> str:
+    """`show_skill_preview=True`이면 SKILL 파트 헤더 아래에 그 스킬의 효과
+    설명을 예고 줄로 덧붙인다 (적군 PRE 선언 답글 전용 — 본 전투/DM 전투에서만
+    사용된다). 스킬이 아직 공개되지 않았으면(`SkillData.revealed=False`)
+    설명 대신 블라인드 문구를 보여준다."""
     blocks = [
-        _format_part(context, caster_id, part_result) for part_result in part_results
+        _format_part(context, caster_id, part_result, show_skill_preview)
+        for part_result in part_results
     ]
     return "\n\n".join(blocks)
 
@@ -64,6 +71,7 @@ def _format_part(
     context: "BattlefieldContext",
     caster_id: CharacterId,
     part_result: CommandPartProcessResult,
+    show_skill_preview: bool = False,
 ) -> str:
     part = part_result.expanded_part.original_part
     assert isinstance(part, CommandPart)
@@ -78,10 +86,24 @@ def _format_part(
         # 있을 수 있으므로 그건 그대로 보여준다.
         log_entries = [e for e in log_entries if e.kind != BattleLogEntryKind.MOVE]
 
-    body_lines = [_format_entry(context, entry) for entry in log_entries]
-    if not body_lines:
+    lines = []
+    if show_skill_preview and part.type_ == ActionType.SKILL:
+        lines.append(_format_skill_preview(context, part))
+    lines.extend(_format_entry(context, entry) for entry in log_entries)
+
+    if not lines:
         return header
-    return header + "\n" + "\n".join(body_lines)
+    return header + "\n" + "\n".join(lines)
+
+
+_BLIND_SKILL_TEXT = "[효과 미확인]"
+
+
+def _format_skill_preview(context: "BattlefieldContext", part: CommandPart) -> str:
+    assert part.skill_id is not None
+    skill_data = context.get_skill_data_by_id(part.skill_id)
+    text = skill_data.description if skill_data.revealed else _BLIND_SKILL_TEXT
+    return f"↳ {text}"
 
 
 def _format_header(caster_id: CharacterId, part: CommandPart) -> str:
