@@ -565,7 +565,8 @@ def test_guardian_evaluated_at_enemy_post_action_position():
     )
     ctx.add_character(
         get_test_preset("적군 1", skill_1_id="강타", atk=50),
-        FactionType.ENEMY, BattlefieldColumnIndex(1),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(1),
     )
     ctx.buff_container.add_passive_wrapper(_make_guardian_passive(guardian_id))
 

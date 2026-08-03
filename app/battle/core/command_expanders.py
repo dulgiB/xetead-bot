@@ -1,3 +1,5 @@
+from typing import cast
+
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import (
     ADMIN_ID,
@@ -24,9 +26,10 @@ from battle.exceptions import (
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,
+    BattlefieldColumnIndex,
     ValueSourceType,
 )
-from battle.objects.models import BaseValueIndicator, BuffUid, HealData
+from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
 
 
 def expand_admin_command(
@@ -38,6 +41,10 @@ def expand_admin_command(
             admin_target_phase=command.target_phase,
         )
     elif isinstance(command, ForceMoveCommand):
+        # Admin의 Force* 커맨드는 항상 캐릭터 이름만 대상으로 받는다(열
+        # 지정은 to_position 필드가 별도로 담당) — command_expanders.py 상단
+        # 주석 참고.
+        move_targets = cast(list[CharacterId], command.targets)
         return CommandPartData(
             original_part=command,
             data_per_effect=(
@@ -48,12 +55,13 @@ def expand_admin_command(
                             to_position=command.to_position,
                             is_forced=True,
                         )
-                        for target in command.targets
+                        for target in move_targets
                     ]
                 ),
             ),
         )
     elif isinstance(command, ForceDamageCommand):
+        damage_targets = cast(list[CharacterId], command.targets)
         return CommandPartData(
             original_part=command,
             data_per_effect=(
@@ -67,12 +75,13 @@ def expand_admin_command(
                                 value=command.damage_value,
                             ),
                         )
-                        for target in command.targets
+                        for target in damage_targets
                     ]
                 ),
             ),
         )
     elif isinstance(command, ForceHealCommand):
+        heal_targets = cast(list[CharacterId], command.targets)
         return CommandPartData(
             original_part=command,
             data_per_effect=(
@@ -86,12 +95,13 @@ def expand_admin_command(
                                 value=command.heal_value,
                             ),
                         )
-                        for target in command.targets
+                        for target in heal_targets
                     ]
                 ),
             ),
         )
     elif isinstance(command, ForceAddBuffByIdCommand):
+        buff_add_targets = cast(list[CharacterId], command.targets)
         return CommandPartData(
             original_part=command,
             data_per_effect=(
@@ -102,14 +112,14 @@ def expand_admin_command(
                             applied_to=target,
                             buff_id=command.buff_id,
                         )
-                        for target in command.targets
+                        for target in buff_add_targets
                     ]
                 ),
             ),
         )
     elif isinstance(command, ForceRemoveBuffByIdCommand):
         buff_remove_list: list[BuffUid] = []
-        for target in command.targets:
+        for target in cast(list[CharacterId], command.targets):
             target_buff_list = context.buff_container.get_buffs_by(target, None)
             buff_remove_list.extend(
                 buff.uid for buff in target_buff_list if buff.id == command.buff_id
@@ -132,12 +142,15 @@ def expand_character_command(
 
     for part in command.parts:
         if part.type_ == ActionType.MOVE and part.targets is not None:
+            # parser.py의 command_format_move가 이동 커맨드에는 항상 열
+            # 하나만 targets[0]에 채워 넣는다.
+            move_pos = cast(BattlefieldColumnIndex, part.targets[0])
             parts_list.append(
                 CommandPartData(
                     part,
                     data_per_effect=(
                         CommandPartDataPerEffect(
-                            move_list=[MoveData(command.user_id, part.targets[0])]
+                            move_list=[MoveData(command.user_id, move_pos)]
                         ),
                     ),
                 )
@@ -147,6 +160,9 @@ def expand_character_command(
             is_magic_attack = context.characters[
                 command.user_id
             ].status.is_magic_attacker
+            # parser.py의 command_format_attack이 공격 커맨드에는 항상 캐릭터
+            # 이름 하나만 targets[0]에 채워 넣는다.
+            attack_target = cast(CharacterId, part.targets[0])
             parts_list.append(
                 CommandPartData(
                     part,
@@ -155,7 +171,7 @@ def expand_character_command(
                             damage_list=[
                                 DamageData(
                                     command.user_id,
-                                    part.targets[0],
+                                    attack_target,
                                     BaseValueIndicator(ValueSourceType.STAT_ATK_ROLL),
                                     is_magic_attack,
                                 )
@@ -166,6 +182,9 @@ def expand_character_command(
             )
 
         elif part.type_ == ActionType.SKILL:
+            assert (
+                part.skill_id is not None
+            )  # ActionType.SKILL이면 parser.py가 항상 채움
             skill_used = None
             for skill in context.characters[command.user_id].skills:
                 if skill.data.id == part.skill_id:

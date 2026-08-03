@@ -279,7 +279,9 @@ class TestPassiveSkill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", max_hp=200), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
 
         manager.process_command(parse_character_command(vampire, "[공격/적군]", ctx))
@@ -306,7 +308,9 @@ class TestPassiveSkill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", max_hp=200), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
 
         manager.process_command(parse_character_command(vampire, "[공격/적군]", ctx))
@@ -332,7 +336,9 @@ class TestPassiveSkill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("아군", max_hp=200), FactionType.ALLY, BattlefieldColumnIndex(0)
+            get_test_preset("아군", max_hp=200),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
         )
 
         # 기본 공격은 진영 검증이 없어 아군도 대상으로 지정할 수 있다.
@@ -365,7 +371,9 @@ class TestCost2Skill:
     def test_only_expose_granted_when_holder_lacks_stack_buff(self):
         ctx, manager, vampire, enemy = self._make_ready_context()
 
-        manager.process_command(parse_character_command(vampire, "[Cost2Skill/1열]", ctx))
+        manager.process_command(
+            parse_character_command(vampire, "[Cost2Skill/1열]", ctx)
+        )
 
         assert ctx.get_buff_instance(enemy, "노출_테스트") is not None
         assert ctx.get_buff_instance(enemy, "받는대미지증가_테스트") is None
@@ -373,10 +381,17 @@ class TestCost2Skill:
     def test_snapshot_debuff_also_granted_when_holder_has_stack_buff(self):
         ctx, manager, vampire, enemy = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=vampire, applied_to=vampire, buff_id="스택_테스트", stack_value=2)
+            BuffAddData(
+                given_by=vampire,
+                applied_to=vampire,
+                buff_id="스택_테스트",
+                stack_value=2,
+            )
         )
 
-        manager.process_command(parse_character_command(vampire, "[Cost2Skill/1열]", ctx))
+        manager.process_command(
+            parse_character_command(vampire, "[Cost2Skill/1열]", ctx)
+        )
 
         assert ctx.get_buff_instance(enemy, "노출_테스트") is not None
         granted = ctx.get_buff_instance(enemy, "받는대미지증가_테스트")
@@ -399,7 +414,9 @@ class TestCost3Skill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", max_hp=500), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=500),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
         if holder_stack:
             ctx.buff_container.add(
@@ -416,7 +433,9 @@ class TestCost3Skill:
         ctx, manager, vampire, target = self._make_ready_context(holder_stack=3)
         hp_before = ctx.characters[target].status.curr_hp
 
-        manager.process_command(parse_character_command(vampire, "[Cost3Skill/적군]", ctx))
+        manager.process_command(
+            parse_character_command(vampire, "[Cost3Skill/적군]", ctx)
+        )
 
         assert hp_before - ctx.characters[target].status.curr_hp == 30  # atk 10 * 300%
         assert ctx.get_buff_instance(target, "받는대미지증가_테스트") is None
@@ -428,7 +447,9 @@ class TestCost3Skill:
             BuffAddData(given_by=vampire, applied_to=target, buff_id="노출_테스트")
         )
 
-        manager.process_command(parse_character_command(vampire, "[Cost3Skill/적군]", ctx))
+        manager.process_command(
+            parse_character_command(vampire, "[Cost3Skill/적군]", ctx)
+        )
 
         granted = ctx.get_buff_instance(target, "받는대미지증가_테스트")
         assert granted is not None
@@ -441,10 +462,14 @@ class TestCost3Skill:
             BuffAddData(given_by=vampire, applied_to=target, buff_id="노출_테스트")
         )
         ctx.buff_container.add(
-            BuffAddData(given_by=vampire, applied_to=target, buff_id="받는대미지증가_테스트")
+            BuffAddData(
+                given_by=vampire, applied_to=target, buff_id="받는대미지증가_테스트"
+            )
         )
 
-        manager.process_command(parse_character_command(vampire, "[Cost3Skill/적군]", ctx))
+        manager.process_command(
+            parse_character_command(vampire, "[Cost3Skill/적군]", ctx)
+        )
 
         assert ctx.get_buff_instance(target, "코스트감소_테스트") is not None
         # 이번 라운드에는 아직 반영되지 않는다.

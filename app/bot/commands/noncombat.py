@@ -110,7 +110,9 @@ def handle_roll(
 # ---------------------------------------------------------------------------
 
 
-def _compute_heal_amount(effect: SkillEffectHeal, target_max_hp: int, count: int) -> Optional[int]:
+def _compute_heal_amount(
+    effect: SkillEffectHeal, target_max_hp: int, count: int
+) -> Optional[int]:
     """비전투에서 지원하는 value_source(고정값/최대 체력 %)에 한해 회복량을 계산한다."""
     if effect.value_source == ValueSourceType.FIXED:
         return (effect.value or 0) * count
@@ -130,7 +132,11 @@ def handle_use_item(
 
     현재는 회복(Heal) 효과만 지원한다.
     """
-    command_text = f"[사용/{item_name}" + (f"/{target_name}" if target_name else "") + f"/{count}개]"
+    command_text = (
+        f"[사용/{item_name}"
+        + (f"/{target_name}" if target_name else "")
+        + f"/{count}개]"
+    )
 
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
@@ -174,6 +180,9 @@ def handle_use_item(
     if heal_amount is None:
         msg = f"◊ '{item_name}'의 회복 방식은 비전투 상황에서 지원하지 않습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+    # heal_amount가 not None이면 _compute_heal_amount()가 FIXED/STAT_MAX_HP
+    # 분기를 탔다는 뜻이므로 value_source도 이미 채워져 있다.
+    assert item.effect.value_source is not None
 
     prev_hp = target_data.curr_hp or 0
     new_hp = min(target_data.max_hp, prev_hp + heal_amount)
@@ -185,7 +194,9 @@ def handle_use_item(
         inventory.consume(user_name, item_name, count)
     except Exception as e:
         msg = f"◊ 아이템 사용 처리 중 오류가 발생했습니다: {e}"
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=traceback.format_exc())
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
 
     result_text = f"{target_char_name}의 체력을 {heal_amount} 회복했습니다. ({prev_hp} → {new_hp})"
     reply = f"◊ '{item_name}' 사용: {result_text}"
@@ -244,7 +255,9 @@ def handle_transfer_item(
         inventory.grant(target_name, item_name, count)
     except Exception as e:
         msg = f"◊ 아이템 양도 처리 중 오류가 발생했습니다: {e}"
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg, error_trace=traceback.format_exc())
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
 
     result_text = f"{user_name} → {target_name}에게 '{item_name}' {count}개 양도"
     reply = f"◊ 양도 완료: {result_text}"
@@ -371,7 +384,9 @@ def handle_daily_quest_roll(
     if save_succeeded:
         result += "의뢰를 완수했다. 사례로 1G를 획득했다."
     else:
-        result += "의뢰 결과 저장에 실패했습니다. 이 답글에 다시 답글로 재시도해 주세요."
+        result += (
+            "의뢰 결과 저장에 실패했습니다. 이 답글에 다시 답글로 재시도해 주세요."
+        )
     if errors:
         result += "\n◊ " + "; ".join(errors)
     return result, NoncombatLogInfo(
@@ -458,7 +473,9 @@ def handle_investigation_venue_choice(
     command_text = f"[상시조사/{venue_name}]"
     nc = state.noncombat
 
-    venue_name = resolve_matching_key(venue_name, nc.investigation_venue_to_quest.keys())
+    venue_name = resolve_matching_key(
+        venue_name, nc.investigation_venue_to_quest.keys()
+    )
     quest_id = nc.investigation_venue_to_quest.get(venue_name)
     if quest_id is None:
         # 이 답글은 유효한 의뢰 개요가 아니므로, 이전에 선택했던 의뢰가 남아 있다면

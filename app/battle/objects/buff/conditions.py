@@ -36,6 +36,7 @@ def _characters_in_holder_scope(
         if (char.faction == holder_char.faction) != same_faction:
             continue
         if in_range:
+            assert holder_range is not None  # in_range=True일 때만 여기 도달
             if not is_reachable(
                 holder_pos, context.find_character_position(char_id), holder_range
             ):
@@ -269,6 +270,7 @@ class EnemyInRangeCountCondition(Condition):
                 context, holder, same_faction=False, include_self=True, in_range=True
             )
         )
+        assert self.value is not None
         return enemy_count >= self.value
 
 
@@ -288,6 +290,7 @@ class AllyInRangeCountCondition(Condition):
                 context, holder, same_faction=True, include_self=False, in_range=True
             )
         )
+        assert self.value is not None
         return ally_count >= self.value
 
 

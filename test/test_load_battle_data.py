@@ -36,9 +36,7 @@ class _FakeSpreadsheet:
 
     def fetch_sheet_metadata(self):
         self.fetch_sheet_metadata_call_count += 1
-        return {
-            "sheets": [{"properties": {"title": name}} for name in self._sheets]
-        }
+        return {"sheets": [{"properties": {"title": name}} for name in self._sheets]}
 
 
 def _base_sheets(**overrides) -> dict[str, list[dict]]:

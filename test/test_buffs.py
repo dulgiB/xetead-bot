@@ -212,7 +212,9 @@ class TestBuffAtk:
             target_count=1,
             cost=0,
             effects=[
-                SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                )
             ],
             description="",
         )
@@ -475,7 +477,9 @@ class TestBuffReceivedDamage:
         skill = make_buff_skill("방어 스킬", "피해 감소")
         return make_context(buff, skill_dict={"방어 스킬": skill})
 
-    def test_received_damage_buff_increases_damage_taken(self, ctx_damage_up, monkeypatch):
+    def test_received_damage_buff_increases_damage_taken(
+        self, ctx_damage_up, monkeypatch
+    ):
         """받는 대미지 증가 버프를 받은 캐릭터는 더 큰 피해를 입는다.
 
         두 공격이 각자 독립적으로 1d6을 굴리면, +50% 버프로도 주사위 눈 차이를
@@ -877,14 +881,16 @@ class TestBuffTaunt:
 
         ctx.add_character(
             get_test_preset("도발자", skill_1_id="도발 스킬"),
-            FactionType.ALLY, BattlefieldColumnIndex(0),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
         )
         ctx.add_character(
             get_test_preset("공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
         ctx.add_character(
             get_test_preset("적군", skill_1_id="저주 일격"),
-            FactionType.ENEMY, BattlefieldColumnIndex(1),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(1),
         )
 
         # 적이 공격수에게 저주 일격 선언
@@ -1087,13 +1093,13 @@ class TestBuffDuration:
             target_count=1,
             cost=0,
             effects=[
-                SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                )
             ],
             description="",
         )
-        ctx = make_context(
-            buff, skill_dict={"버프 스킬": skill, "약공격": weak_attack}
-        )
+        ctx = make_context(buff, skill_dict={"버프 스킬": skill, "약공격": weak_attack})
         manager = setup_enemy_pre_phase(ctx)
 
         ctx.add_character(
@@ -1279,7 +1285,9 @@ class TestPassiveSkillSelfHealOnGivenDamage:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", max_hp=200), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
 
         hp_before = ctx.characters[attacker_id].status.curr_hp

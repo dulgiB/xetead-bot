@@ -45,6 +45,7 @@ def count_bracket_groups(input_str: str) -> int:
     """입력 텍스트에 포함된 완결된 대괄호 그룹([...]) 개수를 센다."""
     return len(_bracket_group.findall(input_str))
 
+
 # 이동 :: 이동/1 또는 이동/1열
 command_format_move = regex.compile(rf"^\s*{_이동}\s*/\s*(?P<pos>[1-7]열?)\s*$")
 

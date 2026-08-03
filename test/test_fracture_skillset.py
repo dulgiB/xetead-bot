@@ -253,13 +253,13 @@ class TestPassiveSkill:
         )
         if target_debuff_id is not None:
             ctx.buff_container.add(
-                BuffAddData(given_by=caster, applied_to=target, buff_id=target_debuff_id)
+                BuffAddData(
+                    given_by=caster, applied_to=target, buff_id=target_debuff_id
+                )
             )
 
         hp_before = ctx.characters[target].status.curr_hp
-        manager.process_command(
-            parse_character_command(caster, "[공격/적군]", ctx)
-        )
+        manager.process_command(parse_character_command(caster, "[공격/적군]", ctx))
         hp_after = ctx.characters[target].status.curr_hp
         return hp_before - hp_after
 
@@ -329,7 +329,9 @@ class TestCost3Skill:
     def test_low_tier_deals_280_percent_and_adds_stack(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="균열", stack_value=1)
+            BuffAddData(
+                given_by=caster, applied_to=target, buff_id="균열", stack_value=1
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -344,7 +346,9 @@ class TestCost3Skill:
     def test_mid_tier_deals_350_percent_and_adds_stack(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="균열", stack_value=3)
+            BuffAddData(
+                given_by=caster, applied_to=target, buff_id="균열", stack_value=3
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -359,7 +363,9 @@ class TestCost3Skill:
     def test_max_tier_deals_500_percent_and_clears_all_stacks(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=target, buff_id="균열", stack_value=5)
+            BuffAddData(
+                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp

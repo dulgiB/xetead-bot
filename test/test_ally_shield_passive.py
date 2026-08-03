@@ -16,7 +16,12 @@ from battle.objects.buff.conditions import (
     TargetIsAllyCondition,
 )
 from battle.objects.buff.models import BuffData
-from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType, ValueType
+from battle.objects.define import (
+    ActionType,
+    BattlefieldColumnIndex,
+    FactionType,
+    ValueType,
+)
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import (
     PassiveSkillData,

@@ -30,9 +30,7 @@ class _FakeSpreadsheet:
     def fetch_sheet_metadata(self):
         self.fetch_sheet_metadata_call_count += 1
         return {
-            "sheets": [
-                {"properties": {"title": name}} for name in self._worksheets
-            ]
+            "sheets": [{"properties": {"title": name}} for name in self._worksheets]
         }
 
 
@@ -113,9 +111,7 @@ def test_get_all_records_numericises_like_gspread():
 
 
 def test_get_all_records_reuses_get_all_values_cache():
-    spreadsheet = _FakeSpreadsheet(
-        {"캐릭터": [["name", "curr_hp"], ["아군1", "50"]]}
-    )
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name", "curr_hp"], ["아군1", "50"]]})
     cache = _make_cache(spreadsheet)
 
     cache.get_all_values("캐릭터")

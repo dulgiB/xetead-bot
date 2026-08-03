@@ -250,7 +250,9 @@ def test_str_lists_active_buffs_with_duration_and_description(
     ctx = context_with_atk_buff_skill
     buff_atk_data.description = "다음 공격의 대미지를 증가시킨다."
     ally_id = CharacterId("아군 1")
-    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
     ctx.buff_container.add(
         BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="공격력 증가")
     )
@@ -258,8 +260,7 @@ def test_str_lists_active_buffs_with_duration_and_description(
     text = str(ctx)
 
     assert (
-        "아군 1 | [공격력 증가] (3턴/0회)\n"
-        "↳ 다음 공격의 대미지를 증가시킨다." in text
+        "아군 1 | [공격력 증가] (3턴/0회)\n↳ 다음 공격의 대미지를 증가시킨다." in text
     )
 
 
@@ -274,7 +275,9 @@ def test_str_excludes_passive_skill_wrapper_buffs(empty_context):
         id="특성",
         trigger=PassiveSkillTrigger.ON_ENEMY_MOVE,
         target_type=PassiveSkillTargetType.ATTACKER_OR_TARGET,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None)
+        ],
         description="",
     )
     empty_context.buff_container.add_passive_wrapper(

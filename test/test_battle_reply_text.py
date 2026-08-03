@@ -7,7 +7,13 @@ from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
-from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType, ValueSourceType, ValueType
+from battle.objects.define import (
+    ActionType,
+    BattlefieldColumnIndex,
+    FactionType,
+    ValueSourceType,
+    ValueType,
+)
 from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.skill.effects import (
@@ -27,12 +33,16 @@ from spreadsheets.inventory import Inventory
 def _ally_action_manager(ctx: BattlefieldContext) -> RoundManager:
     manager = RoundManager(ctx)
     manager.process_command(
-        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
     )
     return manager
 
 
-def _run(ctx: BattlefieldContext, manager: RoundManager, caster_id: CharacterId, text: str) -> str:
+def _run(
+    ctx: BattlefieldContext, manager: RoundManager, caster_id: CharacterId, text: str
+) -> str:
     before = len(ctx.results)
     cmd = parse_character_command(caster_id, text, ctx)
     manager.process_command(cmd)
@@ -44,7 +54,9 @@ def test_move_command_is_header_only():
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
-    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
 
     reply = _run(ctx, manager, caster_id, "[이동/3]")
 
@@ -55,15 +67,22 @@ def test_attack_command_shows_damage_and_calculation():
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
-    ctx.add_character(get_test_preset("아군 1", atk=10), FactionType.ALLY, BattlefieldColumnIndex(0))
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1", atk=10), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     reply = _run(ctx, manager, caster_id, "[공격/적군 1]")
 
     lines = reply.splitlines()
     assert lines[0] == "【공격 ▸ 적군 1】"
     target = ctx.characters[CharacterId("적군 1")]
-    assert lines[1] == f"▹ 적군 1 | -{100 - target.status.curr_hp} → {target.status.curr_hp}/100"
+    assert (
+        lines[1]
+        == f"▹ 적군 1 | -{100 - target.status.curr_hp} → {target.status.curr_hp}/100"
+    )
     assert lines[2].startswith("↳ ")
 
 
@@ -74,16 +93,22 @@ def test_fixed_damage_skill_omits_calculation_line():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None)
+        ],
         description="",
     )
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"강타": skill})
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="강타"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="강타"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     reply = _run(ctx, manager, caster_id, "[강타/적군 1]")
 
@@ -116,7 +141,9 @@ def test_self_targeted_skill_header_uses_caster_name():
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="집중하기"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="집중하기"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
 
     reply = _run(ctx, manager, caster_id, "[집중하기]")
@@ -154,17 +181,21 @@ def test_skill_with_damage_and_debuff_clear_combines_lines_in_effect_order():
     caster_id = CharacterId("아군 1")
     target_id = CharacterId("적군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="정화 일격"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="정화 일격"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
-    ctx.buff_container.add(BuffAddData(given_by=caster_id, applied_to=target_id, buff_id="독"))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=caster_id, applied_to=target_id, buff_id="독")
+    )
 
     reply = _run(ctx, manager, caster_id, "[정화 일격/적군 1]")
 
     assert reply == (
-        "【정화 일격 ▸ 적군 1】\n"
-        "▹ 적군 1 | -10 → 90/100\n"
-        "▹ 적군 1 | 모든 디버프 제거"
+        "【정화 일격 ▸ 적군 1】\n▹ 적군 1 | -10 → 90/100\n▹ 적군 1 | 모든 디버프 제거"
     )
 
 
@@ -174,7 +205,9 @@ def test_item_command_header_uses_item_name():
         target_rule="SkillTargetRuleSelf",
         cost=1,
         attack_range=1,
-        effect=SkillEffectHeal(ValueSourceType.FIXED, 15, ValueType.INTEGER, None, None),
+        effect=SkillEffectHeal(
+            ValueSourceType.FIXED, 15, ValueType.INTEGER, None, None
+        ),
     )
     ctx = BattlefieldContext(
         buff_dict={},
@@ -185,7 +218,9 @@ def test_item_command_header_uses_item_name():
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", initial_hp=50), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", initial_hp=50),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
 
     reply = _run(ctx, manager, caster_id, "[포션]")
@@ -199,25 +234,26 @@ def test_multiple_parts_are_joined_by_blank_line():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
         description="",
     )
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"찌르기": skill})
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="찌르기"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="찌르기"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     reply = _run(ctx, manager, caster_id, "[이동/3 - 찌르기/적군 1]")
 
-    assert reply == (
-        "【이동 ▸ 3열】\n"
-        "\n"
-        "【찌르기 ▸ 적군 1】\n"
-        "▹ 적군 1 | -5 → 95/100"
-    )
+    assert reply == ("【이동 ▸ 3열】\n\n【찌르기 ▸ 적군 1】\n▹ 적군 1 | -5 → 95/100")
 
 
 def test_column_targeted_skill_header_shows_input_column():
@@ -226,16 +262,22 @@ def test_column_targeted_skill_header_shows_input_column():
         target_rule="SkillTargetRuleColumn",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
         description="",
     )
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"광역기": skill})
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="광역기"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="광역기"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     reply = _run(ctx, manager, caster_id, "[광역기/1열]")
 
@@ -248,16 +290,24 @@ def test_move_effect_inside_skill_shows_target_and_position():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectMove(ValueSourceType.TOWARD_HOLDER, 1, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectMove(
+                ValueSourceType.TOWARD_HOLDER, 1, ValueType.INTEGER, None, None
+            )
+        ],
         description="",
     )
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"당기기": skill})
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="당기기"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="당기기"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(3))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(3)
+    )
 
     reply = _run(ctx, manager, caster_id, "[당기기/적군 1]")
 
@@ -269,10 +319,18 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
     """SkillEffectConsumeStackForDamage는 스택 소모 줄이 대미지 줄보다 먼저 나와야 한다
     (실제 계산도 소모 결과를 대미지 값이 참조하는 순서)."""
     stack_buff = BuffData(
-        id="저주", buff_class_name="BuffAtk", duration_turn_value=None,
-        duration_count_value=None, duration_count_deduct_condition=None,
-        value_type=ValueType.INTEGER, value=0, condition_=None, condition_value=None,
-        is_debuff=True, description="", max_stack=5,
+        id="저주",
+        buff_class_name="BuffAtk",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER,
+        value=0,
+        condition_=None,
+        condition_value=None,
+        is_debuff=True,
+        description="",
+        max_stack=5,
     )
     skill = SkillData(
         id="저주 방출",
@@ -281,20 +339,34 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
         cost=0,
         effects=[
             SkillEffectConsumeStackForDamage(
-                ValueSourceType.CONSUMED_BUFF_STACK, 100, ValueType.INTEGER, "저주", None,
+                ValueSourceType.CONSUMED_BUFF_STACK,
+                100,
+                ValueType.INTEGER,
+                "저주",
+                None,
                 buff_stack_cap=2,
             )
         ],
         description="",
     )
-    ctx = BattlefieldContext(buff_dict={"저주": stack_buff}, skill_dict={"저주 방출": skill})
+    ctx = BattlefieldContext(
+        buff_dict={"저주": stack_buff}, skill_dict={"저주 방출": skill}
+    )
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="저주 방출"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="저주 방출"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
-    ctx.buff_container.add(BuffAddData(given_by=caster_id, applied_to=caster_id, buff_id="저주", stack_value=3))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=caster_id, applied_to=caster_id, buff_id="저주", stack_value=3
+        )
+    )
 
     reply = _run(ctx, manager, caster_id, "[저주 방출/적군 1]")
 
@@ -311,10 +383,18 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
     스킬(예: 반송형 스킬)은 한 줄로 합쳐서 보여줘야 하고, 스택 소모 항목은
     버프 이름으로 라벨링되어야 한다."""
     stack_buff = BuffData(
-        id="저주", buff_class_name="BuffAtk", duration_turn_value=None,
-        duration_count_value=None, duration_count_deduct_condition=None,
-        value_type=ValueType.INTEGER, value=0, condition_=None, condition_value=None,
-        is_debuff=True, description="", max_stack=10,
+        id="저주",
+        buff_class_name="BuffAtk",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER,
+        value=0,
+        condition_=None,
+        condition_value=None,
+        is_debuff=True,
+        description="",
+        max_stack=10,
     )
     skill = SkillData(
         id="이중 타격",
@@ -322,15 +402,23 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
         target_count=1,
         cost=0,
         effects=[
-            SkillEffectDamage(ValueSourceType.STAT_ATK, 150, ValueType.INTEGER, None, None),
+            SkillEffectDamage(
+                ValueSourceType.STAT_ATK, 150, ValueType.INTEGER, None, None
+            ),
             SkillEffectConsumeStackForDamage(
-                ValueSourceType.CONSUMED_BUFF_STACK, 300, ValueType.INTEGER, "저주", None,
+                ValueSourceType.CONSUMED_BUFF_STACK,
+                300,
+                ValueType.INTEGER,
+                "저주",
+                None,
                 buff_stack_cap=5,
             ),
         ],
         description="",
     )
-    ctx = BattlefieldContext(buff_dict={"저주": stack_buff}, skill_dict={"이중 타격": skill})
+    ctx = BattlefieldContext(
+        buff_dict={"저주": stack_buff}, skill_dict={"이중 타격": skill}
+    )
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
@@ -338,9 +426,13 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
     ctx.buff_container.add(
-        BuffAddData(given_by=caster_id, applied_to=caster_id, buff_id="저주", stack_value=5)
+        BuffAddData(
+            given_by=caster_id, applied_to=caster_id, buff_id="저주", stack_value=5
+        )
     )
 
     reply = _run(ctx, manager, caster_id, "[이중 타격/적군 1]")
@@ -373,17 +465,17 @@ def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="연타"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="연타"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     reply = _run(ctx, manager, caster_id, "[연타/적군 1]")
 
-    assert reply == (
-        "【연타 ▸ 적군 1】\n"
-        "▹ 적군 1 | -15 → 85/100\n"
-        "↳ 10 + 5"
-    )
+    assert reply == ("【연타 ▸ 적군 1】\n▹ 적군 1 | -15 → 85/100\n↳ 10 + 5")
 
 
 # ── 라운드 종료 처리(DoT/HoT) 답글 포맷팅 ────────────────────────────────────────
@@ -431,8 +523,14 @@ def test_round_end_dot_produces_round_end_processing_block():
     ctx = BattlefieldContext(buff_dict={"DoT": _dot_buff_data(value=10)}, skill_dict={})
     manager = RoundManager(ctx)
     enemy_id = CharacterId("적군 1")
-    ctx.add_character(get_test_preset("적군 1", max_hp=100), FactionType.ENEMY, BattlefieldColumnIndex(0))
-    ctx.buff_container.add(BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="DoT"))
+    ctx.add_character(
+        get_test_preset("적군 1", max_hp=100),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="DoT")
+    )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
     body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
@@ -446,9 +544,13 @@ def test_round_end_hot_uses_plus_sign():
     manager = RoundManager(ctx)
     ally_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", initial_hp=50, max_hp=100), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", initial_hp=50, max_hp=100),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.buff_container.add(BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="HoT"))
+    ctx.buff_container.add(
+        BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="HoT")
+    )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
     body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
@@ -466,12 +568,22 @@ def test_round_end_groups_multiple_targets_into_separate_blocks():
     manager = RoundManager(ctx)
     enemy_id = CharacterId("적군 1")
     ally_id = CharacterId("아군 1")
-    ctx.add_character(get_test_preset("적군 1", max_hp=100), FactionType.ENEMY, BattlefieldColumnIndex(0))
     ctx.add_character(
-        get_test_preset("아군 1", initial_hp=50, max_hp=100), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("적군 1", max_hp=100),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.buff_container.add(BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="DoT"))
-    ctx.buff_container.add(BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="HoT"))
+    ctx.add_character(
+        get_test_preset("아군 1", initial_hp=50, max_hp=100),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="DoT")
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="HoT")
+    )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
     body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
@@ -488,7 +600,9 @@ def test_round_end_returns_empty_string_when_nothing_fires():
     """발동한 ON_ROUND_END 효과가 없으면 빈 문자열을 반환해야 한다."""
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     manager = RoundManager(ctx)
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
     body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
@@ -532,12 +646,20 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
             "reference_buff_id": "Mark",
         }
     )
-    ctx = BattlefieldContext(buff_dict={"Mark": mark, "MarkDrain": mark_drain}, skill_dict={})
+    ctx = BattlefieldContext(
+        buff_dict={"Mark": mark, "MarkDrain": mark_drain}, skill_dict={}
+    )
     manager = RoundManager(ctx)
     enemy_id = CharacterId("적군 1")
-    ctx.add_character(get_test_preset("적군 1", max_hp=100), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1", max_hp=100),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
+    )
     ctx.buff_container.add(
-        BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="Mark", stack_value=3)
+        BuffAddData(
+            given_by=enemy_id, applied_to=enemy_id, buff_id="Mark", stack_value=3
+        )
     )
     ctx.buff_container.add(
         BuffAddData(given_by=enemy_id, applied_to=enemy_id, buff_id="MarkDrain")
@@ -547,9 +669,7 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
     body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
 
     assert body == (
-        "【라운드 종료 처리 ▸ 적군 1】\n"
-        "▹ 적군 1 | -15 → 85/100\n"
-        "↳ 3[Mark] × 5"
+        "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | -15 → 85/100\n↳ 3[Mark] × 5"
     )
 
 
@@ -573,15 +693,21 @@ def test_enemy_skill_preview_shows_description_when_revealed():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
         description="대상에게 고정 피해를 준다.",
         revealed=True,
     )
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
     ctx.add_character(
-        get_test_preset("적군 1", skill_1_id="스킬_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        get_test_preset("적군 1", skill_1_id="스킬_1"),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
 
     caster_id, new_results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
     reply = format_battle_reply(ctx, caster_id, new_results, show_skill_preview=True)
@@ -595,15 +721,21 @@ def test_enemy_skill_preview_blinds_description_when_not_revealed():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
         description="대상에게 고정 피해를 준다.",
         revealed=False,
     )
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
     ctx.add_character(
-        get_test_preset("적군 1", skill_1_id="스킬_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        get_test_preset("적군 1", skill_1_id="스킬_1"),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
 
     caster_id, new_results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
     reply = format_battle_reply(ctx, caster_id, new_results, show_skill_preview=True)
@@ -618,15 +750,21 @@ def test_skill_preview_omitted_when_show_skill_preview_is_false():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
         description="대상에게 고정 피해를 준다.",
         revealed=False,
     )
     ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
     ctx.add_character(
-        get_test_preset("적군 1", skill_1_id="스킬_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        get_test_preset("적군 1", skill_1_id="스킬_1"),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
 
     caster_id, new_results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
     reply = format_battle_reply(ctx, caster_id, new_results)
@@ -640,7 +778,9 @@ def test_mark_skill_revealed_updates_skill_dict_in_place():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
         description="",
         revealed=False,
     )
@@ -658,7 +798,9 @@ def test_mark_skill_revealed_is_noop_when_already_revealed():
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
         description="",
         revealed=True,
     )

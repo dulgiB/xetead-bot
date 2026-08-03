@@ -21,6 +21,4 @@ class NoHealEvent(NoDataEvent):
 
 class BuffNoHeal(BuffNoDataBase):
     def create_event(self) -> NoHealEvent:
-        return NoHealEvent(
-            condition=self.condition, buff_label=self.display_id_label()
-        )
+        return NoHealEvent(condition=self.condition, buff_label=self.display_id_label())

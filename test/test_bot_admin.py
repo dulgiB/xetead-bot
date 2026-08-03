@@ -161,7 +161,9 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
     표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
     누락된다."""
-    monkeypatch.setattr(log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {})
+    monkeypatch.setattr(
+        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
+    )
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -243,8 +245,7 @@ def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     )
 
     assert reply_text == (
-        "적 캐릭터 【이동 ▸ 3열】\n\n"
-        "적 캐릭터 【공격 ▸ 유효 캐릭터】"
+        "적 캐릭터 【이동 ▸ 3열】\n\n적 캐릭터 【공격 ▸ 유효 캐릭터】"
     )
 
 
@@ -345,7 +346,11 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
 
     context = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
@@ -360,18 +365,14 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
 
     listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
 
-    listener.on_notification(
-        _make_notification("user1", 1, 1000, "[아군/1열]")
-    )
+    listener.on_notification(_make_notification("user1", 1, 1000, "[아군/1열]"))
 
     assert state.practice.prep_post_id == 0
     assert len(state.practice.context.characters) == 1
     round_n_after_start = state.practice.round_n
 
     # 같은 참가자가 이미 소모된 원본 준비 게시물(1000)에 다시 답글
-    listener.on_notification(
-        _make_notification("user1", 2, 1000, "[아군/2열]")
-    )
+    listener.on_notification(_make_notification("user1", 2, 1000, "[아군/2열]"))
 
     assert len(state.practice.context.characters) == 1
     assert state.practice.round_n == round_n_after_start
@@ -385,11 +386,26 @@ def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
-    monkeypatch.setattr(admin_module, "load_battle_data", lambda spreadsheet, cache=None: (
-        {}, {}, {}, {}, None, state.char_dict, state.name_dict, state.noncombat_char_dict
-    ))
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
@@ -462,19 +478,19 @@ def test_round_start_game_post_attaches_field_image(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
-        _make_notification("test-admin", 1, 0, "[전투개시]")
-    )
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
 
-    public_posts = [
-        c for c in mastodon.status_post_calls if "in_reply_to_id" not in c
-    ]
+    public_posts = [c for c in mastodon.status_post_calls if "in_reply_to_id" not in c]
     assert len(public_posts) == 1
     assert public_posts[0]["media_ids"] == [mastodon.last_media_id]
     # 본 전투 페이즈 게시물은 visibility를 강제하지 않고 계정/서버 기본값을
@@ -498,7 +514,11 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
     monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
@@ -513,9 +533,7 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
         _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
     )
 
-    reply_calls = [
-        c for c in mastodon.status_post_calls if "in_reply_to_id" in c
-    ]
+    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
     char_reply = reply_calls[-1]
     assert char_reply["media_ids"] is None
     assert "공격" in char_reply["status"]
@@ -543,7 +561,11 @@ def test_character_command_with_two_bracket_groups_is_rejected_with_explicit_err
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
     monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
@@ -577,19 +599,19 @@ def test_ally_action_phase_post_attaches_field_image(monkeypatch):
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
-        _make_notification("test-admin", 1, 0, "[진행]")
-    )
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[진행]"))
 
-    public_posts = [
-        c for c in mastodon.status_post_calls if "in_reply_to_id" not in c
-    ]
+    public_posts = [c for c in mastodon.status_post_calls if "in_reply_to_id" not in c]
     assert len(public_posts) == 1
     assert public_posts[0]["media_ids"] == [mastodon.last_media_id]
 
@@ -612,19 +634,19 @@ def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatc
     monkeypatch.setattr(
         main_module,
         "load_char_data",
-        lambda spreadsheet, cache=None: (state.char_dict, state.name_dict, state.noncombat_char_dict),
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
     )
     monkeypatch.setattr(main_module, "capture_field_sheet_image", _failing_capture)
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
-        _make_notification("test-admin", 1, 0, "[진행]")
-    )
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[진행]"))
 
-    public_posts = [
-        c for c in mastodon.status_post_calls if "in_reply_to_id" not in c
-    ]
+    public_posts = [c for c in mastodon.status_post_calls if "in_reply_to_id" not in c]
     assert len(public_posts) == 1
     assert public_posts[0]["media_ids"] is None
     assert "유효 캐릭터" in public_posts[0]["status"]
@@ -643,12 +665,23 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     }
     name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -686,9 +719,7 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     )
     calls_before_action = len(mastodon.status_post_calls)
     listener.on_notification(
-        _make_notification(
-            first_acct, 4, active_post_id, f"[공격/{second_name}]"
-        )
+        _make_notification(first_acct, 4, active_post_id, f"[공격/{second_name}]")
     )
     # 캐릭터의 커맨드 답글이 이 액션으로 발생하는 첫 번째 게시물이다 — 다음
     # 라운드 공지는 예전 라운드 공지(active_post_id)가 아니라 이 답글에
@@ -799,12 +830,23 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
     }
     name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -843,7 +885,9 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
     하므로 attack_range를 전체 열 폭(7)으로 넉넉히 잡는다 — 그렇지 않으면
     무작위 배치 결과에 따라 사거리 밖 판정으로 테스트가 간헐적으로 실패한다.
     """
-    monkeypatch.setattr(log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {})
+    monkeypatch.setattr(
+        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
+    )
     state = _make_state()
     char_dict = {"player_acct": get_test_preset("전사", attack_range=7)}
     name_dict = {
@@ -851,12 +895,23 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
         "고블린": get_test_preset("고블린", max_hp=enemy_max_hp),
     }
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -890,10 +945,9 @@ def test_dm_battle_start_places_enemy_by_command_and_allies_by_mention(monkeypat
     assert warrior_id in dm_state.session.context.characters
     assert dm_state.session.context.characters[goblin_id].faction == FactionType.ENEMY
     assert dm_state.session.context.characters[warrior_id].faction == FactionType.ALLY
-    assert (
-        dm_state.session.context.find_character_position(goblin_id)
-        == BattlefieldColumnIndex.from_str("1열")
-    )
+    assert dm_state.session.context.find_character_position(
+        goblin_id
+    ) == BattlefieldColumnIndex.from_str("1열")
     assert dm_state.session.started is True
 
 
@@ -920,10 +974,9 @@ def test_dm_battle_start_silently_accepts_faction_prefixed_column(monkeypatch):
     dm_state = next(iter(state.dm_battles.values()))
     goblin_id = CharacterId("고블린")
     assert goblin_id in dm_state.session.context.characters
-    assert (
-        dm_state.session.context.find_character_position(goblin_id)
-        == BattlefieldColumnIndex.from_str("1열")
-    )
+    assert dm_state.session.context.find_character_position(
+        goblin_id
+    ) == BattlefieldColumnIndex.from_str("1열")
 
 
 def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
@@ -962,9 +1015,7 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     # 이어져야 한다(이전 공지에 다시 답글로 달면 확인 답글과 형제가 되어
     # 스레드가 갈라진다).
     calls_before_advance = len(mastodon.status_post_calls)
-    listener.on_notification(
-        _make_notification("test-admin", 3, pre_post_id, "[진행]")
-    )
+    listener.on_notification(_make_notification("test-admin", 3, pre_post_id, "[진행]"))
     confirmation_id = 9000 + calls_before_advance
     ally_call = mastodon.status_post_calls[-1]
     assert ally_call["visibility"] == "direct"
@@ -997,8 +1048,12 @@ def test_dm_battle_phase_posts_chain_off_confirmation_not_stale_post(monkeypatch
 
     listener.on_notification(
         _make_notification(
-            "test-admin", 1, 0, "[전투 발생][배치/고블린/1열]",
-            visibility="direct", extra_mentions=["player_acct"],
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
         )
     )
     dm_state = next(iter(state.dm_battles.values()))
@@ -1051,9 +1106,7 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
     dm_state = next(iter(state.dm_battles.values()))
     pre_post_id = dm_state.active_post_id
 
-    listener.on_notification(
-        _make_notification("test-admin", 2, pre_post_id, "[진행]")
-    )
+    listener.on_notification(_make_notification("test-admin", 2, pre_post_id, "[진행]"))
     active_post_id = dm_state.active_post_id
 
     listener.on_notification(
@@ -1067,7 +1120,9 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
 def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
     """두 개의 DM 전투가 동시에 진행되어도 서로의 상태(적/아군 배치, 라운드)가
     섞이면 안 된다 — state.dm_battles는 여러 인스턴스를 동시에 관리해야 한다."""
-    monkeypatch.setattr(log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {})
+    monkeypatch.setattr(
+        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
+    )
     state = _make_state()
     char_dict = {
         "player1_acct": get_test_preset("전사1"),
@@ -1080,12 +1135,23 @@ def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
         "오크": get_test_preset("오크"),
     }
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")

@@ -156,7 +156,10 @@ class BattlefieldContext:
         붙이지 않는다."""
         if not isinstance(buff, BuffCompanionGuardian):
             return ""
-        companion = self.characters.get(self.find_companion_id(char_id))
+        companion_id = self.find_companion_id(char_id)
+        if companion_id is None:
+            return ""
+        companion = self.characters.get(companion_id)
         if companion is None:
             return ""
         max_hp = companion.status[CombatStatType.MAX_HP]
@@ -485,7 +488,9 @@ class BattlefieldContext:
         스킬 효과는 그 이름을 다시 알 필요 없이 이 메서드로 위임한다."""
         companion_id = self.find_companion_id(owner_id)
         if companion_id is None:
-            raise ValueError(f"{owner_id.name}의 동료가 아직 한 번도 소환되지 않았습니다.")
+            raise ValueError(
+                f"{owner_id.name}의 동료가 아직 한 번도 소환되지 않았습니다."
+            )
 
         owner = self.characters.get(owner_id)
         if owner is None:

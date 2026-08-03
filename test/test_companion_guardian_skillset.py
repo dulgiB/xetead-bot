@@ -313,7 +313,9 @@ class TestSummonAtBattleStart:
         ctx = _make_context()
         _add_owner(ctx, max_hp=200, atk=100)
         ctx.add_character(
-            get_test_preset("적군", max_hp=1000), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
 
         ctx.on_battle_start()
@@ -322,7 +324,9 @@ class TestSummonAtBattleStart:
         companion = ctx.characters[companion_id]
         assert companion.status.curr_hp == 40
         assert companion.faction == FactionType.ALLY
-        assert ctx.find_character_position(companion_id) == ctx.find_character_position(OWNER)
+        assert ctx.find_character_position(companion_id) == ctx.find_character_position(
+            OWNER
+        )
 
     def test_field_display_shows_companion_hp_next_to_guardian_buff(self):
         """[CompanionBuff1] 버프 표시줄에만 동료 체력이 "(이름: 현재/최대)" 형식으로
@@ -330,7 +334,9 @@ class TestSummonAtBattleStart:
         ctx = _make_context()
         _add_owner(ctx, max_hp=200, atk=100)
         ctx.add_character(
-            get_test_preset("적군", max_hp=1000), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
 
         ctx.on_battle_start()
@@ -364,7 +370,9 @@ class TestSummonAtBattleStart:
         ctx.add_character(
             get_test_preset("아군3"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
-        assert ctx.try_find_empty_slot(FactionType.ALLY, BattlefieldColumnIndex(0)) is None
+        assert (
+            ctx.try_find_empty_slot(FactionType.ALLY, BattlefieldColumnIndex(0)) is None
+        )
 
         ctx.on_battle_start()
         companion_id = _companion_id(ctx)
@@ -373,8 +381,15 @@ class TestSummonAtBattleStart:
         assert ctx.characters[companion_id].status.curr_hp == 40
         assert ctx.find_character_position(companion_id) == BattlefieldColumnIndex(0)
         # 슬롯 자체는 여전히 3/3 그대로다 — 동료가 슬롯을 차지하지 않았다는 뜻.
-        assert ctx.try_find_empty_slot(FactionType.ALLY, BattlefieldColumnIndex(0)) is None
-        assert companion_id not in ctx.position_map[FactionType.ALLY][BattlefieldColumnIndex(0)].values()
+        assert (
+            ctx.try_find_empty_slot(FactionType.ALLY, BattlefieldColumnIndex(0)) is None
+        )
+        assert (
+            companion_id
+            not in ctx.position_map[FactionType.ALLY][
+                BattlefieldColumnIndex(0)
+            ].values()
+        )
 
     def test_enemy_column_aoe_splits_as_single_hit_on_owner(self):
         """동료가 position_map에 없어도 owner의 열을 노리는 열 대상(AOE)
@@ -416,14 +431,18 @@ class TestCost2Skill:
         ctx = _make_context()
         _add_owner(ctx, max_hp=200, atk=100)
         ctx.add_character(
-            get_test_preset("적군", max_hp=1000), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
         ctx.on_battle_start()
         manager = _setup_ally_phase(ctx)
         target = CharacterId("적군")
 
         hp_before = ctx.characters[target].status.curr_hp
-        manager.process_command(parse_character_command(OWNER, "[Cost2Skill/적군]", ctx))
+        manager.process_command(
+            parse_character_command(OWNER, "[Cost2Skill/적군]", ctx)
+        )
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 200
@@ -435,14 +454,18 @@ class TestCost2Skill:
         ctx = _make_context()
         _add_owner(ctx, max_hp=200, atk=100)
         ctx.add_character(
-            get_test_preset("적군", max_hp=1000), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
         # on_battle_start()를 호출하지 않아 동료가 존재하지 않는 상태를 재현한다.
         manager = _setup_ally_phase(ctx)
         target = CharacterId("적군")
 
         hp_before = ctx.characters[target].status.curr_hp
-        manager.process_command(parse_character_command(OWNER, "[Cost2Skill/적군]", ctx))
+        manager.process_command(
+            parse_character_command(OWNER, "[Cost2Skill/적군]", ctx)
+        )
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 250
@@ -456,7 +479,9 @@ class TestCost3Skill:
         ctx = _make_context()
         _add_owner(ctx, max_hp=200, atk=100)
         ctx.add_character(
-            get_test_preset("적군", max_hp=1000), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
         return ctx
 
@@ -478,7 +503,8 @@ class TestCost3Skill:
         )
         assert ctx.characters[companion_id].status.curr_hp == companion_hp_before - 10
         assert any(
-            b.id == "CompanionBuff2" for b in ctx.buff_container.get_buffs_by(OWNER, None)
+            b.id == "CompanionBuff2"
+            for b in ctx.buff_container.get_buffs_by(OWNER, None)
         )
 
     def test_companion_hp_clamps_to_zero_when_below_spend_amount(self):
@@ -492,7 +518,8 @@ class TestCost3Skill:
 
         assert ctx.characters[companion_id].status.curr_hp == 0
         assert any(
-            b.id == "CompanionBuff2" for b in ctx.buff_container.get_buffs_by(OWNER, None)
+            b.id == "CompanionBuff2"
+            for b in ctx.buff_container.get_buffs_by(OWNER, None)
         )
 
     def test_resummons_companion_at_10_percent_when_dead(self):
@@ -514,7 +541,8 @@ class TestCost3Skill:
         assert hp_before - hp_after == 80
         assert ctx.characters[companion_id].status.curr_hp == 20  # 200 * 10%
         assert not any(
-            b.id == "CompanionBuff2" for b in ctx.buff_container.get_buffs_by(OWNER, None)
+            b.id == "CompanionBuff2"
+            for b in ctx.buff_container.get_buffs_by(OWNER, None)
         )
 
 
@@ -548,7 +576,9 @@ class TestCompanionGuardianSplitAndCounter:
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
         owner_damage = owner_hp_before - ctx.characters[OWNER].status.curr_hp
-        companion_damage = companion_hp_before - ctx.characters[companion_id].status.curr_hp
+        companion_damage = (
+            companion_hp_before - ctx.characters[companion_id].status.curr_hp
+        )
         enemy_damage = enemy_hp_before - ctx.characters[enemy].status.curr_hp
 
         # 고정 100 대미지를 절반씩(50/50) 나눠 받는다.

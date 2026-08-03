@@ -28,7 +28,7 @@ def _make_context_with_two_characters() -> BattlefieldContext:
 
 
 class _FakeHpWorksheet:
-    """"캐릭터"/"에너미" 시트 하나를 흉내낸다. name→행 매핑이 담긴 원본
+    """ "캐릭터"/"에너미" 시트 하나를 흉내낸다. name→행 매핑이 담긴 원본
     2차원 배열을 들고 있으며, update_cell 호출을 기록한다."""
 
     def __init__(self, rows: list[list], fail_for: set[str] | None = None):
@@ -49,7 +49,7 @@ class _FakeHpWorksheet:
 
 
 class _FakeSpreadsheetForHpLookup:
-    """"캐릭터"/"에너미" 두 시트로 구성된 가짜 스프레드시트. 헤더는
+    """ "캐릭터"/"에너미" 두 시트로 구성된 가짜 스프레드시트. 헤더는
     [name, curr_hp] 고정."""
 
     def __init__(self, char_names: list[str], enemy_names: list[str] | None = None):
@@ -83,10 +83,16 @@ def test_write_back_changed_hp_absorbs_failure_and_continues():
 
     entries = [
         BattleLogEntry(
-            target_name="아군1", kind=BattleLogEntryKind.DAMAGE, result="대미지 10", value=10
+            target_name="아군1",
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 10",
+            value=10,
         ),
         BattleLogEntry(
-            target_name="아군2", kind=BattleLogEntryKind.DAMAGE, result="대미지 5", value=5
+            target_name="아군2",
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 5",
+            value=5,
         ),
     ]
 
@@ -136,7 +142,10 @@ def test_write_back_changed_hp_logs_companion_miss_at_debug_not_error(caplog):
 
     entries = [
         BattleLogEntry(
-            target_name="동료", kind=BattleLogEntryKind.DAMAGE, result="대미지 5", value=5
+            target_name="동료",
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 5",
+            value=5,
         ),
     ]
 
@@ -145,8 +154,7 @@ def test_write_back_changed_hp_logs_companion_miss_at_debug_not_error(caplog):
 
     assert not any(r.levelno >= logging.ERROR for r in caplog.records)
     assert any(
-        r.levelno == logging.DEBUG and "동료" in r.getMessage()
-        for r in caplog.records
+        r.levelno == logging.DEBUG and "동료" in r.getMessage() for r in caplog.records
     )
 
 
@@ -160,7 +168,10 @@ def test_write_back_changed_hp_still_logs_error_for_non_companion_miss(caplog):
 
     entries = [
         BattleLogEntry(
-            target_name="아군2", kind=BattleLogEntryKind.DAMAGE, result="대미지 5", value=5
+            target_name="아군2",
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 5",
+            value=5,
         ),
     ]
 
@@ -168,8 +179,7 @@ def test_write_back_changed_hp_still_logs_error_for_non_companion_miss(caplog):
         log_sheets.write_back_changed_hp(spreadsheet, ctx, entries)
 
     assert any(
-        r.levelno == logging.ERROR and "아군2" in r.getMessage()
-        for r in caplog.records
+        r.levelno == logging.ERROR and "아군2" in r.getMessage() for r in caplog.records
     )
 
 
@@ -194,16 +204,17 @@ def test_write_back_changed_hp_reuses_given_cache():
     spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
     cache = SheetCache(
         spreadsheet,
-        worksheet_factory=lambda properties: spreadsheet.worksheet(
-            properties["title"]
-        ),
+        worksheet_factory=lambda properties: spreadsheet.worksheet(properties["title"]),
     )
     # load_char_data()가 커맨드 처리 초반에 이미 채워 뒀을 캐시를 흉내낸다.
     cache.get_all_records("캐릭터", value_render_option=log_sheets._UNFORMATTED)
 
     entries = [
         BattleLogEntry(
-            target_name="아군1", kind=BattleLogEntryKind.DAMAGE, result="대미지 10", value=10
+            target_name="아군1",
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 10",
+            value=10,
         ),
     ]
     log_sheets.write_back_changed_hp(spreadsheet, ctx, entries, cache=cache)
@@ -221,7 +232,15 @@ def test_upsert_field_row_invalidates_cache_after_write():
     class _FakeFieldWorksheet:
         def __init__(self):
             self.rows = [
-                ["id", "is_main", "started_at", "ended_at", "round", "phase", "characters_json"]
+                [
+                    "id",
+                    "is_main",
+                    "started_at",
+                    "ended_at",
+                    "round",
+                    "phase",
+                    "characters_json",
+                ]
             ]
             self.get_all_values_call_count = 0
 
@@ -233,7 +252,7 @@ def test_upsert_field_row_invalidates_cache_after_write():
             self.get_all_values_call_count += 1
             return self.rows
 
-        def update(self, range_name, values, value_input_option=None):
+        def update(self, values, range_name=None, value_input_option=None):
             # "A2:G2" 형식에서 행 번호만 뽑아 그 행을 갱신한다.
             row_idx = int(range_name[1:].split(":")[0])
             self.rows[row_idx - 1] = values[0]
@@ -255,12 +274,22 @@ def test_upsert_field_row_invalidates_cache_after_write():
     cache = SheetCache(spreadsheet, worksheet_factory=lambda properties: ws)
 
     log_sheets.upsert_field_row(
-        spreadsheet, "field-1", is_main=True, round_n=1, phase="ALLY_ACTION",
-        characters=[], cache=cache,
+        spreadsheet,
+        "field-1",
+        is_main=True,
+        round_n=1,
+        phase="ALLY_ACTION",
+        characters=[],
+        cache=cache,
     )
     log_sheets.upsert_field_row(
-        spreadsheet, "field-1", is_main=True, round_n=2, phase="ENEMY_POST_ACTION",
-        characters=[], cache=cache,
+        spreadsheet,
+        "field-1",
+        is_main=True,
+        round_n=2,
+        phase="ENEMY_POST_ACTION",
+        characters=[],
+        cache=cache,
     )
 
     # 두 번째 호출이 첫 번째가 삽입한 행을 찾아 갱신했어야 한다 — 새 행이

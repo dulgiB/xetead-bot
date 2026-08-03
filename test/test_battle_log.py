@@ -38,9 +38,13 @@ def test_build_log_entries_records_damage(context_with_damage_skill):
     ctx = context_with_damage_skill
     manager = _ally_action_manager(ctx)
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="강타"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="강타"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     before = len(ctx.results)
     cmd = parse_character_command(CharacterId("아군 1"), "[강타/적군 1]", ctx)
@@ -65,7 +69,9 @@ def test_build_log_entries_records_heal(context_with_heal_skill):
         BattlefieldColumnIndex(0),
     )
     ctx.add_character(
-        get_test_preset("아군 2", initial_hp=50), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 2", initial_hp=50),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
 
     before = len(ctx.results)
@@ -89,7 +95,9 @@ def test_build_log_entries_records_buff_add(context_with_atk_buff_skill):
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(1))
+    ctx.add_character(
+        get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(1)
+    )
 
     before = len(ctx.results)
     cmd = parse_character_command(CharacterId("아군 1"), "[공격 보조/아군 2]", ctx)
@@ -135,7 +143,9 @@ def test_build_log_entries_records_stacking_buff_add_with_stack_count():
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="쌓기"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="쌓기"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
 
     before = len(ctx.results)
@@ -184,15 +194,23 @@ def test_build_log_entries_records_buff_remove_from_stack_consumption():
         ],
         description="",
     )
-    ctx = BattlefieldContext(buff_dict={"재앙": stack_buff}, skill_dict={"전가": consume_skill})
+    ctx = BattlefieldContext(
+        buff_dict={"재앙": stack_buff}, skill_dict={"전가": consume_skill}
+    )
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="전가"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="전가"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
     ctx.buff_container.add(
-        BuffAddData(given_by=caster_id, applied_to=caster_id, buff_id="재앙", stack_value=3)
+        BuffAddData(
+            given_by=caster_id, applied_to=caster_id, buff_id="재앙", stack_value=3
+        )
     )
 
     before = len(ctx.results)
@@ -236,14 +254,20 @@ def test_build_log_entries_records_debuff_clear():
         effects=[SkillEffectRemoveDebuffs(None, None, None, None, None)],
         description="",
     )
-    ctx = BattlefieldContext(buff_dict={"독": debuff}, skill_dict={"정화": cleanse_skill})
+    ctx = BattlefieldContext(
+        buff_dict={"독": debuff}, skill_dict={"정화": cleanse_skill}
+    )
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     target_id = CharacterId("아군 2")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="정화"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", skill_1_id="정화"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(1))
+    ctx.add_character(
+        get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(1)
+    )
     ctx.buff_container.add(
         BuffAddData(given_by=caster_id, applied_to=target_id, buff_id="독")
     )
@@ -312,7 +336,9 @@ class _FakeSpreadsheet:
 
 
 def test_inventory_grant_appends_new_row_when_recipient_has_no_history():
-    ws = _FakeWorksheet(["character_name", "item_id", "count"], [["아군 1", "포션", "1"]])
+    ws = _FakeWorksheet(
+        ["character_name", "item_id", "count"], [["아군 1", "포션", "1"]]
+    )
     spreadsheet = _FakeSpreadsheet(ws)
     inv = Inventory({("아군 1", "포션"): 1}, spreadsheet)
 

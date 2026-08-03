@@ -8,7 +8,7 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.core.commands.models import CommandPartCalculator
+    from battle.core.command_calculator import CommandPartCalculator
 
 
 class BuffEventCalculatePriority(Enum):

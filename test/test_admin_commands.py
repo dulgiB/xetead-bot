@@ -27,15 +27,16 @@ def test_force_move_updates_position(empty_context, empty_manager):
             to_position=BattlefieldColumnIndex(2),
         )
     )
-    assert (
-        empty_context.find_character_position(CharacterId("아군 1"))
-        == BattlefieldColumnIndex(2)
-    )
+    assert empty_context.find_character_position(
+        CharacterId("아군 1")
+    ) == BattlefieldColumnIndex(2)
 
 
 def test_force_damage_and_heal(empty_context, empty_manager):
     empty_context.add_character(
-        get_test_preset("아군 1", max_hp=100), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", max_hp=100),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
     empty_manager.process_command(
         ForceDamageCommand(

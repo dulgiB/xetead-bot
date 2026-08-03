@@ -6,6 +6,7 @@ from battle.objects.buff.conditions import Condition
 from battle.objects.define import BuffCountDeductCondition, ValueType
 from battle.objects.models import CharacterId
 from utils.spreadsheet_bool import parse_spreadsheet_bool
+from utils.spreadsheet_row import SpreadsheetRow
 
 if TYPE_CHECKING:
     from battle.objects.buff.buff_base import BuffBase
@@ -42,14 +43,14 @@ class BuffData:
     reference_buff_id: Optional[str] = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, str | int]) -> "BuffData":
+    def from_dict(cls, data: SpreadsheetRow) -> "BuffData":
         return BuffData(
-            id=data["id"],
-            buff_class_name=data["buff_name"],
-            duration_turn_value=data["duration_turn_value"]
+            id=str(data["id"]),
+            buff_class_name=str(data["buff_name"]),
+            duration_turn_value=int(data["duration_turn_value"])
             if data["duration_turn_value"]
             else None,
-            duration_count_value=data["duration_count_value"]
+            duration_count_value=int(data["duration_count_value"])
             if data["duration_count_value"]
             else None,
             duration_count_deduct_condition=BuffCountDeductCondition(
@@ -58,15 +59,17 @@ class BuffData:
             if data["duration_count_deduct_condition"]
             else None,
             value_type=ValueType(data["value_type"]) if data["value_type"] else None,
-            value=data["value"] if data["value_type"] else 0,
-            condition_=data["condition"] if data["condition"] else None,
-            condition_value=data["condition_value"]
+            value=int(data["value"]) if data["value_type"] else 0,
+            condition_=str(data["condition"]) if data["condition"] else None,
+            condition_value=int(data["condition_value"])
             if data["condition_value"]
             else None,
             is_debuff=parse_spreadsheet_bool(data.get("is_debuff", False)),
-            description=data["description"],
+            description=str(data["description"]),
             max_stack=int(data["max_stack"]) if data.get("max_stack") else None,
-            reference_buff_id=data.get("reference_buff_id") or None,
+            reference_buff_id=str(data["reference_buff_id"])
+            if data.get("reference_buff_id")
+            else None,
         )
 
     @property
@@ -116,18 +119,22 @@ class PassiveBuffData:
     reference_buff_id: Optional[str] = None
 
     @classmethod
-    def from_dict(cls, data: dict[str, str | int]) -> "PassiveBuffData":
+    def from_dict(cls, data: SpreadsheetRow) -> "PassiveBuffData":
         return cls(
-            id=data["id"],
-            buff_class_name=data["buff_name"],
+            id=str(data["id"]),
+            buff_class_name=str(data["buff_name"]),
             value=int(data["value"]) if data.get("value") else 0,
-            value_type=ValueType(data["value_type"]) if data.get("value_type") else None,
-            condition_=data.get("condition") or None,
+            value_type=ValueType(data["value_type"])
+            if data.get("value_type")
+            else None,
+            condition_=str(data["condition"]) if data.get("condition") else None,
             condition_value=int(data["condition_value"])
             if data.get("condition_value")
             else None,
-            description=data.get("description", ""),
-            reference_buff_id=data.get("reference_buff_id") or None,
+            description=str(data.get("description", "")),
+            reference_buff_id=str(data["reference_buff_id"])
+            if data.get("reference_buff_id")
+            else None,
         )
 
     @property

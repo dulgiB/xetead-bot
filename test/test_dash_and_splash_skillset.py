@@ -36,7 +36,9 @@ def cost3_skill() -> SkillData:
         target_count=1,
         cost=3,
         effects=[
-            SkillEffectMove(ValueSourceType.TARGET_CURR_POSITION, None, None, None, None),
+            SkillEffectMove(
+                ValueSourceType.TARGET_CURR_POSITION, None, None, None, None
+            ),
             SkillEffectDamage(
                 ValueSourceType.STAT_ATK_ROLL, 320, ValueType.PERCENT, None, None
             ),

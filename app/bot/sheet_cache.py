@@ -25,7 +25,7 @@ gspread.Spreadsheet.worksheet(name)은 이름이 무엇이든 매번 스프레�
 뒤쪽 코드가 쓰기 전 값을 다시 읽을 수 있다).
 """
 
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 import gspread
 from gspread.utils import ValueRenderOption, numericise_all, to_records
@@ -39,11 +39,9 @@ class SheetCache:
         worksheet_factory=None,
     ):
         self._spreadsheet = spreadsheet
-        self._sheet_metadata: Optional[dict] = None
+        self._sheet_metadata: Optional[Mapping[str, Any]] = None
         self._worksheets: dict[str, gspread.Worksheet] = {}
-        self._raw_values: dict[
-            tuple[str, Optional[ValueRenderOption]], list[list]
-        ] = {}
+        self._raw_values: dict[tuple[str, Optional[ValueRenderOption]], list[list]] = {}
         # 테스트에서 실제 gspread.Worksheet(HTTP 클라이언트 필요) 없이도
         # worksheet() 캐싱/메타데이터 재사용 로직을 검증할 수 있도록 하는 seam.
         self._worksheet_factory = worksheet_factory or self._build_worksheet

@@ -26,7 +26,9 @@ def test_given_and_received_groups_multiply_independently():
     value = ValueWithModifiers(
         100,
         given_modifiers=[FloatValueModifier(source_name="주는 대미지 증가", value=30)],
-        received_modifiers=[FloatValueModifier(source_name="받는 대미지 감소", value=-10)],
+        received_modifiers=[
+            FloatValueModifier(source_name="받는 대미지 감소", value=-10)
+        ],
     )
     assert value.get_value(None, _USER, _TARGET, 0) == 117
 
@@ -94,7 +96,9 @@ def test_fixed_value_still_applies_non_buff_mechanics():
 def test_format_calculation_returns_none_for_plain_fixed_value():
     """modifier가 전혀 없는 FIXED 값은 보여줄 계산식이 없으므로 None."""
     value = ValueWithModifiers(
-        BaseValueIndicator(ValueSourceType.FIXED, 50), given_modifiers=[], received_modifiers=[]
+        BaseValueIndicator(ValueSourceType.FIXED, 50),
+        given_modifiers=[],
+        received_modifiers=[],
     )
     value.get_value(None, _USER, _TARGET, 0)
     assert value.format_calculation() is None
@@ -129,7 +133,9 @@ def test_format_calculation_matches_given_received_group_example():
         ],
         received_modifiers=[
             FloatValueModifier(source_name="받는 대미지 감소", value=-10),
-            FloatValueModifier(source_name="마법 저항", value=15, applies_to_fixed=True),
+            FloatValueModifier(
+                source_name="마법 저항", value=15, applies_to_fixed=True
+            ),
         ],
     )
     value.roll_result = DiceRollResult(bonus_list=[4], n_sides=6, rolls=[3])

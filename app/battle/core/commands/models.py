@@ -33,9 +33,10 @@ class CommandPart:
     skill_id: Optional[str] = None
     item_id: Optional[str] = None
 
-    targets: list[CharacterId] | list[BattlefieldColumnIndex] = field(
-        default_factory=list
-    )
+    # 대부분의 커맨드는 한 종류만 담지만, SkillTargetRuleNamedWithColumn처럼
+    # 캐릭터 이름과 열을 한 커맨드에 함께 지정하는 경우가 있어 원소별로
+    # 섞일 수 있는 타입이다(list[A] | list[B]가 아니라 list[A | B]).
+    targets: list[CharacterId | BattlefieldColumnIndex] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -167,7 +168,9 @@ class BattleLogEntry:
     roll_display: Optional[str] = None
     value: Optional[int] = None  # damage/heal 최종 수치
     buff_id: Optional[str] = None  # buff_add/buff_remove
-    stack_delta: Optional[int] = None  # buff_add: 이번에 추가된 스택 / buff_remove: 이번에 소모된 스택
+    stack_delta: Optional[int] = (
+        None  # buff_add: 이번에 추가된 스택 / buff_remove: 이번에 소모된 스택
+    )
     # damage/heal 적용 직후의 대상 HP/최대 HP 스냅샷. 같은 커맨드에서 같은
     # 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상), 답글 포매터가
     # 나중에 context를 다시 조회하면 최종 HP만 보이게 되므로 이 시점 값을

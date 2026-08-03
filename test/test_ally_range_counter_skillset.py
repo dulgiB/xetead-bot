@@ -323,9 +323,7 @@ class TestPassiveSkill:
         )
 
         enemy_hp_before = ctx.characters[enemy].status.curr_hp
-        manager.process_command(
-            parse_character_command(enemy, "[공격/아군2]", ctx)
-        )
+        manager.process_command(parse_character_command(enemy, "[공격/아군2]", ctx))
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         enemy_hp_after = ctx.characters[enemy].status.curr_hp
 
@@ -389,7 +387,9 @@ class TestPassiveSkill:
             _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
         )
         ctx.buff_container.add(
-            _buff_add(given_by="적군", applied_to="적군", buff_id="받는대미지감소_테스트")
+            _buff_add(
+                given_by="적군", applied_to="적군", buff_id="받는대미지감소_테스트"
+            )
         )
 
         enemy_hp_before = ctx.characters[enemy].status.curr_hp
@@ -407,9 +407,7 @@ class TestPassiveSkill:
         enemy = CharacterId("적군")
 
         enemy_hp_before = ctx.characters[enemy].status.curr_hp
-        manager.process_command(
-            parse_character_command(enemy, "[공격/아군2]", ctx)
-        )
+        manager.process_command(parse_character_command(enemy, "[공격/아군2]", ctx))
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         enemy_hp_after = ctx.characters[enemy].status.curr_hp
 
@@ -425,9 +423,7 @@ class TestPassiveSkill:
         )
 
         enemy_hp_before = ctx.characters[enemy].status.curr_hp
-        manager.process_command(
-            parse_character_command(enemy, "[공격/아군2]", ctx)
-        )
+        manager.process_command(parse_character_command(enemy, "[공격/아군2]", ctx))
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         enemy_hp_after = ctx.characters[enemy].status.curr_hp
 
@@ -528,7 +524,9 @@ class TestGivenAndReceivedDamageBuff:
         marked = CharacterId("마크아군")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("마크아군", atk=100), FactionType.ALLY, BattlefieldColumnIndex(0)
+            get_test_preset("마크아군", atk=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
         )
         ctx.add_character(
             get_test_preset("적군", max_hp=1000),
@@ -556,7 +554,9 @@ class TestGivenAndReceivedDamageBuff:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", atk=100), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", atk=100),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
         ctx.buff_container.add(
             _buff_add(given_by="마크아군", applied_to="마크아군", buff_id="버프_2")
@@ -586,7 +586,9 @@ class TestCounterOnMarkedAllyAttackBuff:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("마크아군", atk=100), FactionType.ALLY, BattlefieldColumnIndex(1)
+            get_test_preset("마크아군", atk=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(1),
         )
         ctx.add_character(
             get_test_preset("적군", max_hp=10000),
@@ -644,7 +646,9 @@ class TestCounterOnMarkedAllyAttackBuff:
         대미지" 버프의 영향을 받아야 한다."""
         ctx, manager, holder, marked, enemy = self._setup()
         ctx.buff_container.add(
-            _buff_add(given_by="적군", applied_to="적군", buff_id="받는대미지감소_테스트")
+            _buff_add(
+                given_by="적군", applied_to="적군", buff_id="받는대미지감소_테스트"
+            )
         )
 
         hp_before = ctx.characters[enemy].status.curr_hp

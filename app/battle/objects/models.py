@@ -180,7 +180,10 @@ def _bucket_modifiers(
 
 @dataclass
 class ValueWithModifiers:
-    base_value: BaseValueIndicator
+    # int는 실제 커맨드 파이프라인에서는 쓰이지 않고, calculator 없이 계수/
+    # 그룹 계산만 검증하는 테스트에서 raw 값을 바로 넘기는 용도다(get_value()가
+    # calculator를 참조하지 않고 그대로 반환하는 지름길을 탄다).
+    base_value: int | BaseValueIndicator
     given_int_modifiers: list[IntValueModifier]
     given_float_modifiers: list[FloatValueModifier]
     received_int_modifiers: list[IntValueModifier]
@@ -192,7 +195,7 @@ class ValueWithModifiers:
 
     def __init__(
         self,
-        base_value: BaseValueIndicator,
+        base_value: int | BaseValueIndicator,
         given_modifiers: list[ValueModifierBase],
         received_modifiers: list[ValueModifierBase],
     ):
@@ -233,6 +236,7 @@ class ValueWithModifiers:
         target: CharacterId,
         effect_seq_number: int,
     ) -> int:
+        base_value: int | DiceRollResult
         if isinstance(self.base_value, int):
             base_value = self.base_value
         elif isinstance(self.base_value, BaseValueIndicator):
@@ -334,9 +338,12 @@ class ValueWithModifiers:
             if not float_modifiers:
                 continue
             group_str = "1"
-            for modifier in float_modifiers:
-                sign = "-" if modifier.value < 0 else "+"
-                group_str += f" {sign} {abs(modifier.value) / 100:g}[{modifier.source_name}]"
+            for float_modifier in float_modifiers:
+                sign = "-" if float_modifier.value < 0 else "+"
+                group_str += (
+                    f" {sign} {abs(float_modifier.value) / 100:g}"
+                    f"[{float_modifier.source_name}]"
+                )
             result_str += f" × ({group_str})"
 
         return result_str

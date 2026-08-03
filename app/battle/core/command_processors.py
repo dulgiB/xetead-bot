@@ -1,5 +1,5 @@
 from dataclasses import replace
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from utils.battle_helpers import is_reachable
 
@@ -174,9 +174,10 @@ def try_process_enemy_command_on_post_action(
 
 def try_expansion_if_valid(
     context: BattlefieldContext, command: CharacterCommand
-) -> Optional[tuple[list[CommandPartData], int]]:
+) -> tuple[list[CommandPartData], int]:
     """
     커맨드 실행 전 사전 검증. 문제가 있으면 CommandValidationError를 raise한다.
+    (None을 반환하는 경우는 없다 — 검증 실패는 항상 예외로 알린다.)
     검증 항목:
       1. 커맨드 사용자가 전장에 존재하는지
       2. 코스트가 충분한지
@@ -239,9 +240,7 @@ def try_expansion_if_valid(
             if not context.has_item(part.item_id):
                 raise CommandValidationError(error_item_does_not_exist(part.item_id))
             if context.inventory.get_count(command.user_id.name, part.item_id) <= 0:
-                raise CommandValidationError(
-                    error_no_item_in_inventory(part.item_id)
-                )
+                raise CommandValidationError(error_no_item_in_inventory(part.item_id))
 
     # 커맨드 전체의 코스트를 한꺼번에 산출한다 — 되는 데까지 처리해주지 않고
     # 전체 코스트가 부족하면 아예 미처리한다.
@@ -254,13 +253,15 @@ def try_expansion_if_valid(
     expanded_command_data_list = expand_character_command(command, context)
     for command_data in expanded_command_data_list:
         # 아이템은 고유 사거리를 사용하고, 그 외(공격/스킬)는 캐릭터의 사거리 스탯을 사용한다.
-        part = command_data.original_part
+        original_part = command_data.original_part
         if (
-            part is not None
-            and part.type_ == ActionType.USE_ITEM
-            and part.item_id is not None
+            original_part is not None
+            and original_part.type_ == ActionType.USE_ITEM
+            and original_part.item_id is not None
         ):
-            effective_range = context.get_item_data_by_id(part.item_id).attack_range
+            effective_range = context.get_item_data_by_id(
+                original_part.item_id
+            ).attack_range
         else:
             effective_range = attack_range
 

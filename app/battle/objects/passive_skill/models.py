@@ -8,6 +8,7 @@ from battle.objects.buff.models import PassiveBuffData
 from battle.objects.define import MAX_PASSIVE_EFFECT_COUNT
 from battle.objects.models import BuffUid, CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
+from utils.spreadsheet_row import SpreadsheetRow
 
 # buff_mod_event 추출용 임시 인스턴스는 create_event()만 호출되고 버려지므로
 # given_by/applied_to/uid는 실제로 쓰이지 않는다 — 전투 참가자가 아직 없는
@@ -47,10 +48,11 @@ class PassiveSkillData:
 
     @classmethod
     def from_dict(
-        cls, data: dict, passive_buff_dict: dict[str, PassiveBuffData]
+        cls, data: SpreadsheetRow, passive_buff_dict: dict[str, PassiveBuffData]
     ) -> "PassiveSkillData":
         buff_mod_event: Optional[BuffEvent] = None
-        top_buff_id = data.get("buff_id") or None
+        top_buff_id_raw = data.get("buff_id") or None
+        top_buff_id = str(top_buff_id_raw) if top_buff_id_raw is not None else None
         if top_buff_id:
             passive_buff_data = passive_buff_dict[top_buff_id]
             buff_module = importlib.import_module("battle.objects.buff.buffs")
@@ -78,10 +80,10 @@ class PassiveSkillData:
                 effects.append(effect)
 
         return cls(
-            id=data["id"],
+            id=str(data["id"]),
             trigger=PassiveSkillTrigger(data["trigger"]),
             target_type=PassiveSkillTargetType(data["target_type"]),
             effects=effects,
             buff_mod_event=buff_mod_event,
-            description=data.get("description", ""),
+            description=str(data.get("description", "")),
         )

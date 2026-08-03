@@ -97,6 +97,9 @@ class PassiveSkillWrapperEvent(BuffEvent):
     ) -> None:
         if self.role == "buff_mod":
             assert self.passive_data.buff_mod_event is not None
+            # buff_mod은 ON_ACTION 또는 반응형 타이밍(_REACTIVE_TRIGGER_TIMING)으로만
+            # 등록되므로, 이 경로로 apply()가 호출될 때는 항상 실제 상대가 있다.
+            assert attacker_or_target is not None
             self.passive_data.buff_mod_event.apply(
                 holder, attacker_or_target, calculator, effect_seq_number
             )
@@ -167,6 +170,9 @@ class PassiveSkillWrapperBuff(BuffBase):
     필요) 하나의 PassiveSkillData가 buff_mod_event와 effects를 모두 가지면
     `create()`가 역할별로 나뉜 버프 인스턴스 여러 개를 반환한다.
     """
+
+    _passive_data: PassiveSkillData
+    _role: Literal["buff_mod", "effects"]
 
     @classmethod
     def create(

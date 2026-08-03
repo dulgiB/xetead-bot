@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from battle.exceptions import (
     CommandValidationError,
@@ -25,7 +25,7 @@ class SkillTargetRule(abc.ABC):
 
     @abc.abstractmethod
     def get_targets(
-        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
         pass
 
@@ -43,7 +43,7 @@ class SkillTargetRuleSelf(SkillTargetRule):
         return True
 
     def get_targets(
-        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
         return [self.skill_holder_id]
 
@@ -59,13 +59,14 @@ class SkillTargetRuleColumn(SkillTargetRule):
     """
 
     def get_targets(
-        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
-        target_id_list = []
+        target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
         assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
-        for column in targets:
+        columns = cast(list[BattlefieldColumnIndex], targets)
+        for column in columns:
             target_id_list += self.context.position_map[target_faction][column].values()
 
         # position_map 슬롯을 차지하지 않는 동료(예: 소환수)는 열 대상에
@@ -87,13 +88,14 @@ class SkillTargetRuleAllyColumn(SkillTargetRule):
     """
 
     def get_targets(
-        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
-        target_id_list = []
+        target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].faction
 
         assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
-        for column in targets:
+        columns = cast(list[BattlefieldColumnIndex], targets)
+        for column in columns:
             target_id_list += self.context.position_map[target_faction][column].values()
         return target_id_list
 
@@ -108,10 +110,10 @@ class SkillTargetRuleNamed(SkillTargetRule):
     """
 
     def get_targets(
-        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
         assert all(isinstance(target, CharacterId) for target in targets)
-        return targets
+        return cast(list[CharacterId], targets)
 
 
 @dataclass(frozen=True)
@@ -126,7 +128,7 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
     """
 
     def get_targets(
-        self, targets: list[BattlefieldColumnIndex] | list[CharacterId]
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
         characters = [t for t in targets if isinstance(t, CharacterId)]
         columns = [t for t in targets if isinstance(t, BattlefieldColumnIndex)]
@@ -137,8 +139,6 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
         if columns:
             target_pos = self.context.find_character_position(characters[0])
             if abs(target_pos.value - columns[0].value) != 1:
-                raise CommandValidationError(
-                    error_invalid_move_destination(columns[0])
-                )
+                raise CommandValidationError(error_invalid_move_destination(columns[0]))
 
         return characters

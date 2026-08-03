@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional, Self
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_events import BuffEvent
@@ -92,7 +92,7 @@ class BuffDurationCounter:
         return True
 
     def display_text(self, stack_count: Optional[int] = None) -> str:
-        """"(N턴/M회)" 또는 "(N턴/M스택)" 형식의 표시 텍스트.
+        """ "(N턴/M회)" 또는 "(N턴/M스택)" 형식의 표시 텍스트.
 
         stack_count는 적층형 버프(max_stack이 있는 버프)에 한해 호출측이
         넘긴다. 구조상 적층형 버프는 duration_count_value(횟수)를 쓰지
@@ -153,11 +153,11 @@ class BuffBase(abc.ABC):
         uid: BuffUid,
         given_by: CharacterId,
         applied_to: CharacterId,
-        value: Optional[int] = 0,
+        value: int = 0,
         value_type: Optional[ValueType] = None,
         condition: Optional[Condition] = None,
         reference_buff_id: Optional[str] = None,
-    ) -> "BuffBase":
+    ) -> Self:
         """ "버프" 시트의 BuffData 없이 필드를 직접 채워 인스턴스화한다
         (__init__은 BuffData를 요구하므로 우회 경로가 필요한 곳 전용 —
         패시브 스킬 래퍼, 패시브 버프 모디파이어 값 템플릿). BuffBase에

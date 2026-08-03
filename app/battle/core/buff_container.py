@@ -197,8 +197,9 @@ class BuffContainer:
         event_pairs = self._collect_reactive_event_pairs(
             BuffApplyTiming.ALLY_DAMAGED,
             damaged_char.faction,
-            lambda holder_id: self._context.find_character_position(holder_id)
-            == damaged_pos,
+            lambda holder_id: (
+                self._context.find_character_position(holder_id) == damaged_pos
+            ),
         )
         self._apply_reactive_events(
             event_pairs, damaged_char_id, calculator, effect_seq_number
