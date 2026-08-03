@@ -6,6 +6,7 @@ from battle.core.battlefield_context import BattlefieldContext
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, FactionType
+from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.skill.models import SkillData
 from battle.practice.define import SideType
@@ -31,10 +32,17 @@ class PracticeBattlefieldContext(BattlefieldContext):
     """
 
     def __init__(
-        self, buff_dict: dict[str, BuffData], skill_dict: dict[str, SkillData]
+        self,
+        buff_dict: dict[str, BuffData],
+        skill_dict: dict[str, SkillData],
+        item_dict: "dict[str, ItemData] | None" = None,
     ):
-        # 대련에는 milestone_n이 의미 없으므로 고정. 아이템/인벤토리는 미지원.
-        super().__init__(buff_dict, skill_dict, milestone_n=1)
+        # 대련에는 milestone_n이 의미 없으므로 고정. 인벤토리(보유/소비)는
+        # 미지원이지만, item_dict는 넘겨받아 이름 조회에는 쓴다 — 그래야
+        # 파서가 "이건 실존하는 아이템인데 여기선 못 쓴다"와 "이건 애초에
+        # 등록된 스킬도 아이템도 아니다"를 구분해 정확한 에러를 낼 수 있다
+        # (allow_item_usage=False가 실제 사용 자체는 여전히 막는다).
+        super().__init__(buff_dict, skill_dict, item_dict=item_dict, milestone_n=1)
 
     @property
     def allow_item_usage(self) -> bool:

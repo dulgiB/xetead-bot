@@ -891,6 +891,35 @@ def test_dm_battle_start_places_enemy_by_command_and_allies_by_mention(monkeypat
     assert dm_state.session.started is True
 
 
+def test_dm_battle_start_silently_accepts_faction_prefixed_column(monkeypatch):
+    """DM 전투의 [배치/이름/열]은 진영 지정이 없는 문법이지만(배치 대상이
+    항상 적군으로 고정), 본 전투 문법인 [배치/이름/적군 N열]을 실수로 그대로
+    써도 에러 없이 "적군" 부분을 무시하고 열만 적용해야 한다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/적군 1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+
+    assert len(state.dm_battles) == 1
+    dm_state = next(iter(state.dm_battles.values()))
+    goblin_id = CharacterId("고블린")
+    assert goblin_id in dm_state.session.context.characters
+    assert (
+        dm_state.session.context.find_character_position(goblin_id)
+        == BattlefieldColumnIndex.from_str("1열")
+    )
+
+
 def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     """DM 전투의 모든 게시물은 최초 [전투 발생] DM의 visibility를 따르고 서로
     답글로 이어지며, 아군 커맨드로 적이 전멸하면 admin의 [진행] 없이 즉시

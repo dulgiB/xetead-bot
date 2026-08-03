@@ -579,13 +579,13 @@ def _cmd_practice_prep(
         buff_dict,
         skill_dict,
         _passive_skill_dict,
-        _item_dict,
+        item_dict,
         _inventory,
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
-    context = PracticeBattlefieldContext(buff_dict, skill_dict)
+    context = PracticeBattlefieldContext(buff_dict, skill_dict, item_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,
@@ -853,13 +853,13 @@ def _cmd_investigation_battle(
         buff_dict,
         skill_dict,
         _passive_skill_dict,
-        _item_dict,
+        item_dict,
         _inventory,
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
-    context = PracticeBattlefieldContext(buff_dict, skill_dict)
+    context = PracticeBattlefieldContext(buff_dict, skill_dict, item_dict)
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,
@@ -912,6 +912,15 @@ def _cmd_investigation_battle(
 # ---------------------------------------------------------------------------
 
 
+def _dm_battle_column_token(raw: str) -> str:
+    """DM 전투의 [배치/이름/열] 문법은 진영 지정이 없다(배치 대상이 항상
+    적군으로 고정이라 무의미하기 때문) — 본 전투 문법인 [배치/이름/적군 N열]을
+    실수로 그대로 써도(예: "적군 4열") 에러 없이 마지막 토큰(열 표기)만
+    조용히 취한다."""
+    parts = raw.split()
+    return parts[-1] if parts else raw
+
+
 def _cmd_dm_battle_start(
     text: str, mentions: list[str], state: "BotState", visibility: str
 ) -> AdminCommandResult:
@@ -941,7 +950,9 @@ def _cmd_dm_battle_start(
             errors.append(f"지정된 캐릭터({name})를 찾을 수 없습니다.")
             continue
         try:
-            column = BattlefieldColumnIndex.from_str(m.group(2).strip())
+            column = BattlefieldColumnIndex.from_str(
+                _dm_battle_column_token(m.group(2).strip())
+            )
             session.add_character(data, FactionType.ENEMY, column)
         except (ValueError, CommandValidationError) as e:
             errors.append(str(e))
