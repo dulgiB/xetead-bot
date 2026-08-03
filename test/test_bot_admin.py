@@ -672,14 +672,20 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
         if state.practice.first_mover.value == "1팀"
         else ("archer_acct", "검사")
     )
+    calls_before_action = len(mastodon.status_post_calls)
     listener.on_notification(
         _make_notification(
             first_acct, 4, active_post_id, f"[공격/{second_name}]"
         )
     )
+    # 캐릭터의 커맨드 답글이 이 액션으로 발생하는 첫 번째 게시물이다 — 다음
+    # 라운드 공지는 예전 라운드 공지(active_post_id)가 아니라 이 답글에
+    # 이어져야 스레드가 갈라지지 않는다.
+    char_reply_id = 9000 + calls_before_action
     round_call = mastodon.status_post_calls[-1]
     assert round_call["visibility"] == "unlisted"
-    assert round_call["in_reply_to_id"] == active_post_id
+    assert round_call["in_reply_to_id"] == char_reply_id
+    assert round_call["in_reply_to_id"] != active_post_id
 
 
 def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
@@ -940,13 +946,18 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     assert "고블린" in name_dict  # sanity
     assert str(dm_state.session.context) in proxy_reply["status"]
 
-    # admin이 [진행]으로 ALLY_ACTION 진입 — 이전 게시물에 답글로 이어져야 함
+    # admin이 [진행]으로 ALLY_ACTION 진입 — admin에게 보낸 확인 답글 뒤에
+    # 이어져야 한다(이전 공지에 다시 답글로 달면 확인 답글과 형제가 되어
+    # 스레드가 갈라진다).
+    calls_before_advance = len(mastodon.status_post_calls)
     listener.on_notification(
         _make_notification("test-admin", 3, pre_post_id, "[진행]")
     )
+    confirmation_id = 9000 + calls_before_advance
     ally_call = mastodon.status_post_calls[-1]
     assert ally_call["visibility"] == "direct"
-    assert ally_call["in_reply_to_id"] == pre_post_id
+    assert ally_call["in_reply_to_id"] == confirmation_id
+    assert ally_call["in_reply_to_id"] != pre_post_id
     active_post_id = dm_state.active_post_id
     assert active_post_id != pre_post_id
 
@@ -961,6 +972,51 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     assert "전투 종료" in end_call["status"]
     assert "아군" in end_call["status"]
     assert state.dm_battles == {}
+
+
+def test_dm_battle_phase_posts_chain_off_confirmation_not_stale_post(monkeypatch):
+    """DM 전투의 관리자 주도 페이즈 전환([진행] 정산/라운드 종료, [전투 속행])도
+    대련과 같은 패턴으로 스레드가 갈라지지 않아야 한다 — 각 페이즈 공지는
+    admin에게 보낸 확인 답글 뒤에 이어져야지, 이전 페이즈 공지에 다시
+    답글로 달려 확인 답글과 형제가 되면 안 된다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch, enemy_max_hp=100
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin", 1, 0, "[전투 발생][배치/고블린/1열]",
+            visibility="direct", extra_mentions=["player_acct"],
+        )
+    )
+    dm_state = next(iter(state.dm_battles.values()))
+    tip = dm_state.active_post_id
+
+    def advance(status_id, text):
+        nonlocal tip
+        calls_before = len(mastodon.status_post_calls)
+        listener.on_notification(_make_notification("test-admin", status_id, tip, text))
+        confirmation_id = 9000 + calls_before
+        game_post_call = mastodon.status_post_calls[-1]
+        assert game_post_call["in_reply_to_id"] == confirmation_id
+        assert game_post_call["in_reply_to_id"] != tip
+        tip = dm_state.active_post_id
+
+    # [진행] → ALLY_ACTION
+    advance(2, "[진행]")
+
+    # 아군 커맨드(고블린을 전멸시키지 않을 정도로만 공격) — 별도 game_post 없음
+    listener.on_notification(_make_notification("player_acct", 3, tip, "[공격/고블린]"))
+    tip = dm_state.active_post_id
+
+    # [진행] → ENEMY_POST_ACTION (정산)
+    advance(4, "[진행]")
+
+    # [진행] → 라운드 종료
+    advance(5, "[진행]")
+
+    # [전투 속행] → 다음 라운드 시작
+    advance(6, "[전투 속행]")
 
 
 def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
