@@ -386,69 +386,18 @@ class MastodonBotListener(StreamListener):
                 visibility=visibility,
                 in_reply_to_id=in_reply_to_id,
             )
+            self._post_admin_result(result, status_id, acct, visibility, state)
+            return
 
-            if not result.reply_text:
-                # reply_text가 비어 있으면 game_post_text를 단일 답글로 전송
-                if result.game_post_text is not None:
-                    post = self._reply(
-                        status_id, acct, visibility, result.game_post_text
-                    )
-                    _apply_game_post_side_effects(state, result, post["id"])
-            else:
-                # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
-                # 이미지는 페이즈 게시물에만 첨부한다). post_as_new_status면
-                # 답글이 아니라 타임라인의 새 게시물로 올린다(전투 준비 공지 등).
-                if result.post_as_new_status:
-                    reply_status = self._mastodon.status_post(
-                        _truncate(result.reply_text), visibility="public"
-                    )
-                else:
-                    reply_status = self._reply(
-                        status_id,
-                        acct,
-                        visibility,
-                        result.reply_text,
-                    )
-                _persist_battle_log(state, result.battle_log, str(reply_status["id"]))
-
-                if result.set_preparation_post:
-                    state.preparation_status_id = reply_status["id"]
-
-                # 퍼블릭 게시물 게시 (페이즈 게시물) — 필드 시트 이미지를
-                # 첨부한다 (render_public_field_sheet는 admin.py의 각
-                # 핸들러에서 이미 호출됐으므로 여기서는 캡처만).
-                if result.game_post_text is not None:
-                    game_media_ids = (
-                        self._capture_field_media_ids(state)
-                        if result.attach_field_image
-                        else []
-                    )
-                    post_text = result.game_post_text
-                    # 이미지 캡처가 실패하면(빈 media_ids) 필드 현황을 텍스트로
-                    # 대체 표시한다 — 성공 시에는 이미지만으로 충분하므로
-                    # str(context) 보드를 중복으로 붙이지 않는다.
-                    if (
-                        result.attach_field_image
-                        and not game_media_ids
-                        and state.session is not None
-                    ):
-                        post_text = f"{post_text}\n\n{state.session.context}"
-                    post_kwargs: dict = {"media_ids": game_media_ids or None}
-                    if result.game_post_reply_to_confirmation:
-                        # 이전 페이즈 공지(admin의 [진행] 요청이 답글로 달렸던
-                        # 그 게시물)에 다시 답글로 달면, 방금 위에서 보낸
-                        # 확인 답글(reply_status)과 이 게시물이 같은 부모의
-                        # 형제가 되어 스레드가 갈라진다 — 확인 답글 뒤에
-                        # 이어야 [이전 공지] ← [admin 요청] ← [확인 답글] ←
-                        # [이 공지] 순으로 선형으로 이어진다.
-                        post_kwargs["in_reply_to_id"] = reply_status["id"]
-                    if result.game_post_visibility is not None:
-                        post_kwargs["visibility"] = result.game_post_visibility
-                    new_post = self._mastodon.status_post(
-                        _truncate(post_text), **post_kwargs
-                    )
-                    _apply_game_post_side_effects(state, result, new_post["id"])
-
+        # 1.5. 캐릭터 계정이 직접 [대련]을 시작 — 대련은 (상시전투와 달리)
+        # Admin 커맨드가 아니라 캐릭터 전용 커맨드다. 발신 캐릭터 자신과
+        # 함께 멘션된 상대가 참여 대상이 된다.
+        if acct in state.char_dict and admin_commands._RE_PRACTICE_PREP.search(text):
+            expected_accts = [acct] + [m for m in (mentions or []) if m != acct]
+            result = admin_commands._cmd_practice_prep(
+                expected_accts, state, visibility
+            )
+            self._post_admin_result(result, status_id, acct, visibility, state)
             return
 
         # 2. 대련/상시전투 준비 게시물 답글 (포지션 선언)
@@ -689,6 +638,76 @@ class MastodonBotListener(StreamListener):
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
+
+    def _post_admin_result(
+        self,
+        result: AdminCommandResult,
+        status_id: int,
+        acct: str,
+        visibility: str,
+        state: "BotState",
+    ) -> None:
+        """AdminCommandResult를 실제 게시물로 발행한다.
+
+        Admin 커맨드(handle_admin_command)뿐 아니라, 캐릭터가 직접 시작하는
+        [대련]처럼 같은 AdminCommandResult 셰이프를 반환하는 다른 진입점에서도
+        재사용한다."""
+        if not result.reply_text:
+            # reply_text가 비어 있으면 game_post_text를 단일 답글로 전송
+            if result.game_post_text is not None:
+                post = self._reply(status_id, acct, visibility, result.game_post_text)
+                _apply_game_post_side_effects(state, result, post["id"])
+        else:
+            # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
+            # 이미지는 페이즈 게시물에만 첨부한다). post_as_new_status면
+            # 답글이 아니라 타임라인의 새 게시물로 올린다(전투 준비 공지 등).
+            if result.post_as_new_status:
+                reply_status = self._mastodon.status_post(
+                    _truncate(result.reply_text), visibility="public"
+                )
+            else:
+                reply_status = self._reply(
+                    status_id, acct, visibility, result.reply_text,
+                )
+            _persist_battle_log(state, result.battle_log, str(reply_status["id"]))
+
+            if result.set_preparation_post:
+                state.preparation_status_id = reply_status["id"]
+
+            # 퍼블릭 게시물 게시 (페이즈 게시물) — 필드 시트 이미지를
+            # 첨부한다 (render_public_field_sheet는 admin.py의 각
+            # 핸들러에서 이미 호출됐으므로 여기서는 캡처만).
+            if result.game_post_text is not None:
+                game_media_ids = (
+                    self._capture_field_media_ids(state)
+                    if result.attach_field_image
+                    else []
+                )
+                post_text = result.game_post_text
+                # 이미지 캡처가 실패하면(빈 media_ids) 필드 현황을 텍스트로
+                # 대체 표시한다 — 성공 시에는 이미지만으로 충분하므로
+                # str(context) 보드를 중복으로 붙이지 않는다.
+                if (
+                    result.attach_field_image
+                    and not game_media_ids
+                    and state.session is not None
+                ):
+                    post_text = f"{post_text}\n\n{state.session.context}"
+                post_kwargs: dict = {"media_ids": game_media_ids or None}
+                if result.game_post_reply_to_confirmation:
+                    # 이전 페이즈 공지(admin의 [진행] 요청이 답글로 달렸던
+                    # 그 게시물)에 다시 답글로 달면, 방금 위에서 보낸
+                    # 확인 답글(reply_status)과 이 게시물이 같은 부모의
+                    # 형제가 되어 스레드가 갈라진다 — 확인 답글 뒤에
+                    # 이어야 [이전 공지] ← [admin 요청] ← [확인 답글] ←
+                    # [이 공지] 순으로 선형으로 이어진다.
+                    post_kwargs["in_reply_to_id"] = reply_status["id"]
+                if result.game_post_visibility is not None:
+                    post_kwargs["visibility"] = result.game_post_visibility
+                new_post = self._mastodon.status_post(
+                    _truncate(post_text), **post_kwargs
+                )
+                _apply_game_post_side_effects(state, result, new_post["id"])
 
     def _reply(
         self,

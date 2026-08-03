@@ -187,9 +187,6 @@ def handle_admin_command(
     if _RE_INVESTIGATION_BATTLE.search(text):
         return _cmd_investigation_battle(text, mentions or [], state, visibility)
 
-    if _RE_PRACTICE_PREP.search(text):
-        return _cmd_practice_prep(mentions or [], state, visibility)
-
     if m := _RE_PROXY.match(text):
         char_name = m.group(1).strip()
         cmd_str = m.group(2).strip()
