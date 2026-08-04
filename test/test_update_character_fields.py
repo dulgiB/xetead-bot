@@ -22,6 +22,7 @@ class _FakeWorksheet:
     def __init__(self, rows: list[list]):
         self.rows = rows  # 헤더 포함, get_values() 형식
         self.written: list[tuple[int, int, object]] = []
+        self.update_calls: list[dict] = []
         self.get_values_call_count = 0
 
     def get_values(self, value_render_option=None, pad_values=True):
@@ -30,6 +31,22 @@ class _FakeWorksheet:
 
     def update_cell(self, row, col, value):
         self.written.append((row, col, value))
+
+    def update(
+        self, values, range_name=None, raw=True, value_input_option=None, **kwargs
+    ):
+        row, col = gspread.utils.a1_to_rowcol(range_name)
+        value = values[0][0]
+        self.written.append((row, col, value))
+        self.update_calls.append(
+            {
+                "row": row,
+                "col": col,
+                "value": value,
+                "raw": raw,
+                "value_input_option": value_input_option,
+            }
+        )
 
 
 class _FakeSpreadsheet:
@@ -120,6 +137,27 @@ def test_update_character_gold_and_quest_date_writes_matching_row():
     ws = spreadsheet.worksheet("캐릭터")
     assert (3, 2, 1) in ws.written
     assert (3, 3, "2026-08-03") in ws.written
+
+
+def test_update_character_gold_and_quest_date_stores_date_as_raw_string():
+    """daily_quest_date는 handle_daily_quest_start()에서 문자열 그대로
+    재비교된다 — update_cell()의 고정 USER_ENTERED로 쓰면 "YYYY-MM-DD" 형식의
+    문자열이 Sheets에 의해 날짜 타입(내부 시리얼 넘버)으로 자동 변환되고,
+    이후 UNFORMATTED_VALUE로 다시 읽으면 그 시리얼 넘버 문자열이 반환되어
+    "오늘 이미 했음" 비교가 영원히 거짓이 되며 1일 1회 제한이 무력화된다.
+    RAW(raw=True, 기본값)로 저장해 이 자동 변환을 막아야 한다."""
+    rows = [
+        ["name", "gold", "daily_quest_date"],
+        ["아군1", "0", ""],
+    ]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_gold_and_quest_date(spreadsheet, "아군1", 1, "2026-08-03")
+
+    ws = spreadsheet.worksheet("캐릭터")
+    date_call = next(c for c in ws.update_calls if c["col"] == 3)
+    assert date_call["value"] == "2026-08-03"
+    assert date_call["raw"] is True
 
 
 def test_update_character_gold_and_quest_date_raises_when_not_found():

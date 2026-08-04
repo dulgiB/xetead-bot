@@ -74,6 +74,16 @@ _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
 _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생')}]")
 _RE_PROXY = re.compile(r"^([^\[\]]+?)\s+(\[.+])$", re.DOTALL)
 
+
+def _dm_mention_prefix(dm_state: "DmBattleState") -> str:
+    """DM 전투 참가자 멘션 텍스트를 만든다. visibility="direct" 게시물은
+    명시적으로 멘션된 계정만 볼 수 있으므로, 페이즈 전환/정산/종료 게시물마다
+    이 프리픽스를 붙여야 참가자가 스레드를 계속 확인할 수 있다."""
+    if not dm_state.mentions:
+        return ""
+    return " ".join(f"@{a}" for a in dm_state.mentions) + "\n"
+
+
 _VALID_COLUMNS = [
     BattlefieldColumnIndex.COL1,
     BattlefieldColumnIndex.COL2,
@@ -177,9 +187,6 @@ def handle_admin_command(
 
     if _RE_INVESTIGATION_BATTLE.search(text):
         return _cmd_investigation_battle(text, mentions or [], state, visibility)
-
-    if _RE_PRACTICE_PREP.search(text):
-        return _cmd_practice_prep(mentions or [], state, visibility)
 
     if m := _RE_PROXY.match(text):
         char_name = m.group(1).strip()
@@ -972,9 +979,8 @@ def _cmd_dm_battle_start(
         except (ValueError, CommandValidationError) as e:
             errors.append(str(e))
 
-    ally_data_list = [
-        state.char_dict[acct] for acct in mentions if acct in state.char_dict
-    ]
+    participant_accts = [acct for acct in mentions if acct in state.char_dict]
+    ally_data_list = [state.char_dict[acct] for acct in participant_accts]
     errors.extend(_assign_random_positions(session, ally_data_list, FactionType.ALLY))
 
     if not session.context.characters:
@@ -985,10 +991,14 @@ def _cmd_dm_battle_start(
 
     session.start()
     dm_state = DmBattleState(
-        session=session, field_id="", active_post_id=0, visibility=visibility
+        session=session,
+        field_id="",
+        active_post_id=0,
+        visibility=visibility,
+        mentions=participant_accts,
     )
 
-    game_post = _make_phase_post_text(
+    game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
         RoundPhaseType.ENEMY_PRE_ACTION, session.round_n, session
     )
     game_post += f"\n\n{session.context}"
@@ -1052,7 +1062,7 @@ def _cmd_dm_battle_advance_phase(
             game_post_visibility=dm_state.visibility,
         )
 
-    game_post = _make_phase_post_text(
+    game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
         new_phase,
         session.round_n,
         session,
@@ -1081,7 +1091,9 @@ def _cmd_dm_battle_continue(
         )
 
     new_phase = session.advance_phase()  # → ENEMY_PRE_ACTION
-    game_post = _make_phase_post_text(new_phase, session.round_n, session)
+    game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
+        new_phase, session.round_n, session
+    )
     game_post += f"\n\n{session.context}"
 
     return AdminCommandResult(
@@ -1204,7 +1216,7 @@ def _end_dm_battle(
     result = f"◊ 전투 종료 (라운드 {session.round_n})"
     if winner is not None:
         result += f"\n\n승자: {winner.value}"
-    return f"{result}\n\n{session.context}"
+    return f"{_dm_mention_prefix(dm_state)}{result}\n\n{session.context}"
 
 
 def find_dm_battle_by_field_id(
