@@ -1,9 +1,10 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
+from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming
+from battle.objects.define import BuffApplyTiming, CombatStatType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -44,12 +45,20 @@ class BuffCatastrophe(BuffBase):
     def create_event(self) -> BuffEvent:
         return CatastropheNoopEvent(condition=self.condition)
 
-    def on_battle_end(self, context: "BattlefieldContext") -> None:
+    def on_battle_end(self, context: "BattlefieldContext") -> Optional[BattleLogEntry]:
         if self.stack_count <= 0:
-            return
+            return None
         character = context.characters.get(self.applied_to)
         if character is None:
-            return
-        character.status.curr_hp = max(
-            0, character.status.curr_hp - self.stack_count * 3
+            return None
+        damage = self.stack_count * 3
+        character.status.curr_hp = max(0, character.status.curr_hp - damage)
+        return BattleLogEntry(
+            target_name=self.applied_to.name,
+            kind=BattleLogEntryKind.DAMAGE,
+            result=f"대미지 {damage}",
+            roll_display=f"({self.stack_count}스택 × 3[{self.id}])",
+            value=damage,
+            hp_after=character.status.curr_hp,
+            max_hp=character.status[CombatStatType.MAX_HP],
         )

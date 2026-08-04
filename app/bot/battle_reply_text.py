@@ -14,7 +14,7 @@ from battle.core.commands.models import (
     CommandPart,
     CommandPartProcessResult,
 )
-from battle.objects.define import ActionType
+from battle.objects.define import ActionType, CombatStatType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -54,17 +54,41 @@ def format_round_end_log_entries(
     """라운드 종료 시 발동한 버프(DoT/HoT 등)의 결과를 대상 캐릭터별로 묶어
     "【라운드 종료 처리 ▸ {대상}】" 블록으로 조립한다. 해당 라운드에 발동한
     효과가 없으면 빈 문자열을 반환한다."""
+    return _format_grouped_entries(context, "라운드 종료 처리", entries)
+
+
+def format_battle_end_log_entries(
+    context: "BattlefieldContext", entries: list[BattleLogEntry]
+) -> str:
+    """전투 종료 시점에 발동하는 효과(유예된 재앙 등)의 결과를 대상
+    캐릭터별로 묶어 "【전투 종료 처리 ▸ {대상}】" 블록으로 조립한다. 발동한
+    효과가 없으면 빈 문자열을 반환한다."""
+    return _format_grouped_entries(context, "전투 종료 처리", entries)
+
+
+def _format_grouped_entries(
+    context: "BattlefieldContext", header_label: str, entries: list[BattleLogEntry]
+) -> str:
     if not entries:
         return ""
     grouped: dict[str, list[BattleLogEntry]] = {}
     for entry in entries:
         grouped.setdefault(entry.target_name, []).append(entry)
     blocks = [
-        f"【라운드 종료 처리 ▸ {target_name}】\n"
+        f"【{header_label} ▸ {target_name}】\n"
         + "\n".join(_format_entry(context, entry) for entry in target_entries)
         for target_name, target_entries in grouped.items()
     ]
     return "\n\n".join(blocks)
+
+
+def format_final_hp_roster(context: "BattlefieldContext") -> str:
+    """전투 종료 시 필드에 남아 있는 모든 캐릭터의 최종 체력을
+    "▹ {이름} | {현재 체력}/{최대 체력}" 목록으로 조립한다."""
+    return "\n".join(
+        f"▹ {char_id.name} | {character.status.curr_hp}/{character.status[CombatStatType.MAX_HP]}"
+        for char_id, character in context.characters.items()
+    )
 
 
 def _format_part(

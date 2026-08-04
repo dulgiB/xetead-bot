@@ -37,7 +37,7 @@ class DiceRollResult:
             result_str += ")"
 
         result_str += " + "
-        result_str += " + ".join(str(roll) for roll in self.rolls)
+        result_str += f"{sum(self.rolls)}[{len(self.rolls)}d{self.n_sides}]"
         result_str += ")"
         return result_str
 

@@ -26,8 +26,10 @@ from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.battle_reply_text import (
+    format_battle_end_log_entries,
     format_battle_reply,
     format_eliminated_characters,
+    format_final_hp_roster,
     format_round_end_log_entries,
 )
 from bot.dm_battle_state import DmBattleState
@@ -45,6 +47,7 @@ from bot.session import BattleSession
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from bot.main import BotState
+    from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +350,7 @@ def _cmd_battle_start(
         RoundPhaseType.ENEMY_PRE_ACTION,
         state.session.round_n,
         state.session,
+        state.name_dict,
     )
     return AdminCommandResult(reply_text, game_post, attach_field_image=True)
 
@@ -432,6 +436,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
         new_phase,
         state.session.round_n,
         state.session,
+        state.name_dict,
         post_action_results,
         round_end_log_entries,
         eliminated_characters,
@@ -488,7 +493,9 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
         _log_system_error("공개 필드 시트 렌더링")
         system_error = True
 
-    game_post = _make_phase_post_text(new_phase, state.session.round_n, state.session)
+    game_post = _make_phase_post_text(
+        new_phase, state.session.round_n, state.session, state.name_dict
+    )
 
     error_suffix = f"\n{_SYSTEM_ERROR_MESSAGE}" if system_error else ""
     reply = f"◊ 라운드 {state.session.round_n} 시작{error_suffix}"
@@ -499,29 +506,16 @@ def _cmd_end(state: "BotState") -> str:
     if state.session is None or not state.session.started:
         return "◊ 진행 중인 전투가 없습니다."
 
+    context = state.session.context
     system_error = False
 
     # 전투 종료 시점 버프 훅([재앙] 등) 처리 후, 변경된 HP를 스프레드시트에 반영한다.
-    hp_before = {
-        char_id: char.status.curr_hp
-        for char_id, char in state.session.context.characters.items()
-    }
-    state.session.context.on_battle_end()
-    battle_end_entries = [
-        BattleLogEntry(
-            target_name=char_id.name,
-            kind=BattleLogEntryKind.DAMAGE,
-            result=f"대미지 {before - char.status.curr_hp}",
-            value=before - char.status.curr_hp,
-        )
-        for char_id, char in state.session.context.characters.items()
-        if (before := hp_before[char_id]) != char.status.curr_hp
-    ]
+    battle_end_entries = context.on_battle_end()
     if battle_end_entries:
         try:
             write_back_changed_hp(
                 state.spreadsheet,
-                state.session.context,
+                context,
                 battle_end_entries,
                 cache=state.sheet_cache,
             )
@@ -536,7 +530,7 @@ def _cmd_end(state: "BotState") -> str:
             is_main=True,
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
-            characters=build_field_characters(state.session.context, include_hp=False),
+            characters=build_field_characters(context, include_hp=False),
             ended=True,
             cache=state.sheet_cache,
         )
@@ -547,7 +541,7 @@ def _cmd_end(state: "BotState") -> str:
     try:
         render_public_field_sheet(
             state.field_spreadsheet,
-            state.session.context,
+            context,
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
@@ -564,7 +558,17 @@ def _cmd_end(state: "BotState") -> str:
     state.pending_participants.clear()
     state.pending_placements.clear()
 
+    body_blocks = [
+        block
+        for block in (
+            format_final_hp_roster(context),
+            format_battle_end_log_entries(context, battle_end_entries),
+        )
+        if block
+    ]
     result = "◊ 전투 종료"
+    if body_blocks:
+        result += "\n\n" + "\n\n".join(body_blocks)
     if system_error:
         result += f"\n{_SYSTEM_ERROR_MESSAGE}"
     return result
@@ -693,6 +697,7 @@ def _cmd_proxy(
             state.session.context,
             char_id,
             new_results,
+            state.name_dict,
             show_skill_preview=is_enemy_declare,
         )
         if is_enemy_declare:
@@ -767,6 +772,7 @@ def _make_phase_post_text(
     phase: RoundPhaseType,
     round_n: int,
     session: "BattleSession",
+    name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
     post_action_results: Optional[
         dict[CharacterId, list[CommandPartProcessResult]]
     ] = None,
@@ -786,7 +792,7 @@ def _make_phase_post_text(
 
     if phase == RoundPhaseType.ENEMY_POST_ACTION:
         body = _format_enemy_post_action_results(
-            session.context, post_action_results or {}
+            session.context, post_action_results or {}, name_dict
         )
         return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n\n{body}"
 
@@ -810,10 +816,31 @@ def _make_phase_post_text(
     return ""
 
 
+def _damaged_target_mentions(
+    part_result: CommandPartProcessResult,
+    name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
+) -> str:
+    """part_result의 대미지 로그가 가리키는 대상들 중, "캐릭터" 시트에 등록된
+    (mastodon 계정이 있는) 대상들을 멘션 문자열로 만든다. 소환수 등 계정이
+    없는 대상은 name_dict에 없으므로 자연히 제외된다."""
+    target_names = dict.fromkeys(
+        entry.target_name
+        for entry in part_result.log_entries
+        if entry.kind == BattleLogEntryKind.DAMAGE
+    )
+    accts = [
+        data.mastodon_id
+        for name in target_names
+        if (data := name_dict.get(name)) is not None and data.mastodon_id
+    ]
+    return " ".join(f"@{acct}" for acct in accts)
+
+
 def _format_named_reply(
     context: "BattlefieldContext",
     char_id: CharacterId,
     part_results: list[CommandPartProcessResult],
+    name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
     *,
     show_skill_preview: bool = False,
 ) -> str:
@@ -822,21 +849,29 @@ def _format_named_reply(
 
     프록시(관리자 대행) 답글은 실제로 행동한 캐릭터가 누구인지 답글 자체만
     보고는 알 수 없으므로(직접 답글과 달리 caster에게 보내는 답글이 아님),
-    헤더 앞에 이름을 붙인다.
+    헤더 앞에 이름을 붙인다. 공격/스킬로 대미지를 입은 대상이 있으면 그
+    계정을 헤더 줄에 멘션해 당사자에게 알린다.
     """
     blocks = []
     for part_result in part_results:
         block = format_battle_reply(
             context, char_id, [part_result], show_skill_preview=show_skill_preview
         )
-        if block:
-            blocks.append(f"{char_id.name} {block}")
+        if not block:
+            continue
+        mentions = _damaged_target_mentions(part_result, name_dict)
+        header_line, sep, rest = block.partition("\n")
+        if mentions:
+            header_line = f"{header_line} {mentions}"
+        block = header_line + sep + rest
+        blocks.append(f"{char_id.name} {block}")
     return "\n\n".join(blocks)
 
 
 def _format_enemy_post_action_results(
     context: "BattlefieldContext",
     post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
+    name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
 ) -> str:
     """ENEMY_POST_ACTION 정산 결과를 "{적 이름} 【헤더】/계산식" 블록으로
     조립한다. 커맨드(파트) 하나당 블록 하나이며, 같은 적의 커맨드가
@@ -853,7 +888,7 @@ def _format_enemy_post_action_results(
             if r.expanded_part.original_part is None
             or r.expanded_part.original_part.type_ != ActionType.MOVE
         ]
-        block = _format_named_reply(context, user_id, non_move_results)
+        block = _format_named_reply(context, user_id, non_move_results, name_dict)
         if block:
             blocks.append(block)
     return "\n\n".join(blocks) if blocks else "변동 없음"
@@ -999,7 +1034,7 @@ def _cmd_dm_battle_start(
     )
 
     game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
-        RoundPhaseType.ENEMY_PRE_ACTION, session.round_n, session
+        RoundPhaseType.ENEMY_PRE_ACTION, session.round_n, session, state.name_dict
     )
     game_post += f"\n\n{session.context}"
     if errors:
@@ -1066,6 +1101,7 @@ def _cmd_dm_battle_advance_phase(
         new_phase,
         session.round_n,
         session,
+        state.name_dict,
         post_action_results,
         round_end_log_entries,
         eliminated_characters,
@@ -1092,7 +1128,7 @@ def _cmd_dm_battle_continue(
 
     new_phase = session.advance_phase()  # → ENEMY_PRE_ACTION
     game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
-        new_phase, session.round_n, session
+        new_phase, session.round_n, session, state.name_dict
     )
     game_post += f"\n\n{session.context}"
 
@@ -1145,7 +1181,11 @@ def _cmd_dm_battle_proxy(
             entries=entries,
         )
         reply_text = _format_named_reply(
-            session.context, char_id, new_results, show_skill_preview=is_enemy_declare
+            session.context,
+            char_id,
+            new_results,
+            state.name_dict,
+            show_skill_preview=is_enemy_declare,
         )
         if is_enemy_declare:
             reveal_declared_enemy_skills(
@@ -1188,21 +1228,7 @@ def _end_dm_battle(
     변경된 HP를 "캐릭터" 시트에 반영하고, state.dm_battles에서 이 세션을
     제거한다."""
     session = dm_state.session
-    hp_before = {
-        char_id: char.status.curr_hp
-        for char_id, char in session.context.characters.items()
-    }
-    session.context.on_battle_end()
-    battle_end_entries = [
-        BattleLogEntry(
-            target_name=char_id.name,
-            kind=BattleLogEntryKind.DAMAGE,
-            result=f"대미지 {before - char.status.curr_hp}",
-            value=before - char.status.curr_hp,
-        )
-        for char_id, char in session.context.characters.items()
-        if (before := hp_before[char_id]) != char.status.curr_hp
-    ]
+    battle_end_entries = session.context.on_battle_end()
     if battle_end_entries:
         write_back_changed_hp(
             state.spreadsheet,
@@ -1216,7 +1242,18 @@ def _end_dm_battle(
     result = f"◊ 전투 종료 (라운드 {session.round_n})"
     if winner is not None:
         result += f"\n\n승자: {winner.value}"
-    return f"{_dm_mention_prefix(dm_state)}{result}\n\n{session.context}"
+
+    body_blocks = [
+        block
+        for block in (
+            format_final_hp_roster(session.context),
+            format_battle_end_log_entries(session.context, battle_end_entries),
+        )
+        if block
+    ]
+    if body_blocks:
+        result += "\n\n" + "\n\n".join(body_blocks)
+    return f"{_dm_mention_prefix(dm_state)}{result}"
 
 
 def find_dm_battle_by_field_id(

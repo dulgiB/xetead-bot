@@ -141,7 +141,7 @@ def test_format_calculation_matches_given_received_group_example():
     value.roll_result = DiceRollResult(bonus_list=[4], n_sides=6, rolls=[3])
 
     assert value.format_calculation() == (
-        "(4 + 3) × 1.2[계수] × (1 + 0.3[주는 대미지 증가] - 0.1[주는 대미지 감소])"
+        "(4 + 3[1d6]) × 1.2[계수] × (1 + 0.3[주는 대미지 증가] - 0.1[주는 대미지 감소])"
         " × (1 - 0.1[받는 대미지 감소] + 0.15[마법 저항])"
     )
 
