@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 import gspread
+from gspread.utils import ValueInputOption
 
 from battle.core.commands.models import BattleLogEntry
 from battle.objects.models import CharacterId
@@ -99,8 +100,8 @@ def _get_or_create_worksheet(
     cache: Optional[SheetCache] = None,
 ) -> gspread.Worksheet:
     try:
-        return cache.worksheet(name) if cache is not None else spreadsheet.worksheet(
-            name
+        return (
+            cache.worksheet(name) if cache is not None else spreadsheet.worksheet(name)
         )
     except gspread.WorksheetNotFound:
         ws = spreadsheet.add_worksheet(name, rows=100, cols=len(headers))
@@ -149,8 +150,10 @@ def _load_hp_write_targets(
     targets: dict[str, tuple[gspread.Worksheet, int, int]] = {}
     for sheet_name in ("캐릭터", "에너미"):
         try:
-            ws = cache.worksheet(sheet_name) if cache is not None else spreadsheet.worksheet(
-                sheet_name
+            ws = (
+                cache.worksheet(sheet_name)
+                if cache is not None
+                else spreadsheet.worksheet(sheet_name)
             )
         except gspread.exceptions.WorksheetNotFound:
             continue
@@ -263,7 +266,9 @@ def upsert_field_row(
     같은 커맨드 처리 중 upsert_field_row가 다시 호출됐을 때 방금 쓴 내용을
     못 보고 중복 삽입하는 것을 막기 위함이다.
     """
-    ws = _get_or_create_worksheet(spreadsheet, _FIELD_SHEET, _FIELD_HEADERS, cache=cache)
+    ws = _get_or_create_worksheet(
+        spreadsheet, _FIELD_SHEET, _FIELD_HEADERS, cache=cache
+    )
     if cache is not None:
         all_values = cache.get_all_values(_FIELD_SHEET)
     else:
@@ -299,7 +304,9 @@ def upsert_field_row(
             characters_json,
         ]
         ws.update(
-            f"A{row_idx}:G{row_idx}", [new_row], value_input_option="USER_ENTERED"
+            [new_row],
+            range_name=f"A{row_idx}:G{row_idx}",
+            value_input_option=ValueInputOption.user_entered,
         )
         if cache is not None:
             cache.invalidate(_FIELD_SHEET)
@@ -314,7 +321,7 @@ def upsert_field_row(
         phase,
         characters_json,
     ]
-    ws.insert_rows([new_row], row=2, value_input_option="USER_ENTERED")
+    ws.insert_rows([new_row], row=2, value_input_option=ValueInputOption.user_entered)
     if cache is not None:
         cache.invalidate(_FIELD_SHEET)
 
@@ -358,11 +365,11 @@ def append_battle_log(
                 error_trace or "",
                 reply_ref,
             ],
-            value_input_option="USER_ENTERED",
+            value_input_option=ValueInputOption.user_entered,
         )
         return
 
-    rows = [
+    rows: list[list[str | int]] = [
         [
             field_id,
             round_n,
@@ -376,7 +383,7 @@ def append_battle_log(
         ]
         for entry in entries
     ]
-    ws.append_rows(rows, value_input_option="USER_ENTERED")
+    ws.append_rows(rows, value_input_option=ValueInputOption.user_entered)
 
 
 # ---------------------------------------------------------------------------
@@ -405,5 +412,5 @@ def append_noncombat_log(
             error_trace or "",
             reply_ref,
         ],
-        value_input_option="USER_ENTERED",
+        value_input_option=ValueInputOption.user_entered,
     )

@@ -50,7 +50,9 @@ class SkillEffectConsumeStackForDamage(SkillEffectBase):
         cap = self.buff_stack_cap or 0
 
         buff_remove_list = [
-            BuffRemoveData(applied_to=holder, buff_id=self.buff_id, requested_amount=cap)
+            BuffRemoveData(
+                applied_to=holder, buff_id=self.buff_id, requested_amount=cap
+            )
         ]
 
         is_magic_attack = context.characters[holder].status.is_magic_attacker

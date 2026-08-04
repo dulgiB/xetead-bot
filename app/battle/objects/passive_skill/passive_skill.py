@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional
 
 from battle.core.commands.models import DamageCalculateData, HealCalculateData
-from battle.objects.buff.buff_base import BuffBase, BuffDurationCounter
+from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.define import BuffApplyTiming, ValueSourceType
 from battle.objects.models import BuffUid, CharacterId
@@ -97,6 +97,9 @@ class PassiveSkillWrapperEvent(BuffEvent):
     ) -> None:
         if self.role == "buff_mod":
             assert self.passive_data.buff_mod_event is not None
+            # buff_mod은 ON_ACTION 또는 반응형 타이밍(_REACTIVE_TRIGGER_TIMING)으로만
+            # 등록되므로, 이 경로로 apply()가 호출될 때는 항상 실제 상대가 있다.
+            assert attacker_or_target is not None
             self.passive_data.buff_mod_event.apply(
                 holder, attacker_or_target, calculator, effect_seq_number
             )
@@ -142,6 +145,17 @@ class PassiveSkillWrapperEvent(BuffEvent):
                 effect_data.heal_data_list.append(HealCalculateData(heal))
 
 
+# buff_mod 역할이 ON_ACTION 대신 반응형 타이밍으로 등록돼야 하는 제3자 관전형
+# PassiveSkillTrigger 전체를 담는다. 새 반응형 트리거가 추가되면 여기도 함께
+# 갱신해야 한다 — 빠지면 그 트리거 + buff_mod 조합의 패시브가 조용히 발동하지
+# 않는다(홀더가 attacker_id/target_id 자신이 아니라 ON_ACTION 조회에 안 걸림).
+_REACTIVE_TRIGGER_TIMING: dict[PassiveSkillTrigger, BuffApplyTiming] = {
+    PassiveSkillTrigger.ON_ENEMY_MOVE: BuffApplyTiming.ON_ENEMY_MOVE,
+    PassiveSkillTrigger.ALLY_DAMAGED: BuffApplyTiming.ALLY_DAMAGED,
+    PassiveSkillTrigger.ALLY_IN_RANGE_DAMAGED: BuffApplyTiming.ALLY_IN_RANGE_DAMAGED,
+}
+
+
 class PassiveSkillWrapperBuff(BuffBase):
     """패시브 스킬을 BuffContainer 내에서 실행하기 위한 래퍼 버프.
 
@@ -156,6 +170,9 @@ class PassiveSkillWrapperBuff(BuffBase):
     필요) 하나의 PassiveSkillData가 buff_mod_event와 effects를 모두 가지면
     `create()`가 역할별로 나뉜 버프 인스턴스 여러 개를 반환한다.
     """
+
+    _passive_data: PassiveSkillData
+    _role: Literal["buff_mod", "effects"]
 
     @classmethod
     def create(
@@ -175,31 +192,23 @@ class PassiveSkillWrapperBuff(BuffBase):
         passive_data: PassiveSkillData,
         role: Literal["buff_mod", "effects"],
     ) -> "PassiveSkillWrapperBuff":
-        obj: "PassiveSkillWrapperBuff" = object.__new__(cls)
-        obj.id = passive_data.id
-        obj.uid = BuffUid(holder, holder, f"__passive__{passive_data.id}__{role}")
-        obj.given_by = holder
-        obj.applied_to = holder
-        obj.value = 0
-        obj.value_type = None
-        obj.duration = BuffDurationCounter(None, None, None)
         # "effects" 역할의 게이팅은 passive_data.effects 각각의 condition으로
-        # 처리된다(obj.condition은 쓰이지 않음). "buff_mod" 역할은 apply()가
+        # 처리되므로 condition은 비워둔다. "buff_mod" 역할은 apply()가
         # buff_mod_event.apply()로 직접 위임하며 그 안에서는 조건을 다시
         # 확인하지 않으므로, buff_mod_event.condition을 여기 그대로 실어야
         # _apply_buff_events()의 is_applied() 게이팅이 실제로 동작한다.
-        obj.condition = (
+        condition = (
             passive_data.buff_mod_event.condition
             if role == "buff_mod" and passive_data.buff_mod_event is not None
             else None
         )
-        obj.is_debuff = False
-        # object.__new__()로 BuffBase.__init__을 우회하므로 적층 관련
-        # 속성이 설정되지 않는다 — 패시브 스킬은 자체 스택 시스템이 없으므로
-        # 적층 불가(max_stack=None)로 고정하고, stack_count는 표시용
-        # 기본값(사용되지 않지만 접근 시 AttributeError를 막기 위함)만 둔다.
-        obj.max_stack = None
-        obj.stack_count = 1
+        obj = cls._create_bare(
+            id_=passive_data.id,
+            uid=BuffUid(holder, holder, f"__passive__{passive_data.id}__{role}"),
+            given_by=holder,
+            applied_to=holder,
+            condition=condition,
+        )
         obj._passive_data = passive_data
         obj._role = role
         return obj
@@ -213,16 +222,14 @@ class PassiveSkillWrapperBuff(BuffBase):
     @property
     def timing(self) -> BuffApplyTiming:
         if self._role == "buff_mod":
-            # buff_mod_event(ReceivedDamageModEvent 등)는 실제 공격 처리 중
-            # _apply_buff_events()가 ON_ACTION 타이밍 버프만 조회하므로, trigger가
-            # 무엇이든 항상 ON_ACTION이어야 실제로 대미지/회복에 반영된다.
-            # 다만 ALLY_IN_RANGE_DAMAGED는 예외다 — 이 트리거는 홀더 자신이
-            # 공격자/피격자가 아닌 제3자 관전 반응이라 _apply_buff_events가
-            # 아예 호출되지 않으므로, BuffContainer.on_ally_in_range_damaged()가
-            # 조회하는 타이밍을 그대로 써야 실제로 발동한다.
-            if self._passive_data.trigger == PassiveSkillTrigger.ALLY_IN_RANGE_DAMAGED:
-                return BuffApplyTiming.ALLY_IN_RANGE_DAMAGED
-            return BuffApplyTiming.ON_ACTION
+            # buff_mod_event는 실제 공격/회복 처리 중 수치를 바꿔야 하므로
+            # 기본은 ON_ACTION(_apply_buff_events()가 조회)이다. 다만 트리거가
+            # 제3자 반응형(홀더 자신이 공격자/피격자가 아님)이면 _apply_buff_events가
+            # 아예 호출되지 않으므로, _REACTIVE_TRIGGER_TIMING에 등록된 대응
+            # 타이밍(BuffContainer.on_*()가 조회)을 대신 써야 실제로 발동한다.
+            return _REACTIVE_TRIGGER_TIMING.get(
+                self._passive_data.trigger, BuffApplyTiming.ON_ACTION
+            )
         if self._passive_data.trigger == PassiveSkillTrigger.BATTLE_START:
             return BuffApplyTiming.ON_BATTLE_START
         if self._passive_data.trigger == PassiveSkillTrigger.ROUND_START:

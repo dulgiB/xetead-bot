@@ -6,6 +6,7 @@ from battle.objects.models import CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
 from battle.objects.skill.target_functions import SkillTargetRule
 from utils.spreadsheet_bool import parse_spreadsheet_bool
+from utils.spreadsheet_row import SpreadsheetRow
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -34,18 +35,18 @@ class ItemData:
     usable_outside_battle: bool = False
 
     @classmethod
-    def from_dict(cls, data: dict[str, str | int]) -> "ItemData":
+    def from_dict(cls, data: SpreadsheetRow) -> "ItemData":
         effect = parse_skill_effect(data, 0)
         if effect is None:
             raise ValueError(f"아이템({data.get('id')})에 효과(effect_0)가 없습니다.")
 
         return ItemData(
-            id=data["id"],
-            target_rule=data["target_rule"],
-            cost=data["cost"],
-            attack_range=data["range"],
+            id=str(data["id"]),
+            target_rule=str(data["target_rule"]),
+            cost=int(data["cost"]),
+            attack_range=int(data["range"]),
             effect=effect,
-            description=data.get("description", "") or "",
+            description=str(data.get("description", "") or ""),
             usable_outside_battle=parse_spreadsheet_bool(
                 data.get("usable_outside_battle", False)
             ),

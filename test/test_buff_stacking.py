@@ -230,7 +230,9 @@ class TestConsumeStackForDamage:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", max_hp=200), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
         return ctx, manager, caster, target
 
@@ -239,7 +241,9 @@ class TestConsumeStackForDamage:
         4*3=12, 기본 10 포함 총 22. 소모량 3 이상이므로 도발도 함께 부여된다."""
         ctx, manager, caster, target = self._make_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -259,7 +263,9 @@ class TestConsumeStackForDamage:
         2*3=6, 총 16. 도발은 부여되지 않아야 한다."""
         ctx, manager, caster, target = self._make_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -297,7 +303,9 @@ class TestAllyDamagedHook:
             description="",
         )
         ctx = BattlefieldContext(
-            buff_dict={"재앙": curse}, skill_dict={}, passive_skill_dict={"재앙 축적": passive}
+            buff_dict={"재앙": curse},
+            skill_dict={},
+            passive_skill_dict={"재앙 축적": passive},
         )
         return ctx
 
@@ -349,7 +357,9 @@ class TestAllyDamagedHook:
 
     def test_extra_stack_only_when_holder_itself_damaged(self):
         """HolderWasAttackedCondition: 자신이 맞았을 때만 추가로 반응."""
-        ctx = self._make_passive_context(condition_class_name="HolderWasAttackedCondition")
+        ctx = self._make_passive_context(
+            condition_class_name="HolderWasAttackedCondition"
+        )
         manager = setup_enemy_pre_phase(ctx)
         catastrophe_id = CharacterId("Catastrophe")
         ctx.add_character(
@@ -409,7 +419,9 @@ class TestSkillEffectHealAndFillBuffStack:
         caster = CharacterId("Catastrophe")
         ally = CharacterId("아군")
         ctx.add_character(
-            get_test_preset("Catastrophe", skill_1_id="재앙 나눔", initial_hp=90, max_hp=100),
+            get_test_preset(
+                "Catastrophe", skill_1_id="재앙 나눔", initial_hp=90, max_hp=100
+            ),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -419,7 +431,9 @@ class TestSkillEffectHealAndFillBuffStack:
             BattlefieldColumnIndex(1),
         )
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=6)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=6
+            )
         )
 
         # space = 10-6=4 -> heal_amount = 4*5=20. 아군은 84->100(16 흡수),
@@ -444,7 +458,12 @@ class TestBuffCatastropheBattleEnd:
             BattlefieldColumnIndex(0),
         )
         ctx.buff_container.add(
-            BuffAddData(given_by=catastrophe_id, applied_to=catastrophe_id, buff_id="재앙", stack_value=6)
+            BuffAddData(
+                given_by=catastrophe_id,
+                applied_to=catastrophe_id,
+                buff_id="재앙",
+                stack_value=6,
+            )
         )
 
         ctx.on_battle_end()
@@ -459,7 +478,12 @@ class TestBuffCatastropheBattleEnd:
             get_test_preset("Catastrophe"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
         ctx.buff_container.add(
-            BuffAddData(given_by=catastrophe_id, applied_to=catastrophe_id, buff_id="재앙", stack_value=3)
+            BuffAddData(
+                given_by=catastrophe_id,
+                applied_to=catastrophe_id,
+                buff_id="재앙",
+                stack_value=3,
+            )
         )
 
         for _ in range(5):

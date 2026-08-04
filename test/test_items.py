@@ -47,7 +47,9 @@ def item_potion() -> ItemData:
         target_rule="SkillTargetRuleSelf",
         cost=1,
         attack_range=0,
-        effect=SkillEffectHeal(ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None),
+        effect=SkillEffectHeal(
+            ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None
+        ),
     )
 
 
@@ -234,7 +236,9 @@ def test_practice_battle_blocks_item_with_specific_message(item_potion):
     )
 
     cmd = parse_character_command(CharacterId("전사"), "[포션]", ctx)
-    with pytest.raises(CommandValidationError, match="이 전투에서는 아이템을 사용할 수 없습니다"):
+    with pytest.raises(
+        CommandValidationError, match="이 전투에서는 아이템을 사용할 수 없습니다"
+    ):
         manager.process_command(cmd)
 
 
@@ -294,7 +298,9 @@ def test_inventory_grant_creates_new_entry_when_absent():
 
 
 def test_inventory_grant_appends_new_row_when_recipient_has_no_history():
-    ws = _FakeWorksheet(["character_name", "item_id", "count"], [["아군 1", "포션", "1"]])
+    ws = _FakeWorksheet(
+        ["character_name", "item_id", "count"], [["아군 1", "포션", "1"]]
+    )
     spreadsheet = _FakeSpreadsheet(ws)
     inv = Inventory({("아군 1", "포션"): 1}, spreadsheet)
 

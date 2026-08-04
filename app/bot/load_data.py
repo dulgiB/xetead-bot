@@ -76,21 +76,27 @@ def load_battle_data(
     buff_raw = _worksheet(db, "버프", cache).get_all_records(
         value_render_option=_UNFORMATTED
     )
-    buff_dict: dict[str, BuffData] = {r["id"]: BuffData.from_dict(r) for r in buff_raw}
+    buff_dict: dict[str, BuffData] = {
+        str(r["id"]): BuffData.from_dict(r) for r in buff_raw
+    }
 
     char_skill_raw = _worksheet(db, "스킬_캐릭터", cache).get_all_records(
         value_render_option=_UNFORMATTED
     )
     skill_dict: dict[str, SkillData] = {
-        r["id"]: SkillData.from_dict(r) for r in char_skill_raw
+        str(r["id"]): SkillData.from_dict(r) for r in char_skill_raw
     }
     try:
         enemy_skill_raw = _worksheet(db, "스킬_에너미", cache).get_all_records(
             value_render_option=_UNFORMATTED
         )
-        skill_dict.update({r["id"]: SkillData.from_dict(r) for r in enemy_skill_raw})
+        skill_dict.update(
+            {str(r["id"]): SkillData.from_dict(r) for r in enemy_skill_raw}
+        )
     except gspread.exceptions.WorksheetNotFound:
-        logger.warning("'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다.")
+        logger.warning(
+            "'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다."
+        )
 
     passive_buff_dict = load_passive_buff_data(db, cache=cache)
 
@@ -100,12 +106,14 @@ def load_battle_data(
             value_render_option=_UNFORMATTED
         )
         passive_skill_dict = {
-            r["id"]: PassiveSkillData.from_dict(r, passive_buff_dict)
+            str(r["id"]): PassiveSkillData.from_dict(r, passive_buff_dict)
             for r in passive_skill_raw
             if r.get("id")
         }
     except gspread.exceptions.WorksheetNotFound:
-        logger.warning("'스킬_패시브' 시트를 찾을 수 없습니다. 패시브 스킬 없이 로드합니다.")
+        logger.warning(
+            "'스킬_패시브' 시트를 찾을 수 없습니다. 패시브 스킬 없이 로드합니다."
+        )
 
     item_dict = load_item_data(db, cache=cache)
     inventory = load_inventory(db, cache=cache)
@@ -163,15 +171,19 @@ def load_passive_buff_data(
     전용 데이터로, 지속시간/적층 등이 없는 '버프' 시트의 축소판이다.
     """
     try:
-        passive_buff_raw = _worksheet(spreadsheet, "버프_패시브", cache).get_all_records(
-            value_render_option=_UNFORMATTED
-        )
+        passive_buff_raw = _worksheet(
+            spreadsheet, "버프_패시브", cache
+        ).get_all_records(value_render_option=_UNFORMATTED)
     except gspread.exceptions.WorksheetNotFound:
-        logger.warning("'버프_패시브' 시트를 찾을 수 없습니다. 버프 모디파이어 없이 로드합니다.")
+        logger.warning(
+            "'버프_패시브' 시트를 찾을 수 없습니다. 버프 모디파이어 없이 로드합니다."
+        )
         return {}
 
     return {
-        r["id"]: PassiveBuffData.from_dict(r) for r in passive_buff_raw if r.get("id")
+        str(r["id"]): PassiveBuffData.from_dict(r)
+        for r in passive_buff_raw
+        if r.get("id")
     }
 
 
@@ -187,7 +199,7 @@ def load_item_data(
         logger.warning("'아이템' 시트를 찾을 수 없습니다. 아이템 없이 로드합니다.")
         return {}
 
-    return {r["id"]: ItemData.from_dict(r) for r in item_raw if r.get("id")}
+    return {str(r["id"]): ItemData.from_dict(r) for r in item_raw if r.get("id")}
 
 
 def load_inventory(
@@ -213,7 +225,7 @@ def load_inventory(
         return Inventory({}, spreadsheet)
 
     counts: dict[tuple[str, str], int] = {
-        (r["character_name"], r["item_id"]): int(r["count"] or 0)
+        (str(r["character_name"]), str(r["item_id"])): int(r["count"] or 0)
         for r in inventory_raw
         if r.get("character_name") and r.get("item_id")
     }
@@ -281,7 +293,9 @@ def load_char_data(
 
     try:
         if cache is not None:
-            enemy_raw = cache.get_all_records("에너미", value_render_option=_UNFORMATTED)
+            enemy_raw = cache.get_all_records(
+                "에너미", value_render_option=_UNFORMATTED
+            )
         else:
             enemy_raw = spreadsheet.worksheet("에너미").get_all_records(
                 value_render_option=_UNFORMATTED
@@ -450,7 +464,9 @@ def update_character_curr_hp(
                     cache.invalidate(sheet_name)
                 return
 
-    raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다.")
+    raise RuntimeError(
+        f"캐릭터 '{char_name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다."
+    )
 
 
 def _load_enemy_skill_sheet(

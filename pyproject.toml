@@ -21,6 +21,20 @@ include = ["battle*", "bots*", "spreadsheets*", "story*", "utils*"]
 [tool.ruff.lint]
 [tool.ruff.format]
 
+[tool.mypy]
+mypy_path = "app"
+files = ["app"]
+strict_equality = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+
+# pymupdf(fitz)는 stub/py.typed 마커가 없는 서드파티 패키지라 타입 검사
+# 대상에서 제외한다 — 우리 코드 자체의 타입 검사는 계속 적용된다.
+[[tool.mypy.overrides]]
+module = "fitz"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
 pythonpath = ["app"]
@@ -32,6 +46,8 @@ log_date_format = "%Y-%m-%d %H:%M:%S"
 
 [dependency-groups]
 dev = [
+    "mypy>=2.3.0",
     "pytest>=9.1.1",
     "ruff>=0.15.19",
+    "types-regex>=2026.7.19.20260720",
 ]

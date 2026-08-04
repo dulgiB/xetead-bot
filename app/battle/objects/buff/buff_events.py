@@ -8,7 +8,7 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
-    from battle.core.commands.models import CommandPartCalculator
+    from battle.core.command_calculator import CommandPartCalculator
 
 
 class BuffEventCalculatePriority(Enum):
@@ -39,7 +39,6 @@ class BuffEvent(abc.ABC):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        # 조건이 없다면 무조건 적용
         if self.condition is None:
             return True
         return self.condition.is_applied(context, holder, attacker_or_target)

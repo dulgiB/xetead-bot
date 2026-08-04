@@ -1,3 +1,5 @@
+from typing import Optional
+
 from battle.objects.define import CombatStatType, MagicResistanceType
 from battle.objects.models import FloatValueModifier
 
@@ -11,7 +13,7 @@ class CombatStats:
         magic_resistance: MagicResistanceType,
         is_magic_attacker: bool,
         max_cost: int,
-        curr_hp: int = None,
+        curr_hp: Optional[int] = None,
     ):
         self._base_atk = attack
         self._base_attack_range = attack_range

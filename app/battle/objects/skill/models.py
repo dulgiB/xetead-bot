@@ -1,7 +1,7 @@
 import abc
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional, Type
+from typing import TYPE_CHECKING, Literal, Optional, Type, cast
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
@@ -10,12 +10,12 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     SkillTargetOverrideType,
     ValueSourceType,
-    ValueType,
 )
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
 from battle.objects.skill.define import SkillValueType
 from battle.objects.skill.target_functions import SkillTargetRule
 from utils.spreadsheet_bool import parse_spreadsheet_bool
+from utils.spreadsheet_row import SpreadsheetRow
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class SkillEffectBase(abc.ABC):
     value_source: Optional[ValueSourceType]
     value: Optional[int]
-    value_type: Optional[ValueType]
+    value_type: Optional[SkillValueType]
     buff_id: Optional[str]
     buff_add_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
@@ -115,9 +115,10 @@ class SkillEffectBase(abc.ABC):
         return []
 
 
-def parse_skill_effect(
-    data: dict[str, str | int], index: int
-) -> Optional[SkillEffectBase]:
+_EnemyPhase = Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
+
+
+def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffectBase]:
     """스프레드시트 행에서 index번째 효과(effect_{index} 등)를 파싱한다.
 
     스킬(effect_0~2)과 아이템(effect_0) 양쪽에서 재사용된다.
@@ -128,23 +129,25 @@ def parse_skill_effect(
         return None
 
     skill_effect_module = importlib.import_module("battle.objects.skill.effects")
-    effect: Type[SkillEffectBase] = getattr(skill_effect_module, effect_name)
+    effect: Type[SkillEffectBase] = getattr(skill_effect_module, str(effect_name))
 
     value_source = (
         ValueSourceType(data[f"value_source_{index}"])
         if data.get(f"value_source_{index}")
         else None
     )
-    value = data.get(f"value_{index}") or None
+    value_raw = data.get(f"value_{index}") or None
+    value = int(value_raw) if value_raw is not None else None
     value_type = (
         SkillValueType(data[f"value_type_{index}"])
         if data.get(f"value_type_{index}")
         else None
     )
     # 스킬_캐릭터/스킬_패시브는 buff_id_{index}, 스킬_에너미는 buff_name_{index}를 쓴다.
-    buff_id = data.get(f"buff_id_{index}") or data.get(f"buff_name_{index}") or None
+    buff_id_raw = data.get(f"buff_id_{index}") or data.get(f"buff_name_{index}") or None
+    buff_id = str(buff_id_raw) if buff_id_raw is not None else None
     buff_add_timing = (
-        RoundPhaseType(data[f"buff_add_timing_{index}"])
+        cast(_EnemyPhase, RoundPhaseType(data[f"buff_add_timing_{index}"]))
         if data.get(f"buff_add_timing_{index}")
         else None
     )
@@ -154,14 +157,21 @@ def parse_skill_effect(
         else None
     )
     apply_timing_raw = data.get(f"effect_apply_timing_{index}")
-    apply_timing = RoundPhaseType(apply_timing_raw) if apply_timing_raw else None
+    apply_timing = (
+        cast(_EnemyPhase, RoundPhaseType(apply_timing_raw))
+        if apply_timing_raw
+        else None
+    )
     buff_stack_cap = (
         int(data[f"buff_stack_cap_{index}"])
         if data.get(f"buff_stack_cap_{index}")
         else None
     )
 
-    condition_class_name = data.get(f"condition_{index}") or None
+    condition_class_name_raw = data.get(f"condition_{index}") or None
+    condition_class_name = (
+        str(condition_class_name_raw) if condition_class_name_raw is not None else None
+    )
     condition_value = (
         int(data[f"condition_value_{index}"])
         if data.get(f"condition_value_{index}")
@@ -177,8 +187,16 @@ def parse_skill_effect(
         condition_class_name = None
         condition_value = None
 
-    reference_buff_id = data.get(f"reference_buff_id_{index}") or None
-    required_target_buff_id = data.get(f"required_target_buff_id_{index}") or None
+    reference_buff_id_raw = data.get(f"reference_buff_id_{index}") or None
+    reference_buff_id = (
+        str(reference_buff_id_raw) if reference_buff_id_raw is not None else None
+    )
+    required_target_buff_id_raw = data.get(f"required_target_buff_id_{index}") or None
+    required_target_buff_id = (
+        str(required_target_buff_id_raw)
+        if required_target_buff_id_raw is not None
+        else None
+    )
 
     return effect(
         value_source=value_source,
@@ -218,7 +236,7 @@ class SkillData:
     revealed: bool = True
 
     @classmethod
-    def from_dict(cls, data: dict[str, str | int]) -> "SkillData":
+    def from_dict(cls, data: SpreadsheetRow) -> "SkillData":
         skill_effects: list[SkillEffectBase] = []
 
         for i in range(MAX_EFFECT_COUNT):
@@ -226,12 +244,12 @@ class SkillData:
                 skill_effects.append(effect)
 
         return SkillData(
-            id=data["id"],
-            target_rule=data["target_rule"],
-            target_count=data["target_count"],
-            cost=data["cost"],
+            id=str(data["id"]),
+            target_rule=str(data["target_rule"]),
+            target_count=int(data["target_count"]),
+            cost=int(data["cost"]),
             effects=skill_effects,
-            description=data["description"],
+            description=str(data["description"]),
             revealed=parse_spreadsheet_bool(data.get("is_revealed", True)),
         )
 

@@ -39,7 +39,6 @@ class PracticeRoundManager:
 
     def to_phase(self, phase: PracticeRoundPhase) -> None:
         if phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
-            # 라운드 시작 처리 + 선공/후공 무작위 결정
             self._context.on_start_round()
             sides = list(SideType)
             random.shuffle(sides)
@@ -65,6 +64,9 @@ class PracticeRoundManager:
 
         char_side = self._context.get_side(command.user_id)
 
+        # _phase가 None이 아니면 FIRST_MOVER_ACTION 전환(to_phase)이 이미
+        # 일어난 뒤이므로 _first_mover/_second_mover도 함께 채워져 있다.
+        assert self._first_mover is not None and self._second_mover is not None
         expected_side = (
             self._first_mover
             if self._phase == PracticeRoundPhase.FIRST_MOVER_ACTION

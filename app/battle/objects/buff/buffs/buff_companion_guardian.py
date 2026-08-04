@@ -39,6 +39,7 @@ class CompanionGuardianEvent(BuffEvent):
         companion_id = calculator.context.find_companion_id(holder)
         if not is_companion_alive(calculator.context, companion_id):
             return
+        assert companion_id is not None  # is_companion_alive()가 이미 보장
 
         effect_data = calculator.data_by_effect[effect_seq_number]
         holder_was_hit = any(
@@ -54,7 +55,9 @@ class CompanionGuardianEvent(BuffEvent):
             dc.base.target_id == companion_id for dc in effect_data.damage_data_list
         )
         split_modifier = FloatValueModifier(
-            source_name="CompanionBuff1", value=-self._SPLIT_PERCENT, applies_to_fixed=True
+            source_name="CompanionBuff1",
+            value=-self._SPLIT_PERCENT,
+            applies_to_fixed=True,
         )
         shared_calcs: list[DamageCalculateData] = []
         if not companion_already_targeted:
@@ -81,6 +84,7 @@ class CompanionGuardianEvent(BuffEvent):
             and attacker_or_target in calculator.context.characters
         )
         if attacker_alive:
+            assert attacker_or_target is not None  # attacker_alive가 이미 보장
             effect_data.damage_data_list.append(
                 make_coefficient_damage_calc(
                     attacker_id=holder,

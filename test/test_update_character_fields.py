@@ -212,14 +212,26 @@ def test_reveal_declared_enemy_skills_reads_sheet_once_for_multiple_skills():
     여러 개 있어도 '스킬_에너미' 시트는 한 번만 읽어야 한다 — 스킬마다 개별
     write-back 후 캐시를 무효화하면 뒤이은 스킬이 매번 재조회하게 된다."""
     skill_a = SkillData(
-        id="스킬_A", target_rule="SkillTargetRuleNamed", target_count=1, cost=0,
-        effects=[], description="", revealed=False,
+        id="스킬_A",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[],
+        description="",
+        revealed=False,
     )
     skill_b = SkillData(
-        id="스킬_B", target_rule="SkillTargetRuleNamed", target_count=1, cost=0,
-        effects=[], description="", revealed=False,
+        id="스킬_B",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[],
+        description="",
+        revealed=False,
     )
-    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_A": skill_a, "스킬_B": skill_b})
+    ctx = BattlefieldContext(
+        buff_dict={}, skill_dict={"스킬_A": skill_a, "스킬_B": skill_b}
+    )
     command = CharacterCommand(
         user_id=CharacterId("적군 1"),
         parts=[

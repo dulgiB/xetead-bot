@@ -1,4 +1,5 @@
 """희생 방어 (BuffSacrifice) 테스트."""
+
 import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
@@ -67,14 +68,15 @@ def _setup(sacrifice_buff_data, sacrifice_skill):
     )
     manager = RoundManager(ctx)
     manager.process_command(
-        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
     )
 
     protector_id = CharacterId("아군 1")
     protected_id = CharacterId("아군 2")
     enemy_id = CharacterId("적군 1")
 
-    # 아군 1(보호자)이 아군 2(피보호자)에게 희생 방어 버프 부여
     ctx.add_character(
         get_test_preset("아군 1", skill_1_id="희생 방어"),
         FactionType.ALLY,
@@ -99,20 +101,18 @@ def test_attack_redirected_to_protector(sacrifice_buff_data, sacrifice_skill):
         sacrifice_buff_data, sacrifice_skill
     )
 
-    # PRE_ACTION: 적군 공격 선언
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
     cmd = parse_character_command(enemy_id, "[공격/아군 2]", ctx)
     manager.process_command(cmd)
 
-    # POST: 정산
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
     protector_hp = ctx.characters[protector_id].status.curr_hp
     protected_hp = ctx.characters[protected_id].status.curr_hp
 
-    assert protector_hp < 100  # 보호자가 대미지 수령
-    assert protected_hp == 100  # 피보호자는 무사
+    assert protector_hp < 100
+    assert protected_hp == 100
 
 
 def test_sacrifice_buff_expires_after_one_use(sacrifice_buff_data, sacrifice_skill):
@@ -149,7 +149,7 @@ def test_second_attack_hits_protected_after_buff_expires(
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
 
     protected_hp_after_round1 = ctx.characters[protected_id].status.curr_hp
-    assert protected_hp_after_round1 == 100  # 1라운드에는 무사
+    assert protected_hp_after_round1 == 100
 
     # 2라운드: 버프 없으므로 피보호자 직접 피격
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
@@ -172,7 +172,9 @@ def test_redirect_is_faction_agnostic(sacrifice_buff_data, sacrifice_skill):
     )
     manager = RoundManager(ctx)
     manager.process_command(
-        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
     )
 
     enemy_protector_id = CharacterId("적군 1")
@@ -189,7 +191,6 @@ def test_redirect_is_faction_agnostic(sacrifice_buff_data, sacrifice_skill):
         get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
 
-    # 적군 1(보호자)이 적군 2(피보호자)를 보호하도록 희생 방어 버프를 직접 부여
     ctx.buff_container.add(
         BuffAddData(
             given_by=enemy_protector_id,
@@ -202,8 +203,8 @@ def test_redirect_is_faction_agnostic(sacrifice_buff_data, sacrifice_skill):
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.process_command(parse_character_command(ally_id, "[공격/적군 2]", ctx))
 
-    assert ctx.characters[enemy_protector_id].status.curr_hp < 100  # 보호자 피격
-    assert ctx.characters[enemy_protected_id].status.curr_hp == 100  # 피보호자 무사
+    assert ctx.characters[enemy_protector_id].status.curr_hp < 100
+    assert ctx.characters[enemy_protected_id].status.curr_hp == 100
 
 
 def test_ally_heal_not_redirected(sacrifice_buff_data, sacrifice_skill):
@@ -215,7 +216,9 @@ def test_ally_heal_not_redirected(sacrifice_buff_data, sacrifice_skill):
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
-        effects=[SkillEffectHeal(ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None)],
+        effects=[
+            SkillEffectHeal(ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None)
+        ],
         description="",
     )
     ctx = BattlefieldContext(
@@ -224,7 +227,9 @@ def test_ally_heal_not_redirected(sacrifice_buff_data, sacrifice_skill):
     )
     manager = RoundManager(ctx)
     manager.process_command(
-        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
     )
 
     protector_id = CharacterId("아군 1")
@@ -233,23 +238,27 @@ def test_ally_heal_not_redirected(sacrifice_buff_data, sacrifice_skill):
 
     ctx.add_character(
         get_test_preset("아군 1", skill_1_id="희생 방어"),
-        FactionType.ALLY, BattlefieldColumnIndex(0),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
     ctx.add_character(
         get_test_preset("아군 2", initial_hp=50),
-        FactionType.ALLY, BattlefieldColumnIndex(0),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
     ctx.add_character(
         get_test_preset("아군 3", skill_1_id="힐"),
-        FactionType.ALLY, BattlefieldColumnIndex(0),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
     ctx.add_character(
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
 
-    # 보호자가 아군 2에게 희생 방어 부여
-    manager.process_command(parse_character_command(protector_id, "[희생 방어/아군 2]", ctx))
-    # 아군 3이 아군 2에게 힐 → 힐이 보호자(아군 1)에게 가면 안 됨
+    manager.process_command(
+        parse_character_command(protector_id, "[희생 방어/아군 2]", ctx)
+    )
+    # 힐은 희생 방어 리다이렉트 대상이 아니므로 보호자(아군 1)에게 가면 안 된다.
     manager.process_command(parse_character_command(healer_id, "[힐/아군 2]", ctx))
 
     assert ctx.characters[protected_id].status.curr_hp == 70  # 50 + 20
@@ -275,15 +284,14 @@ def test_turn_based_sacrifice_redirects_every_round(sacrifice_skill):
         turn_buff, sacrifice_skill
     )
 
-    # 1라운드
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
     manager.process_command(parse_character_command(enemy_id, "[공격/아군 2]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
     protector_hp_round1 = ctx.characters[protector_id].status.curr_hp
-    assert protector_hp_round1 < 100  # 보호자 피격
-    assert ctx.characters[protected_id].status.curr_hp == 100  # 피보호자 무사
+    assert protector_hp_round1 < 100
+    assert ctx.characters[protected_id].status.curr_hp == 100
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)  # turn 2 → 1
 
@@ -342,7 +350,9 @@ def test_sacrifice_redirects_attached_debuff(sacrifice_buff_data, sacrifice_skil
     )
     manager = RoundManager(ctx)
     manager.process_command(
-        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
     )
 
     protector_id = CharacterId("아군 1")
@@ -351,30 +361,32 @@ def test_sacrifice_redirects_attached_debuff(sacrifice_buff_data, sacrifice_skil
 
     ctx.add_character(
         get_test_preset("아군 1", skill_1_id="희생 방어"),
-        FactionType.ALLY, BattlefieldColumnIndex(0),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
     ctx.add_character(
         get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
     ctx.add_character(
         get_test_preset("적군 1", skill_1_id="저주 일격"),
-        FactionType.ENEMY, BattlefieldColumnIndex(0),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
     )
 
-    # 보호자가 피보호자에게 희생 방어 부여
-    manager.process_command(parse_character_command(protector_id, "[희생 방어/아군 2]", ctx))
+    manager.process_command(
+        parse_character_command(protector_id, "[희생 방어/아군 2]", ctx)
+    )
 
-    # 적이 피보호자에게 저주 일격
     manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-    manager.process_command(parse_character_command(enemy_id, "[저주 일격/아군 2]", ctx))
+    manager.process_command(
+        parse_character_command(enemy_id, "[저주 일격/아군 2]", ctx)
+    )
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
-    # 대미지: 피보호자 무사, 보호자 피격
     assert ctx.characters[protected_id].status.curr_hp == 100
     assert ctx.characters[protector_id].status.curr_hp < 100
 
-    # 디버프도 보호자에게만 적용
     protected_buffs = ctx.buff_container.get_buffs_by(
         protected_id, BuffApplyTiming.ON_ACTION
     )
@@ -425,7 +437,9 @@ def test_sacrifice_reduces_redirected_damage():
     )
     manager = RoundManager(ctx)
     manager.process_command(
-        ChangePhaseCommand(type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION)
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
     )
 
     protector_id = CharacterId("아군 1")
@@ -440,7 +454,8 @@ def test_sacrifice_reduces_redirected_damage():
     )
     ctx.add_character(
         get_test_preset("적군 1", skill_1_id="강타"),
-        FactionType.ENEMY, BattlefieldColumnIndex(0),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
     )
 
     ctx.buff_container.add(
@@ -454,4 +469,4 @@ def test_sacrifice_reduces_redirected_damage():
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
     assert ctx.characters[protected_id].status.curr_hp == 100  # 피보호자 무사
-    assert ctx.characters[protector_id].status.curr_hp == 60   # 100 - 40 (경감 적용)
+    assert ctx.characters[protector_id].status.curr_hp == 60  # 100 - 40 (경감 적용)

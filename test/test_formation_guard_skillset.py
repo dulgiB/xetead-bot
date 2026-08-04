@@ -374,9 +374,15 @@ class TestPassiveSkill:
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
-        ctx.add_character(get_test_preset("Ally1"), FactionType.ALLY, BattlefieldColumnIndex(1))
-        ctx.add_character(get_test_preset("Ally2"), FactionType.ALLY, BattlefieldColumnIndex(2))
-        ctx.add_character(get_test_preset("Ally3"), FactionType.ALLY, BattlefieldColumnIndex(3))
+        ctx.add_character(
+            get_test_preset("Ally1"), FactionType.ALLY, BattlefieldColumnIndex(1)
+        )
+        ctx.add_character(
+            get_test_preset("Ally2"), FactionType.ALLY, BattlefieldColumnIndex(2)
+        )
+        ctx.add_character(
+            get_test_preset("Ally3"), FactionType.ALLY, BattlefieldColumnIndex(3)
+        )
 
         manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
 
@@ -398,8 +404,12 @@ class TestPassiveSkill:
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
-        ctx.add_character(get_test_preset("Ally1"), FactionType.ALLY, BattlefieldColumnIndex(1))
-        ctx.add_character(get_test_preset("Ally2"), FactionType.ALLY, BattlefieldColumnIndex(2))
+        ctx.add_character(
+            get_test_preset("Ally1"), FactionType.ALLY, BattlefieldColumnIndex(1)
+        )
+        ctx.add_character(
+            get_test_preset("Ally2"), FactionType.ALLY, BattlefieldColumnIndex(2)
+        )
 
         manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
 
@@ -477,10 +487,14 @@ class TestCost3Skill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("WithFormation"), FactionType.ALLY, BattlefieldColumnIndex(0)
+            get_test_preset("WithFormation"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("WithoutFormation"), FactionType.ALLY, BattlefieldColumnIndex(0)
+            get_test_preset("WithoutFormation"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
         )
         ctx.buff_container.add(
             BuffAddData(
@@ -525,9 +539,7 @@ class TestReflectBuff:
 
         attacker_hp_before = ctx.characters[attacker].status.curr_hp
         target_hp_before = ctx.characters[target].status.curr_hp
-        manager.process_command(
-            parse_character_command(attacker, "[공격/적군]", ctx)
-        )
+        manager.process_command(parse_character_command(attacker, "[공격/적군]", ctx))
         attacker_hp_after = ctx.characters[attacker].status.curr_hp
         target_hp_after = ctx.characters[target].status.curr_hp
 
@@ -556,9 +568,7 @@ class TestReflectBuff:
             BuffAddData(given_by=target, applied_to=target, buff_id="반사")
         )
 
-        manager.process_command(
-            parse_character_command(attacker, "[공격/적군]", ctx)
-        )
+        manager.process_command(parse_character_command(attacker, "[공격/적군]", ctx))
         entries = ctx.results[-1].log_entries
 
         no_effect = next(e for e in entries if e.kind == BattleLogEntryKind.NO_EFFECT)
@@ -591,13 +601,13 @@ class TestReflectBuff:
             BuffAddData(given_by=target, applied_to=target, buff_id="반사")
         )
         ctx.buff_container.add(
-            BuffAddData(given_by=attacker, applied_to=attacker, buff_id="GivenBoostTest")
+            BuffAddData(
+                given_by=attacker, applied_to=attacker, buff_id="GivenBoostTest"
+            )
         )
 
         attacker_hp_before = ctx.characters[attacker].status.curr_hp
-        manager.process_command(
-            parse_character_command(attacker, "[공격/적군]", ctx)
-        )
+        manager.process_command(parse_character_command(attacker, "[공격/적군]", ctx))
         attacker_hp_after = ctx.characters[attacker].status.curr_hp
 
         # floor(100 * 1.5) = 150, floor(150 * 0.4) = 60
@@ -628,9 +638,7 @@ class TestReflectBuff:
         )
 
         attacker_hp_before = ctx.characters[attacker].status.curr_hp
-        manager.process_command(
-            parse_character_command(attacker, "[공격/적군]", ctx)
-        )
+        manager.process_command(parse_character_command(attacker, "[공격/적군]", ctx))
         attacker_hp_after = ctx.characters[attacker].status.curr_hp
 
         # ReceivedGuardTest(-50%)가 반영됐다면 20이 됐겠지만, 무시되므로 그대로 40.
@@ -665,9 +673,7 @@ class TestReflectBuff:
         )
 
         attacker_hp_before = ctx.characters[attacker].status.curr_hp
-        manager.process_command(
-            parse_character_command(attacker, "[공격/적군]", ctx)
-        )
+        manager.process_command(parse_character_command(attacker, "[공격/적군]", ctx))
         attacker_hp_after = ctx.characters[attacker].status.curr_hp
 
         # ReceivedGuardTest(-50%)가 반영됐다면 20이 됐겠지만, 무시되므로 그대로 40.

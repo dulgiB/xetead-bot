@@ -50,4 +50,6 @@ class BuffCatastrophe(BuffBase):
         character = context.characters.get(self.applied_to)
         if character is None:
             return
-        character.status.curr_hp = max(0, character.status.curr_hp - self.stack_count * 3)
+        character.status.curr_hp = max(
+            0, character.status.curr_hp - self.stack_count * 3
+        )

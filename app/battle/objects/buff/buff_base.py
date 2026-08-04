@@ -1,14 +1,16 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional, Self
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_events import BuffEvent
+from battle.objects.buff.conditions import Condition
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     BuffApplyTiming,
     BuffCountDeductCondition,
     ValueSourceType,
+    ValueType,
 )
 from battle.objects.models import BuffUid, CharacterId
 
@@ -90,7 +92,7 @@ class BuffDurationCounter:
         return True
 
     def display_text(self, stack_count: Optional[int] = None) -> str:
-        """"(N턴/M회)" 또는 "(N턴/M스택)" 형식의 표시 텍스트.
+        """ "(N턴/M회)" 또는 "(N턴/M스택)" 형식의 표시 텍스트.
 
         stack_count는 적층형 버프(max_stack이 있는 버프)에 한해 호출측이
         넘긴다. 구조상 적층형 버프는 duration_count_value(횟수)를 쓰지
@@ -142,6 +144,38 @@ class BuffBase(abc.ABC):
 
         # 다른 버프의 id를 참조해야 하는 효과 전용(대부분의 버프는 쓰지 않음).
         self.reference_buff_id = data.reference_buff_id
+
+    @classmethod
+    def _create_bare(
+        cls,
+        *,
+        id_: str,
+        uid: BuffUid,
+        given_by: CharacterId,
+        applied_to: CharacterId,
+        value: int = 0,
+        value_type: Optional[ValueType] = None,
+        condition: Optional[Condition] = None,
+        reference_buff_id: Optional[str] = None,
+    ) -> Self:
+        """ "버프" 시트의 BuffData 없이 필드를 직접 채워 인스턴스화한다
+        (__init__은 BuffData를 요구하므로 우회 경로가 필요한 곳 전용 —
+        패시브 스킬 래퍼, 패시브 버프 모디파이어 값 템플릿). BuffBase에
+        필드가 추가되면 이 메서드 하나만 맞추면 된다."""
+        obj = object.__new__(cls)
+        obj.id = id_
+        obj.uid = uid
+        obj.given_by = given_by
+        obj.applied_to = applied_to
+        obj.value = value
+        obj.value_type = value_type
+        obj.duration = BuffDurationCounter(None, None, None)
+        obj.condition = condition
+        obj.is_debuff = False
+        obj.max_stack = None
+        obj.stack_count = 1
+        obj.reference_buff_id = reference_buff_id
+        return obj
 
     def __hash__(self):
         return hash(self.uid)

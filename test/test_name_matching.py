@@ -98,7 +98,9 @@ def test_skill_and_target_name_ignore_whitespace_differences():
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     # 스킬명·대상명 모두 공백을 빼고 입력
     cmd = parse_character_command(CharacterId("아군 1"), "[변칙공격/적군1]", ctx)
@@ -110,8 +112,12 @@ def test_skill_and_target_name_ignore_whitespace_differences():
 def test_attack_target_name_with_extra_whitespace_resolves():
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     manager = _ally_action_manager(ctx)
-    ctx.add_character(get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0))
-    ctx.add_character(get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
 
     cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군   1]", ctx)
     manager.process_command(cmd)
@@ -125,7 +131,9 @@ def test_item_name_and_target_ignore_whitespace_differences():
         target_rule="SkillTargetRuleNamed",
         cost=1,
         attack_range=1,
-        effect=SkillEffectHeal(ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None),
+        effect=SkillEffectHeal(
+            ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None
+        ),
     )
     ctx = BattlefieldContext(
         buff_dict={},
@@ -135,7 +143,9 @@ def test_item_name_and_target_ignore_whitespace_differences():
     )
     manager = _ally_action_manager(ctx)
     ctx.add_character(
-        get_test_preset("아군 1", initial_hp=50), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("아군 1", initial_hp=50),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
     )
 
     cmd = parse_character_command(CharacterId("아군 1"), "[폭탄]", ctx)

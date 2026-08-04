@@ -162,21 +162,12 @@ class BuffContainer:
         if moved_char is None:
             return
 
-        event_pairs = []
-        for buff in self._buffs:
-            if buff.timing != BuffApplyTiming.ON_ENEMY_MOVE:
-                continue
-            holder_char = self._context.characters.get(buff.applied_to)
-            if holder_char is None:
-                continue
-            if holder_char.faction == moved_char.faction:
-                continue
-            event_pairs.append((buff.create_event(), buff.applied_to))
-
+        event_pairs = self._collect_reactive_event_pairs(
+            BuffApplyTiming.ON_ENEMY_MOVE, moved_char.foe_faction, lambda _: True
+        )
         if not event_pairs:
             return
 
-        event_pairs.sort(key=lambda x: x[0].priority.value)
         buff_calculator = CommandPartCalculator.create_empty_for_buff(self._context)
         for event, holder in event_pairs:
             if event.is_applied(self._context, holder, moved_char_id):
@@ -206,8 +197,9 @@ class BuffContainer:
         event_pairs = self._collect_reactive_event_pairs(
             BuffApplyTiming.ALLY_DAMAGED,
             damaged_char.faction,
-            lambda holder_id: self._context.find_character_position(holder_id)
-            == damaged_pos,
+            lambda holder_id: (
+                self._context.find_character_position(holder_id) == damaged_pos
+            ),
         )
         self._apply_reactive_events(
             event_pairs, damaged_char_id, calculator, effect_seq_number

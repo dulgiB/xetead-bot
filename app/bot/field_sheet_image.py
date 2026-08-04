@@ -84,13 +84,15 @@ def capture_field_sheet_image(
     range_a1: str = _EXPORT_RANGE,
     cache: Optional[SheetCache] = None,
 ) -> Iterator[Path]:
-    """"필드" 시트의 현재 상태를 PNG로 캡처해 임시 파일 경로를 넘겨준다.
+    """ "필드" 시트의 현재 상태를 PNG로 캡처해 임시 파일 경로를 넘겨준다.
 
     인증은 별도로 만들지 않고 `spreadsheet`가 이미 들고 있는 gspread 인증
     세션(`spreadsheet.client.session`, `AuthorizedSession`)을 재사용한다.
     """
-    ws = cache.worksheet(_FIELD_SHEET) if cache is not None else spreadsheet.worksheet(
-        _FIELD_SHEET
+    ws = (
+        cache.worksheet(_FIELD_SHEET)
+        if cache is not None
+        else spreadsheet.worksheet(_FIELD_SHEET)
     )
     gid = ws.id
     response = spreadsheet.client.session.get(

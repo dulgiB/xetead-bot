@@ -46,7 +46,6 @@ class PracticeBattlefieldContext(BattlefieldContext):
 
     @property
     def allow_item_usage(self) -> bool:
-        # 대련/상시전투에서는 아이템 커맨드를 사용할 수 없다.
         return False
 
     # ------------------------------------------------------------------

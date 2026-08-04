@@ -36,6 +36,7 @@ def _characters_in_holder_scope(
         if (char.faction == holder_char.faction) != same_faction:
             continue
         if in_range:
+            assert holder_range is not None  # in_range=True일 때만 여기 도달
             if not is_reachable(
                 holder_pos, context.find_character_position(char_id), holder_range
             ):
@@ -49,10 +50,10 @@ def _characters_in_holder_scope(
 class Condition(abc.ABC):
     value: Optional[int] = None
 
-    # 이번 라운드에 이미 확정된 결과(damaged_this_round 등)에 의존하는 조건이면
-    # True로 오버라이드한다. ENEMY_POST_ACTION 트리거 패시브가 적의 지연 공격이
-    # 모두 적용된 뒤에 평가되어야 하는지 PassiveSkillWrapperBuff.timing이
-    # 판단하는 데 쓰인다(app/battle/objects/passive_skill/passive_skill.py 참고).
+    # True면 ENEMY_POST_ACTION 트리거 패시브가 적의 지연 공격이 모두 적용된
+    # 뒤에 평가되도록 PassiveSkillWrapperBuff.timing이 골라준다. 직접
+    # 오버라이드하지 말고 damaged_this_round를 읽는 조건은 아래
+    # RoundResolvedCondition을 상속한다.
     requires_round_resolved: ClassVar[bool] = False
 
     @abc.abstractmethod
@@ -63,6 +64,15 @@ class Condition(abc.ABC):
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
         pass
+
+
+@dataclass(frozen=True)
+class RoundResolvedCondition(Condition):
+    """damaged_this_round 등 이번 라운드에 확정된 데이터를 읽는 조건의 공통
+    부모. 이 조건을 쓰는 새 클래스는 requires_round_resolved를 따로 켤 필요
+    없이 이 클래스를 상속하기만 하면 된다."""
+
+    requires_round_resolved: ClassVar[bool] = True
 
 
 @dataclass(frozen=True)
@@ -260,6 +270,7 @@ class EnemyInRangeCountCondition(Condition):
                 context, holder, same_faction=False, include_self=True, in_range=True
             )
         )
+        assert self.value is not None
         return enemy_count >= self.value
 
 
@@ -279,6 +290,7 @@ class AllyInRangeCountCondition(Condition):
                 context, holder, same_faction=True, include_self=False, in_range=True
             )
         )
+        assert self.value is not None
         return ally_count >= self.value
 
 
@@ -304,13 +316,11 @@ class TargetIsInRangeCondition(Condition):
 
 
 @dataclass(frozen=True)
-class HolderWasAttackedCondition(Condition):
+class HolderWasAttackedCondition(RoundResolvedCondition):
     """holder가 이번 라운드 동안(damaged_this_round 기준) 대미지를 받았을 때 True.
 
     "같은 열 아군 누구든" 대신 "자신이 맞았을 때만" 추가로 반응하는 조건에 쓴다.
     """
-
-    requires_round_resolved: ClassVar[bool] = True
 
     def is_applied(
         self,
@@ -322,11 +332,9 @@ class HolderWasAttackedCondition(Condition):
 
 
 @dataclass(frozen=True)
-class AllyInSameColumnWasAttackedCondition(Condition):
+class AllyInSameColumnWasAttackedCondition(RoundResolvedCondition):
     """holder와 같은 열·같은 진영(자신 포함)인 캐릭터 중 이번 라운드 동안
     (damaged_this_round 기준) 대미지를 받은 자가 1명이라도 있으면 True."""
-
-    requires_round_resolved: ClassVar[bool] = True
 
     def is_applied(
         self,
@@ -362,14 +370,12 @@ class TargetIsAllyCondition(Condition):
 
 
 @dataclass(frozen=True)
-class AllyInRangeWasAttackedCondition(Condition):
+class AllyInRangeWasAttackedCondition(RoundResolvedCondition):
     """holder의 사거리 이내(자신 포함)·같은 진영인 캐릭터 중 이번 라운드
     동안(damaged_this_round 기준) 대미지를 받은 자가 1명이라도 있으면 True.
     "라운드 최종 위치 기준"은 별도 처리가 필요 없다 — 라운드 종료 시점에
     find_character_position()을 호출하면 자연히 그 라운드의 최종 위치가
     나온다."""
-
-    requires_round_resolved: ClassVar[bool] = True
 
     def is_applied(
         self,
@@ -386,13 +392,11 @@ class AllyInRangeWasAttackedCondition(Condition):
 
 
 @dataclass(frozen=True)
-class OtherAllyInRangeWasAttackedCondition(Condition):
+class OtherAllyInRangeWasAttackedCondition(RoundResolvedCondition):
     """holder의 사거리 이내·같은 진영이면서 holder 자신은 제외한 캐릭터 중
     이번 라운드 동안(damaged_this_round 기준) 대미지를 받은 자가 1명이라도
     있으면 True. holder 자신이 맞은 것만으로는 발동하지 않는다는 점에서
     AllyInRangeWasAttackedCondition(자신 포함)과 구분된다."""
-
-    requires_round_resolved: ClassVar[bool] = True
 
     def is_applied(
         self,

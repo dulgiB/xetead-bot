@@ -4,6 +4,7 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
@@ -486,9 +487,7 @@ def test_target_in_range_condition_triggers_when_in_range():
 # ── 수호 본능 (ENEMY_POST_ACTION 트리거) ──────────────────────────────────────
 
 
-def _guard_buff_data() -> "BuffData":
-    from battle.objects.buff.models import BuffData
-
+def _guard_buff_data() -> BuffData:
     return BuffData(
         id="수호",
         buff_class_name="BuffReceivedDamage",
@@ -565,7 +564,8 @@ def test_guardian_evaluated_at_enemy_post_action_position():
     )
     ctx.add_character(
         get_test_preset("적군 1", skill_1_id="강타", atk=50),
-        FactionType.ENEMY, BattlefieldColumnIndex(1),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(1),
     )
     ctx.buff_container.add_passive_wrapper(_make_guardian_passive(guardian_id))
 

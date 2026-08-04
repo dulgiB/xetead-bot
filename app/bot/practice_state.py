@@ -14,11 +14,9 @@ class PracticeBattleState:
     context: PracticeBattlefieldContext
     manager: PracticeRoundManager
 
-    # 라운드 정보
     round_n: int = 0
     round_limit: int = 3
 
-    # 게시물 ID
     prep_post_id: int = 0
     active_post_id: Optional[int] = None
 
@@ -69,10 +67,7 @@ class PracticeBattleState:
         self.manager.end_round()
 
     def total_hp_by_side(self, side: SideType) -> int:
-        return sum(
-            c.status.curr_hp
-            for c in self.context.get_side_characters(side)
-        )
+        return sum(c.status.curr_hp for c in self.context.get_side_characters(side))
 
     def winner(self) -> Optional[SideType]:
         """남은 체력 기준으로 승자 SideType을 반환한다. 동점이면 None."""

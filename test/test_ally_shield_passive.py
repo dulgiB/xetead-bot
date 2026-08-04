@@ -11,12 +11,14 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buffs import BuffGivenDamage
-from battle.objects.buff.conditions import (
-    OtherAllyInRangeWasAttackedCondition,
-    TargetIsAllyCondition,
-)
+from battle.objects.buff.conditions import TargetIsAllyCondition
 from battle.objects.buff.models import BuffData
-from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType, ValueType
+from battle.objects.define import (
+    ActionType,
+    BattlefieldColumnIndex,
+    FactionType,
+    ValueType,
+)
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import (
     PassiveSkillData,

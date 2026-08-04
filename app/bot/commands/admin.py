@@ -156,8 +156,7 @@ def handle_admin_command(
     if _RE_DM_BATTLE_START.search(text):
         return _cmd_dm_battle_start(text, mentions or [], state, visibility)
 
-    if _RE_MANUAL_PLACE.search(text):
-        m = _RE_MANUAL_PLACE.search(text)
+    if m := _RE_MANUAL_PLACE.search(text):
         name = m.group(1).strip()
         faction_col_str = m.group(2).strip()
         return AdminCommandResult(_cmd_manual_place(name, faction_col_str, state))
@@ -218,9 +217,7 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
         inventory,
     )
     reply = "◊ 전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨주세요."
-    return AdminCommandResult(
-        reply, set_preparation_post=True, post_as_new_status=True
-    )
+    return AdminCommandResult(reply, set_preparation_post=True, post_as_new_status=True)
 
 
 def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str:
@@ -311,9 +308,7 @@ def _cmd_battle_start(
             is_main=True,
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
-            characters=build_field_characters(
-                state.session.context, include_hp=False
-            ),
+            characters=build_field_characters(state.session.context, include_hp=False),
             cache=state.sheet_cache,
         )
     except Exception:
@@ -364,9 +359,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             is_main=True,
             round_n=state.session.round_n,
             phase=new_phase.value,
-            characters=build_field_characters(
-                state.session.context, include_hp=False
-            ),
+            characters=build_field_characters(state.session.context, include_hp=False),
             cache=state.sheet_cache,
         )
     except Exception:
@@ -467,9 +460,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             is_main=True,
             round_n=state.session.round_n,
             phase=new_phase.value,
-            characters=build_field_characters(
-                state.session.context, include_hp=False
-            ),
+            characters=build_field_characters(state.session.context, include_hp=False),
             cache=state.sheet_cache,
         )
     except Exception:
@@ -538,9 +529,7 @@ def _cmd_end(state: "BotState") -> str:
             is_main=True,
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
-            characters=build_field_characters(
-                state.session.context, include_hp=False
-            ),
+            characters=build_field_characters(state.session.context, include_hp=False),
             ended=True,
             cache=state.sheet_cache,
         )
@@ -668,7 +657,9 @@ def _cmd_proxy(
     field_id = str(state.preparation_status_id)
     round_n = state.session.round_n
     phase = state.session.current_phase
-    is_enemy_declare = state.session.context.characters[char_id].faction == FactionType.ENEMY
+    is_enemy_declare = (
+        state.session.context.characters[char_id].faction == FactionType.ENEMY
+    )
 
     try:
         command = parse_character_command(char_id, cmd_str, state.session.context)
@@ -680,7 +671,9 @@ def _cmd_proxy(
         state.session.process_command(command)
         new_results = state.session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
-        write_back_changed_hp(state.spreadsheet, state.session.context, entries, cache=state.sheet_cache)
+        write_back_changed_hp(
+            state.spreadsheet, state.session.context, entries, cache=state.sheet_cache
+        )
 
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -690,11 +683,17 @@ def _cmd_proxy(
             entries=entries,
         )
         reply_text = _format_named_reply(
-            state.session.context, char_id, new_results, show_skill_preview=is_enemy_declare
+            state.session.context,
+            char_id,
+            new_results,
+            show_skill_preview=is_enemy_declare,
         )
         if is_enemy_declare:
             reveal_declared_enemy_skills(
-                state.spreadsheet, state.session.context, command, cache=state.sheet_cache
+                state.spreadsheet,
+                state.session.context,
+                command,
+                cache=state.sheet_cache,
             )
         return reply_text, battle_log
     except CommandValidationError as e:
@@ -894,7 +893,7 @@ def _cmd_investigation_battle(
         parts = faction_col_str.split()
         if len(parts) < 2:
             errors.append(
-                f"◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다. (예시: [배치/늑대/적군 3열])"
+                "◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다. (예시: [배치/늑대/적군 3열])"
             )
             continue
         faction_str, col_str = parts[0], parts[1]
@@ -976,9 +975,7 @@ def _cmd_dm_battle_start(
     ally_data_list = [
         state.char_dict[acct] for acct in mentions if acct in state.char_dict
     ]
-    errors.extend(
-        _assign_random_positions(session, ally_data_list, FactionType.ALLY)
-    )
+    errors.extend(_assign_random_positions(session, ally_data_list, FactionType.ALLY))
 
     if not session.context.characters:
         reply_parts = ["◊ 배치에 모두 실패하여 전투를 시작하지 못했습니다."]
@@ -1019,7 +1016,12 @@ def _cmd_dm_battle_advance_phase(
             for part_result in part_results
             for entry in part_result.log_entries
         ]
-        write_back_changed_hp(state.spreadsheet, session.context, post_action_entries, cache=state.sheet_cache)
+        write_back_changed_hp(
+            state.spreadsheet,
+            session.context,
+            post_action_entries,
+            cache=state.sheet_cache,
+        )
 
     round_end_log_entries = (
         session.manager.get_last_round_end_log_entries()
@@ -1027,7 +1029,12 @@ def _cmd_dm_battle_advance_phase(
         else None
     )
     if round_end_log_entries:
-        write_back_changed_hp(state.spreadsheet, session.context, round_end_log_entries, cache=state.sheet_cache)
+        write_back_changed_hp(
+            state.spreadsheet,
+            session.context,
+            round_end_log_entries,
+            cache=state.sheet_cache,
+        )
 
     eliminated_characters = (
         session.manager.get_last_eliminated_characters()
@@ -1114,7 +1121,9 @@ def _cmd_dm_battle_proxy(
         session.process_command(command)
         new_results = session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
-        write_back_changed_hp(state.spreadsheet, session.context, entries, cache=state.sheet_cache)
+        write_back_changed_hp(
+            state.spreadsheet, session.context, entries, cache=state.sheet_cache
+        )
 
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -1183,7 +1192,12 @@ def _end_dm_battle(
         if (before := hp_before[char_id]) != char.status.curr_hp
     ]
     if battle_end_entries:
-        write_back_changed_hp(state.spreadsheet, session.context, battle_end_entries, cache=state.sheet_cache)
+        write_back_changed_hp(
+            state.spreadsheet,
+            session.context,
+            battle_end_entries,
+            cache=state.sheet_cache,
+        )
 
     state.dm_battles.pop(dm_state.active_post_id, None)
 

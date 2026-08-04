@@ -3,7 +3,13 @@ from typing import TYPE_CHECKING, ClassVar
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.companion import is_companion_alive
 from battle.objects.define import ValueSourceType
-from battle.objects.models import BaseValueIndicator, CharacterId, DamageData, HealData, MoveData
+from battle.objects.models import (
+    BaseValueIndicator,
+    CharacterId,
+    DamageData,
+    HealData,
+    MoveData,
+)
 from battle.objects.skill.models import SkillEffectBase
 
 if TYPE_CHECKING:
@@ -45,6 +51,7 @@ class SkillEffectSpendCompanionHpOrSummon(SkillEffectBase):
         companion_id = context.find_companion_id(holder)
 
         if is_companion_alive(context, companion_id):
+            assert companion_id is not None  # is_companion_alive()가 이미 보장
             damage_list = [
                 DamageData(
                     attacker_id=holder,

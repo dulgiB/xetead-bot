@@ -28,7 +28,7 @@
 from typing import TYPE_CHECKING, Optional
 
 import gspread
-from gspread.utils import rowcol_to_a1
+from gspread.utils import ValueInputOption, rowcol_to_a1
 
 from battle.core.commands.models import CharacterCommand
 from battle.objects.define import (
@@ -86,8 +86,10 @@ def render_public_field_sheet(
     battle_name: Optional[str] = None,
     cache: Optional[SheetCache] = None,
 ) -> None:
-    ws = cache.worksheet(_FIELD_SHEET) if cache is not None else spreadsheet.worksheet(
-        _FIELD_SHEET
+    ws = (
+        cache.worksheet(_FIELD_SHEET)
+        if cache is not None
+        else spreadsheet.worksheet(_FIELD_SHEET)
     )
 
     enemy_grid, enemy_declare_grid, notes = _build_faction_block(
@@ -132,7 +134,7 @@ def render_public_field_sheet(
             },
         ]
     )
-    ws.batch_update(updates, value_input_option="USER_ENTERED")
+    ws.batch_update(updates, value_input_option=ValueInputOption.user_entered)
     ws.update_notes(notes)
 
 
@@ -150,7 +152,9 @@ def _build_faction_block(
     나타낸다 (적군은 -1: 위로, 아군은 +1: 아래로). 반환하는 두 그리드는 모두
     블록의 최상단 행부터 시작하는 상대 좌표라 `batch_update`에 그대로 넘길 수 있다.
     """
-    block_top = min(main_row_start, main_row_start + direction * (CHARACTER_PER_COLUMN - 1) * 3)
+    block_top = min(
+        main_row_start, main_row_start + direction * (CHARACTER_PER_COLUMN - 1) * 3
+    )
 
     grid = [["" for _ in range(_COLUMN_COUNT)] for _ in range(_FACTION_BLOCK_HEIGHT)]
     declare_grid = [["", ""] for _ in range(_FACTION_BLOCK_HEIGHT)]
@@ -219,7 +223,9 @@ def _format_stats_line(char: "CombatCharacter") -> str:
     atk = char.status[CombatStatType.ATK]
     attack_range = char.status[CombatStatType.RANGE]
     attack_kind = "마법" if char.status.is_magic_attacker else "물리"
-    return f"ATK {atk} · RAN {attack_range}\n{attack_kind} · 마력적응 {_m_res_icon(char)}"
+    return (
+        f"ATK {atk} · RAN {attack_range}\n{attack_kind} · 마력적응 {_m_res_icon(char)}"
+    )
 
 
 def _m_res_icon(char: "CombatCharacter") -> str:
@@ -245,9 +251,7 @@ def _format_buff_cell(
         icon = "▾" if buff.is_debuff else "▴"
         label = buff.display_id_label()
         stack_count = buff.stack_count if buff.max_stack is not None else None
-        display_lines.append(
-            f"{icon} {label}{buff.duration.display_text(stack_count)}"
-        )
+        display_lines.append(f"{icon} {label}{buff.duration.display_text(stack_count)}")
         description = buff.get_description(context)
         note_lines.append(f"[{label}] {description}")
 

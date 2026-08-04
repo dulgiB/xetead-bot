@@ -340,14 +340,18 @@ class TestCost2Skill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", max_hp=200), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
         return ctx, manager, caster, target
 
     def test_consumes_up_to_cap_and_grants_taunt_when_threshold_met(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -366,7 +370,9 @@ class TestCost2Skill:
     def test_taunt_not_granted_below_threshold(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -385,7 +391,9 @@ class TestCost2Skill:
         남기면 안 된다 — 답글이 실제 게임 상태와 어긋나게 된다."""
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2
+            )
         )
 
         before = len(ctx.results)
@@ -400,7 +408,9 @@ class TestCost2Skill:
         """cap 5보다 적게 보유(3스택)해도 실패 없이 있는 만큼만 소모된다."""
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=3)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=3
+            )
         )
 
         manager.process_command(
@@ -432,7 +442,9 @@ class TestCost3Skill:
             BattlefieldColumnIndex(1),
         )
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="재앙", stack_value=6)
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=6
+            )
         )
 
         # 남은 여유 = 10-6=4 -> 회복량 = 4*5=20. 아군은 84->100(16 흡수),

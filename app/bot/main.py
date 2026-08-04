@@ -131,9 +131,7 @@ def _apply_game_post_side_effects(
         _register_dm_battle(state, result.dm_battle_to_register, new_post_id)
     if state.session is not None and state.session.started:
         state.active_phase_post_id = (
-            new_post_id
-            if state.session.current_phase in _COMMAND_PHASES
-            else None
+            new_post_id if state.session.current_phase in _COMMAND_PHASES else None
         )
 
 
@@ -307,7 +305,9 @@ class MastodonBotListener(StreamListener):
             with capture_field_sheet_image(
                 state.field_spreadsheet, cache=state.field_sheet_cache
             ) as image_path:
-                media = self._mastodon.media_post(str(image_path), mime_type="image/png")
+                media = self._mastodon.media_post(
+                    str(image_path), mime_type="image/png"
+                )
                 return [media["id"]]
         except Exception:
             logger.exception("공개 필드 시트 이미지 캡처/업로드 실패")
@@ -344,7 +344,12 @@ class MastodonBotListener(StreamListener):
                 if m["acct"] != self._bot_acct
             ]
             self.__dispatch(
-                acct, status_id, in_reply_to_id, command_text, status["visibility"], mentions
+                acct,
+                status_id,
+                in_reply_to_id,
+                command_text,
+                status["visibility"],
+                mentions,
             )
         except Exception:
             logger.exception(
@@ -393,11 +398,12 @@ class MastodonBotListener(StreamListener):
                     )
                 else:
                     reply_status = self._reply(
-                        status_id, acct, visibility, result.reply_text,
+                        status_id,
+                        acct,
+                        visibility,
+                        result.reply_text,
                     )
-                _persist_battle_log(
-                    state, result.battle_log, str(reply_status["id"])
-                )
+                _persist_battle_log(state, result.battle_log, str(reply_status["id"]))
 
                 if result.set_preparation_post:
                     state.preparation_status_id = reply_status["id"]
@@ -530,9 +536,7 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.practice.active_post_id
         ):
             practice_visibility = state.practice.visibility
-            reply, game_post, battle_log = _handle_practice_command(
-                acct, text, state
-            )
+            reply, game_post, battle_log = _handle_practice_command(acct, text, state)
             reply_status = self._reply(status_id, acct, visibility, reply)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
@@ -565,6 +569,9 @@ class MastodonBotListener(StreamListener):
             state.active_phase_post_id is not None
             and in_reply_to_id == state.active_phase_post_id
         ):
+            # active_phase_post_id는 session이 있을 때만 설정되고 전투 종료 시
+            # session과 함께 None으로 리셋된다(admin.py 참고) — 항상 같이 산다.
+            assert state.session is not None
             response, battle_log = handle_character_command(
                 acct, text, state, state.session, str(state.preparation_status_id)
             )
@@ -695,6 +702,9 @@ class MastodonBotListener(StreamListener):
 
 def _start_investigation_battle(state: "BotState") -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
+    assert (
+        state.practice is not None
+    )  # 호출측이 이미 확인함(state.practice is not None)
     ps = state.practice
     errors: list[str] = []
 
@@ -727,6 +737,9 @@ def _start_investigation_battle(state: "BotState") -> str:
 
 def _start_practice_battle(state: "BotState") -> str:
     """대련 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을 반환한다."""
+    assert (
+        state.practice is not None
+    )  # 호출측이 이미 확인함(state.practice is not None)
     ps = state.practice
     errors: list[str] = []
 

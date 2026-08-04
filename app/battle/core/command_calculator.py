@@ -95,8 +95,12 @@ class CommandPartCalculator:
         self._redirect_map: dict[CharacterId, CharacterId] = {}
 
         # (effect_seq_number, holder) 조합당 1회만 발동해야 하는 패시브
-        # 스킬(GIVEN_DAMAGE/GIVEN_HEAL 기반)의 발동 여부 기록.
-        self._fired_given_value_passives: set[tuple[int, CharacterId, int]] = set()
+        # 스킬(GIVEN_DAMAGE/GIVEN_HEAL 기반)의 발동 여부 기록. 세 번째 원소는
+        # 발동원 구분자로, 패시브 스킬 효과 인덱스(int)나 버프 모디파이어
+        # 식별 문자열(str) 등 호출측이 각자 고유하게 정하는 값이다.
+        self._fired_given_value_passives: set[tuple[int, CharacterId, int | str]] = (
+            set()
+        )
 
         # 스킬 하나(커맨드 파트 하나)가 effect를 여러 개 써서 같은 대상에게 여러 번
         # 대미지를 입혀도 실제로는 "한 번의 타격"이다. ON_ATTACK/ON_HIT count형
@@ -125,8 +129,8 @@ class CommandPartCalculator:
         self,
         phase: Optional[RoundPhaseType],
     ):
-        # 대미지 처리 전에 리다이렉트 매핑을 먼저 계산한다.
-        # (이 페이즈에서 실제로 대미지가 적용되는 effect만 대상으로 하여 1회만 차감)
+        # 이 페이즈에서 실제로 대미지가 적용되는 effect만 대상으로 해야
+        # 희생 방어 횟수 차감이 PRE/POST 이중 처리에서도 1회만 일어난다.
         self._prepare_redirects(phase)
 
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
@@ -217,7 +221,9 @@ class CommandPartCalculator:
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
             return apply_timing == RoundPhaseType.ENEMY_PRE_ACTION
         if phase == RoundPhaseType.ENEMY_POST_ACTION:
-            return apply_timing is None or apply_timing == RoundPhaseType.ENEMY_POST_ACTION
+            return (
+                apply_timing is None or apply_timing == RoundPhaseType.ENEMY_POST_ACTION
+            )
         if phase == RoundPhaseType.ALLY_ACTION or phase is None:
             return True
         return False  # BUFF_UPDATE_AND_NEXT_ROUND_STANDBY 등
@@ -570,7 +576,7 @@ def _build_damage_entry(
     보여준다. 계산식은 각 구성 요소의 계산식을 "+"로 이어붙인다(구성 요소가
     하나뿐이면 그 계산식을 그대로 써서 기존 표시와 동일하게 유지한다)."""
     calcs = _damage_calcs_for_target(calculator, target_id)
-    total_value = sum(c.result_value for c in calcs)
+    total_value = sum(c.result_value for c in calcs if c.result_value is not None)
     last = calcs[-1]
     if len(calcs) == 1:
         roll_display = last.roll_display
