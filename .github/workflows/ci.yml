@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  lint-and-typecheck:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,3 +30,6 @@ jobs:
 
       - name: mypy
         run: uv run mypy
+
+      - name: pytest
+        run: uv run pytest
