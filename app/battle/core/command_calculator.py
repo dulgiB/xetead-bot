@@ -125,8 +125,8 @@ class CommandPartCalculator:
         self,
         phase: Optional[RoundPhaseType],
     ):
-        # 대미지 처리 전에 리다이렉트 매핑을 먼저 계산한다.
-        # (이 페이즈에서 실제로 대미지가 적용되는 effect만 대상으로 하여 1회만 차감)
+        # 이 페이즈에서 실제로 대미지가 적용되는 effect만 대상으로 해야
+        # 희생 방어 횟수 차감이 PRE/POST 이중 처리에서도 1회만 일어난다.
         self._prepare_redirects(phase)
 
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:

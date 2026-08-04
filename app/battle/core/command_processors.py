@@ -189,7 +189,6 @@ def try_expansion_if_valid(
          원본 커맨드의 targets에 나타나지 않는다).
     """
 
-    # 1. 사용자 존재 확인
     if command.user_id not in context.characters:
         raise CommandValidationError(error_target_does_not_exist(command.user_id))
 
@@ -221,7 +220,6 @@ def try_expansion_if_valid(
         for part in command.parts
     ]
 
-    # 2. 스킬/아이템 존재 여부 및 대상 수 확인
     for part in command.parts:
         if part.type_ == ActionType.SKILL and part.skill_id is not None:
             skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
@@ -238,17 +236,15 @@ def try_expansion_if_valid(
             # 대련 등 아이템을 사용할 수 없는 전장인지 확인
             if not context.allow_item_usage:
                 raise CommandValidationError(error_item_not_usable_here())
-            # "아이템" 시트에 등록된 아이템인지 확인
             if not context.has_item(part.item_id):
                 raise CommandValidationError(error_item_does_not_exist(part.item_id))
-            # 인벤토리에 보유하고 있는지 확인
             if context.inventory.get_count(command.user_id.name, part.item_id) <= 0:
                 raise CommandValidationError(
                     error_no_item_in_inventory(part.item_id)
                 )
 
-    # 3. 코스트 확인
-    # 커맨드 전체의 코스트를 한꺼번에 산출한다. (되는 데까지 처리해주지 않고 전체 코스트가 부족하다면 아예 미처리)
+    # 커맨드 전체의 코스트를 한꺼번에 산출한다 — 되는 데까지 처리해주지 않고
+    # 전체 코스트가 부족하면 아예 미처리한다.
     needed_cost = get_total_cost(command.parts, command.user_id, context)
     if user.status.remaining_cost < needed_cost:
         raise CommandValidationError(
@@ -272,9 +268,9 @@ def try_expansion_if_valid(
             if sub_data is None:
                 continue
 
-            # 3. 이동 목적지 검증 — damage 검증보다 먼저 수행해 user_pos를 갱신한다.
+            # 이동 목적지는 damage 검증보다 먼저 수행해 user_pos를 갱신한다.
             # 슬롯 점유 여부는 실제로 이동하는 캐릭터(move_data.character_id)의
-            # 진영 기준으로 확인해야 한다. 시전자의 진영으로 확인하면, 다른
+            # 진영 기준으로 확인해야 한다 — 시전자의 진영으로 확인하면, 다른
             # 진영의 캐릭터를 이동시키는 스킬(끌어당기기/밀어내기, 대상을
             # 지정한 열로 이동시키는 스킬 등)에서 엉뚱한 진영의 열 점유 상태를
             # 검사하게 된다.
@@ -289,7 +285,6 @@ def try_expansion_if_valid(
                 if mover_id == command.user_id:
                     user_pos = to_pos
 
-            # 4. 대미지/힐 대상 존재 및 사거리 확인 (이동 후 위치 기준)
             for damage_data in sub_data.damage_list:
                 target_id = damage_data.target_id
                 if target_id not in context.characters:

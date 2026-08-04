@@ -14,11 +14,9 @@ class PracticeBattleState:
     context: PracticeBattlefieldContext
     manager: PracticeRoundManager
 
-    # 라운드 정보
     round_n: int = 0
     round_limit: int = 3
 
-    # 게시물 ID
     prep_post_id: int = 0
     active_post_id: Optional[int] = None
 

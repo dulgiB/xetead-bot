@@ -94,7 +94,6 @@ def parse_character_command(
                     d = match.capturesdict()
                     name = d["name"][0].strip()
                     if d["targets"] and d["targets"][0]:
-                        # 캐릭터 이름 또는 열(column)로 변환한다.
                         targets: list[CharacterId | BattlefieldColumnIndex] = []
                         for target in d["targets"][0].split("/"):
                             try:
