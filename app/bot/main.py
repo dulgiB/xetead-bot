@@ -492,6 +492,11 @@ class MastodonBotListener(StreamListener):
         ):
             practice_visibility = state.practice.visibility
             reply, game_post, battle_log = _handle_practice_command(acct, text, state)
+            if reply is None:
+                # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
+                # 스레드는 active_post_id에 그대로 남아, 이후 정상 커맨드가
+                # 오면 문제없이 이어진다.
+                return
             reply_status = self._reply(status_id, acct, visibility, reply)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
@@ -530,6 +535,10 @@ class MastodonBotListener(StreamListener):
             response, battle_log = handle_character_command(
                 acct, text, state, state.session, str(state.preparation_status_id)
             )
+            # silent_on_unrecognized를 안 넘겼으므로(기본값 False) response는
+            # 항상 str이다 — 본 전투는 페이즈마다 게시물이 바뀌는 구조라
+            # 사담을 조용히 무시하는 대상이 아니다.
+            assert response is not None
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             return
@@ -540,6 +549,9 @@ class MastodonBotListener(StreamListener):
             reply, end_post_text, battle_log = _handle_dm_battle_command(
                 acct, text, state, dm_state
             )
+            if reply is None:
+                # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
+                return
             reply_status = self._reply(status_id, acct, visibility, reply)
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if end_post_text is not None:
@@ -810,10 +822,13 @@ def _start_practice_battle(state: "BotState") -> str:
 
 def _handle_practice_command(
     acct: str, text: str, state: "BotState"
-) -> tuple[str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
+) -> tuple[Optional[str], Optional[str], Optional[log_sheets.BattleCommandLog]]:
     """
     대련/상시전투 중 캐릭터 커맨드를 처리한다.
-    반환값: (reply_text, game_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text_or_None, game_post_text_or_None, battle_log_or_None)
+
+    reply_text가 None이면 대괄호 커맨드 자체가 없는 답글(사담 등)이었다는
+    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다.
     """
     ps = state.practice
     if ps is None:
@@ -847,11 +862,8 @@ def _handle_practice_command(
     try:
         command = parse_character_command(char_id, text, ps.context)
         if command is None:
-            return (
-                "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]",
-                None,
-                None,
-            )
+            # 대괄호 커맨드가 아예 없는 답글(사담 등) — 에러 없이 무시한다.
+            return None, None, None
         result = ps.manager.process_command(command)
         entries = [
             entry
@@ -933,18 +945,30 @@ def _handle_practice_command(
 
 def _handle_dm_battle_command(
     acct: str, text: str, state: "BotState", dm_state: DmBattleState
-) -> tuple[str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
+) -> tuple[Optional[str], Optional[str], Optional[log_sheets.BattleCommandLog]]:
     """
     DM 전투 중 캐릭터 커맨드를 처리한다. handle_character_command를 그대로
     재사용하되, DM 전투는 스레드 답글이 유일한 실시간 확인 수단이므로 매
     답글에 현재 필드 상태(str(context))를 덧붙이고, 처리 후 전멸 여부를
     확인해 전멸 시 전투를 종료한다.
 
-    반환값: (reply_text, end_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text_or_None, end_post_text_or_None, battle_log_or_None)
+
+    reply_text가 None이면 대괄호 커맨드 자체가 없는 답글(사담 등)이었다는
+    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. DM
+    전투는 스레드 하나가 계속 이어지는 구조라 대련/상시전투와 동일하게
+    처리한다(본 전투는 페이즈마다 게시물이 바뀌므로 대상이 아니다).
     """
     response, battle_log = handle_character_command(
-        acct, text, state, dm_state.session, dm_state.field_id
+        acct,
+        text,
+        state,
+        dm_state.session,
+        dm_state.field_id,
+        silent_on_unrecognized=True,
     )
+    if response is None:
+        return None, None, None
     response = f"{response}\n\n{dm_state.session.context}"
 
     winner = admin_commands._check_dm_battle_wipe(dm_state)

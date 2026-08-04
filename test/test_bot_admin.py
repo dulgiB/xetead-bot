@@ -542,6 +542,42 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     assert char_reply["status"].startswith("@ally_acct\n")
 
 
+def test_main_battle_idle_chat_still_gets_error_reply(monkeypatch):
+    """본 전투는 대련/DM 전투와 달리 페이즈마다 게시물이 새로 바뀌는
+    구조라 스레드 하나가 계속 이어지지 않는다 — 사담을 조용히 무시하는
+    대상이 아니므로, 대괄호 커맨드가 없으면 기존처럼 에러 답글을 보내야
+    한다(silent_on_unrecognized 기본값이 False로 유지되는지 확인)."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    active_post_id = state.active_phase_post_id
+
+    listener.on_notification(
+        _make_notification("ally_acct", 3, active_post_id, "화이팅!")
+    )
+
+    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
+    assert "인식할 수 없습니다" in reply_calls[-1]["status"]
+
+
 def test_character_command_with_two_bracket_groups_is_rejected_with_explicit_error(
     monkeypatch,
 ):
@@ -1014,6 +1050,73 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
     assert "swordsman_acct" in state.practice.declared
 
 
+def test_practice_idle_chat_reply_is_silently_ignored(monkeypatch):
+    """대련/상시전투는 스레드 하나가 계속 이어지는 구조라, 참가자가 대괄호
+    커맨드 없이 잡담(사담)만 답글로 달아도 에러 답글로 스레드를 어지럽히면
+    안 된다 — 커맨드가 올 때까지 조용히 무시하고, active_post_id도 그대로
+    유지해 이후 정상 커맨드가 문제없이 이어지게 해야 한다."""
+    state = _make_state()
+    char_dict = {
+        "swordsman_acct": get_test_preset("검사"),
+        "archer_acct": get_test_preset("궁수"),
+    }
+    name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification(
+            "swordsman_acct",
+            1,
+            0,
+            "[대련]",
+            visibility="unlisted",
+            extra_mentions=["archer_acct"],
+        )
+    )
+    prep_post_id = state.practice.prep_post_id
+    listener.on_notification(
+        _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/1열]")
+    )
+    listener.on_notification(
+        _make_notification("archer_acct", 3, prep_post_id, "[2팀/1열]")
+    )
+    active_post_id = state.practice.active_post_id
+    calls_before = len(mastodon.status_post_calls)
+
+    listener.on_notification(
+        _make_notification("swordsman_acct", 4, active_post_id, "화이팅!")
+    )
+
+    assert len(mastodon.status_post_calls) == calls_before  # 새 게시물이 없어야 한다
+    assert state.practice.active_post_id == active_post_id  # 타래가 그대로 유지된다
+
+    # 이어서 정상 커맨드를 보내면 여전히 같은 게시물에 답글로 이어져야 한다.
+    listener.on_notification(
+        _make_notification("swordsman_acct", 5, active_post_id, "[이동/2]")
+    )
+    assert len(mastodon.status_post_calls) > calls_before
+
+
 def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
     """DM 전투 테스트 공용 셋업. (mastodon, listener, state, char_dict, name_dict) 반환.
 
@@ -1052,6 +1155,44 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
     return mastodon, listener, state, char_dict, name_dict
+
+
+def test_dm_battle_idle_chat_reply_is_silently_ignored(monkeypatch):
+    """DM 전투도 대련/상시전투와 동일하게 스레드 하나가 계속 이어지는
+    구조다 — 참가자가 대괄호 커맨드 없이 잡담만 답글로 달아도 에러 답글
+    없이 조용히 무시하고, active_post_id도 그대로 유지해야 한다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch
+    )
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+    dm_state = next(iter(state.dm_battles.values()))
+    pre_post_id = dm_state.active_post_id
+    listener.on_notification(_make_notification("test-admin", 2, pre_post_id, "[진행]"))
+    active_post_id = dm_state.active_post_id
+    calls_before = len(mastodon.status_post_calls)
+
+    listener.on_notification(
+        _make_notification("player_acct", 3, active_post_id, "다들 화이팅!")
+    )
+
+    assert len(mastodon.status_post_calls) == calls_before
+    assert dm_state.active_post_id == active_post_id
+
+    # 이어서 정상 커맨드를 보내면 여전히 같은 게시물에 답글로 이어져야 한다.
+    listener.on_notification(
+        _make_notification("player_acct", 4, active_post_id, "[공격/고블린]")
+    )
+    assert len(mastodon.status_post_calls) > calls_before
 
 
 def test_dm_battle_start_places_enemy_by_command_and_allies_by_mention(monkeypatch):
