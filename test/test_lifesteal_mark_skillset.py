@@ -334,7 +334,9 @@ class TestPassiveSkill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("적군", max_hp=200), FactionType.ENEMY, BattlefieldColumnIndex(0)
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
         )
 
         manager.process_command(parse_character_command(vampire, "[폭탄/적군]", ctx))

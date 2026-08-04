@@ -818,9 +818,7 @@ def test_mark_skill_revealed_is_noop_when_already_revealed():
 def test_format_eliminated_characters_lists_names_without_trailing_label():
     """각 줄은 다른 헤더들과 마찬가지로 이름만 보여줘야 한다 — "| 탈락"처럼
     헤더에서 이미 드러난 정보를 항목마다 반복하면 안 된다."""
-    text = format_eliminated_characters(
-        [CharacterId("적군 1"), CharacterId("적군 2")]
-    )
+    text = format_eliminated_characters([CharacterId("적군 1"), CharacterId("적군 2")])
 
     assert text == "【탈락】\n▹ 적군 1\n▹ 적군 2"
 
