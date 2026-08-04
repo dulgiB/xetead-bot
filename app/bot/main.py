@@ -700,6 +700,16 @@ class MastodonBotListener(StreamListener):
         )
 
 
+def _field_text(ps: PracticeBattleState) -> str:
+    """대련/상시전투 필드 상태 텍스트. 상시전투는 side_label()이 이미
+    "아군"/"적군"을 쓰므로 그대로, 대련은 "1팀"/"2팀"으로 진영 헤더가
+    바뀐다(본 전투용 BattlefieldContext.__str__ 기본값인 "아군"/"적군" 대신)."""
+    return ps.context.format_field_text(
+        ally_label=ps.side_label(SideType.SIDE_1),
+        enemy_label=ps.side_label(SideType.SIDE_2),
+    )
+
+
 def _start_investigation_battle(state: "BotState") -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
     assert (
@@ -728,7 +738,7 @@ def _start_investigation_battle(state: "BotState") -> str:
         f"라운드 상한: {ps.round_limit}라운드\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
-        f"{ps.context}"
+        f"{_field_text(ps)}"
     )
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
@@ -763,7 +773,7 @@ def _start_practice_battle(state: "BotState") -> str:
         f"라운드 상한: {ps.round_limit}라운드\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
-        f"{ps.context}"
+        f"{_field_text(ps)}"
     )
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
@@ -851,7 +861,7 @@ def _handle_practice_command(
             game_post = (
                 f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
                 f"승자: {winner_label}\n\n"
-                f"{ps.context}"
+                f"{_field_text(ps)}"
             )
             state.practice = None
             return reply_text, game_post, battle_log
@@ -861,7 +871,7 @@ def _handle_practice_command(
         game_post = (
             f"◊ [{ps.round_n}라운드] 후공: {second_label}\n"
             f"후공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
-            f"{ps.context}"
+            f"{_field_text(ps)}"
         )
         return reply_text, game_post, battle_log
 
@@ -878,7 +888,7 @@ def _handle_practice_command(
         game_post = (
             f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
             f"승자: {winner_label}\n\n"
-            f"{ps.context}"
+            f"{_field_text(ps)}"
         )
         state.practice = None
         return reply_text, game_post, battle_log
@@ -888,7 +898,7 @@ def _handle_practice_command(
     game_post = (
         f"◊ [{ps.round_n}라운드] 선공: {mover_label}\n"
         f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
-        f"{ps.context}"
+        f"{_field_text(ps)}"
     )
     return reply_text, game_post, battle_log
 

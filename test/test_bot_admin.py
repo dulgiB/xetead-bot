@@ -788,6 +788,44 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
     assert state.practice is None
 
 
+def test_practice_field_text_uses_team_labels_not_faction_labels():
+    """대련은 아군/적군 구도가 아니므로, 필드 상황 텍스트도 팀 커맨드([1팀/...])와
+    맞춰 "1팀"/"2팀" 헤더를 써야 한다 — 본 전투용 "아군"/"적군" 표현이 새어
+    나오면 안 된다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ps = PracticeBattleState(
+        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=False
+    )
+
+    text = main_module._field_text(ps)
+
+    assert "1팀\n" in text
+    assert "2팀\n" in text
+    assert "아군" not in text
+    assert "적군" not in text
+
+
+def test_investigation_field_text_still_uses_faction_labels():
+    """상시전투는 대련과 같은 SIDE_1/SIDE_2 메커니즘을 쓰지만, 안내 문구
+    (side_label)가 이미 "아군"/"적군"을 쓰므로 필드 텍스트도 그대로 유지돼야
+    한다 — 대련 대응이 상시전투까지 "1팀"/"2팀"으로 바꿔버리면 안 된다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ps = PracticeBattleState(
+        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=True
+    )
+
+    text = main_module._field_text(ps)
+
+    assert "아군\n" in text
+    assert "적군\n" in text
+    assert "1팀" not in text
+    assert "2팀" not in text
+
+
 def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_error():
     """캐릭터 계정이 대괄호를 두 개로 나눠 보내면(예: '[A] [B]'), 파서의 탐욕적
     매칭 때문에 하나만 조용히 처리되고 나머지가 사라지는 문제가 있었다 —

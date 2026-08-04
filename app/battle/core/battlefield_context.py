@@ -86,6 +86,18 @@ class BattlefieldContext:
         self.damaged_this_round: set[CharacterId] = set()
 
     def __str__(self):
+        return self.format_field_text()
+
+    def format_field_text(
+        self,
+        *,
+        ally_label: str = FactionType.ALLY.value,
+        enemy_label: str = FactionType.ENEMY.value,
+    ) -> str:
+        """필드 상황을 텍스트로 그린다. position_map은 항상 FactionType
+        기준이라(대련의 SideType도 PracticeBattlefieldContext 내부에서
+        FactionType으로 매핑되어 들어온다) 헤더로 쓸 라벨만 갈아끼우면
+        대련처럼 "아군"/"적군" 대신 "1팀"/"2팀" 등을 보여줄 수 있다."""
         enemy_str = []
         for column_idx, enemies in self.position_map[FactionType.ENEMY].items():
             enemy_list = []
@@ -112,7 +124,7 @@ class BattlefieldContext:
                 f"[{column_idx}] " + " | ".join(str(ally) for ally in ally_list)
             )
 
-        board = f"적군\n{'\n'.join(enemy_str)}\n\n아군\n{'\n'.join(ally_str)}"
+        board = f"{enemy_label}\n{'\n'.join(enemy_str)}\n\n{ally_label}\n{'\n'.join(ally_str)}"
 
         buff_summary = self._format_buff_summary()
         if not buff_summary:
