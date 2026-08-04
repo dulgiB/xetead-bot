@@ -295,7 +295,6 @@ class TestPassiveSkill:
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
         vampire = CharacterId("Vampire")
-        enemy = CharacterId("적군")
         ctx.add_character(
             get_test_preset(
                 "Vampire",

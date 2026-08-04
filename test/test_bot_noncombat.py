@@ -10,7 +10,6 @@ from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
     handle_daily_quest_roll,
-    handle_daily_quest_start,
     handle_investigation_accept,
     handle_investigation_venue_choice,
     handle_roll,

@@ -1,6 +1,6 @@
 from dataclasses import KW_ONLY, dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, Optional
+from typing import Literal, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData

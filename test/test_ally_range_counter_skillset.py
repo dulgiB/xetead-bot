@@ -313,7 +313,6 @@ class TestPassiveSkill:
         ctx = _make_context()
         manager = _setup_enemy_pre_phase(ctx)
         self._add_holder_and_ally(ctx)
-        holder = CharacterId("Sentinel")
         enemy = CharacterId("적군")
         # 조건 충족용으로 [버프_1](주는 대미지 수정자)가 아니라 [버프_3](수치를
         # 건드리지 않는 반응형 버프)를 부여한다 — 이 테스트는 반격의 "기본
@@ -357,7 +356,6 @@ class TestPassiveSkill:
         ctx = _make_context()
         manager = _setup_enemy_pre_phase(ctx)
         self._add_holder_and_ally(ctx)
-        holder = CharacterId("Sentinel")
         enemy = CharacterId("적군")
         ctx.buff_container.add(
             _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_1")
@@ -381,7 +379,6 @@ class TestPassiveSkill:
         ctx = _make_context()
         manager = _setup_enemy_pre_phase(ctx)
         self._add_holder_and_ally(ctx)
-        holder = CharacterId("Sentinel")
         enemy = CharacterId("적군")
         ctx.buff_container.add(
             _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
@@ -692,7 +689,6 @@ class TestCounterOnMarkedAllyAttackBuff:
     def test_no_bonus_when_attacker_is_not_marked(self):
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        holder = CharacterId("Sentinel")
         unmarked = CharacterId("마크없는아군")
         enemy = CharacterId("적군")
         ctx.add_character(

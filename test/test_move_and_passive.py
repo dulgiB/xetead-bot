@@ -4,6 +4,7 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
@@ -486,9 +487,7 @@ def test_target_in_range_condition_triggers_when_in_range():
 # ── 수호 본능 (ENEMY_POST_ACTION 트리거) ──────────────────────────────────────
 
 
-def _guard_buff_data() -> "BuffData":
-    from battle.objects.buff.models import BuffData
-
+def _guard_buff_data() -> BuffData:
     return BuffData(
         id="수호",
         buff_class_name="BuffReceivedDamage",

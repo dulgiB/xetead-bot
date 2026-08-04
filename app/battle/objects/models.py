@@ -11,10 +11,7 @@ from battle.objects.define import (
 )
 
 if TYPE_CHECKING:
-    from battle.core.command_calculator import (
-        CalculatorMutableData,
-        CommandPartCalculator,
-    )
+    from battle.core.command_calculator import CommandPartCalculator
 
 
 @dataclass(frozen=True)

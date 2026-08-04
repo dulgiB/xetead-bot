@@ -893,7 +893,7 @@ def _cmd_investigation_battle(
         parts = faction_col_str.split()
         if len(parts) < 2:
             errors.append(
-                f"◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다. (예시: [배치/늑대/적군 3열])"
+                "◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다. (예시: [배치/늑대/적군 3열])"
             )
             continue
         faction_str, col_str = parts[0], parts[1]
