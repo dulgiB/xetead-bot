@@ -744,12 +744,23 @@ def test_practice_can_be_started_directly_by_character_account(monkeypatch):
     }
     name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
     monkeypatch.setattr(
-        main_module, "load_char_data", lambda spreadsheet, cache=None: (char_dict, name_dict, {})
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
     )
     monkeypatch.setattr(
         admin_module,
         "load_battle_data",
-        lambda spreadsheet, cache=None: ({}, {}, {}, {}, None, char_dict, name_dict, {}),
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
     )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
@@ -812,9 +823,7 @@ def test_investigation_battle_remains_admin_only(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
-        _make_notification("swordsman_acct", 1, 0, "[상시전투]")
-    )
+    listener.on_notification(_make_notification("swordsman_acct", 1, 0, "[상시전투]"))
 
     assert state.practice is None
     assert mastodon.status_post_calls == []
@@ -1103,9 +1112,7 @@ def test_dm_battle_game_posts_mention_participants_so_they_remain_visible(monkey
     dm_state = next(iter(state.dm_battles.values()))
     pre_post_id = dm_state.active_post_id
 
-    listener.on_notification(
-        _make_notification("test-admin", 2, pre_post_id, "[진행]")
-    )
+    listener.on_notification(_make_notification("test-admin", 2, pre_post_id, "[진행]"))
     ally_call = mastodon.status_post_calls[-1]
     assert "@player_acct" in ally_call["status"]
 

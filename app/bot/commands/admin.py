@@ -74,6 +74,7 @@ _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
 _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생')}]")
 _RE_PROXY = re.compile(r"^([^\[\]]+?)\s+(\[.+])$", re.DOTALL)
 
+
 def _dm_mention_prefix(dm_state: "DmBattleState") -> str:
     """DM 전투 참가자 멘션 텍스트를 만든다. visibility="direct" 게시물은
     명시적으로 멘션된 계정만 볼 수 있으므로, 페이즈 전환/정산/종료 게시물마다

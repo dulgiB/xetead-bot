@@ -667,7 +667,10 @@ class MastodonBotListener(StreamListener):
                 )
             else:
                 reply_status = self._reply(
-                    status_id, acct, visibility, result.reply_text,
+                    status_id,
+                    acct,
+                    visibility,
+                    result.reply_text,
                 )
             _persist_battle_log(state, result.battle_log, str(reply_status["id"]))
 

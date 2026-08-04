@@ -32,12 +32,20 @@ class _FakeWorksheet:
     def update_cell(self, row, col, value):
         self.written.append((row, col, value))
 
-    def update(self, values, range_name=None, raw=True, value_input_option=None, **kwargs):
+    def update(
+        self, values, range_name=None, raw=True, value_input_option=None, **kwargs
+    ):
         row, col = gspread.utils.a1_to_rowcol(range_name)
         value = values[0][0]
         self.written.append((row, col, value))
         self.update_calls.append(
-            {"row": row, "col": col, "value": value, "raw": raw, "value_input_option": value_input_option}
+            {
+                "row": row,
+                "col": col,
+                "value": value,
+                "raw": raw,
+                "value_input_option": value_input_option,
+            }
         )
 
 
