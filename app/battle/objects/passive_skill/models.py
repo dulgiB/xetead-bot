@@ -6,7 +6,13 @@ from typing import Optional
 from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.buff.models import PassiveBuffData
 from battle.objects.define import MAX_PASSIVE_EFFECT_COUNT
+from battle.objects.models import BuffUid, CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
+
+# buff_mod_event 추출용 임시 인스턴스는 create_event()만 호출되고 버려지므로
+# given_by/applied_to/uid는 실제로 쓰이지 않는다 — 전투 참가자가 아직 없는
+# 데이터 로드 시점에 생성되기도 하고, 애초에 식별할 대상이 없다.
+_TEMPLATE_CHARACTER_ID = CharacterId("__buff_mod_template__")
 
 
 class PassiveSkillTrigger(str, Enum):
@@ -49,13 +55,21 @@ class PassiveSkillData:
             passive_buff_data = passive_buff_dict[top_buff_id]
             buff_module = importlib.import_module("battle.objects.buff.buffs")
             buff_class = getattr(buff_module, passive_buff_data.buff_class_name)
-            temp = object.__new__(buff_class)
-            temp.id = passive_buff_data.id
-            temp.value = passive_buff_data.value
-            temp.value_type = passive_buff_data.value_type
-            temp.condition = passive_buff_data.condition
-            temp.reference_buff_id = passive_buff_data.reference_buff_id
-            buff_mod_event = temp.create_event()
+            template = buff_class._create_bare(
+                id_=passive_buff_data.id,
+                uid=BuffUid(
+                    _TEMPLATE_CHARACTER_ID,
+                    _TEMPLATE_CHARACTER_ID,
+                    passive_buff_data.buff_class_name,
+                ),
+                given_by=_TEMPLATE_CHARACTER_ID,
+                applied_to=_TEMPLATE_CHARACTER_ID,
+                value=passive_buff_data.value,
+                value_type=passive_buff_data.value_type,
+                condition=passive_buff_data.condition,
+                reference_buff_id=passive_buff_data.reference_buff_id,
+            )
+            buff_mod_event = template.create_event()
 
         effects: list[SkillEffectBase] = []
         for i in range(MAX_PASSIVE_EFFECT_COUNT):
