@@ -263,10 +263,15 @@ class BuffContainer:
             event_pairs, target_id, calculator, effect_seq_number
         )
 
-    def on_battle_end(self) -> None:
-        """전투 종료 시점에 모든 버프의 on_battle_end() 훅을 호출한다."""
+    def on_battle_end(self) -> list[BattleLogEntry]:
+        """전투 종료 시점에 모든 버프의 on_battle_end() 훅을 호출하고,
+        정산 결과가 있는 것들을 모아 반환한다."""
+        entries = []
         for buff in list(self._buffs):
-            buff.on_battle_end(self._context)
+            entry = buff.on_battle_end(self._context)
+            if entry is not None:
+                entries.append(entry)
+        return entries
 
     def on_enemy_post_action(self) -> None:
         self._apply_round_events(BuffApplyTiming.ON_ENEMY_POST_ACTION)

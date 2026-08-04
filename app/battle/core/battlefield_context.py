@@ -436,8 +436,8 @@ class BattlefieldContext:
     def on_battle_start(self) -> None:
         self.buff_container.on_battle_start()
 
-    def on_battle_end(self) -> None:
-        self.buff_container.on_battle_end()
+    def on_battle_end(self) -> list[BattleLogEntry]:
+        return self.buff_container.on_battle_end()
 
     def _spawn_companion_character(
         self, owner: CombatCharacter, companion_id: CharacterId, hp_percent: int

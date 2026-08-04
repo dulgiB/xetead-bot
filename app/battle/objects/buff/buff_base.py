@@ -16,6 +16,7 @@ from battle.objects.models import BuffUid, CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.core.commands.models import BattleLogEntry
 
 
 @dataclass(frozen=True, eq=True)
@@ -201,9 +202,13 @@ class BuffBase(abc.ABC):
     def get_sacrifice_override(self) -> Optional[CharacterId]:
         return None
 
-    def on_battle_end(self, context: "BattlefieldContext") -> None:
-        """전투 종료 시점에 호출된다. 기본은 아무 동작도 하지 않는다."""
-        pass
+    def on_battle_end(
+        self, context: "BattlefieldContext"
+    ) -> Optional["BattleLogEntry"]:
+        """전투 종료 시점에 호출된다. 정산 결과(HP 변동 등)가 있으면
+        전투 종료 답글에 표시할 BattleLogEntry를 반환한다. 기본은 아무
+        동작도 하지 않는다."""
+        return None
 
     @property
     @abc.abstractmethod

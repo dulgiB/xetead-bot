@@ -431,7 +431,7 @@ class TestPassiveSkill:
         assert reply == (
             "【공격 ▸ 적군】\n"
             "▹ 적군 | -100 → 900/1000\n"
-            "↳ (100 + )\n"
+            "↳ (100 + 0[0d6])\n"
             "▹ 적군 | [Mark]×1 부여 → 최종 1"
         )
 
@@ -738,7 +738,7 @@ class TestMarkCounterBuff:
         assert reply == (
             "【이동 ▸ 2열】\n"
             "▹ 적군 | -140 → 860/1000\n"
-            "↳ (100 + ) × (0.7[MarkCounter 계수] × 2[Mark])"
+            "↳ (100 + 0[0d6]) × (0.7[MarkCounter 계수] × 2[Mark])"
         )
 
 

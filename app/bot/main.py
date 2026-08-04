@@ -765,7 +765,7 @@ def _start_investigation_battle(state: "BotState") -> str:
         f"◊ 상시전투 시작\n"
         f"라운드 상한: {ps.round_limit}라운드\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
-        f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+        f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
         f"{_field_text(ps)}"
     )
     if errors:
@@ -800,7 +800,7 @@ def _start_practice_battle(state: "BotState") -> str:
         f"◊ 대련 시작\n"
         f"라운드 상한: {ps.round_limit}라운드\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
-        f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+        f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
         f"{_field_text(ps)}"
     )
     if errors:
@@ -898,7 +898,7 @@ def _handle_practice_command(
         second_label = ps.side_label(ps.second_mover)
         game_post = (
             f"◊ [{ps.round_n}라운드] 후공: {second_label}\n"
-            f"후공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+            f"후공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
             f"{_field_text(ps)}"
         )
         return reply_text, game_post, battle_log
@@ -925,7 +925,7 @@ def _handle_practice_command(
     mover_label = ps.side_label(ps.first_mover)
     game_post = (
         f"◊ [{ps.round_n}라운드] 선공: {mover_label}\n"
-        f"선공은 이 게시물에 답글로 커맨드를 입력해 주세요.\n\n"
+        f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
         f"{_field_text(ps)}"
     )
     return reply_text, game_post, battle_log
