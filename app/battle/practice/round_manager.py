@@ -39,7 +39,6 @@ class PracticeRoundManager:
 
     def to_phase(self, phase: PracticeRoundPhase) -> None:
         if phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
-            # 라운드 시작 처리 + 선공/후공 무작위 결정
             self._context.on_start_round()
             sides = list(SideType)
             random.shuffle(sides)

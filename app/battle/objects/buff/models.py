@@ -17,16 +17,13 @@ class BuffData:
     id: str
     buff_class_name: str
 
-    # 지속 시간 (턴수 or 횟수)
     duration_turn_value: Optional[int]
     duration_count_value: Optional[int]
     duration_count_deduct_condition: Optional[BuffCountDeductCondition]
 
-    # 값 (정수 or 퍼센트, 보너스)
     value_type: Optional[ValueType]
     value: int
 
-    # 적용 조건
     condition_: Optional[str]
     condition_value: Optional[int]
 

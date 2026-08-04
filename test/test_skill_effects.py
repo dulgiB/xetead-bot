@@ -143,7 +143,6 @@ def test_atk_buff_increases_damage(buff_skill_setup):
     ctx, manager = buff_skill_setup
     target_id = CharacterId("아군 2")
 
-    # 버프 부여
     cmd1 = parse_character_command(CharacterId("아군 1"), "[공격 보조/아군 2]", ctx)
     manager.process_command(cmd1)
 
