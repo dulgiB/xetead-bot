@@ -731,10 +731,16 @@ class MastodonBotListener(StreamListener):
 def _field_text(ps: PracticeBattleState) -> str:
     """대련/상시전투 필드 상태 텍스트. 상시전투는 side_label()이 이미
     "아군"/"적군"을 쓰므로 그대로, 대련은 "1팀"/"2팀"으로 진영 헤더가
-    바뀐다(본 전투용 BattlefieldContext.__str__ 기본값인 "아군"/"적군" 대신)."""
+    바뀐다(본 전투용 BattlefieldContext.__str__ 기본값인 "아군"/"적군" 대신).
+
+    상시전투는 본 전투 필드 이미지와 같은 순서(적군 먼저)를 유지하지만,
+    대련은 "2팀"이 항상 먼저 출력되는 게 팀 번호 순서와 어긋나 헷갈리므로
+    "1팀"이 먼저 출력되게 한다(ally_first) — SIDE_1↔FactionType 매핑
+    자체는 그대로이므로 라벨-데이터 대응은 변하지 않는다."""
     return ps.context.format_field_text(
         ally_label=ps.side_label(SideType.SIDE_1),
         enemy_label=ps.side_label(SideType.SIDE_2),
+        ally_first=not ps.is_investigation,
     )
 
 

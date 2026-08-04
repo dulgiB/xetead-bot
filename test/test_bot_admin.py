@@ -924,6 +924,60 @@ def test_investigation_field_text_still_uses_faction_labels():
     assert "2팀" not in text
 
 
+def test_practice_field_text_shows_team_1_before_team_2():
+    """대련 필드 텍스트에서 "2팀"이 항상 먼저 출력되면 팀 번호 순서와
+    어긋나 헷갈린다 — "1팀"이 먼저, "2팀"이 나중에 출력돼야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ps = PracticeBattleState(
+        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=False
+    )
+
+    text = main_module._field_text(ps)
+
+    assert text.index("1팀\n") < text.index("2팀\n")
+
+
+def test_investigation_field_text_still_shows_enemy_before_ally():
+    """상시전투는 본 전투 필드 이미지와 같은 순서(적군 먼저, 아군 나중)를
+    유지해야 한다 — 대련의 "1팀 먼저" 대응이 상시전투까지 건드리면 안
+    된다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ps = PracticeBattleState(
+        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=True
+    )
+
+    text = main_module._field_text(ps)
+
+    assert text.index("적군\n") < text.index("아군\n")
+
+
+def test_practice_winner_uses_hp_ratio_not_absolute_total():
+    """팀 인원/최대 체력 총량이 다르면 절대 체력 합 비교는 불공평하다 —
+    예를 들어 1팀(50/100=50%)이 2팀(60/200=30%)보다 체력 비율은 높지만
+    절대 합은 더 낮은 경우, 승자는 비율이 더 높은 1팀이어야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("A", max_hp=100), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("B", max_hp=200), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
+    ps = PracticeBattleState(context=ctx, manager=PracticeRoundManager(ctx))
+
+    char_a = ctx.characters[CharacterId("A")]
+    char_b = ctx.characters[CharacterId("B")]
+    # add_character가 대련이라 max_hp를 절반으로 만들므로(100→50, 200→100),
+    # 그 절반 기준으로 curr_hp를 다시 맞춘다: A는 50%(25/50), B는 30%(30/100).
+    char_a.status.curr_hp = 25
+    char_b.status.curr_hp = 30
+
+    assert ps.winner() == SideType.SIDE_1
+
+
 def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_error():
     """캐릭터 계정이 대괄호를 두 개로 나눠 보내면(예: '[A] [B]'), 파서의 탐욕적
     매칭 때문에 하나만 조용히 처리되고 나머지가 사라지는 문제가 있었다 —

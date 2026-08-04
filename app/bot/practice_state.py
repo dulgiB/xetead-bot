@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from battle.objects.define import BattlefieldColumnIndex
+from battle.objects.define import BattlefieldColumnIndex, CombatStatType
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
@@ -69,13 +69,28 @@ class PracticeBattleState:
     def total_hp_by_side(self, side: SideType) -> int:
         return sum(c.status.curr_hp for c in self.context.get_side_characters(side))
 
+    def total_max_hp_by_side(self, side: SideType) -> int:
+        return sum(
+            c.status[CombatStatType.MAX_HP]
+            for c in self.context.get_side_characters(side)
+        )
+
     def winner(self) -> Optional[SideType]:
-        """남은 체력 기준으로 승자 SideType을 반환한다. 동점이면 None."""
-        hp1 = self.total_hp_by_side(SideType.SIDE_1)
-        hp2 = self.total_hp_by_side(SideType.SIDE_2)
-        if hp1 > hp2:
+        """체력 비율(현재 체력 합 / 최대 체력 합) 기준으로 승자 SideType을
+        반환한다. 동점이면 None.
+
+        절대 체력 합으로 비교하면 인원 수가 많거나 최대 체력이 큰 팀이
+        단지 그 이유만으로 유리해진다 — 팀 구성이 항상 대칭이라는 보장이
+        없으므로(대련/상시전투 모두 자유롭게 인원을 선언한다) 비율이 더
+        공정한 기준이다. 전멸(체력 0) 판정은 비율로 계산해도 절대 비교와
+        결과가 같으므로 별도 분기가 필요 없다."""
+        max1 = self.total_max_hp_by_side(SideType.SIDE_1)
+        max2 = self.total_max_hp_by_side(SideType.SIDE_2)
+        ratio1 = self.total_hp_by_side(SideType.SIDE_1) / max1 if max1 else 0
+        ratio2 = self.total_hp_by_side(SideType.SIDE_2) / max2 if max2 else 0
+        if ratio1 > ratio2:
             return SideType.SIDE_1
-        if hp2 > hp1:
+        if ratio2 > ratio1:
             return SideType.SIDE_2
         return None
 

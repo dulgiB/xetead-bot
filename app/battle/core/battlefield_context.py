@@ -93,11 +93,16 @@ class BattlefieldContext:
         *,
         ally_label: str = FactionType.ALLY.value,
         enemy_label: str = FactionType.ENEMY.value,
+        ally_first: bool = False,
     ) -> str:
         """필드 상황을 텍스트로 그린다. position_map은 항상 FactionType
         기준이라(대련의 SideType도 PracticeBattlefieldContext 내부에서
         FactionType으로 매핑되어 들어온다) 헤더로 쓸 라벨만 갈아끼우면
-        대련처럼 "아군"/"적군" 대신 "1팀"/"2팀" 등을 보여줄 수 있다."""
+        대련처럼 "아군"/"적군" 대신 "1팀"/"2팀" 등을 보여줄 수 있다.
+
+        `ally_first`는 두 블록 중 어느 쪽을 먼저 그릴지만 바꾼다 — 라벨과
+        실제 데이터(FactionType) 매핑 자체는 건드리지 않으므로 안전하다.
+        기본값 False(적군 먼저)는 본 전투 필드 이미지와 같은 순서다."""
         enemy_str = []
         for column_idx, enemies in self.position_map[FactionType.ENEMY].items():
             enemy_list: list[CombatCharacter | str] = []
@@ -124,7 +129,13 @@ class BattlefieldContext:
                 f"[{column_idx}] " + " | ".join(str(ally) for ally in ally_list)
             )
 
-        board = f"{enemy_label}\n{'\n'.join(enemy_str)}\n\n{ally_label}\n{'\n'.join(ally_str)}"
+        enemy_block = f"{enemy_label}\n{'\n'.join(enemy_str)}"
+        ally_block = f"{ally_label}\n{'\n'.join(ally_str)}"
+        board = (
+            f"{ally_block}\n\n{enemy_block}"
+            if ally_first
+            else f"{enemy_block}\n\n{ally_block}"
+        )
 
         buff_summary = self._format_buff_summary()
         if not buff_summary:
