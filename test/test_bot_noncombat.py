@@ -300,7 +300,7 @@ def test_use_item_rejects_when_insufficient_inventory(monkeypatch, potion_item):
 
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
-    assert "보유 수량이 부족" in reply
+    assert "수가 부족" in reply
 
 
 def test_transfer_item_moves_between_characters(monkeypatch, potion_item):
@@ -320,7 +320,7 @@ def test_transfer_item_moves_between_characters(monkeypatch, potion_item):
 
     reply, log_info = handle_transfer_item(acct, "포션", "동료2", 2, state)
 
-    assert "양도 완료" in reply
+    assert "양도했습니다" in reply
     assert inventory.get_count("동료", "포션") == 1
     assert inventory.get_count("동료2", "포션") == 2
 

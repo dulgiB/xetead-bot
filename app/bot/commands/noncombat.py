@@ -167,7 +167,7 @@ def handle_use_item(
 
     owned = inventory.get_count(user_name, item_name)
     if owned < count:
-        msg = f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        msg = f"◊ 보유한 「{item_name}」의 수가 부족합니다. (현재 {owned}개)"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     target_char_name = resolve_matching_key(target_char_name, state.name_dict.keys())
@@ -247,7 +247,7 @@ def handle_transfer_item(
 
     owned = inventory.get_count(user_name, item_name)
     if owned < count:
-        msg = f"◊ '{item_name}' 보유 수량이 부족합니다. (보유: {owned}개)"
+        msg = f"◊ 보유한 「{item_name}」의 수가 부족합니다. (현재 {owned}개)"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
@@ -260,7 +260,7 @@ def handle_transfer_item(
         )
 
     result_text = f"{user_name} → {target_name}에게 '{item_name}' {count}개 양도"
-    reply = f"◊ 양도 완료: {result_text}"
+    reply = f"◊ {target_name}에게 「{item_name}」 {count}개를 양도했습니다."
     return reply, NoncombatLogInfo(command_text=command_text, result=result_text)
 
 
@@ -308,7 +308,7 @@ def handle_daily_quest_start(
     reply = (
         f"{quest.description}\n"
         "어떻게 할까?\n"
-        "(판정 방법: [판정/스탯] 형식으로 답글을 달아주세요.)"
+        "\n◊ [판정/(원하는 비전투 스테이터스)] 형식으로 답글을 달아 의뢰를 수행할 수 있습니다."
     )
     return reply, NoncombatLogInfo(
         command_text=command_text, result=f"의뢰 배정: {quest.name}"
