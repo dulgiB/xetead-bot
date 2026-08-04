@@ -343,6 +343,12 @@ class MastodonBotListener(StreamListener):
                 for m in status.get("mentions", [])
                 if m["acct"] != self._bot_acct
             ]
+            # acct/status_id는 위에서 이미 무조건 대입됐다 — 선언 시점의
+            # Optional은 이 지점 이전에 예외가 나 except로 빠졌을 때 로그에
+            # None을 안전하게 쓰기 위한 것일 뿐, 여기 도달했다면 항상 채워져
+            # 있다.
+            assert acct is not None
+            assert status_id is not None
             self.__dispatch(
                 acct,
                 status_id,
