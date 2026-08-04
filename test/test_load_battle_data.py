@@ -121,6 +121,57 @@ def test_load_battle_data_without_passive_sheets_still_loads():
     assert passive_skill_dict == {}
 
 
+def test_load_battle_data_skips_blank_padding_rows_without_crashing():
+    """ "버프"/"스킬_캐릭터"/"스킬_에너미" 시트에는 앞으로 데이터를 채울 여백으로
+    남겨둔, id를 포함한 모든 칸이 빈 문자열인 행이 섞여 있을 수 있다.
+    SkillData.from_dict()의 target_count/cost는 int(data[...])로 캐스팅해
+    빈 문자열이면 그대로 ValueError로 죽는데, id 없는 행을 걸러내지 않고
+    전부 순회하면 실제 스킬을 하나도 정의하지 않은 시트라도 봇이 시작하지
+    못한다. id가 있는 행만 읽어 나머지 유효한 데이터는 정상 로드되어야
+    한다."""
+    blank_row = {
+        "id": "",
+        "buff_name": "",
+        "duration_turn_value": "",
+        "duration_count_value": "",
+        "duration_count_deduct_condition": "",
+        "value_type": "",
+        "value": "",
+        "condition": "",
+        "condition_value": "",
+        "description": "",
+    }
+    blank_skill_row = {
+        "id": "",
+        "target_rule": "",
+        "target_count": "",
+        "cost": "",
+        "description": "",
+    }
+    sheets = _base_sheets(
+        **{
+            "버프": [blank_row, blank_row],
+            "스킬_캐릭터": [
+                blank_skill_row,
+                {
+                    "id": "TestSkill1",
+                    "target_rule": "SkillTargetRuleSelf",
+                    "target_count": "0",
+                    "cost": "1",
+                    "description": "",
+                },
+            ],
+            "스킬_에너미": [blank_skill_row, blank_skill_row],
+        }
+    )
+    spreadsheet = _FakeSpreadsheet(sheets)
+
+    (_buff_dict, skill_dict, *_rest) = load_battle_data(spreadsheet)
+
+    assert "" not in skill_dict
+    assert "TestSkill1" in skill_dict
+
+
 def test_load_battle_data_shares_sheet_metadata_via_cache():
     """cache가 주어지면 "버프"/"스킬_캐릭터"/"캐릭터"/"에너미" 등 서로 다른 이름의
     시트를 9개 가까이 조회해도 fetch_sheet_metadata()는 인스턴스당 1회만 불려야
