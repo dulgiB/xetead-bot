@@ -294,7 +294,7 @@ def upsert_field_row(
         existing = existing + [""] * (len(_FIELD_HEADERS) - len(existing))
         started_at = existing[2] or _now()
         ended_at = _now() if ended else existing[3]
-        new_row = [
+        new_row: list[str | int | float] = [
             field_id,
             is_main,
             started_at,
