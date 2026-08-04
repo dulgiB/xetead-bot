@@ -15,6 +15,8 @@ CompanionBuff2)을 쓴다.
   없으면 동료를 최대 체력 10%로 재소환한다.
 """
 
+import itertools
+
 import pytest
 
 from battle.core.battlefield_context import BattlefieldContext
@@ -585,6 +587,48 @@ class TestCompanionGuardianSplitAndCounter:
         assert companion_damage == 30
         # 반격: 공격 굴림 80% (milestone_n=0이므로 atk=100 그대로 굴림 → 80).
         assert enemy_damage == 80
+
+    def test_incoming_random_roll_damage_is_split_from_a_single_roll(self, monkeypatch):
+        """분담 대상 대미지가 STAT_ATK_ROLL(공격 굴림)처럼 매 get_value() 호출마다
+        다시 굴리는 소스일 때, holder/동료 몫이 서로 다른 굴림이 아니라 같은
+        굴림 값을 절반씩 나눠 받아야 한다. 서로 다른 두 번의 굴림을 흉내 낼 수
+        있도록 random.randint()가 호출 순서마다 다른 값을 반환하게 만들어,
+        굴림이 공유되지 않으면(버그) 두 캐릭터가 받는 대미지가 달라짐을
+        확인한다."""
+        ctx = _make_context(milestone_n=2)
+        _add_owner(ctx, max_hp=200, atk=100)
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000, atk=0),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.on_battle_start()
+        companion_id = _companion_id(ctx)
+        manager = _setup_ally_phase(ctx)
+        enemy = CharacterId("적군")
+
+        # 굴림이 공유되지 않으면 첫 번째 호출(6+6=12)과 두 번째 호출(1+1=2)이
+        # 서로 다른 대미지를 만들어낸다. 공유되면 분담용으로는 처음 두 값(6, 6)만
+        # 쓰이고, 이후 반격 굴림 등 다른 호출은 순환된 나머지 값을 그대로 쓴다.
+        rolls = itertools.cycle([6, 6, 1, 1])
+        monkeypatch.setattr("random.randint", lambda a, b: next(rolls))
+
+        owner_hp_before = ctx.characters[OWNER].status.curr_hp
+        companion_hp_before = ctx.characters[companion_id].status.curr_hp
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+        manager.process_command(
+            parse_character_command(enemy, "[공격/CompanionGuardian]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        owner_damage = owner_hp_before - ctx.characters[OWNER].status.curr_hp
+        companion_damage = (
+            companion_hp_before - ctx.characters[companion_id].status.curr_hp
+        )
+
+        assert owner_damage == companion_damage == 6
 
     def test_no_split_or_counter_when_companion_absent(self):
         ctx = self._make_ready_context()

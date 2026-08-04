@@ -4,7 +4,12 @@ from typing import TYPE_CHECKING, ClassVar
 from battle.core.commands.models import HealCalculateData
 from battle.objects.buff.buff_base import BuffAddData, BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
+from battle.objects.define import (
+    ActionType,
+    BuffApplyTiming,
+    ValueSourceType,
+    ValueType,
+)
 from battle.objects.models import (
     BaseValueIndicator,
     CharacterId,
@@ -21,6 +26,8 @@ class HealAndBuffStackOnDealingDamageEvent(BuffEvent):
     """holder가 대미지를 줄 때마다 그 대미지의 heal_percent%만큼 자신을
     회복시키고, 회복량이 _STACK_HEAL_THRESHOLD 이상이거나 대상이 holder와
     같은 진영(아군)이면 reference_buff_id 버프를 1스택 부여한다.
+    ActionType.USE_ITEM(대미지를 주는 아이템 사용)은 직접 공격/스킬이
+    아니므로 발동시키지 않는다.
 
     holder의 한 번의 공격이 단일 대상만 노린다고 가정한다 — 여러 대상을
     동시에 타격하는 효과라면 GIVEN_DAMAGE가 이 effect의 전체 대미지를
@@ -44,6 +51,9 @@ class HealAndBuffStackOnDealingDamageEvent(BuffEvent):
         calculator: "CommandPartCalculator",
         effect_seq_number: int,
     ) -> None:
+        if calculator.action_type == ActionType.USE_ITEM:
+            return
+
         context = calculator.context
         holder_char = context.characters.get(holder)
         if holder_char is None:

@@ -77,21 +77,25 @@ def load_battle_data(
         value_render_option=_UNFORMATTED
     )
     buff_dict: dict[str, BuffData] = {
-        str(r["id"]): BuffData.from_dict(r) for r in buff_raw
+        str(r["id"]): BuffData.from_dict(r) for r in buff_raw if r.get("id")
     }
 
     char_skill_raw = _worksheet(db, "스킬_캐릭터", cache).get_all_records(
         value_render_option=_UNFORMATTED
     )
     skill_dict: dict[str, SkillData] = {
-        str(r["id"]): SkillData.from_dict(r) for r in char_skill_raw
+        str(r["id"]): SkillData.from_dict(r) for r in char_skill_raw if r.get("id")
     }
     try:
         enemy_skill_raw = _worksheet(db, "스킬_에너미", cache).get_all_records(
             value_render_option=_UNFORMATTED
         )
         skill_dict.update(
-            {str(r["id"]): SkillData.from_dict(r) for r in enemy_skill_raw}
+            {
+                str(r["id"]): SkillData.from_dict(r)
+                for r in enemy_skill_raw
+                if r.get("id")
+            }
         )
     except gspread.exceptions.WorksheetNotFound:
         logger.warning(

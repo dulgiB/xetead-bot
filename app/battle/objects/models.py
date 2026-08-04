@@ -65,7 +65,7 @@ class FloatValueModifier(ValueModifierBase):
 @dataclass(frozen=True)
 class BaseValueIndicator:
     value_source: ValueSourceType
-    value: Optional[int] = None
+    value: Optional[int | DiceRollResult] = None
     coefficient: Optional[FloatValueModifier] = None
     # CONSUMED_BUFF_STACK/REFERENCED_BUFF_STACK 전용: 대상 버프 id.
     # format_calculation()이 수치를 "{값}[{buff_id}]"로 라벨링하는 데 쓰인다
@@ -80,7 +80,12 @@ class BaseValueIndicator:
         calculator: Optional["CommandPartCalculator"],
         effect_seq_number: int,
     ) -> int | DiceRollResult:
-        if self.value_source == ValueSourceType.FIXED and self.value is not None:
+        # FIXED 외의 소스도 value가 이미 채워져 있으면(예: CompanionBuff1이
+        # 홀더/동료 분담 몫을 같은 굴림 값으로 고정하려고 미리 채워둔 경우)
+        # 그대로 반환한다 — value_source를 FIXED로 바꾸면 base_coefficient가
+        # 적용되지 않아(ValueWithModifiers.__init__ 참고) 계수가 있는 소스에는
+        # 쓸 수 없기 때문에, 원래 value_source를 유지한 채로 캐싱한다.
+        if self.value is not None:
             return self.value
 
         # calculator가 None인 경우는 AdminCommand 한정. AdminCommand는 고정 대미지만 사용한다.

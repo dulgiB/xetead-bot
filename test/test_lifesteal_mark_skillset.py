@@ -31,11 +31,16 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     CombatStatType,
     FactionType,
+    ValueSourceType,
+    ValueType,
 )
+from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
+from battle.objects.skill.effects import SkillEffectDamage
 from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
+from spreadsheets.inventory import Inventory
 
 
 def _buff_dict() -> dict[str, BuffData]:
@@ -229,12 +234,19 @@ def _passive_skill_dict(
     }
 
 
-def _make_context(*, milestone_n: int = 0) -> BattlefieldContext:
+def _make_context(
+    *,
+    milestone_n: int = 0,
+    item_dict: dict[str, ItemData] | None = None,
+    inventory: Inventory | None = None,
+) -> BattlefieldContext:
     passive_buff_dict = _passive_buff_dict()
     return BattlefieldContext(
         buff_dict=_buff_dict(),
         skill_dict=_skill_dict(),
         passive_skill_dict=_passive_skill_dict(passive_buff_dict),
+        item_dict=item_dict,
+        inventory=inventory,
         milestone_n=milestone_n,
     )
 
@@ -290,6 +302,50 @@ class TestPassiveSkill:
         assert ctx.characters[enemy].status.curr_hp == 200 - 100
         assert ctx.characters[vampire].status.curr_hp == 100 + 20
         assert ctx.get_buff_stack(vampire, "스택_테스트") == 1
+
+    def test_no_heal_or_stack_when_damage_dealt_via_item(self):
+        """패시브는 "대미지를 줄 때마다"를 직접 공격/스킬로 한정한다 —
+        대미지를 주는 아이템을 사용해도 회복/스택이 발동하면 안 된다."""
+        item_bomb = ItemData(
+            id="폭탄",
+            target_rule="SkillTargetRuleNamed",
+            cost=1,
+            attack_range=1,
+            effect=SkillEffectDamage(
+                ValueSourceType.FIXED, 100, ValueType.INTEGER, None, None
+            ),
+        )
+        ctx = _make_context(
+            item_dict={"폭탄": item_bomb},
+            inventory=Inventory({("Vampire", "폭탄"): 1}),
+        )
+        manager = _setup_ally_phase(ctx)
+        vampire = CharacterId("Vampire")
+        enemy = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset(
+                "Vampire",
+                atk=100,
+                initial_hp=100,
+                max_hp=200,
+                passive_skill_id="PassiveSkill",
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+
+        manager.process_command(parse_character_command(vampire, "[폭탄/적군]", ctx))
+
+        # 대미지 100은 그대로 들어가지만, 아이템으로 준 대미지라 회복도
+        # 스택도 발동하지 않아야 한다.
+        assert ctx.characters[enemy].status.curr_hp == 200 - 100
+        assert ctx.characters[vampire].status.curr_hp == 100
+        assert ctx.get_buff_stack(vampire, "스택_테스트") == 0
 
     def test_no_stack_when_heal_below_threshold_and_target_is_enemy(self):
         ctx = _make_context()

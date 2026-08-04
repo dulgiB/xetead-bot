@@ -13,6 +13,7 @@ from battle.core.commands.models import (
 from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffRemoveData
 from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.define import (
+    ActionType,
     BuffApplyTiming,
     BuffCountDeductCondition,
     CombatStatType,
@@ -69,6 +70,13 @@ class CalculatorMutableData:
 class CommandPartCalculator:
     def __init__(self, data: CommandPartData, context: "BattlefieldContext"):
         self.context = context
+        # "본인/아군이 대미지를 주었을 때"를 트리거로 쓰는 ON_ACTION 패시브가
+        # ActionType.USE_ITEM(대미지를 주는 아이템 사용)까지 발동시키지 않도록
+        # 구분하는 용도. CommandPartCalculator 인스턴스는 CommandPartData
+        # 하나(=커맨드 파트 하나)당 1:1로 생성되므로 여기서 한 번만 읽으면 된다.
+        self.action_type: Optional[ActionType] = (
+            data.original_part.type_ if data.original_part is not None else None
+        )
         self.buffed_stats_by_character: dict[CharacterId, BuffedStats] = {
             char_id: BuffedStats(
                 character.status, {stat: [] for stat in CombatStatType}
