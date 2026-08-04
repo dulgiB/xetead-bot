@@ -100,7 +100,7 @@ class BattlefieldContext:
         대련처럼 "아군"/"적군" 대신 "1팀"/"2팀" 등을 보여줄 수 있다."""
         enemy_str = []
         for column_idx, enemies in self.position_map[FactionType.ENEMY].items():
-            enemy_list = []
+            enemy_list: list[CombatCharacter | str] = []
             for i in range(CHARACTER_PER_COLUMN):
                 if i in enemies.keys():
                     enemy_list.append(self.characters[enemies[i]])
@@ -113,7 +113,7 @@ class BattlefieldContext:
 
         ally_str = []
         for column_idx, allies in self.position_map[FactionType.ALLY].items():
-            ally_list = []
+            ally_list: list[CombatCharacter | str] = []
             for i in range(CHARACTER_PER_COLUMN):
                 if i in allies.keys():
                     ally_list.append(self.characters[allies[i]])
