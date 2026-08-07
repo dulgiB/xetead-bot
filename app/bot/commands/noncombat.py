@@ -284,7 +284,7 @@ def handle_daily_quest_start(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        location, _, _, _ = load_location_and_investigation(
+        location, investigation_active, _, _ = load_location_and_investigation(
             state.spreadsheet, cache=state.sheet_cache
         )
         daily_quests = load_daily_quests(state.spreadsheet, cache=state.sheet_cache)
@@ -294,7 +294,11 @@ def handle_daily_quest_start(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    pool = [q for q in daily_quests if not q.location or q.location == location]
+    pool = [
+        q
+        for q in daily_quests
+        if investigation_active and (not q.location or q.location == location)
+    ]
     if not pool:
         msg = "◊ 현재 위치에서 받을 수 있는 의뢰가 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -306,12 +310,11 @@ def handle_daily_quest_start(
     )
 
     reply = (
-        f"{quest.description}\n"
-        "어떻게 할까?\n"
+        f"{quest.client_name}로부터 {quest.description} 의뢰를 받았다. 어떻게 할까?\n"
         "\n◊ [판정/(원하는 비전투 스테이터스)] 형식으로 답글을 달아 의뢰를 수행할 수 있습니다."
     )
     return reply, NoncombatLogInfo(
-        command_text=command_text, result=f"의뢰 배정: {quest.name}"
+        command_text=command_text, result=f"의뢰 배정: {quest.id} ({quest.client_name})"
     )
 
 
@@ -357,9 +360,13 @@ def handle_daily_quest_roll(
             state.spreadsheet, cache=state.sheet_cache
         )
         pool = [m for m in result_messages if m.success_type == success_type]
-        judgment = random.choice(pool).message if pool else success_type.value
+        message = random.choice(pool).message if pool else None
     except Exception:
-        judgment = success_type.value
+        message = None
+
+    judgment = (
+        f"{success_type.value}! {message}" if message else f"{success_type.value}!"
+    )
 
     new_gold = char_data.gold + 1
     today = date.today().isoformat()
@@ -382,7 +389,7 @@ def handle_daily_quest_roll(
 
     result = f"[{stat_name}] {dice}+{stat_val} → 「{total}」\n{judgment}\n"
     if save_succeeded:
-        result += "의뢰를 완수했다. 사례로 1G를 획득했다."
+        result += "\n의뢰를 완수했다. 사례로 1G를 획득했다."
     else:
         result += (
             "의뢰 결과 저장에 실패했습니다. 이 답글에 다시 답글로 재시도해 주세요."

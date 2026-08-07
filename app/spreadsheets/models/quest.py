@@ -24,7 +24,7 @@ class DailyQuestResultMessageData:
 @dataclass(frozen=True)
 class DailyQuestData:
     id: str
-    name: str
+    client_name: str
     description: str
     location: str  # 빈 문자열이면 위치 무관
 
@@ -32,7 +32,7 @@ class DailyQuestData:
     def from_dict(cls, raw: dict) -> "DailyQuestData":
         return cls(
             id=raw["id"],
-            name=raw["name"],
+            client_name=raw["client_name"],
             description=raw["description"],
             location=str(raw.get("location", "") or ""),
         )

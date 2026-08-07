@@ -2,6 +2,8 @@ import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 
+import random  # noqa: E402
+
 import pytest  # noqa: E402
 from battle.objects.define import ValueSourceType, ValueType  # noqa: E402
 from battle.objects.item.models import ItemData  # noqa: E402
@@ -10,6 +12,7 @@ from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
     handle_daily_quest_roll,
+    handle_daily_quest_start,
     handle_investigation_accept,
     handle_investigation_venue_choice,
     handle_roll,
@@ -23,7 +26,12 @@ from bot.noncombat_state import DailyQuestMidState  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
 from spreadsheets.inventory import Inventory  # noqa: E402
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet  # noqa: E402
-from spreadsheets.models.quest import QuestData  # noqa: E402
+from spreadsheets.models.quest import (  # noqa: E402
+    DailyQuestData,
+    DailyQuestResultMessageData,
+    DailyQuestSuccessType,
+    QuestData,
+)
 
 
 def _make_state(acct: str) -> BotState:
@@ -42,6 +50,17 @@ def _make_state(acct: str) -> BotState:
         quest_id="퀘스트1", bot_reply_post_id=123
     )
     return state
+
+
+def _daily_quest(
+    id_="q1",
+    client_name="길 잃은 어린아이",
+    description="부모를 찾아 달라는",
+    location="",
+) -> DailyQuestData:
+    return DailyQuestData(
+        id=id_, client_name=client_name, description=description, location=location
+    )
 
 
 def test_handle_roll_returns_log_info():
@@ -112,6 +131,107 @@ def test_daily_quest_roll_reports_failure_and_keeps_mid_when_save_fails(monkeypa
     assert state.noncombat_char_dict[acct].gold == 10
     assert log_info is not None
     assert log_info.error_trace is not None
+
+
+def test_daily_quest_roll_judgment_always_prefixed_with_success_type(monkeypatch):
+    """message가 시트에 있어도 봇이 항상 '{success_type}! '을 앞에 붙여야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quest_result_messages",
+        lambda spreadsheet, cache=None: [
+            DailyQuestResultMessageData(
+                success_type=DailyQuestSuccessType.GREAT_SUCCESS,
+                message="완벽한 솜씨로 해결했다.",
+            )
+        ],
+    )
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)  # 6+2 → 「8」 → 대성공
+
+    result, log_info = handle_daily_quest_roll(acct, "육체", state)
+
+    assert "대성공! 완벽한 솜씨로 해결했다." in result
+
+
+def test_daily_quest_roll_judgment_prefix_alone_when_no_message_row(monkeypatch):
+    """해당 success_type의 메시지 행이 없으면 접두어만 출력된다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quest_result_messages",
+        lambda spreadsheet, cache=None: [],
+    )
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)  # 6+2 → 「8」 → 대성공
+
+    result, log_info = handle_daily_quest_roll(acct, "육체", state)
+
+    assert "대성공!\n" in result
+
+
+def test_daily_quest_roll_adds_blank_line_before_completion_message(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+    )
+
+    result, log_info = handle_daily_quest_roll(acct, "육체", state)
+
+    assert "\n\n의뢰를 완수했다. 사례로 1G를 획득했다." in result
+
+
+def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_location_and_investigation",
+        lambda spreadsheet, cache=None: ("마을", True, [], {}),
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quests",
+        lambda spreadsheet, cache=None: [
+            _daily_quest(
+                client_name="길 잃은 어린아이", description="부모를 찾아 달라는"
+            )
+        ],
+    )
+
+    result, log_info = handle_daily_quest_start(acct, state)
+
+    assert result.startswith(
+        "길 잃은 어린아이로부터 부모를 찾아 달라는 의뢰를 받았다. 어떻게 할까?"
+    )
+    assert log_info is not None
+
+
+def test_daily_quest_start_unavailable_when_investigation_inactive(monkeypatch):
+    """investigation_active가 꺼져 있으면 위치 무관(location='') 의뢰도 제공하지 않는다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_location_and_investigation",
+        lambda spreadsheet, cache=None: ("마을", False, [], {}),
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quests",
+        lambda spreadsheet, cache=None: [_daily_quest(location="")],
+    )
+
+    result, log_info = handle_daily_quest_start(acct, state)
+
+    assert "받을 수 있는 의뢰가 없습니다" in result
 
 
 def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
