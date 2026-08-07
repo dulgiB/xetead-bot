@@ -169,6 +169,16 @@ def handle_admin_command(
     if _RE_DM_BATTLE_START.search(text):
         return _cmd_dm_battle_start(text, mentions or [], state, visibility)
 
+    # [상시전투]는 README에 문서화된 대로 같은 메시지에 [배치/이름/진영 열]을
+    # 함께 실어 적을 즉시 배치할 수 있다(_cmd_investigation_battle이 내부에서
+    # 그 [배치/...] 토큰을 직접 파싱한다) — 그래서 이 분기가 아래의 본 전투용
+    # _RE_MANUAL_PLACE보다 먼저 와야 한다. 순서가 바뀌면 "[상시전투]
+    # [배치/.../적군 4열]" 같은 정상 사용법이 본 전투용 수동 배치로 잘못
+    # 라우팅되어 "진행 중인 전투가 없습니다" 오류로 실패한다(session이 아직
+    # 없으므로).
+    if _RE_INVESTIGATION_BATTLE.search(text):
+        return _cmd_investigation_battle(text, mentions or [], state, visibility)
+
     if m := _RE_MANUAL_PLACE.search(text):
         name = m.group(1).strip()
         faction_col_str = m.group(2).strip()
@@ -187,9 +197,6 @@ def handle_admin_command(
 
     if _RE_END.search(text):
         return AdminCommandResult(_cmd_end(state))
-
-    if _RE_INVESTIGATION_BATTLE.search(text):
-        return _cmd_investigation_battle(text, mentions or [], state, visibility)
 
     if m := _RE_PROXY.match(text):
         char_name = m.group(1).strip()
