@@ -54,7 +54,7 @@ def _make_state(acct: str) -> BotState:
 
 def _daily_quest(
     id_="q1",
-    client_name="길 잃은 어린아이",
+    client_name="길 잃은 어린아이로부터",
     description="부모를 찾아 달라는",
     location="",
 ) -> DailyQuestData:
@@ -201,7 +201,7 @@ def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
         "load_daily_quests",
         lambda spreadsheet, cache=None: [
             _daily_quest(
-                client_name="길 잃은 어린아이", description="부모를 찾아 달라는"
+                client_name="길 잃은 어린아이로부터", description="부모를 찾아 달라는"
             )
         ],
     )
@@ -212,6 +212,34 @@ def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
         "길 잃은 어린아이로부터 부모를 찾아 달라는 의뢰를 받았다. 어떻게 할까?"
     )
     assert log_info is not None
+
+
+def test_daily_quest_start_does_not_add_or_alter_particle(monkeypatch):
+    """조사(로부터/으로부터) 선택은 코드가 하지 않는다 — client_name에
+    입력된 조사를 그대로 이어붙일 뿐이다. 종성 유무에 따라 둘 다 그대로
+    통과하는지 확인한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_location_and_investigation",
+        lambda spreadsheet, cache=None: ("마을", True, [], {}),
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quests",
+        lambda spreadsheet, cache=None: [
+            _daily_quest(
+                client_name="마을 촌장으로부터", description="세금 장부를 정리해 달라는"
+            )
+        ],
+    )
+
+    result, log_info = handle_daily_quest_start(acct, state)
+
+    assert result.startswith(
+        "마을 촌장으로부터 세금 장부를 정리해 달라는 의뢰를 받았다. 어떻게 할까?"
+    )
 
 
 def test_daily_quest_start_unavailable_when_investigation_inactive(monkeypatch):

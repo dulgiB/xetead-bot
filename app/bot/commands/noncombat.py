@@ -310,7 +310,7 @@ def handle_daily_quest_start(
     )
 
     reply = (
-        f"{quest.client_name}로부터 {quest.description} 의뢰를 받았다. 어떻게 할까?\n"
+        f"{quest.client_name} {quest.description} 의뢰를 받았다. 어떻게 할까?\n"
         "\n◊ [판정/(원하는 비전투 스테이터스)] 형식으로 답글을 달아 의뢰를 수행할 수 있습니다."
     )
     return reply, NoncombatLogInfo(

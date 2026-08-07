@@ -24,7 +24,7 @@ class DailyQuestResultMessageData:
 @dataclass(frozen=True)
 class DailyQuestData:
     id: str
-    client_name: str
+    client_name: str  # "로부터"/"으로부터" 조사까지 포함해서 입력 (예: "노인으로부터")
     description: str
     location: str  # 빈 문자열이면 위치 무관
 
