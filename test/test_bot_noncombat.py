@@ -79,16 +79,16 @@ def test_handle_roll_returns_log_info():
 
 
 def test_handle_roll_reply_labels_dice_part_with_1d6(monkeypatch):
-    """전투 대미지 굴림 표시([Nd6])와 일관되게, [판정/스탯]의 계산식에서도
-    주사위 부분(앞의 숫자)에 [1d6] 라벨을 붙여 뒤의 스탯값과 구분해야
-    한다."""
+    """전투 대미지 굴림 표시("4 + 1[1d6]", 기본값이 먼저 오고 주사위가
+    나중)와 일관되게, [판정/스탯]의 계산식도 "스탯값+주사위[1d6]" 순서로
+    표시해 스탯값과 주사위 굴림을 시각적으로 구분해야 한다."""
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(random, "randint", lambda a, b: 6)
 
     result, _log_info = handle_roll(acct, "육체", state)
 
-    assert "6[1d6]+" in result
+    assert "+6[1d6]" in result
 
 
 def test_handle_investigation_accept_returns_log_info():
@@ -190,8 +190,8 @@ def test_daily_quest_roll_judgment_prefix_alone_when_no_message_row(monkeypatch)
 
 
 def test_daily_quest_roll_reply_labels_dice_part_with_1d6(monkeypatch):
-    """일일 의뢰 판정도 [판정/스탯]과 동일하게 주사위 부분에 [1d6] 라벨을
-    붙여 뒤의 스탯값과 구분해야 한다."""
+    """일일 의뢰 판정도 [판정/스탯]과 동일하게 "스탯값+주사위[1d6]" 순서로
+    표시해야 한다."""
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
@@ -206,7 +206,7 @@ def test_daily_quest_roll_reply_labels_dice_part_with_1d6(monkeypatch):
 
     result, _log_info = handle_daily_quest_roll(acct, "육체", state)
 
-    assert "6[1d6]+" in result
+    assert "+6[1d6]" in result
 
 
 def test_daily_quest_roll_adds_blank_line_before_completion_message(monkeypatch):
