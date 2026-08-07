@@ -296,6 +296,65 @@ def test_investigation_battle_inline_placement_respects_faction_token(monkeypatc
     assert state.practice.context.get_side(char_id) == SideType.SIDE_1
 
 
+def test_investigation_battle_with_inline_enemy_placement_is_not_routed_to_manual_place(
+    monkeypatch,
+):
+    """[상시전투]와 [배치/이름/적군 열]을 같은 멘션에 함께 보내는 건
+    README에 문서화된 정상 사용법이다 — 그런데 handle_admin_command의
+    분기 순서상 본 전투용 [배치/...] 처리(_RE_MANUAL_PLACE)가 상시전투
+    분기(_RE_INVESTIGATION_BATTLE)보다 먼저 검사되면, 이 메시지가 본
+    전투용 수동 배치로 잘못 라우팅되어 session이 없다는 이유로
+    "진행 중인 전투가 없습니다" 오류가 나고 상시전투 자체는 시작되지
+    않는다. 이 테스트는 handle_admin_command를 실제로 거쳐서(직접
+    _cmd_investigation_battle을 호출하지 않고) 그 라우팅 버그를 잡는다."""
+    state = _make_state()
+    state.session = None  # 실제 버그 재현 조건: [전투 준비]를 한 적 없는 상태
+    state.name_dict = {"몬스터": get_test_preset("몬스터")}
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[상시전투][배치/몬스터/적군 4열]",
+            extra_mentions=["ally_acct"],
+        )
+    )
+
+    assert state.practice is not None
+    assert state.session is None  # 본 전투 세션으로 잘못 새지 않았어야 한다
+    reply = mastodon.status_post_calls[-1]
+    assert "진행 중인 전투가 없습니다" not in reply["status"]
+    char_id = CharacterId("몬스터")
+    assert char_id in state.practice.context.characters
+    assert state.practice.context.get_side(char_id) == SideType.SIDE_2
+
+
 class _FakeMastodon:
     def __init__(self):
         self._next_id = itertools.count(9000)
