@@ -97,7 +97,7 @@ def handle_roll(
     stat_val = char_data.get_noncombat_stat(stat_type)
     dice = random.randint(1, 6)
     total = dice + stat_val
-    reply = f"[{stat_name}] {dice}+{stat_val} → 「{total}」"
+    reply = f"[{stat_name}] {dice}[1d6]+{stat_val} → 「{total}」"
     return reply, NoncombatLogInfo(
         command_text=command_text,
         dice_roll=f"{dice}+{stat_val}",
@@ -387,7 +387,7 @@ def handle_daily_quest_roll(
     if save_succeeded:
         del state.noncombat.daily_quest_mid[acct]
 
-    result = f"[{stat_name}] {dice}+{stat_val} → 「{total}」\n{judgment}\n"
+    result = f"[{stat_name}] {dice}[1d6]+{stat_val} → 「{total}」\n{judgment}\n"
     if save_succeeded:
         result += "\n의뢰를 완수했다. 사례로 1G를 획득했다."
     else:

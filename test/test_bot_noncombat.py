@@ -78,6 +78,19 @@ def test_handle_roll_returns_log_info():
     assert log_info.error_trace is None
 
 
+def test_handle_roll_reply_labels_dice_part_with_1d6(monkeypatch):
+    """전투 대미지 굴림 표시([Nd6])와 일관되게, [판정/스탯]의 계산식에서도
+    주사위 부분(앞의 숫자)에 [1d6] 라벨을 붙여 뒤의 스탯값과 구분해야
+    한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)
+
+    result, _log_info = handle_roll(acct, "육체", state)
+
+    assert "6[1d6]+" in result
+
+
 def test_handle_investigation_accept_returns_log_info():
     """[수락]도 마찬가지로 NoncombatLogInfo를 반환해 로그에 남아야 한다."""
     acct = "user1"
@@ -174,6 +187,26 @@ def test_daily_quest_roll_judgment_prefix_alone_when_no_message_row(monkeypatch)
     result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
     assert "대성공!\n" in result
+
+
+def test_daily_quest_roll_reply_labels_dice_part_with_1d6(monkeypatch):
+    """일일 의뢰 판정도 [판정/스탯]과 동일하게 주사위 부분에 [1d6] 라벨을
+    붙여 뒤의 스탯값과 구분해야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quest_result_messages",
+        lambda spreadsheet, cache=None: [],
+    )
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)
+
+    result, _log_info = handle_daily_quest_roll(acct, "육체", state)
+
+    assert "6[1d6]+" in result
 
 
 def test_daily_quest_roll_adds_blank_line_before_completion_message(monkeypatch):
