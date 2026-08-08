@@ -39,7 +39,7 @@ from bot.commands.noncombat import (
     parse_transfer_item_args,
     parse_use_item_args,
 )
-from bot import log_sheets
+from bot import field_restore, log_sheets
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data
@@ -154,7 +154,9 @@ def _upsert_practice_field_row(
             cache=state.sheet_cache,
         )
     except Exception:
-        logger.exception("필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id)
+        logger.exception(
+            "필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id
+        )
 
 
 def _update_practice_field_active_post(state: "BotState") -> None:
@@ -173,7 +175,9 @@ def _update_practice_field_active_post(state: "BotState") -> None:
             cache=state.sheet_cache,
         )
     except Exception:
-        logger.exception("필드 메타 갱신 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id)
+        logger.exception(
+            "필드 메타 갱신 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id
+        )
 
 
 def _apply_game_post_side_effects(
@@ -205,7 +209,8 @@ def _apply_game_post_side_effects(
                 )
             except Exception:
                 logger.exception(
-                    "필드 메타 갱신 실패 (본 전투 field_id=%s)", state.preparation_status_id
+                    "필드 메타 갱신 실패 (본 전투 field_id=%s)",
+                    state.preparation_status_id,
                 )
 
 
@@ -233,7 +238,9 @@ def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) 
             battle_type=log_sheets.FieldBattleType.DM,
             round_n=dm.session.round_n,
             phase=dm.session.current_phase.value,
-            characters=log_sheets.build_field_characters(dm.session.context, include_hp=False),
+            characters=log_sheets.build_field_characters(
+                dm.session.context, include_hp=False
+            ),
             meta={"active_post_id": dm.active_post_id, "visibility": dm.visibility},
             cache=state.sheet_cache,
         )
@@ -266,7 +273,10 @@ def _persist_battle_log(
             cache=state.sheet_cache,
         )
 
-        if battle_log.battle_type == log_sheets.FieldBattleType.MAIN and state.session is not None:
+        if (
+            battle_log.battle_type == log_sheets.FieldBattleType.MAIN
+            and state.session is not None
+        ):
             log_sheets.upsert_field_row(
                 state.spreadsheet,
                 battle_log.field_id,
@@ -284,7 +294,10 @@ def _persist_battle_log(
             )
         elif (
             battle_log.battle_type
-            in (log_sheets.FieldBattleType.PRACTICE, log_sheets.FieldBattleType.INVESTIGATION)
+            in (
+                log_sheets.FieldBattleType.PRACTICE,
+                log_sheets.FieldBattleType.INVESTIGATION,
+            )
             and state.practice is not None
             and battle_log.field_id == str(state.practice.prep_post_id)
         ):
@@ -313,7 +326,10 @@ def _persist_battle_log(
                     characters=log_sheets.build_field_characters(
                         dm.session.context, include_hp=False
                     ),
-                    meta={"active_post_id": dm.active_post_id, "visibility": dm.visibility},
+                    meta={
+                        "active_post_id": dm.active_post_id,
+                        "visibility": dm.visibility,
+                    },
                     cache=state.sheet_cache,
                 )
     except Exception:
@@ -884,7 +900,9 @@ def _start_investigation_battle(state: "BotState") -> str:
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
     ps.start_round()
-    _upsert_practice_field_row(state, ps, phase_value=ps.phase.value if ps.phase else "")
+    _upsert_practice_field_row(
+        state, ps, phase_value=ps.phase.value if ps.phase else ""
+    )
 
     mover_label = ps.side_label(ps.first_mover)
     game_post = (
@@ -920,7 +938,9 @@ def _start_practice_battle(state: "BotState") -> str:
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
     ps.start_round()
-    _upsert_practice_field_row(state, ps, phase_value=ps.phase.value if ps.phase else "")
+    _upsert_practice_field_row(
+        state, ps, phase_value=ps.phase.value if ps.phase else ""
+    )
 
     mover_label = ps.side_label(ps.first_mover)
     game_post = (
@@ -1102,14 +1122,17 @@ def _handle_dm_battle_command(
 
 
 def main() -> None:
-    # 버프/스킬/패시브/아이템/인벤토리는 여기서 로드해도 바로 stale해지므로 쓰지 않는다.
-    # 전투 세션(본 전투/대련/상시전투) 시작 시점에 load_battle_data()로 다시 로드한다.
+    # 버프/스킬/패시브/아이템/인벤토리는 평상시엔 여기서 로드해도 바로
+    # stale해지므로 쓰지 않고, 전투 세션(본 전투/DM 전투/대련/상시전투) 시작
+    # 시점에 load_battle_data()로 다시 로드한다. 다만 재기동 직후 딱 한 번,
+    # 아래 field_restore.restore_all()이 "필드" 시트에 남아 있던 미종료
+    # 전투를 재구성할 때는 이 시점의 값이 곧 최신값이라 그대로 재사용한다.
     (
-        _buff_dict,
-        _skill_dict,
-        _passive_skill_dict,
-        _item_dict,
-        _inventory,
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        inventory,
         char_dict,
         name_dict,
         noncombat_char_dict,
@@ -1132,6 +1155,25 @@ def main() -> None:
     me = mastodon.me()
     logger.info("봇 시작: @%s", me["acct"])
     logger.info("등록된 캐릭터: %d명", len(char_dict))
+
+    try:
+        restored_summaries = field_restore.restore_all(
+            state, buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
+        )
+    except Exception:
+        logger.exception("전투 재기동 복원 중 오류가 발생했습니다")
+        restored_summaries = []
+
+    if restored_summaries:
+        logger.info("재기동 복원: %d건", len(restored_summaries))
+        summary_text = "\n".join(f"- {s}" for s in restored_summaries)
+        try:
+            mastodon.status_post(
+                f"@{ADMIN_MASTODON_ID} ◊ 봇 재기동: 아래 전투를 이어서 진행합니다.\n{summary_text}",
+                visibility="direct",
+            )
+        except Exception:
+            logger.exception("재기동 복원 안내 DM 전송 실패")
 
     mastodon.stream_user(MastodonBotListener(mastodon, state, me["acct"]))
 
