@@ -52,6 +52,13 @@ class RoundManager:
         조립에 쓰인다."""
         return self._last_eliminated_characters
 
+    def set_phase_for_restore(self, phase: RoundPhaseType) -> None:
+        """봇 재기동 복원 전용: 페이즈 전환 부작용(on_start_round/
+        on_finish_round, 적 커맨드 정산 등) 없이 페이즈 값만 대입한다.
+        크래시 이전에 이미 한 번 실행된 전환을 재실행하면 DoT/HoT나 적
+        커맨드가 중복 적용되므로 `to_phase()`를 그대로 쓰면 안 된다."""
+        self._phase = phase
+
     def to_phase(self, phase: RoundPhaseType):
         self._phase = phase
 

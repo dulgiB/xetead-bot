@@ -51,6 +51,18 @@ class BattleSession:
     ) -> None:
         self.context.add_character(data, faction, column)
 
+    def restore_progress(self, round_n: int, phase: RoundPhaseType) -> None:
+        """봇 재기동 복원 전용: `start()`처럼 1라운드+ENEMY_PRE_ACTION으로
+        리셋하지 않고, 크래시 이전 라운드/페이즈 값을 그대로 대입한다.
+        `on_battle_start()`/`ChangePhaseCommand`를 재실행하지 않으므로
+        페이즈 전환 부작용(DoT 등)이 중복 적용되지 않는다 — 캐릭터를
+        모두 add_character()한 뒤, 필요하면 `context.on_battle_start()`를
+        별도로 한 번만 호출해 배틀-스타트 트리거만 새로 적용한다."""
+        self.started = True
+        self.round_n = round_n
+        self._phase_idx = _PHASE_ORDER.index(phase)
+        self.manager.set_phase_for_restore(phase)
+
     def start(self) -> None:
         self.started = True
         self.round_n = 1
