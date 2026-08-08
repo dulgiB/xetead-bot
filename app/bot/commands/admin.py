@@ -37,6 +37,7 @@ from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import load_battle_data, reveal_declared_enemy_skills
 from bot.log_sheets import (
     BattleCommandLog,
+    FieldBattleType,
     build_field_characters,
     upsert_field_row,
     write_back_changed_hp,
@@ -322,10 +323,11 @@ def _cmd_battle_start(
         upsert_field_row(
             state.spreadsheet,
             str(state.preparation_status_id),
-            is_main=True,
+            battle_type=FieldBattleType.MAIN,
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             characters=build_field_characters(state.session.context, include_hp=False),
+            meta={"name": state.session.name},
             cache=state.sheet_cache,
         )
     except Exception:
@@ -374,10 +376,11 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
         upsert_field_row(
             state.spreadsheet,
             str(state.preparation_status_id),
-            is_main=True,
+            battle_type=FieldBattleType.MAIN,
             round_n=state.session.round_n,
             phase=new_phase.value,
             characters=build_field_characters(state.session.context, include_hp=False),
+            meta={"name": state.session.name},
             cache=state.sheet_cache,
         )
     except Exception:
@@ -476,10 +479,11 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
         upsert_field_row(
             state.spreadsheet,
             str(state.preparation_status_id),
-            is_main=True,
+            battle_type=FieldBattleType.MAIN,
             round_n=state.session.round_n,
             phase=new_phase.value,
             characters=build_field_characters(state.session.context, include_hp=False),
+            meta={"name": state.session.name},
             cache=state.sheet_cache,
         )
     except Exception:
@@ -534,11 +538,12 @@ def _cmd_end(state: "BotState") -> str:
         upsert_field_row(
             state.spreadsheet,
             str(state.preparation_status_id),
-            is_main=True,
+            battle_type=FieldBattleType.MAIN,
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             characters=build_field_characters(context, include_hp=False),
             ended=True,
+            meta={"name": state.session.name},
             cache=state.sheet_cache,
         )
     except Exception:
@@ -648,8 +653,12 @@ def _cmd_proxy(
                 field_id=field_id,
                 round_n=round_n,
                 phase=phase,
+                battle_type=(
+                    FieldBattleType.INVESTIGATION
+                    if ps.is_investigation
+                    else FieldBattleType.PRACTICE
+                ),
                 command_text=cmd_str,
-                is_main=False,
                 entries=entries,
             )
             reply_text = format_battle_reply(ps.context, char_id, result.part_results)
@@ -659,8 +668,12 @@ def _cmd_proxy(
                 field_id=field_id,
                 round_n=round_n,
                 phase=phase,
+                battle_type=(
+                    FieldBattleType.INVESTIGATION
+                    if ps.is_investigation
+                    else FieldBattleType.PRACTICE
+                ),
                 command_text=cmd_str,
-                is_main=False,
                 error_trace=traceback.format_exc(),
             )
             return f"◊ {e}", battle_log
@@ -697,6 +710,7 @@ def _cmd_proxy(
             field_id=field_id,
             round_n=round_n,
             phase=phase.value,
+            battle_type=FieldBattleType.MAIN,
             command_text=cmd_str,
             entries=entries,
         )
@@ -720,6 +734,7 @@ def _cmd_proxy(
             field_id=field_id,
             round_n=round_n,
             phase=phase.value,
+            battle_type=FieldBattleType.MAIN,
             command_text=cmd_str,
             error_trace=traceback.format_exc(),
         )
@@ -1184,6 +1199,7 @@ def _cmd_dm_battle_proxy(
             field_id=field_id,
             round_n=round_n,
             phase=phase.value,
+            battle_type=FieldBattleType.DM,
             command_text=cmd_str,
             entries=entries,
         )
@@ -1204,6 +1220,7 @@ def _cmd_dm_battle_proxy(
             field_id=field_id,
             round_n=round_n,
             phase=phase.value,
+            battle_type=FieldBattleType.DM,
             command_text=cmd_str,
             error_trace=traceback.format_exc(),
         )
@@ -1243,6 +1260,25 @@ def _end_dm_battle(
             battle_end_entries,
             cache=state.sheet_cache,
         )
+
+    if dm_state.field_id:
+        try:
+            upsert_field_row(
+                state.spreadsheet,
+                dm_state.field_id,
+                battle_type=FieldBattleType.DM,
+                round_n=session.round_n,
+                phase=session.current_phase.value,
+                characters=build_field_characters(session.context, include_hp=False),
+                ended=True,
+                meta={
+                    "active_post_id": dm_state.active_post_id,
+                    "visibility": dm_state.visibility,
+                },
+                cache=state.sheet_cache,
+            )
+        except Exception:
+            _log_system_error("필드 시트 저장")
 
     state.dm_battles.pop(dm_state.active_post_id, None)
 
