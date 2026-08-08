@@ -8,7 +8,7 @@ from battle.objects.models import CharacterId
 
 from bot.battle_reply_text import format_battle_reply
 from bot.load_data import reveal_declared_enemy_skills
-from bot.log_sheets import BattleCommandLog, write_back_changed_hp
+from bot.log_sheets import BattleCommandLog, FieldBattleType, write_back_changed_hp
 
 if TYPE_CHECKING:
     from bot.main import BotState
@@ -21,6 +21,7 @@ def handle_character_command(
     state: "BotState",
     session: "BattleSession",
     field_id: str,
+    battle_type: FieldBattleType,
     *,
     silent_on_unrecognized: bool = False,
 ) -> tuple[Optional[str], Optional[BattleCommandLog]]:
@@ -28,9 +29,13 @@ def handle_character_command(
     mastodon acct를 char_dict로 캐릭터 ID로 변환 후 커맨드를 파싱·처리한다.
     검증 실패 시 오류 메시지 문자열을 반환한다.
 
-    `session`/`field_id`는 호출측이 명시한다 — 본 전투(`state.session`,
-    `str(state.preparation_status_id)`)와 DM 전투(각 `DmBattleState.session`/
-    `.field_id`)가 이 함수를 공유하기 위함이다.
+    `session`/`field_id`/`battle_type`은 호출측이 명시한다 — 본 전투
+    (`state.session`, `str(state.preparation_status_id)`, `MAIN`)와 DM 전투
+    (각 `DmBattleState.session`/`.field_id`, `DM`)가 이 함수를 공유하기
+    위함이다. 이 함수 스스로 본 전투/DM 전투를 구분할 방법이 없으므로
+    `battle_type`을 기본값 없이 반드시 caller가 넘기게 한다 — 과거에는
+    `is_main` 기본값(True)에 의존해 DM 전투 커맨드도 본 전투로 잘못
+    기록되는 버그가 있었다.
 
     반환값의 두 번째 요소는 로그_전투 기록용 자료다 (전투가 시작되지 않았거나
     캐릭터를 찾지 못하는 등, 커맨드 자체를 시도하지 않은 경우는 None).
@@ -95,6 +100,7 @@ def handle_character_command(
             field_id=field_id,
             round_n=round_n,
             phase=phase.value,
+            battle_type=battle_type,
             command_text=text,
             entries=entries,
         )
@@ -111,6 +117,7 @@ def handle_character_command(
             field_id=field_id,
             round_n=round_n,
             phase=phase.value,
+            battle_type=battle_type,
             command_text=text,
             error_trace=traceback.format_exc(),
         )

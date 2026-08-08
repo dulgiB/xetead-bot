@@ -37,6 +37,20 @@ class PracticeRoundManager:
     def phase(self) -> PracticeRoundPhase | None:
         return self._phase
 
+    def set_phase_for_restore(
+        self,
+        phase: PracticeRoundPhase,
+        first_mover: SideType | None,
+        second_mover: SideType | None,
+    ) -> None:
+        """봇 재기동 복원 전용: on_start_round()나 선공/후공 재추첨 없이
+        페이즈·선공/후공 값만 대입한다. 크래시 이전에 결정된 선공/후공을
+        그대로 유지해야 하므로(재추첨하면 실제 진행과 어긋난다) 호출측이
+        복원한 값을 명시적으로 넘긴다."""
+        self._phase = phase
+        self._first_mover = first_mover
+        self._second_mover = second_mover
+
     def to_phase(self, phase: PracticeRoundPhase) -> None:
         if phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
             self._context.on_start_round()

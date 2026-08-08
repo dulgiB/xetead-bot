@@ -1,15 +1,17 @@
 """필드/로그_전투/로그_비전투 시트 기록.
 
-"필드" 시트는 전투 세션(본 전투/대련/상시전투)의 진행 상태 스냅샷이자
+"필드" 시트는 전투 세션(본 전투/DM 전투/대련/상시전투)의 진행 상태 스냅샷이자
 크래시 복구용 데이터를 겸한다 (과거 battle_persistence.py의 "전투 진행" 시트를
-대체한다). "로그_전투"/"로그_비전투"는 커맨드 정산·비전투 행위 발생 시마다
-행을 추가하는 append-only 로그다.
+대체한다). ended_at이 비어 있는 행은 봇 재기동 시 `bot/field_restore.py`가
+읽어 해당 전투를 메모리에 재구성한다. "로그_전투"/"로그_비전투"는 커맨드
+정산·비전투 행위 발생 시마다 행을 추가하는 append-only 로그다.
 """
 
 import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
 import gspread
@@ -17,7 +19,6 @@ from gspread.utils import ValueInputOption
 
 from battle.core.commands.models import BattleLogEntry
 from battle.objects.models import CharacterId
-from utils.spreadsheet_bool import parse_spreadsheet_bool
 
 from bot.sheet_cache import SheetCache
 
@@ -25,6 +26,19 @@ if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
 
 logger = logging.getLogger(__name__)
+
+
+class FieldBattleType(str, Enum):
+    """ "필드" 시트 한 행이 어떤 종류의 전투를 기록하는지 구분한다.
+
+    전투 재개(재기동 복원) 시 이 값으로 본 전투/DM 전투/대련/상시전투 중
+    무엇을 복원할지 분기한다.
+    """
+
+    MAIN = "본전투"
+    DM = "DM전투"
+    PRACTICE = "대련"
+    INVESTIGATION = "상시전투"
 
 
 @dataclass(frozen=True)
@@ -38,8 +52,8 @@ class BattleCommandLog:
     field_id: str
     round_n: int
     phase: str
+    battle_type: FieldBattleType
     command_text: str
-    is_main: bool = True
     entries: list[BattleLogEntry] = field(default_factory=list)
     error_trace: Optional[str] = None
 
@@ -57,12 +71,13 @@ class NoncombatLogInfo:
 _FIELD_SHEET = "필드"
 _FIELD_HEADERS = [
     "id",
-    "is_main",
+    "battle_type",
     "started_at",
     "ended_at",
     "round",
     "phase",
     "characters_json",
+    "meta_json",
 ]
 
 _BATTLE_LOG_SHEET = "로그_전투"
@@ -90,7 +105,10 @@ _NONCOMBAT_LOG_HEADERS = [
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    # Google Sheets의 USER_ENTERED는 ISO 8601의 "T" 구분자·타임존 접미사가
+    # 있으면 날짜/시간으로 파싱하지 못하고 텍스트로 남는다 — 공백으로 구분된
+    # 이 포맷만 자동 인식한다. UTC 기준 시각인 점은 기존과 동일하다.
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _get_or_create_worksheet(
@@ -128,6 +146,7 @@ def build_field_characters(
         position = int(str(context.find_character_position(char_id)))
         row = {
             "name": char_id.name,
+            "faction": char.faction.value,
             "position": position,
             "remaining_cost": char.status.remaining_cost,
         }
@@ -243,23 +262,37 @@ def write_back_changed_hp(
             logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
 
 
+# 동시에 최대 1개 슬롯만 진행되는 배틀타입 — field_id로 기존 행을 못 찾으면
+# 같은 battle_type의 가장 최근 미종료 행을 대신 찾아 갱신한다. DM 전투는
+# 여러 개가 동시에 진행될 수 있어 이 fallback을 적용하면 안 된다(field_id
+# 정확히 일치할 때만 갱신).
+_SINGLE_SLOT_BATTLE_TYPES = frozenset(
+    {FieldBattleType.MAIN, FieldBattleType.PRACTICE, FieldBattleType.INVESTIGATION}
+)
+
+
 def upsert_field_row(
     spreadsheet: gspread.Spreadsheet,
     field_id: str,
-    is_main: bool,
+    battle_type: FieldBattleType,
     round_n: int,
     phase: str,
     characters: list[dict],
     ended: bool = False,
+    meta: Optional[dict] = None,
     cache: Optional[SheetCache] = None,
 ) -> None:
     """필드 시트에 전투 세션 스냅샷을 upsert한다.
 
     - field_id로 기존 행을 찾으면 그 행을 갱신한다.
-    - 못 찾았고 is_main이면, 가장 위(가장 최근)의 is_main=TRUE 행을 대신 갱신한다
-      (본 전투는 동시에 두 개 이상 진행되지 않는다는 전제).
+    - 못 찾았고 battle_type이 동시 1개 슬롯 전제(`_SINGLE_SLOT_BATTLE_TYPES`)면,
+      가장 위(가장 최근)의 같은 battle_type 행을 대신 갱신한다. DM 전투는
+      동시에 여러 개 진행될 수 있어 이 fallback을 적용하지 않는다.
     - 그래도 못 찾으면 새 행을 최상단(헤더 다음)에 삽입한다.
     - ended=True면 ended_at만 채우고 나머지는 기존 값을 유지한다.
+    - meta는 배틀타입별 라우팅/부가 정보(예: 페이즈 게시물 id, visibility)를
+      담는 dict다. 기존 meta_json이 있으면 완전히 덮어쓴다 — 부분 갱신은
+      `update_field_meta()`를 쓴다.
 
     `cache`가 주어지면 초기 조회에 재사용하되, 이 함수 자체가 "필드" 시트에
     쓰기를 수행하므로 반환 직전 반드시 그 시트의 캐시 엔트리를 무효화한다 —
@@ -281,13 +314,14 @@ def upsert_field_row(
             row_idx = i
             break
 
-    if row_idx is None and is_main:
+    if row_idx is None and battle_type in _SINGLE_SLOT_BATTLE_TYPES:
         for i, row in enumerate(data_rows, start=2):
-            if row and len(row) > 1 and parse_spreadsheet_bool(row[1]):
+            if row and len(row) > 1 and row[1] == battle_type.value:
                 row_idx = i
                 break
 
     characters_json = json.dumps(characters, ensure_ascii=False)
+    meta_json = json.dumps(meta or {}, ensure_ascii=False)
 
     if row_idx is not None:
         existing = all_values[row_idx - 1]
@@ -296,16 +330,17 @@ def upsert_field_row(
         ended_at = _now() if ended else existing[3]
         new_row: list[str | int | float] = [
             field_id,
-            is_main,
+            battle_type.value,
             started_at,
             ended_at,
             round_n,
             phase,
             characters_json,
+            meta_json,
         ]
         ws.update(
             [new_row],
-            range_name=f"A{row_idx}:G{row_idx}",
+            range_name=f"A{row_idx}:H{row_idx}",
             value_input_option=ValueInputOption.user_entered,
         )
         if cache is not None:
@@ -314,16 +349,152 @@ def upsert_field_row(
 
     new_row = [
         field_id,
-        is_main,
+        battle_type.value,
         _now(),
         _now() if ended else "",
         round_n,
         phase,
         characters_json,
+        meta_json,
     ]
     ws.insert_rows([new_row], row=2, value_input_option=ValueInputOption.user_entered)
     if cache is not None:
         cache.invalidate(_FIELD_SHEET)
+
+
+def update_field_meta(
+    spreadsheet: gspread.Spreadsheet,
+    field_id: str,
+    meta: dict,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """이미 upsert_field_row로 만들어진 "필드" 행의 meta_json에 주어진 키만
+    병합해 갱신한다.
+
+    페이즈 게시물 id처럼 upsert_field_row 호출 시점엔 아직 정해지지 않고
+    게시가 실제로 끝난 뒤에만 알 수 있는 값을 나중에 채워 넣는 용도다.
+    field_id에 해당하는 행이 없으면(아직 upsert_field_row가 호출되지 않은
+    경우) 조용히 건너뛴다.
+    """
+    ws = _get_or_create_worksheet(
+        spreadsheet, _FIELD_SHEET, _FIELD_HEADERS, cache=cache
+    )
+    if cache is not None:
+        all_values = cache.get_all_values(_FIELD_SHEET)
+    else:
+        all_values = ws.get_all_values()
+    data_rows = all_values[1:]
+
+    row_idx = None
+    for i, row in enumerate(data_rows, start=2):
+        if row and row[0] == field_id:
+            row_idx = i
+            break
+    if row_idx is None:
+        logger.warning(
+            "'필드' 시트에서 field_id=%s 행을 찾지 못해 메타 갱신을 건너뜁니다",
+            field_id,
+        )
+        return
+
+    existing = all_values[row_idx - 1]
+    existing = existing + [""] * (len(_FIELD_HEADERS) - len(existing))
+    try:
+        existing_meta = json.loads(existing[7]) if existing[7] else {}
+    except (json.JSONDecodeError, TypeError):
+        existing_meta = {}
+    existing_meta.update(meta)
+
+    ws.update_cell(row_idx, 8, json.dumps(existing_meta, ensure_ascii=False))
+    if cache is not None:
+        cache.invalidate(_FIELD_SHEET)
+
+
+@dataclass(frozen=True)
+class FieldRow:
+    """ "필드" 시트 한 행을 파싱한 결과. `bot/field_restore.py`가 봇 재기동
+    시 이 값으로 전투를 재구성한다."""
+
+    field_id: str
+    battle_type: FieldBattleType
+    round_n: int
+    phase: str
+    characters: list[dict]
+    meta: dict
+
+
+def load_open_battle_rows(
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
+) -> list[FieldRow]:
+    """ "필드" 시트에서 ended_at이 비어 있는(=아직 끝나지 않은) 행만 읽어
+    반환한다. 봇 재기동 시 이어서 진행할 전투를 찾는 용도다.
+
+    battle_type을 인식할 수 없거나 characters_json/meta_json이 손상된 행은
+    복원 대상에서 조용히 제외한다(경고 로그만 남긴다) — 재기동 자체가
+    막히면 안 되므로 한 행의 문제가 다른 행 복원을 막지 않게 한다.
+    """
+    try:
+        if cache is not None:
+            all_values = cache.get_all_values(_FIELD_SHEET)
+        else:
+            all_values = spreadsheet.worksheet(_FIELD_SHEET).get_all_values()
+    except gspread.WorksheetNotFound:
+        return []
+    if not all_values:
+        return []
+
+    rows: list[FieldRow] = []
+    for raw in all_values[1:]:
+        if not raw or not raw[0]:
+            continue
+        padded = raw + [""] * (len(_FIELD_HEADERS) - len(raw))
+        (
+            field_id,
+            battle_type_str,
+            _started_at,
+            ended_at,
+            round_str,
+            phase,
+            characters_str,
+            meta_str,
+        ) = padded[:8]
+        if ended_at:
+            continue
+        try:
+            battle_type = FieldBattleType(battle_type_str)
+        except ValueError:
+            logger.warning(
+                "'필드' 시트의 battle_type(%s)을 인식할 수 없어 복원에서 건너뜁니다: id=%s",
+                battle_type_str,
+                field_id,
+            )
+            continue
+        try:
+            characters = json.loads(characters_str) if characters_str else []
+        except json.JSONDecodeError:
+            logger.warning(
+                "'필드' 시트의 characters_json이 손상되어 건너뜁니다: id=%s", field_id
+            )
+            continue
+        try:
+            meta = json.loads(meta_str) if meta_str else {}
+        except json.JSONDecodeError:
+            meta = {}
+        try:
+            round_n = int(round_str) if round_str else 0
+        except ValueError:
+            round_n = 0
+        rows.append(
+            FieldRow(
+                field_id=field_id,
+                battle_type=battle_type,
+                round_n=round_n,
+                phase=phase,
+                characters=characters,
+                meta=meta,
+            )
+        )
+    return rows
 
 
 # ---------------------------------------------------------------------------

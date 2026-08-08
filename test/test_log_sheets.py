@@ -224,51 +224,61 @@ def test_write_back_changed_hp_reuses_given_cache():
     assert spreadsheet.worksheet("캐릭터").get_values_call_count == 1
 
 
+class _FakeFieldWorksheet:
+    def __init__(self):
+        self.rows = [
+            [
+                "id",
+                "battle_type",
+                "started_at",
+                "ended_at",
+                "round",
+                "phase",
+                "characters_json",
+                "meta_json",
+            ]
+        ]
+        self.get_all_values_call_count = 0
+
+    def get_all_values(self):
+        self.get_all_values_call_count += 1
+        return self.rows
+
+    def get_values(self, value_render_option=None, pad_values=True):
+        self.get_all_values_call_count += 1
+        return self.rows
+
+    def update(self, values, range_name=None, value_input_option=None):
+        # "A2:H2" 형식에서 행 번호만 뽑아 그 행을 갱신한다.
+        row_idx = int(range_name[1:].split(":")[0])
+        self.rows[row_idx - 1] = values[0]
+
+    def update_cell(self, row, col, value):
+        row_list = self.rows[row - 1]
+        row_list += [""] * (col - len(row_list))
+        row_list[col - 1] = value
+
+    def insert_rows(self, values, row, value_input_option=None):
+        self.rows.insert(row - 1, values[0])
+
+
+class _FakeFieldSpreadsheet:
+    def __init__(self, ws):
+        self._ws = ws
+        self.id = "fake-field-spreadsheet-id"
+        self.client = None
+
+    def fetch_sheet_metadata(self):
+        return {"sheets": [{"properties": {"title": "필드"}}]}
+
+    def worksheet(self, name):
+        return self._ws
+
+
 def test_upsert_field_row_invalidates_cache_after_write():
     """캐시를 넘겨 upsert_field_row를 두 번 연속 호출하면(같은 커맨드 처리
     중 여러 페이즈를 한 번에 반영하는 경우 등), 두 번째 호출이 첫 번째
     호출이 방금 쓴 내용을 못 보고 새 행을 중복 삽입하면 안 된다."""
-
-    class _FakeFieldWorksheet:
-        def __init__(self):
-            self.rows = [
-                [
-                    "id",
-                    "is_main",
-                    "started_at",
-                    "ended_at",
-                    "round",
-                    "phase",
-                    "characters_json",
-                ]
-            ]
-            self.get_all_values_call_count = 0
-
-        def get_all_values(self):
-            self.get_all_values_call_count += 1
-            return self.rows
-
-        def get_values(self, value_render_option=None, pad_values=True):
-            self.get_all_values_call_count += 1
-            return self.rows
-
-        def update(self, values, range_name=None, value_input_option=None):
-            # "A2:G2" 형식에서 행 번호만 뽑아 그 행을 갱신한다.
-            row_idx = int(range_name[1:].split(":")[0])
-            self.rows[row_idx - 1] = values[0]
-
-        def insert_rows(self, values, row, value_input_option=None):
-            self.rows.insert(row - 1, values[0])
-
-    class _FakeFieldSpreadsheet:
-        def __init__(self, ws):
-            self._ws = ws
-            self.id = "fake-field-spreadsheet-id"
-            self.client = None
-
-        def fetch_sheet_metadata(self):
-            return {"sheets": [{"properties": {"title": "필드"}}]}
-
     ws = _FakeFieldWorksheet()
     spreadsheet = _FakeFieldSpreadsheet(ws)
     cache = SheetCache(spreadsheet, worksheet_factory=lambda properties: ws)
@@ -276,7 +286,7 @@ def test_upsert_field_row_invalidates_cache_after_write():
     log_sheets.upsert_field_row(
         spreadsheet,
         "field-1",
-        is_main=True,
+        battle_type=log_sheets.FieldBattleType.MAIN,
         round_n=1,
         phase="ALLY_ACTION",
         characters=[],
@@ -285,7 +295,7 @@ def test_upsert_field_row_invalidates_cache_after_write():
     log_sheets.upsert_field_row(
         spreadsheet,
         "field-1",
-        is_main=True,
+        battle_type=log_sheets.FieldBattleType.MAIN,
         round_n=2,
         phase="ENEMY_POST_ACTION",
         characters=[],
@@ -296,3 +306,180 @@ def test_upsert_field_row_invalidates_cache_after_write():
     # 하나 더 생기면 안 된다(헤더 + 데이터 행 1개 = 총 2행).
     assert len(ws.rows) == 2
     assert ws.rows[1][4] == 2  # round 컬럼이 마지막 값(2)으로 갱신됨
+    assert ws.rows[1][1] == "본전투"
+
+
+def test_upsert_field_row_single_slot_fallback_ignores_dm():
+    """DM 전투는 동시에 여러 개 진행될 수 있으므로, field_id가 다르면
+    (같은 battle_type이어도) 기존 행을 재사용하지 않고 새 행을 삽입해야
+    한다 — MAIN/PRACTICE/INVESTIGATION만 "동시 1개 슬롯" fallback 대상이다."""
+    ws = _FakeFieldWorksheet()
+    spreadsheet = _FakeFieldSpreadsheet(ws)
+
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "dm-1",
+        battle_type=log_sheets.FieldBattleType.DM,
+        round_n=1,
+        phase="ENEMY_PRE_ACTION",
+        characters=[],
+    )
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "dm-2",
+        battle_type=log_sheets.FieldBattleType.DM,
+        round_n=1,
+        phase="ENEMY_PRE_ACTION",
+        characters=[],
+    )
+
+    assert len(ws.rows) == 3  # 헤더 + DM 전투 2건
+    assert {row[0] for row in ws.rows[1:]} == {"dm-1", "dm-2"}
+
+
+def test_upsert_field_row_single_slot_fallback_reuses_row_for_main():
+    """MAIN은 동시에 1개만 진행된다는 전제 하에, field_id가 바뀌어도(예:
+    대련 종료 후 prep_post_id가 0으로 바뀌는 것과 유사한 상황) 같은
+    battle_type의 가장 최근 행을 재사용해야 한다."""
+    ws = _FakeFieldWorksheet()
+    spreadsheet = _FakeFieldSpreadsheet(ws)
+
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "main-1",
+        battle_type=log_sheets.FieldBattleType.MAIN,
+        round_n=1,
+        phase="ENEMY_PRE_ACTION",
+        characters=[],
+    )
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "main-2",
+        battle_type=log_sheets.FieldBattleType.MAIN,
+        round_n=2,
+        phase="ALLY_ACTION",
+        characters=[],
+    )
+
+    assert len(ws.rows) == 2  # 새 행이 추가되지 않고 기존 행이 갱신됨
+    assert ws.rows[1][0] == "main-2"
+    assert ws.rows[1][4] == 2
+
+
+def test_upsert_field_row_meta_json_round_trip():
+    """meta에 넘긴 dict가 meta_json 컬럼에 그대로 직렬화되어야 한다."""
+    ws = _FakeFieldWorksheet()
+    spreadsheet = _FakeFieldSpreadsheet(ws)
+
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "field-1",
+        battle_type=log_sheets.FieldBattleType.MAIN,
+        round_n=1,
+        phase="ALLY_ACTION",
+        characters=[],
+        meta={"name": "테스트 전투", "active_phase_post_id": 123},
+    )
+
+    import json
+
+    assert json.loads(ws.rows[1][7]) == {
+        "name": "테스트 전투",
+        "active_phase_post_id": 123,
+    }
+
+
+def test_update_field_meta_merges_into_existing_meta():
+    """update_field_meta는 기존 meta_json의 다른 키는 보존하고 넘긴 키만
+    덮어써야 한다."""
+    ws = _FakeFieldWorksheet()
+    spreadsheet = _FakeFieldSpreadsheet(ws)
+
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "field-1",
+        battle_type=log_sheets.FieldBattleType.MAIN,
+        round_n=1,
+        phase="ENEMY_PRE_ACTION",
+        characters=[],
+        meta={"name": "테스트 전투"},
+    )
+    log_sheets.update_field_meta(spreadsheet, "field-1", {"active_phase_post_id": 999})
+
+    import json
+
+    assert json.loads(ws.rows[1][7]) == {
+        "name": "테스트 전투",
+        "active_phase_post_id": 999,
+    }
+
+
+def test_update_field_meta_skips_when_row_missing(caplog):
+    """아직 upsert_field_row가 호출되지 않아 행 자체가 없으면 조용히
+    건너뛰어야 한다(예외를 던지면 안 된다)."""
+    import logging
+
+    ws = _FakeFieldWorksheet()
+    spreadsheet = _FakeFieldSpreadsheet(ws)
+
+    with caplog.at_level(logging.WARNING, logger="bot.log_sheets"):
+        log_sheets.update_field_meta(spreadsheet, "no-such-id", {"x": 1})
+
+    assert len(ws.rows) == 1  # 헤더만 존재
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
+
+
+def test_now_format_has_no_iso_t_or_timezone_suffix():
+    """Google Sheets USER_ENTERED는 ISO 8601의 'T' 구분자·타임존 접미사가
+    있으면 날짜로 파싱하지 못한다 — 공백 구분 포맷이어야 한다."""
+    import re
+
+    value = log_sheets._now()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", value)
+
+
+def test_build_field_characters_includes_faction():
+    """복원 시 진영을 알아야 add_character(faction=...)를 다시 호출할 수
+    있으므로, faction이 스냅샷에 포함되어야 한다."""
+    ctx = _make_context_with_two_characters()
+    rows = log_sheets.build_field_characters(ctx, include_hp=False)
+    assert all(row["faction"] == "아군" for row in rows)
+    assert {row["name"] for row in rows} == {"아군1", "아군2"}
+
+
+def test_load_open_battle_rows_excludes_ended_and_parses_fields():
+    ws = _FakeFieldWorksheet()
+    spreadsheet = _FakeFieldSpreadsheet(ws)
+
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "open-1",
+        battle_type=log_sheets.FieldBattleType.MAIN,
+        round_n=2,
+        phase="ALLY_ACTION",
+        characters=[
+            {"name": "아군1", "faction": "아군", "position": 1, "remaining_cost": 3}
+        ],
+        meta={"name": "진행중 전투"},
+    )
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "dm-ended",
+        battle_type=log_sheets.FieldBattleType.DM,
+        round_n=5,
+        phase="BUFF_UPDATE_AND_NEXT_ROUND_STANDBY",
+        characters=[],
+        ended=True,
+    )
+
+    rows = log_sheets.load_open_battle_rows(spreadsheet)
+
+    assert [r.field_id for r in rows] == ["open-1"]
+    row = rows[0]
+    assert row.battle_type == log_sheets.FieldBattleType.MAIN
+    assert row.round_n == 2
+    assert row.phase == "ALLY_ACTION"
+    assert row.characters == [
+        {"name": "아군1", "faction": "아군", "position": 1, "remaining_cost": 3}
+    ]
+    assert row.meta == {"name": "진행중 전투"}

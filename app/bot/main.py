@@ -39,7 +39,7 @@ from bot.commands.noncombat import (
     parse_transfer_item_args,
     parse_use_item_args,
 )
-from bot import log_sheets
+from bot import field_restore, log_sheets
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data
@@ -114,6 +114,72 @@ def _truncate(text: str) -> str:
     return text[: _MAX_POST_LENGTH - 1] + "…"
 
 
+def _practice_battle_type(ps: PracticeBattleState) -> log_sheets.FieldBattleType:
+    return (
+        log_sheets.FieldBattleType.INVESTIGATION
+        if ps.is_investigation
+        else log_sheets.FieldBattleType.PRACTICE
+    )
+
+
+def _practice_field_meta(ps: PracticeBattleState) -> dict:
+    return {
+        "prep_post_id": ps.prep_post_id,
+        "active_post_id": ps.active_post_id,
+        "visibility": ps.visibility,
+        "round_limit": ps.round_limit,
+        "first_mover": ps.first_mover.value if ps.first_mover else None,
+        "second_mover": ps.second_mover.value if ps.second_mover else None,
+    }
+
+
+def _upsert_practice_field_row(
+    state: "BotState", ps: PracticeBattleState, *, phase_value: str, ended: bool = False
+) -> None:
+    """대련/상시전투 라운드 시작/종료처럼 캐릭터 커맨드 없이 "필드" 행을
+    직접 갱신해야 하는 지점에서 쓴다(평상시 커맨드별 갱신은
+    `_persist_battle_log`가 담당). `phase_value`를 직접 받는 이유는, 라운드
+    종료 시점엔 `ps.phase`가 이미 None(`PracticeRoundManager.end_round()`가
+    비운 뒤)이라 호출측이 전환 전에 붙잡아 둔 값을 넘겨야 하기 때문이다."""
+    try:
+        log_sheets.upsert_field_row(
+            state.spreadsheet,
+            str(ps.prep_post_id),
+            battle_type=_practice_battle_type(ps),
+            round_n=ps.round_n,
+            phase=phase_value,
+            characters=log_sheets.build_field_characters(ps.context, include_hp=True),
+            ended=ended,
+            meta=_practice_field_meta(ps),
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        logger.exception(
+            "필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id
+        )
+
+
+def _update_practice_field_active_post(state: "BotState") -> None:
+    """대련/상시전투 진행 게시물(active_post_id)이 바뀔 때마다 "필드" 시트
+    메타에 반영한다 — upsert_field_row 호출 시점엔 아직 새 게시물 id가
+    정해지지 않은 경우가 많아(게시 완료 후에야 알 수 있음), 게시가 끝난
+    직후 별도로 패치한다."""
+    ps = state.practice
+    if ps is None:
+        return
+    try:
+        log_sheets.update_field_meta(
+            state.spreadsheet,
+            str(ps.prep_post_id),
+            {"active_post_id": ps.active_post_id},
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        logger.exception(
+            "필드 메타 갱신 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id
+        )
+
+
 def _apply_game_post_side_effects(
     state: "BotState", result: AdminCommandResult, new_post_id: int
 ) -> None:
@@ -133,6 +199,19 @@ def _apply_game_post_side_effects(
         state.active_phase_post_id = (
             new_post_id if state.session.current_phase in _COMMAND_PHASES else None
         )
+        if state.preparation_status_id is not None:
+            try:
+                log_sheets.update_field_meta(
+                    state.spreadsheet,
+                    str(state.preparation_status_id),
+                    {"active_phase_post_id": state.active_phase_post_id},
+                    cache=state.sheet_cache,
+                )
+            except Exception:
+                logger.exception(
+                    "필드 메타 갱신 실패 (본 전투 field_id=%s)",
+                    state.preparation_status_id,
+                )
 
 
 def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) -> None:
@@ -147,6 +226,26 @@ def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) 
     state.dm_battles.pop(dm.active_post_id, None)
     dm.active_post_id = new_post_id
     state.dm_battles[new_post_id] = dm
+
+    # DM 전투는 여러 개가 동시에 진행될 수 있어 field_id별로 "필드" 행을
+    # 따로 관리한다 — 최초 등록(전투 발생) 시 행을 만들고, 이후 페이즈
+    # 전환마다(advance_phase/continue) 다시 호출되어 라운드/페이즈/캐릭터/
+    # active_post_id를 최신 상태로 갱신한다.
+    try:
+        log_sheets.upsert_field_row(
+            state.spreadsheet,
+            dm.field_id,
+            battle_type=log_sheets.FieldBattleType.DM,
+            round_n=dm.session.round_n,
+            phase=dm.session.current_phase.value,
+            characters=log_sheets.build_field_characters(
+                dm.session.context, include_hp=False
+            ),
+            meta={"active_post_id": dm.active_post_id, "visibility": dm.visibility},
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        logger.exception("필드 시트 저장 실패 (DM 전투 field_id=%s)", dm.field_id)
 
 
 def _persist_battle_log(
@@ -174,20 +273,31 @@ def _persist_battle_log(
             cache=state.sheet_cache,
         )
 
-        if battle_log.is_main and state.session is not None:
+        if (
+            battle_log.battle_type == log_sheets.FieldBattleType.MAIN
+            and state.session is not None
+        ):
             log_sheets.upsert_field_row(
                 state.spreadsheet,
                 battle_log.field_id,
-                is_main=True,
+                battle_type=log_sheets.FieldBattleType.MAIN,
                 round_n=state.session.round_n,
                 phase=state.session.current_phase.value,
                 characters=log_sheets.build_field_characters(
                     state.session.context, include_hp=False
                 ),
+                meta={
+                    "name": state.session.name,
+                    "active_phase_post_id": state.active_phase_post_id,
+                },
                 cache=state.sheet_cache,
             )
         elif (
-            not battle_log.is_main
+            battle_log.battle_type
+            in (
+                log_sheets.FieldBattleType.PRACTICE,
+                log_sheets.FieldBattleType.INVESTIGATION,
+            )
             and state.practice is not None
             and battle_log.field_id == str(state.practice.prep_post_id)
         ):
@@ -195,26 +305,31 @@ def _persist_battle_log(
             log_sheets.upsert_field_row(
                 state.spreadsheet,
                 battle_log.field_id,
-                is_main=False,
+                battle_type=battle_log.battle_type,
                 round_n=state.practice.round_n,
                 phase=phase.value if phase is not None else "",
                 characters=log_sheets.build_field_characters(
                     state.practice.context, include_hp=True
                 ),
+                meta=_practice_field_meta(state.practice),
                 cache=state.sheet_cache,
             )
-        elif not battle_log.is_main:
+        elif battle_log.battle_type == log_sheets.FieldBattleType.DM:
             dm = admin_commands.find_dm_battle_by_field_id(state, battle_log.field_id)
             if dm is not None:
                 log_sheets.upsert_field_row(
                     state.spreadsheet,
                     battle_log.field_id,
-                    is_main=False,
+                    battle_type=log_sheets.FieldBattleType.DM,
                     round_n=dm.session.round_n,
                     phase=dm.session.current_phase.value,
                     characters=log_sheets.build_field_characters(
                         dm.session.context, include_hp=False
                     ),
+                    meta={
+                        "active_post_id": dm.active_post_id,
+                        "visibility": dm.visibility,
+                    },
                     cache=state.sheet_cache,
                 )
     except Exception:
@@ -437,6 +552,7 @@ class MastodonBotListener(StreamListener):
                         )
                         if state.practice is not None:
                             state.practice.active_post_id = new_post["id"]
+                            _update_practice_field_active_post(state)
             else:
                 # 대련: [N팀/N열] 포지션 선언
                 m = _RE_DECLARATION.search(text)
@@ -482,6 +598,7 @@ class MastodonBotListener(StreamListener):
                         )
                         if state.practice is not None:
                             state.practice.active_post_id = new_post["id"]
+                            _update_practice_field_active_post(state)
             return
 
         # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)
@@ -512,6 +629,7 @@ class MastodonBotListener(StreamListener):
                 )
                 if state.practice is not None:
                     state.practice.active_post_id = new_post["id"]
+                    _update_practice_field_active_post(state)
             return
 
         # 4. 전투 준비 참전 신청 (bot 준비 게시물에 대한 답글)
@@ -533,7 +651,12 @@ class MastodonBotListener(StreamListener):
             # session과 함께 None으로 리셋된다(admin.py 참고) — 항상 같이 산다.
             assert state.session is not None
             response, battle_log = handle_character_command(
-                acct, text, state, state.session, str(state.preparation_status_id)
+                acct,
+                text,
+                state,
+                state.session,
+                str(state.preparation_status_id),
+                log_sheets.FieldBattleType.MAIN,
             )
             # silent_on_unrecognized를 안 넘겼으므로(기본값 False) response는
             # 항상 str이다 — 본 전투는 페이즈마다 게시물이 바뀌는 구조라
@@ -777,6 +900,9 @@ def _start_investigation_battle(state: "BotState") -> str:
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
     ps.start_round()
+    _upsert_practice_field_row(
+        state, ps, phase_value=ps.phase.value if ps.phase else ""
+    )
 
     mover_label = ps.side_label(ps.first_mover)
     game_post = (
@@ -812,6 +938,9 @@ def _start_practice_battle(state: "BotState") -> str:
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
     ps.start_round()
+    _upsert_practice_field_row(
+        state, ps, phase_value=ps.phase.value if ps.phase else ""
+    )
 
     mover_label = ps.side_label(ps.first_mover)
     game_post = (
@@ -880,8 +1009,8 @@ def _handle_practice_command(
             field_id=field_id,
             round_n=round_n,
             phase=current_phase.value,
+            battle_type=_practice_battle_type(ps),
             command_text=text,
-            is_main=False,
             entries=entries,
         )
         reply_text = format_battle_reply(ps.context, char_id, result.part_results)
@@ -890,8 +1019,8 @@ def _handle_practice_command(
             field_id=field_id,
             round_n=round_n,
             phase=current_phase.value,
+            battle_type=_practice_battle_type(ps),
             command_text=text,
-            is_main=False,
             error_trace=traceback.format_exc(),
         )
         return f"◊ {e}", None, battle_log
@@ -908,6 +1037,9 @@ def _handle_practice_command(
                 f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
                 f"승자: {winner_label}\n\n"
                 f"{_field_text(ps)}"
+            )
+            _upsert_practice_field_row(
+                state, ps, phase_value=current_phase.value, ended=True
             )
             state.practice = None
             return reply_text, game_post, battle_log
@@ -935,6 +1067,9 @@ def _handle_practice_command(
             f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
             f"승자: {winner_label}\n\n"
             f"{_field_text(ps)}"
+        )
+        _upsert_practice_field_row(
+            state, ps, phase_value=current_phase.value, ended=True
         )
         state.practice = None
         return reply_text, game_post, battle_log
@@ -971,6 +1106,7 @@ def _handle_dm_battle_command(
         state,
         dm_state.session,
         dm_state.field_id,
+        log_sheets.FieldBattleType.DM,
         silent_on_unrecognized=True,
     )
     if response is None:
@@ -986,14 +1122,17 @@ def _handle_dm_battle_command(
 
 
 def main() -> None:
-    # 버프/스킬/패시브/아이템/인벤토리는 여기서 로드해도 바로 stale해지므로 쓰지 않는다.
-    # 전투 세션(본 전투/대련/상시전투) 시작 시점에 load_battle_data()로 다시 로드한다.
+    # 버프/스킬/패시브/아이템/인벤토리는 평상시엔 여기서 로드해도 바로
+    # stale해지므로 쓰지 않고, 전투 세션(본 전투/DM 전투/대련/상시전투) 시작
+    # 시점에 load_battle_data()로 다시 로드한다. 다만 재기동 직후 딱 한 번,
+    # 아래 field_restore.restore_all()이 "필드" 시트에 남아 있던 미종료
+    # 전투를 재구성할 때는 이 시점의 값이 곧 최신값이라 그대로 재사용한다.
     (
-        _buff_dict,
-        _skill_dict,
-        _passive_skill_dict,
-        _item_dict,
-        _inventory,
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        inventory,
         char_dict,
         name_dict,
         noncombat_char_dict,
@@ -1016,6 +1155,25 @@ def main() -> None:
     me = mastodon.me()
     logger.info("봇 시작: @%s", me["acct"])
     logger.info("등록된 캐릭터: %d명", len(char_dict))
+
+    try:
+        restored_summaries = field_restore.restore_all(
+            state, buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
+        )
+    except Exception:
+        logger.exception("전투 재기동 복원 중 오류가 발생했습니다")
+        restored_summaries = []
+
+    if restored_summaries:
+        logger.info("재기동 복원: %d건", len(restored_summaries))
+        summary_text = "\n".join(f"- {s}" for s in restored_summaries)
+        try:
+            mastodon.status_post(
+                f"@{ADMIN_MASTODON_ID} ◊ 봇 재기동: 아래 전투를 이어서 진행합니다.\n{summary_text}",
+                visibility="direct",
+            )
+        except Exception:
+            logger.exception("재기동 복원 안내 DM 전송 실패")
 
     mastodon.stream_user(MastodonBotListener(mastodon, state, me["acct"]))
 
