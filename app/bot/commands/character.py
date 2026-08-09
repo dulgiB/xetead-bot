@@ -1,3 +1,4 @@
+import logging
 import traceback
 from typing import TYPE_CHECKING, Optional
 
@@ -7,12 +8,15 @@ from battle.exceptions import CommandValidationError
 from battle.objects.models import CharacterId
 
 from bot.battle_reply_text import format_battle_reply
+from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import reveal_declared_enemy_skills
 from bot.log_sheets import BattleCommandLog, FieldBattleType, write_back_changed_hp
 
 if TYPE_CHECKING:
     from bot.main import BotState
     from bot.session import BattleSession
+
+logger = logging.getLogger(__name__)
 
 
 def handle_character_command(
@@ -24,7 +28,7 @@ def handle_character_command(
     battle_type: FieldBattleType,
     *,
     silent_on_unrecognized: bool = False,
-) -> tuple[Optional[str], Optional[BattleCommandLog]]:
+) -> tuple[Optional[str], str, Optional[BattleCommandLog]]:
     """
     mastodon acct를 char_dict로 캐릭터 ID로 변환 후 커맨드를 파싱·처리한다.
     검증 실패 시 오류 메시지 문자열을 반환한다.
@@ -37,35 +41,38 @@ def handle_character_command(
     `is_main` 기본값(True)에 의존해 DM 전투 커맨드도 본 전투로 잘못
     기록되는 버그가 있었다.
 
-    반환값의 두 번째 요소는 로그_전투 기록용 자료다 (전투가 시작되지 않았거나
-    캐릭터를 찾지 못하는 등, 커맨드 자체를 시도하지 않은 경우는 None).
+    반환값: (reply_text_or_None, calc_text, battle_log_or_None). 두 번째
+    요소(calc_text)는 계산식만 모은 텍스트로, 비어 있지 않으면 호출측이
+    spoiler_text="계산식" 후속 게시물로 이어 보낸다. 세 번째 요소는
+    로그_전투 기록용 자료다 (전투가 시작되지 않았거나 캐릭터를 찾지 못하는
+    등, 커맨드 자체를 시도하지 않은 경우는 None).
 
     `silent_on_unrecognized=True`면 대괄호 커맨드 자체가 없는 입력(사담 등)에
-    대해 에러 문자열 대신 `(None, None)`을 반환한다 — DM 전투처럼 스레드
+    대해 에러 문자열 대신 `(None, "", None)`을 반환한다 — DM 전투처럼 스레드
     하나가 계속 이어지는 구조에서, 참가자가 잡담을 해도 에러 답글로 스레드를
     어지럽히지 않기 위함이다. 본 전투는 페이즈마다 게시물이 바뀌는 구조라
     해당되지 않으므로 기본값은 False로 기존 동작을 유지한다.
     """
     if not session.started:
-        return "◊ 전투가 시작되지 않았습니다.", None
+        return "◊ 전투가 시작되지 않았습니다.", "", None
 
     if acct not in state.char_dict:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", "", None
 
     char_data = state.char_dict[acct]
     char_id = CharacterId(char_data.name)
 
     if char_id not in session.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", None
+        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None
 
     phase = session.current_phase
     char = session.context.characters[char_id]
     is_enemy_declare = char.faction.value == "적군"
 
     if char.faction.value == "아군" and phase != RoundPhaseType.ALLY_ACTION:
-        return "◊ 지금은 아군 행동 단계가 아닙니다.", None
+        return "◊ 지금은 아군 행동 단계가 아닙니다.", "", None
     if is_enemy_declare and phase != RoundPhaseType.ENEMY_PRE_ACTION:
-        return "◊ 지금은 적군 행동 선언 단계가 아닙니다.", None
+        return "◊ 지금은 적군 행동 선언 단계가 아닙니다.", "", None
 
     round_n = session.round_n
 
@@ -74,6 +81,7 @@ def handle_character_command(
             "◊ 한 메시지에는 대괄호 커맨드를 하나만 입력할 수 있습니다. "
             "여러 스킬/아이템을 한 번에 쓰려면 '[스킬A/대상 - 스킬B]'처럼 "
             "하이픈으로 이어서 한 대괄호 안에 작성해 주세요.",
+            "",
             None,
         )
 
@@ -81,9 +89,10 @@ def handle_character_command(
         command = parse_character_command(char_id, text, session.context)
         if command is None:
             if silent_on_unrecognized:
-                return None, None
+                return None, "", None
             return (
                 "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]",
+                "",
                 None,
             )
 
@@ -96,6 +105,20 @@ def handle_character_command(
             state.spreadsheet, session.context, entries, cache=state.sheet_cache
         )
 
+        if battle_type == FieldBattleType.MAIN:
+            try:
+                render_public_field_sheet(
+                    state.field_spreadsheet,
+                    session.context,
+                    round_n=round_n,
+                    phase=phase.value,
+                    enemy_declared=session.manager.get_enemy_declared_commands(),
+                    battle_name=session.name,
+                    cache=state.field_sheet_cache,
+                )
+            except Exception:
+                logger.exception("공개 필드 시트 실시간 갱신 실패")
+
         battle_log = BattleCommandLog(
             field_id=field_id,
             round_n=round_n,
@@ -104,14 +127,14 @@ def handle_character_command(
             command_text=text,
             entries=entries,
         )
-        reply_text = format_battle_reply(
+        reply_text, calc_text = format_battle_reply(
             session.context, char_id, new_results, show_skill_preview=is_enemy_declare
         )
         if is_enemy_declare:
             reveal_declared_enemy_skills(
                 state.spreadsheet, session.context, command, cache=state.sheet_cache
             )
-        return reply_text, battle_log
+        return reply_text, calc_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -121,4 +144,4 @@ def handle_character_command(
             command_text=text,
             error_trace=traceback.format_exc(),
         )
-        return f"◊ {e}", battle_log
+        return f"◊ {e}", "", battle_log

@@ -240,7 +240,7 @@ def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     )
     _cmd_battle_start(state)
 
-    reply_text, _battle_log = admin_module._cmd_proxy(
+    reply_text, _calc_text, _battle_log = admin_module._cmd_proxy(
         "적 캐릭터", "[이동/3열 - 공격/유효 캐릭터]", state
     )
 
@@ -592,7 +592,13 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
         _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
     )
 
-    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
+    # 계산식이 있으면 별도의 CW(spoiler_text) 후속 게시물로 이어 보내므로,
+    # 본문 답글만 고르려면 spoiler_text가 없는 호출을 걸러야 한다.
+    reply_calls = [
+        c
+        for c in mastodon.status_post_calls
+        if "in_reply_to_id" in c and "spoiler_text" not in c
+    ]
     char_reply = reply_calls[-1]
     assert char_reply["media_ids"] is None
     assert "공격" in char_reply["status"]
@@ -970,11 +976,11 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
     state.practice = ps
 
     first_acct = side_to_acct[ps.first_mover]
-    _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
+    _, _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
     assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
 
     second_acct = side_to_acct[ps.second_mover]
-    _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+    _, _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
 
     assert "종료" in game_post
     assert "승자: 1팀" in game_post
@@ -1093,7 +1099,7 @@ def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_erro
     )
     state.practice = ps
 
-    reply, game_post, battle_log = _handle_practice_command(
+    reply, _calc_text, game_post, battle_log = _handle_practice_command(
         "acct_a", "[이동/2] [이동/3]", state
     )
 
@@ -1541,7 +1547,11 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
         _make_notification("player_acct", 3, active_post_id, "[공격/고블린]")
     )
 
-    char_reply = mastodon.status_post_calls[-1]
+    # 계산식이 있으면 별도의 CW(spoiler_text) 후속 게시물로 이어 보내므로,
+    # 필드 상태가 덧붙는 본문 답글만 고르려면 spoiler_text가 없는 호출을
+    # 걸러야 한다.
+    body_replies = [c for c in mastodon.status_post_calls if "spoiler_text" not in c]
+    char_reply = body_replies[-1]
     assert str(dm_state.session.context) in char_reply["status"]
 
 

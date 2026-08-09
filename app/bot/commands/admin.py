@@ -28,6 +28,7 @@ from utils.name_matching import resolve_matching_key, whitespace_tolerant_litera
 from bot.battle_reply_text import (
     format_battle_end_log_entries,
     format_battle_reply,
+    format_battle_reply_inline,
     format_eliminated_characters,
     format_final_hp_roster,
     format_round_end_log_entries,
@@ -76,7 +77,7 @@ _RE_END = re.compile(rf"\[{whitespace_tolerant_literal('전투종료')}]")
 _RE_INVESTIGATION_BATTLE = re.compile(rf"\[{whitespace_tolerant_literal('상시전투')}]")
 _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
 _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생')}]")
-_RE_PROXY = re.compile(r"^([^\[\]]+?)\s+(\[.+])$", re.DOTALL)
+_RE_PROXY = re.compile(r"(?:^|\n)\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[.+])\s*$", re.DOTALL)
 
 
 def _dm_mention_prefix(dm_state: "DmBattleState") -> str:
@@ -111,6 +112,9 @@ class AdminCommandResult:
     set_practice_active_post: bool = False
     # 프록시 커맨드(_cmd_proxy)로 캐릭터 커맨드가 정산된 경우 로그_전투 기록용 자료
     battle_log: Optional[BattleCommandLog] = None
+    # reply_text에서 분리된 계산식. 비어 있지 않으면 reply_text 게시 후
+    # spoiler_text="계산식"을 붙인 접힌(CW) 후속 게시물로 이어 보낸다.
+    calc_text: str = ""
     # True이면 game_post_text 게시 시 공개 필드 시트 이미지를 첨부한다 (라운드 시작/종료)
     attach_field_image: bool = False
     # True이면 reply_text를 답글이 아니라 타임라인의 새 게시물로 올린다 (전투 준비 공지 등)
@@ -152,13 +156,15 @@ def handle_admin_command(
             return _cmd_dm_battle_continue(dm_state, state)
         if _RE_END.search(text):
             return AdminCommandResult(_cmd_dm_battle_end(dm_state, state))
-        if m := _RE_PROXY.match(text):
+        if m := _RE_PROXY.search(text):
             char_name = m.group(1).strip()
             cmd_str = m.group(2).strip()
-            reply_text, battle_log = _cmd_dm_battle_proxy(
+            reply_text, calc_text, battle_log = _cmd_dm_battle_proxy(
                 dm_state, char_name, cmd_str, state
             )
-            return AdminCommandResult(reply_text, battle_log=battle_log)
+            return AdminCommandResult(
+                reply_text, battle_log=battle_log, calc_text=calc_text
+            )
         return AdminCommandResult(
             "◊ 전투 진행 중에는 [진행]/[전투속행]/[전투종료] 또는 "
             "'{캐릭터 이름} [커맨드]' 형식의 프록시 커맨드만 사용할 수 있습니다."
@@ -199,11 +205,13 @@ def handle_admin_command(
     if _RE_END.search(text):
         return AdminCommandResult(_cmd_end(state))
 
-    if m := _RE_PROXY.match(text):
+    if m := _RE_PROXY.search(text):
         char_name = m.group(1).strip()
         cmd_str = m.group(2).strip()
-        reply_text, battle_log = _cmd_proxy(char_name, cmd_str, state)
-        return AdminCommandResult(reply_text, battle_log=battle_log)
+        reply_text, calc_text, battle_log = _cmd_proxy(char_name, cmd_str, state)
+        return AdminCommandResult(
+            reply_text, battle_log=battle_log, calc_text=calc_text
+        )
 
     return AdminCommandResult("◊ 알 수 없는 관리자 커맨드입니다.")
 
@@ -624,7 +632,10 @@ def _cmd_practice_prep(
 
 def _cmd_proxy(
     char_name: str, cmd_str: str, state: "BotState"
-) -> tuple[str, Optional[BattleCommandLog]]:
+) -> tuple[str, str, Optional[BattleCommandLog]]:
+    """반환값: (reply_text, calc_text, battle_log_or_None). calc_text가
+    비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어
+    보낸다."""
     # 상시전투 중 프록시 (적군 커맨드 대행)
     ps = state.practice
     if ps is not None and ps.active_post_id is not None:
@@ -632,6 +643,7 @@ def _cmd_proxy(
         if char_id not in ps.context.characters:
             return (
                 f"◊ 지정한 캐릭터({char_name})는 대련/상시전투에 참여하고 있지 않습니다.",
+                "",
                 None,
             )
 
@@ -642,7 +654,7 @@ def _cmd_proxy(
         try:
             command = parse_character_command(char_id, cmd_str, ps.context)
             if command is None:
-                return "◊ 커맨드 형식을 인식할 수 없습니다.", None
+                return "◊ 커맨드 형식을 인식할 수 없습니다.", "", None
             result = ps.manager.process_command(command)
             entries = [
                 entry
@@ -661,8 +673,10 @@ def _cmd_proxy(
                 command_text=cmd_str,
                 entries=entries,
             )
-            reply_text = format_battle_reply(ps.context, char_id, result.part_results)
-            return reply_text, battle_log
+            reply_text, calc_text = format_battle_reply(
+                ps.context, char_id, result.part_results
+            )
+            return reply_text, calc_text, battle_log
         except CommandValidationError as e:
             battle_log = BattleCommandLog(
                 field_id=field_id,
@@ -676,14 +690,18 @@ def _cmd_proxy(
                 command_text=cmd_str,
                 error_trace=traceback.format_exc(),
             )
-            return f"◊ {e}", battle_log
+            return f"◊ {e}", "", battle_log
 
     if state.session is None or not state.session.started:
-        return "◊ 진행 중인 전투가 없습니다.", None
+        return "◊ 진행 중인 전투가 없습니다.", "", None
 
     char_id = state.session.context.resolve_character_id(CharacterId(char_name))
     if char_id not in state.session.context.characters:
-        return f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다.", None
+        return (
+            f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다.",
+            "",
+            None,
+        )
 
     field_id = str(state.preparation_status_id)
     round_n = state.session.round_n
@@ -695,7 +713,7 @@ def _cmd_proxy(
     try:
         command = parse_character_command(char_id, cmd_str, state.session.context)
         if command is None:
-            return "◊ 커맨드 형식을 인식할 수 없습니다.", None
+            return "◊ 커맨드 형식을 인식할 수 없습니다.", "", None
 
         before = len(state.session.context.results)
         state.session.context.inventory.cache = state.sheet_cache
@@ -706,6 +724,19 @@ def _cmd_proxy(
             state.spreadsheet, state.session.context, entries, cache=state.sheet_cache
         )
 
+        try:
+            render_public_field_sheet(
+                state.field_spreadsheet,
+                state.session.context,
+                round_n=round_n,
+                phase=phase.value,
+                enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                battle_name=state.session.name,
+                cache=state.field_sheet_cache,
+            )
+        except Exception:
+            _log_system_error("공개 필드 시트 실시간 갱신")
+
         battle_log = BattleCommandLog(
             field_id=field_id,
             round_n=round_n,
@@ -714,7 +745,7 @@ def _cmd_proxy(
             command_text=cmd_str,
             entries=entries,
         )
-        reply_text = _format_named_reply(
+        reply_text, calc_text = _format_named_reply(
             state.session.context,
             char_id,
             new_results,
@@ -728,7 +759,7 @@ def _cmd_proxy(
                 command,
                 cache=state.sheet_cache,
             )
-        return reply_text, battle_log
+        return reply_text, calc_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -738,7 +769,7 @@ def _cmd_proxy(
             command_text=cmd_str,
             error_trace=traceback.format_exc(),
         )
-        return f"◊ {e}", battle_log
+        return f"◊ {e}", "", battle_log
 
 
 # ---------------------------------------------------------------------------
@@ -858,6 +889,24 @@ def _damaged_target_mentions(
     return " ".join(f"@{acct}" for acct in accts)
 
 
+def _prefix_named_block(
+    char_id: CharacterId,
+    block: str,
+    part_result: CommandPartProcessResult,
+    name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
+) -> str:
+    """프록시(관리자 대행) 답글은 실제로 행동한 캐릭터가 누구인지 답글 자체만
+    보고는 알 수 없으므로(직접 답글과 달리 caster에게 보내는 답글이 아님),
+    헤더 앞에 이름을 붙인다. 공격/스킬로 대미지를 입은 대상이 있으면 그
+    계정을 헤더 줄에 멘션해 당사자에게 알린다."""
+    mentions = _damaged_target_mentions(part_result, name_dict)
+    header_line, sep, rest = block.partition("\n")
+    if mentions:
+        header_line = f"{header_line} {mentions}"
+    block = header_line + sep + rest
+    return f"{char_id.name} {block}"
+
+
 def _format_named_reply(
     context: "BattlefieldContext",
     char_id: CharacterId,
@@ -865,28 +914,45 @@ def _format_named_reply(
     name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
     *,
     show_skill_preview: bool = False,
-) -> str:
-    """part_results를 커맨드(파트) 하나당 "{이름} 【헤더】/계산식" 블록으로
-    조립한다. 여러 파트가 있으면 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+) -> tuple[str, str]:
+    """part_results를 커맨드(파트) 하나당 "{이름} 【헤더】" 블록으로 조립한
+    (본문, 계산식) 튜플을 반환한다. 여러 파트가 있으면 각각 별도 블록으로
+    빈 줄(\\n\\n)로 구분한다. 계산식 블록도 같은 방식으로 캐릭터 이름을
+    붙여 어느 행동에 대한 계산식인지 구분할 수 있게 한다."""
+    body_blocks = []
+    calc_blocks = []
+    for part_result in part_results:
+        body, calc = format_battle_reply(
+            context, char_id, [part_result], show_skill_preview=show_skill_preview
+        )
+        if body:
+            body_blocks.append(
+                _prefix_named_block(char_id, body, part_result, name_dict)
+            )
+        if calc:
+            calc_blocks.append(f"{char_id.name} {calc}")
+    return "\n\n".join(body_blocks), "\n\n".join(calc_blocks)
 
-    프록시(관리자 대행) 답글은 실제로 행동한 캐릭터가 누구인지 답글 자체만
-    보고는 알 수 없으므로(직접 답글과 달리 caster에게 보내는 답글이 아님),
-    헤더 앞에 이름을 붙인다. 공격/스킬로 대미지를 입은 대상이 있으면 그
-    계정을 헤더 줄에 멘션해 당사자에게 알린다.
-    """
+
+def _format_named_reply_inline(
+    context: "BattlefieldContext",
+    char_id: CharacterId,
+    part_results: list[CommandPartProcessResult],
+    name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
+    *,
+    show_skill_preview: bool = False,
+) -> str:
+    """_format_named_reply와 같은 입력을 받지만, 계산식을 본문에 "↳" 줄로
+    그대로 포함한 단일 문자열을 반환한다 — 여러 캐릭터의 결과를 한
+    게시물에 모아 보여주는 집계용 게시물(적 후행 정산 등) 전용."""
     blocks = []
     for part_result in part_results:
-        block = format_battle_reply(
+        block = format_battle_reply_inline(
             context, char_id, [part_result], show_skill_preview=show_skill_preview
         )
         if not block:
             continue
-        mentions = _damaged_target_mentions(part_result, name_dict)
-        header_line, sep, rest = block.partition("\n")
-        if mentions:
-            header_line = f"{header_line} {mentions}"
-        block = header_line + sep + rest
-        blocks.append(f"{char_id.name} {block}")
+        blocks.append(_prefix_named_block(char_id, block, part_result, name_dict))
     return "\n\n".join(blocks)
 
 
@@ -901,7 +967,8 @@ def _format_enemy_post_action_results(
 
     이동은 PRE 선언 시점에 이미 답글로 안내되었으므로 여기서는 제외한다
     (POST 재전개 시 move_list가 빈 채로 남아 헤더만 중복 출력되는 것을 막는다).
-    """
+    여러 캐릭터의 결과를 한 게시물에 모아 보여주는 집계용 게시물이라
+    계산식은 CW로 분리하지 않고 본문에 그대로 포함한다."""
     blocks = []
     for user_id, part_results in post_action_results.items():
         non_move_results = [
@@ -910,7 +977,9 @@ def _format_enemy_post_action_results(
             if r.expanded_part.original_part is None
             or r.expanded_part.original_part.type_ != ActionType.MOVE
         ]
-        block = _format_named_reply(context, user_id, non_move_results, name_dict)
+        block = _format_named_reply_inline(
+            context, user_id, non_move_results, name_dict
+        )
         if block:
             blocks.append(block)
     return "\n\n".join(blocks) if blocks else "변동 없음"
@@ -1170,11 +1239,16 @@ def _cmd_dm_battle_end(dm_state: DmBattleState, state: "BotState") -> str:
 
 def _cmd_dm_battle_proxy(
     dm_state: DmBattleState, char_name: str, cmd_str: str, state: "BotState"
-) -> tuple[str, Optional[BattleCommandLog]]:
+) -> tuple[str, str, Optional[BattleCommandLog]]:
+    """반환값: (reply_text, calc_text, battle_log_or_None)."""
     session = dm_state.session
     char_id = session.context.resolve_character_id(CharacterId(char_name))
     if char_id not in session.context.characters:
-        return f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다.", None
+        return (
+            f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다.",
+            "",
+            None,
+        )
 
     field_id = dm_state.field_id
     round_n = session.round_n
@@ -1184,7 +1258,7 @@ def _cmd_dm_battle_proxy(
     try:
         command = parse_character_command(char_id, cmd_str, session.context)
         if command is None:
-            return "◊ 커맨드 형식을 인식할 수 없습니다.", None
+            return "◊ 커맨드 형식을 인식할 수 없습니다.", "", None
 
         before = len(session.context.results)
         session.context.inventory.cache = state.sheet_cache
@@ -1203,7 +1277,7 @@ def _cmd_dm_battle_proxy(
             command_text=cmd_str,
             entries=entries,
         )
-        reply_text = _format_named_reply(
+        reply_text, calc_text = _format_named_reply(
             session.context,
             char_id,
             new_results,
@@ -1214,7 +1288,7 @@ def _cmd_dm_battle_proxy(
             reveal_declared_enemy_skills(
                 state.spreadsheet, session.context, command, cache=state.sheet_cache
             )
-        return f"{reply_text}\n\n{session.context}", battle_log
+        return f"{reply_text}\n\n{session.context}", calc_text, battle_log
     except CommandValidationError as e:
         battle_log = BattleCommandLog(
             field_id=field_id,
@@ -1224,7 +1298,7 @@ def _cmd_dm_battle_proxy(
             command_text=cmd_str,
             error_trace=traceback.format_exc(),
         )
-        return f"◊ {e}\n\n{session.context}", battle_log
+        return f"◊ {e}\n\n{session.context}", "", battle_log
 
 
 def _check_dm_battle_wipe(dm_state: DmBattleState) -> Optional[FactionType]:

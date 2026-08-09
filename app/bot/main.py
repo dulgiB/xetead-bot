@@ -82,7 +82,14 @@ _COMMAND_PHASES = {
 
 
 class _TextExtractor(HTMLParser):
-    """Mastodon 포스트의 HTML 콘텐츠에서 평문을 추출한다."""
+    """Mastodon 포스트의 HTML 콘텐츠에서 평문을 추출한다.
+
+    `<p>`/`<br>` 등 블록 경계에서 줄바꿈을 넣지 않으면 여러 문단이 그대로
+    이어붙어 "묘사 문단\n\n◊ 커맨드" 같은 여러 줄짜리 입력이 한 줄로
+    뭉개진다 — 프록시 커맨드가 마지막 줄만 파싱하도록 하려면 문단 구분이
+    plain text에도 살아있어야 한다."""
+
+    _BLOCK_TAGS = {"p", "br", "div"}
 
     def __init__(self) -> None:
         super().__init__()
@@ -90,6 +97,10 @@ class _TextExtractor(HTMLParser):
 
     def handle_data(self, data: str) -> None:
         self._parts.append(data)
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in self._BLOCK_TAGS:
+            self._parts.append("\n")
 
     def get_text(self) -> str:
         return "".join(self._parts).strip()
@@ -112,6 +123,33 @@ def _truncate(text: str) -> str:
     if len(text) <= _MAX_POST_LENGTH:
         return text
     return text[: _MAX_POST_LENGTH - 1] + "…"
+
+
+def _split_for_post(text: str, prefix_len: int) -> list[str]:
+    """`text`를 `prefix_len`(매 게시물에 붙는 멘션 등 고정 접두어 길이)을
+    감안해 `_MAX_POST_LENGTH` 이내의 여러 조각으로 나눈다. 계산식이 길어져도
+    truncate로 뒤가 잘려나가지 않도록, 줄 단위로 묶다가 한도를 넘기 직전에
+    새 조각을 시작한다. 한 줄 자체가 한도를 넘으면(예: 매우 긴 계산식 한
+    줄) 그 줄만 강제로 다시 분할한다."""
+    limit = max(1, _MAX_POST_LENGTH - prefix_len)
+    lines = text.split("\n")
+    chunks: list[str] = []
+    current = ""
+    for line in lines:
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) <= limit:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+            current = ""
+        while len(line) > limit:
+            chunks.append(line[:limit])
+            line = line[limit:]
+        current = line
+    if current:
+        chunks.append(current)
+    return chunks or [""]
 
 
 def _practice_battle_type(ps: PracticeBattleState) -> log_sheets.FieldBattleType:
@@ -608,13 +646,17 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.practice.active_post_id
         ):
             practice_visibility = state.practice.visibility
-            reply, game_post, battle_log = _handle_practice_command(acct, text, state)
+            reply, calc_text, game_post, battle_log = _handle_practice_command(
+                acct, text, state
+            )
             if reply is None:
                 # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
                 # 스레드는 active_post_id에 그대로 남아, 이후 정상 커맨드가
                 # 오면 문제없이 이어진다.
                 return
-            reply_status = self._reply(status_id, acct, visibility, reply)
+            reply_status = self._reply_with_calc(
+                status_id, acct, visibility, reply, calc_text
+            )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
                 # 캐릭터의 커맨드 답글(reply_status) 바로 다음에 이어 붙여야
@@ -650,7 +692,7 @@ class MastodonBotListener(StreamListener):
             # active_phase_post_id는 session이 있을 때만 설정되고 전투 종료 시
             # session과 함께 None으로 리셋된다(admin.py 참고) — 항상 같이 산다.
             assert state.session is not None
-            response, battle_log = handle_character_command(
+            response, calc_text, battle_log = handle_character_command(
                 acct,
                 text,
                 state,
@@ -662,20 +704,24 @@ class MastodonBotListener(StreamListener):
             # 항상 str이다 — 본 전투는 페이즈마다 게시물이 바뀌는 구조라
             # 사담을 조용히 무시하는 대상이 아니다.
             assert response is not None
-            reply_status = self._reply(status_id, acct, visibility, response)
+            reply_status = self._reply_with_calc(
+                status_id, acct, visibility, response, calc_text
+            )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             return
 
         # 5.5. DM 전투 중 캐릭터 커맨드 (해당 스레드의 tip 게시물에 대한 답글)
         if in_reply_to_id is not None and in_reply_to_id in state.dm_battles:
             dm_state = state.dm_battles[in_reply_to_id]
-            reply, end_post_text, battle_log = _handle_dm_battle_command(
+            reply, calc_text, end_post_text, battle_log = _handle_dm_battle_command(
                 acct, text, state, dm_state
             )
             if reply is None:
                 # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
                 return
-            reply_status = self._reply(status_id, acct, visibility, reply)
+            reply_status = self._reply_with_calc(
+                status_id, acct, visibility, reply, calc_text
+            )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if end_post_text is not None:
                 self._mastodon.status_post(
@@ -801,11 +847,12 @@ class MastodonBotListener(StreamListener):
                     _truncate(result.reply_text), visibility="public"
                 )
             else:
-                reply_status = self._reply(
+                reply_status = self._reply_with_calc(
                     status_id,
                     acct,
                     visibility,
                     result.reply_text,
+                    result.calc_text,
                 )
             _persist_battle_log(state, result.battle_log, str(reply_status["id"]))
 
@@ -855,12 +902,61 @@ class MastodonBotListener(StreamListener):
         text: str,
         media_ids: Optional[list] = None,
     ) -> dict:
-        return self._mastodon.status_post(
-            f"@{acct}\n{_truncate(text)}",
+        """답글을 보낸다. 계산식이 길어 한 게시물 길이 한도를 넘으면
+        truncate로 뒷부분을 잘라내지 않고, 줄 단위로 나눈 여러 게시물을
+        서로 답글로 이어붙인 스레드로 보낸다. 반환값은 그 스레드의 마지막
+        게시물 status dict — 이 답글에 이어지는 후속 게시물(다음 라운드
+        공지 등)이 스레드 맨 끝에 달리게 하기 위함이다."""
+        mention_prefix = f"@{acct}\n"
+        chunks = _split_for_post(text, len(mention_prefix))
+        status = self._mastodon.status_post(
+            f"{mention_prefix}{chunks[0]}",
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
             media_ids=media_ids or None,
         )
+        for chunk in chunks[1:]:
+            status = self._mastodon.status_post(
+                f"{mention_prefix}{chunk}",
+                in_reply_to_id=status["id"],
+                visibility=visibility,
+            )
+        return status
+
+    def _reply_with_calc(
+        self,
+        in_reply_to_id: int,
+        acct: str,
+        visibility: str,
+        text: str,
+        calc_text: str,
+        media_ids: Optional[list] = None,
+    ) -> dict:
+        """답글을 보내고, 계산식(calc_text)이 있으면 가독성을 위해 그 답글에
+        이어 접힌(CW) 후속 게시물로 따로 보낸다. 계산식 자체가 길어 한
+        게시물 길이 한도를 넘으면 truncate하지 않고 "계산식(1)",
+        "계산식(2)"... 로 번호를 매긴 여러 게시물로 나눠 순서대로 이어
+        보낸다. 반환값은 (CW 게시물이 아닌) 본문 답글의 status dict다 —
+        다음 게시물이 스레드를 이어가려면 이 답글에 답글로 달려야 하기
+        때문이다."""
+        reply_status = self._reply(in_reply_to_id, acct, visibility, text, media_ids)
+        if not calc_text:
+            return reply_status
+
+        mention_prefix = f"@{acct}\n"
+        calc_chunks = _split_for_post(calc_text, len(mention_prefix))
+        multiple = len(calc_chunks) > 1
+        reply_to = reply_status["id"]
+        for i, chunk in enumerate(calc_chunks, start=1):
+            spoiler = f"계산식({i})" if multiple else "계산식"
+            calc_status = self._mastodon.status_post(
+                f"{mention_prefix}{chunk}",
+                in_reply_to_id=reply_to,
+                visibility=visibility,
+                spoiler_text=spoiler,
+            )
+            reply_to = calc_status["id"]
+        return reply_status
 
 
 def _field_text(ps: PracticeBattleState) -> str:
@@ -957,30 +1053,31 @@ def _start_practice_battle(state: "BotState") -> str:
 
 def _handle_practice_command(
     acct: str, text: str, state: "BotState"
-) -> tuple[Optional[str], Optional[str], Optional[log_sheets.BattleCommandLog]]:
+) -> tuple[Optional[str], str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
     """
     대련/상시전투 중 캐릭터 커맨드를 처리한다.
-    반환값: (reply_text_or_None, game_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text_or_None, calc_text, game_post_text_or_None, battle_log_or_None)
 
     reply_text가 None이면 대괄호 커맨드 자체가 없는 답글(사담 등)이었다는
-    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다.
+    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. calc_text가
+    비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어 보낸다.
     """
     ps = state.practice
     if ps is None:
-        return "◊ 진행 중인 대련/상시전투가 없습니다.", None, None
+        return "◊ 진행 중인 대련/상시전투가 없습니다.", "", None, None
 
     if acct not in state.char_dict:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None, None
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", "", None, None
 
     char_data = state.char_dict[acct]
     char_id = CharacterId(char_data.name)
 
     if char_id not in ps.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", None, None
+        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None, None
 
     current_phase = ps.phase
     if current_phase is None:
-        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", None, None
+        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", "", None, None
 
     field_id = str(ps.prep_post_id)
     round_n = ps.round_n
@@ -990,6 +1087,7 @@ def _handle_practice_command(
             "◊ 한 메시지에는 대괄호 커맨드를 하나만 입력할 수 있습니다. "
             "여러 스킬/아이템을 한 번에 쓰려면 '[스킬A/대상 - 스킬B]'처럼 "
             "하이픈으로 이어서 한 대괄호 안에 작성해 주세요.",
+            "",
             None,
             None,
         )
@@ -998,7 +1096,7 @@ def _handle_practice_command(
         command = parse_character_command(char_id, text, ps.context)
         if command is None:
             # 대괄호 커맨드가 아예 없는 답글(사담 등) — 에러 없이 무시한다.
-            return None, None, None
+            return None, "", None, None
         result = ps.manager.process_command(command)
         entries = [
             entry
@@ -1013,7 +1111,9 @@ def _handle_practice_command(
             command_text=text,
             entries=entries,
         )
-        reply_text = format_battle_reply(ps.context, char_id, result.part_results)
+        reply_text, calc_text = format_battle_reply(
+            ps.context, char_id, result.part_results
+        )
     except CommandValidationError as e:
         battle_log = log_sheets.BattleCommandLog(
             field_id=field_id,
@@ -1023,7 +1123,7 @@ def _handle_practice_command(
             command_text=text,
             error_trace=traceback.format_exc(),
         )
-        return f"◊ {e}", None, battle_log
+        return f"◊ {e}", "", None, battle_log
 
     battle_mode = "상시전투" if ps.is_investigation else "대련"
 
@@ -1042,7 +1142,7 @@ def _handle_practice_command(
                 state, ps, phase_value=current_phase.value, ended=True
             )
             state.practice = None
-            return reply_text, game_post, battle_log
+            return reply_text, calc_text, game_post, battle_log
 
         ps.advance_to_second_mover()
         second_label = ps.side_label(ps.second_mover)
@@ -1051,7 +1151,7 @@ def _handle_practice_command(
             f"후공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
             f"{_field_text(ps)}"
         )
-        return reply_text, game_post, battle_log
+        return reply_text, calc_text, game_post, battle_log
 
     # SECOND_MOVER_ACTION
     ps.end_round()
@@ -1072,7 +1172,7 @@ def _handle_practice_command(
             state, ps, phase_value=current_phase.value, ended=True
         )
         state.practice = None
-        return reply_text, game_post, battle_log
+        return reply_text, calc_text, game_post, battle_log
 
     ps.start_round()
     mover_label = ps.side_label(ps.first_mover)
@@ -1081,26 +1181,27 @@ def _handle_practice_command(
         f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
         f"{_field_text(ps)}"
     )
-    return reply_text, game_post, battle_log
+    return reply_text, calc_text, game_post, battle_log
 
 
 def _handle_dm_battle_command(
     acct: str, text: str, state: "BotState", dm_state: DmBattleState
-) -> tuple[Optional[str], Optional[str], Optional[log_sheets.BattleCommandLog]]:
+) -> tuple[Optional[str], str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
     """
     DM 전투 중 캐릭터 커맨드를 처리한다. handle_character_command를 그대로
     재사용하되, DM 전투는 스레드 답글이 유일한 실시간 확인 수단이므로 매
     답글에 현재 필드 상태(str(context))를 덧붙이고, 처리 후 전멸 여부를
     확인해 전멸 시 전투를 종료한다.
 
-    반환값: (reply_text_or_None, end_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text_or_None, calc_text, end_post_text_or_None, battle_log_or_None)
 
     reply_text가 None이면 대괄호 커맨드 자체가 없는 답글(사담 등)이었다는
-    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. DM
-    전투는 스레드 하나가 계속 이어지는 구조라 대련/상시전투와 동일하게
+    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. calc_text가
+    비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어 보낸다.
+    DM 전투는 스레드 하나가 계속 이어지는 구조라 대련/상시전투와 동일하게
     처리한다(본 전투는 페이즈마다 게시물이 바뀌므로 대상이 아니다).
     """
-    response, battle_log = handle_character_command(
+    response, calc_text, battle_log = handle_character_command(
         acct,
         text,
         state,
@@ -1110,15 +1211,15 @@ def _handle_dm_battle_command(
         silent_on_unrecognized=True,
     )
     if response is None:
-        return None, None, None
+        return None, "", None, None
     response = f"{response}\n\n{dm_state.session.context}"
 
     winner = admin_commands._check_dm_battle_wipe(dm_state)
     if winner is None:
-        return response, None, battle_log
+        return response, calc_text, None, battle_log
 
     end_post_text = admin_commands._end_dm_battle(dm_state, state, winner)
-    return response, end_post_text, battle_log
+    return response, calc_text, end_post_text, battle_log
 
 
 def main() -> None:

@@ -4,9 +4,15 @@
 `BattlefieldContext.results`(커맨드 처리 후 `context.results[before:]`로 얻는
 `list[CommandPartProcessResult]`)를 파트(행동) 하나당 하나의
 "【헤더】\n본문" 블록으로 변환하고, 여러 파트가 있으면 빈 줄로 이어붙인다.
+
+계산식(주사위/계수 등)은 본문과 분리해서 반환한다 — 답글이 길어지는 주범이라
+호출측(봇 인터페이스)이 별도의 접힌(CW) 게시물로 이어 보낼 수 있게 하기
+위함이다. 여러 캐릭터의 행동을 한데 모아 보여주는 집계용 게시물(적 후행
+정산, 라운드/전투 종료 처리 등)은 `_inline` 접미사가 붙은 함수로 계산식을
+본문에 "↳" 줄로 그대로 포함해 기존처럼 표시한다.
 """
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.models import (
     BattleLogEntry,
@@ -27,13 +33,38 @@ def format_battle_reply(
     part_results: list[CommandPartProcessResult],
     *,
     show_skill_preview: bool = False,
-) -> str:
-    """`show_skill_preview=True`이면 SKILL 파트 헤더 아래에 그 스킬의 효과
+) -> tuple[str, str]:
+    """(본문, 계산식) 튜플을 반환한다. 표시할 계산식이 없으면 두 번째 값은
+    빈 문자열이다.
+
+    `show_skill_preview=True`이면 SKILL 파트 헤더 아래에 그 스킬의 효과
     설명을 예고 줄로 덧붙인다 (적군 PRE 선언 답글 전용 — 본 전투/DM 전투에서만
     사용된다). 스킬이 아직 공개되지 않았으면(`SkillData.revealed=False`)
     설명 대신 블라인드 문구를 보여준다."""
+    bodies = []
+    calc_blocks = []
+    for part_result in part_results:
+        body, calc_block = _format_part(
+            context, caster_id, part_result, show_skill_preview
+        )
+        bodies.append(body)
+        if calc_block:
+            calc_blocks.append(calc_block)
+    return "\n\n".join(bodies), "\n\n".join(calc_blocks)
+
+
+def format_battle_reply_inline(
+    context: "BattlefieldContext",
+    caster_id: CharacterId,
+    part_results: list[CommandPartProcessResult],
+    *,
+    show_skill_preview: bool = False,
+) -> str:
+    """format_battle_reply와 같은 입력을 받지만, 계산식을 "↳" 줄로 본문에
+    그대로 포함한 단일 문자열을 반환한다 — 여러 캐릭터의 결과를 한 게시물에
+    모아 보여주는 집계용 게시물(적 후행 정산 등) 전용."""
     blocks = [
-        _format_part(context, caster_id, part_result, show_skill_preview)
+        _format_part_inline(context, caster_id, part_result, show_skill_preview)
         for part_result in part_results
     ]
     return "\n\n".join(blocks)
@@ -61,7 +92,7 @@ def format_round_end_log_entries(
         grouped.setdefault(entry.target_name, []).append(entry)
     blocks = [
         f"【라운드 종료 처리 ▸ {target_name}】\n"
-        + "\n".join(_format_entry(context, entry) for entry in target_entries)
+        + "\n".join(_format_entry_inline(context, entry) for entry in target_entries)
         for target_name, target_entries in grouped.items()
     ]
     return "\n\n".join(blocks)
@@ -75,7 +106,7 @@ def format_battle_end_log_entries(
     빈 문자열을 반환한다."""
     if not entries:
         return ""
-    body = "\n".join(_format_entry(context, entry) for entry in entries)
+    body = "\n".join(_format_entry_inline(context, entry) for entry in entries)
     return f"【전투 종료 처리】\n{body}"
 
 
@@ -88,12 +119,9 @@ def format_final_hp_roster(context: "BattlefieldContext") -> str:
     )
 
 
-def _format_part(
-    context: "BattlefieldContext",
-    caster_id: CharacterId,
-    part_result: CommandPartProcessResult,
-    show_skill_preview: bool = False,
-) -> str:
+def _header_and_log_entries(
+    caster_id: CharacterId, part_result: CommandPartProcessResult
+) -> tuple[CommandPart, str, list[BattleLogEntry]]:
     part = part_result.expanded_part.original_part
     assert isinstance(part, CommandPart)
     header = _format_header(caster_id, part)
@@ -106,12 +134,44 @@ def _format_part(
         # extra_log_entries를 통해 다른 종류(DAMAGE 등)의 로그가 함께 실려
         # 있을 수 있으므로 그건 그대로 보여준다.
         log_entries = [e for e in log_entries if e.kind != BattleLogEntryKind.MOVE]
+    return part, header, log_entries
 
+
+def _format_part(
+    context: "BattlefieldContext",
+    caster_id: CharacterId,
+    part_result: CommandPartProcessResult,
+    show_skill_preview: bool = False,
+) -> tuple[str, str]:
+    part, header, log_entries = _header_and_log_entries(caster_id, part_result)
+
+    body_lines = []
+    if show_skill_preview and part.type_ == ActionType.SKILL:
+        body_lines.append(_format_skill_preview(context, part))
+
+    calc_lines = []
+    for entry in log_entries:
+        line, calc = _format_entry(context, entry)
+        body_lines.append(line)
+        if calc:
+            calc_lines.append(f"▹ {entry.target_name}\n↳ {calc}")
+
+    body = header if not body_lines else header + "\n" + "\n".join(body_lines)
+    calc_block = f"{header}\n" + "\n".join(calc_lines) if calc_lines else ""
+    return body, calc_block
+
+
+def _format_part_inline(
+    context: "BattlefieldContext",
+    caster_id: CharacterId,
+    part_result: CommandPartProcessResult,
+    show_skill_preview: bool = False,
+) -> str:
+    part, header, log_entries = _header_and_log_entries(caster_id, part_result)
     lines = []
     if show_skill_preview and part.type_ == ActionType.SKILL:
         lines.append(_format_skill_preview(context, part))
-    lines.extend(_format_entry(context, entry) for entry in log_entries)
-
+    lines.extend(_format_entry_inline(context, entry) for entry in log_entries)
     if not lines:
         return header
     return header + "\n" + "\n".join(lines)
@@ -158,10 +218,12 @@ def _target_name(target: object) -> str:
     return f"{target}열"  # BattlefieldColumnIndex
 
 
-def _format_entry(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
+def _format_entry(
+    context: "BattlefieldContext", entry: BattleLogEntry
+) -> tuple[str, Optional[str]]:
     """캐릭터 이름으로 시작하는 결과 줄 하나를 "▹ "로 시작하는 불릿 형태로
-    조립한다 — 여러 캐릭터/효과 줄이 나열될 때도 한눈에 구분되게 하기
-    위함이다."""
+    조립해 (본문 줄, 계산식 또는 None)을 반환한다 — 여러 캐릭터/효과 줄이
+    나열될 때도 한눈에 구분되게 하기 위함이다."""
     if entry.kind == BattleLogEntryKind.DAMAGE:
         return _format_damage_or_heal(entry, sign="-")
     if entry.kind == BattleLogEntryKind.HEAL:
@@ -169,13 +231,20 @@ def _format_entry(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
     if entry.kind == BattleLogEntryKind.MOVE:
         target_id = CharacterId(entry.target_name)
         position = context.find_character_position(target_id)
-        return f"▹ {entry.target_name} | {position}열로 이동"
+        return f"▹ {entry.target_name} | {position}열로 이동", None
     # BUFF_ADD/BUFF_REMOVE/DEBUFF_CLEAR는 이미 build_log_entries()가 만들어 둔
     # result 문자열을 그대로 쓴다.
-    return f"▹ {entry.target_name} | {entry.result}"
+    return f"▹ {entry.target_name} | {entry.result}", None
 
 
-def _format_damage_or_heal(entry: BattleLogEntry, *, sign: str) -> str:
+def _format_entry_inline(context: "BattlefieldContext", entry: BattleLogEntry) -> str:
+    line, calc = _format_entry(context, entry)
+    return f"{line}\n↳ {calc}" if calc else line
+
+
+def _format_damage_or_heal(
+    entry: BattleLogEntry, *, sign: str
+) -> tuple[str, Optional[str]]:
     # entry.hp_after/max_hp는 이 대미지/회복이 적용된 "그 시점"의 스냅샷이다.
     # 같은 커맨드에서 같은 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상),
     # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
@@ -184,6 +253,4 @@ def _format_damage_or_heal(entry: BattleLogEntry, *, sign: str) -> str:
         line = f"▹ {entry.target_name} | {sign}{entry.value}"
     else:
         line = f"▹ {entry.target_name} | {sign}{entry.value} → {entry.hp_after}/{entry.max_hp}"
-    if entry.roll_display:
-        line += f"\n↳ {entry.roll_display}"
-    return line
+    return line, entry.roll_display
