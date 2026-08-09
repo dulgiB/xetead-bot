@@ -932,16 +932,86 @@ class MastodonBotListener(StreamListener):
         calc_text: str,
         media_ids: Optional[list] = None,
     ) -> dict:
-        """답글을 보내고, 계산식(calc_text)이 있으면 가독성을 위해 그 답글에
-        이어 접힌(CW) 후속 게시물로 따로 보낸다. 계산식 자체가 길어 한
-        게시물 길이 한도를 넘으면 truncate하지 않고 "계산식(1)",
-        "계산식(2)"... 로 번호를 매긴 여러 게시물로 나눠 순서대로 이어
-        보낸다. 반환값은 (CW 게시물이 아닌) 본문 답글의 status dict다 —
-        다음 게시물이 스레드를 이어가려면 이 답글에 답글로 달려야 하기
-        때문이다."""
-        reply_status = self._reply(in_reply_to_id, acct, visibility, text, media_ids)
+        """계산식(calc_text)이 없으면 평범한 답글 하나만 보낸다.
+
+        있으면 게시물을 둘로 나누는 대신, CW(content warning) 게시물 하나로
+        합쳐 보낸다 — 본문(text, 결과 요약)은 spoiler_text로 넣어 항상 바로
+        보이게 하고, 계산식은 그 게시물의 (접었다 펴는) 본문으로 넣는다.
+        Mastodon의 글자수 제한은 spoiler_text와 본문 길이를 합산해서
+        적용되므로, 계산식이 길어 한 게시물에 안 들어가면 truncate하지
+        않고 spoiler_text에 "(1/2)"처럼 번호를 매긴 여러 게시물로 나눠
+        순서대로 이어 보낸다. 반환값은 그 스레드의 첫 게시물 status dict다
+        — 다음 게시물이 스레드를 이어가려면 이 게시물에 답글로 달려야
+        하기 때문이다.
+
+        멘션(@계정)은 spoiler_text에 넣어도 실제 멘션으로 파싱되지 않아
+        상대방에게 알림이 가지 않으므로, 반드시 본문(계산식) 쪽에 넣는다.
+
+        `spoiler_text`는 실측 결과 본문(status)과 별개로 그 자체가 500자
+        한도를 갖는다(합산 500자 제한과는 별도). DM 전투처럼 매 답글에
+        필드 보드 텍스트가 덧붙어 `text`가 그 자체로 500자를 넘어가면
+        한 게시물로 합칠 수 없으므로, 그 경우엔 본문을 평범한 답글로
+        먼저 보내고 계산식만 별도의 CW 후속 게시물로 이어 붙인다."""
         if not calc_text:
-            return reply_status
+            return self._reply(in_reply_to_id, acct, visibility, text, media_ids)
+
+        if len(text) > _MAX_POST_LENGTH:
+            return self._reply_then_calc_followup(
+                in_reply_to_id, acct, visibility, text, calc_text, media_ids
+            )
+
+        mention_prefix = f"@{acct}\n"
+        # spoiler_text에 번호 접미사(" (N/N)")가 붙을 수 있으므로, 먼저
+        # 접미사 없이 나눠 조각 수를 가늠한 뒤 필요하면 그 접미사 길이만큼
+        # 예산을 줄여 다시 나눈다.
+        provisional_chunks = _split_for_post(calc_text, len(mention_prefix) + len(text))
+        if len(provisional_chunks) > 1:
+            suffix_len = len(f" ({len(provisional_chunks)}/{len(provisional_chunks)})")
+            calc_chunks = _split_for_post(
+                calc_text, len(mention_prefix) + len(text) + suffix_len
+            )
+        else:
+            calc_chunks = provisional_chunks
+
+        multiple = len(calc_chunks) > 1
+
+        def _spoiler(i: int) -> str:
+            return f"{text} ({i}/{len(calc_chunks)})" if multiple else text
+
+        first_status = self._mastodon.status_post(
+            f"{mention_prefix}{calc_chunks[0]}",
+            in_reply_to_id=in_reply_to_id,
+            visibility=visibility,
+            media_ids=media_ids or None,
+            spoiler_text=_spoiler(1),
+        )
+        reply_to = first_status["id"]
+        for i, chunk in enumerate(calc_chunks[1:], start=2):
+            calc_status = self._mastodon.status_post(
+                f"{mention_prefix}{chunk}",
+                in_reply_to_id=reply_to,
+                visibility=visibility,
+                spoiler_text=_spoiler(i),
+            )
+            reply_to = calc_status["id"]
+        return first_status
+
+    def _reply_then_calc_followup(
+        self,
+        in_reply_to_id: int,
+        acct: str,
+        visibility: str,
+        text: str,
+        calc_text: str,
+        media_ids: Optional[list] = None,
+    ) -> dict:
+        """`_reply_with_calc`의 폴백: 본문(text)이 그 자체로 spoiler_text
+        한도(500자)를 넘어 한 게시물로 합칠 수 없을 때, 본문을 평범한 답글로
+        먼저 보내고 계산식을 별도의 CW(spoiler_text="계산식") 후속
+        게시물로 이어 붙인다. 계산식이 길면 "계산식(1)", "계산식(2)"...로
+        번호를 매긴 여러 게시물로 나눈다. 반환값은 (CW 게시물이 아닌)
+        본문 답글의 status dict다."""
+        reply_status = self._reply(in_reply_to_id, acct, visibility, text, media_ids)
 
         mention_prefix = f"@{acct}\n"
         calc_chunks = _split_for_post(calc_text, len(mention_prefix))

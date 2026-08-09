@@ -592,19 +592,71 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
         _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
     )
 
-    # 계산식이 있으면 별도의 CW(spoiler_text) 후속 게시물로 이어 보내므로,
-    # 본문 답글만 고르려면 spoiler_text가 없는 호출을 걸러야 한다.
-    reply_calls = [
-        c
-        for c in mastodon.status_post_calls
-        if "in_reply_to_id" in c and "spoiler_text" not in c
-    ]
+    # 계산식이 있으면 본문(요약)은 spoiler_text로, 계산식은 CW 처리된
+    # status로 들어간 게시물 하나로 합쳐 보낸다.
+    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
     char_reply = reply_calls[-1]
     assert char_reply["media_ids"] is None
     assert "공격" in char_reply["status"]
     # "@계정 커맨드파트헤더"처럼 멘션 바로 뒤에 내용이 붙으면 가독성이
     # 나빠지므로, 멘션 다음은 줄바꿈으로 시작해야 한다.
     assert char_reply["status"].startswith("@ally_acct\n")
+
+
+def test_character_command_reply_merges_calc_into_single_cw_post(monkeypatch):
+    """계산식이 있는 커맨드 답글은 게시물 두 개(본문 + CW 후속)가 아니라,
+    본문을 spoiler_text로, 계산식을 status로 넣은 게시물 하나로 합쳐
+    보내야 한다. 계산식 줄 끝에는 최종 값("→ 값")이 붙어야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
+    monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    active_post_id = state.active_phase_post_id
+
+    before_calls = len(mastodon.status_post_calls)
+    listener.on_notification(
+        _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
+    )
+    new_calls = mastodon.status_post_calls[before_calls:]
+
+    # 계산식이 있는 답글은 게시물 하나로 끝나야 한다 (본문 + 별도 CW 후속
+    # 게시물로 두 개가 되면 안 된다).
+    assert len(new_calls) == 1
+    call = new_calls[0]
+
+    target = state.session.context.characters[CharacterId("적 캐릭터")]
+    dealt = 100 - target.status.curr_hp
+    assert call["spoiler_text"] == (
+        f"【공격 ▸ 적 캐릭터】\n▹ 적 캐릭터 | -{dealt} → {target.status.curr_hp}/100"
+    )
+    assert "↳" not in call["spoiler_text"]
+    assert "@ally_acct" not in call["spoiler_text"]
+
+    assert call["status"].startswith("@ally_acct\n")
+    assert "【공격 ▸ 적 캐릭터】" in call["status"]
+    assert f"→ -{dealt}" in call["status"]
 
 
 def test_main_battle_idle_chat_still_gets_error_reply(monkeypatch):
@@ -1547,12 +1599,13 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
         _make_notification("player_acct", 3, active_post_id, "[공격/고블린]")
     )
 
-    # 계산식이 있으면 별도의 CW(spoiler_text) 후속 게시물로 이어 보내므로,
-    # 필드 상태가 덧붙는 본문 답글만 고르려면 spoiler_text가 없는 호출을
-    # 걸러야 한다.
-    body_replies = [c for c in mastodon.status_post_calls if "spoiler_text" not in c]
-    char_reply = body_replies[-1]
-    assert str(dm_state.session.context) in char_reply["status"]
+    # 계산식이 있으면 본문(필드 상태가 덧붙은 텍스트)은 spoiler_text로,
+    # 계산식은 status(계산식만 담긴 CW 본문)로 들어간다 — 답글로 온 첫
+    # 게시물 호출을 확인하고 사용자에게 실제로 보이는 두 필드를 합쳐 확인한다.
+    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
+    char_reply = reply_calls[-1]
+    visible_text = char_reply.get("spoiler_text", "") + char_reply["status"]
+    assert str(dm_state.session.context) in visible_text
 
 
 def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):

@@ -95,8 +95,8 @@ def test_attack_command_separates_damage_and_calculation():
 
     calc_lines = calc.splitlines()
     assert calc_lines[0] == "【공격 ▸ 적군 1】"
-    assert calc_lines[1] == "▹ 적군 1"
-    assert calc_lines[2].startswith("↳ ")
+    assert calc_lines[1].startswith("▹ 적군 1 | ")
+    assert f"→ -{100 - target.status.curr_hp}" in calc_lines[1]
 
 
 def test_fixed_damage_skill_omits_calculation_line():
@@ -389,7 +389,7 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
         "▹ 아군 1 | [저주]×2 소모 → 최종 1\n"
         "▹ 적군 1 | -2 → 98/100"
     )
-    assert calc == "【저주 방출 ▸ 적군 1】\n▹ 적군 1\n↳ 2[저주] × 1"
+    assert calc == "【저주 방출 ▸ 적군 1】\n▹ 적군 1 | 2[저주] × 1 → -2"
 
 
 def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
@@ -457,7 +457,9 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
         "▹ 아군 1 | [저주]×5 소모 → 최종 0\n"
         "▹ 적군 1 | -24 → 76/100"
     )
-    assert calc == "【이중 타격 ▸ 적군 1】\n▹ 적군 1\n↳ 6 × 1.5[계수] + 5[저주] × 3"
+    assert (
+        calc == "【이중 타격 ▸ 적군 1】\n▹ 적군 1 | 6 × 1.5[계수] + 5[저주] × 3 → -24"
+    )
 
 
 def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
@@ -490,7 +492,7 @@ def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
     reply, calc = _run(ctx, manager, caster_id, "[연타/적군 1]")
 
     assert reply == ("【연타 ▸ 적군 1】\n▹ 적군 1 | -15 → 85/100")
-    assert calc == "【연타 ▸ 적군 1】\n▹ 적군 1\n↳ 10 + 5"
+    assert calc == "【연타 ▸ 적군 1】\n▹ 적군 1 | 10 + 5 → -15"
 
 
 # ── 라운드 종료 처리(DoT/HoT) 답글 포맷팅 ────────────────────────────────────────
