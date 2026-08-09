@@ -162,3 +162,36 @@ def test_target_removed_before_post_action_does_not_crash():
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
     assert ally_id not in ctx.characters
+
+
+def test_dead_enemy_declared_attack_does_not_apply_on_post_action():
+    """PRE에서 공격을 선언한 적이 ALLY_ACTION 중 체력 0이 되면(필드 제거는
+    라운드 종료 시점에만 일어나므로 이 시점엔 아직 context.characters에
+    남아 있다), POST_ACTION에서 그 공격이 그대로 적용되면 안 된다 — 이미
+    죽은 적이 공격하는 셈이기 때문이다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    manager = RoundManager(ctx)  # 시작 시 ENEMY_PRE_ACTION
+
+    ally_id = CharacterId("아군 1")
+    enemy_id = CharacterId("적군 1")
+
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+
+    # PRE: 적군이 아군 1을 공격 선언 (대미지는 POST에서 재전개되어 처리됨)
+    cmd = parse_character_command(enemy_id, "[공격/아군 1]", ctx)
+    manager.process_command(cmd)
+
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+
+    # ALLY_ACTION 중 적군 1이 체력 0이 됨 — 아직 필드에서 제거되지는 않는다
+    ctx.characters[enemy_id].status.curr_hp = 0
+    ally_hp_before_post = ctx.characters[ally_id].status.curr_hp
+
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+    assert ctx.characters[ally_id].status.curr_hp == ally_hp_before_post

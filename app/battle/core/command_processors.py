@@ -152,8 +152,15 @@ def try_process_enemy_command_on_post_action(
     user_id: CharacterId,
     remaining_commands: list[CharacterCommand],
 ) -> list[CommandPartProcessResult]:
-    # 적이 사망했다면 패스
+    # 적이 사망했다면 패스. 체력 0 이하 캐릭터의 실제 제거는 라운드 종료
+    # 시점(_remove_eliminated_characters)에 한 번에 처리되므로, ALLY_ACTION
+    # 중 체력이 0이 된 적은 이 시점에도 여전히 context.characters에 남아
+    # 있다 — 필드 제거 여부만으로는 사망을 판정할 수 없고 체력을 직접
+    # 확인해야 한다. 그렇지 않으면 이미 죽은 적의 PRE 선언 공격이 POST에
+    # 그대로 적용되어 버린다.
     if user_id not in context.characters:
+        return []
+    if context.characters[user_id].status.curr_hp <= 0:
         return []
 
     results: list[CommandPartProcessResult] = []
