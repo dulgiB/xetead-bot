@@ -280,7 +280,7 @@ def handle_daily_quest_start(
 
     today = date.today().isoformat()
     if char_data.daily_quest_date == today:
-        msg = "◊ 오늘 이미 의뢰를 수행했습니다. 내일 다시 도전해 주세요!"
+        msg = "오늘은 이미 의뢰 하나를 해결했다. 의욕 넘치는 모험가에게도 휴식은 필요한 법이니 이만 쉬도록 하자."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
