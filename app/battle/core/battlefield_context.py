@@ -169,7 +169,7 @@ class BattlefieldContext:
                     f"{char_id.name} | [{buff.display_id_label()}]"
                     f"{buff.duration.display_text(stack_count)}"
                     f"{self._format_companion_hp_suffix(buff, char_id)}\n"
-                    f"↳ {description}"
+                    f"　↳ {description}"
                 )
         return "\n\n".join(blocks)
 
