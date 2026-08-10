@@ -713,8 +713,8 @@ class MastodonBotListener(StreamListener):
         # 5.5. DM 전투 중 캐릭터 커맨드 (해당 스레드의 tip 게시물에 대한 답글)
         if in_reply_to_id is not None and in_reply_to_id in state.dm_battles:
             dm_state = state.dm_battles[in_reply_to_id]
-            reply, calc_text, end_post_text, battle_log = _handle_dm_battle_command(
-                acct, text, state, dm_state
+            reply, calc_text, end_post_text, end_post_calc_text, battle_log = (
+                _handle_dm_battle_command(acct, text, state, dm_state)
             )
             if reply is None:
                 # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
@@ -724,10 +724,16 @@ class MastodonBotListener(StreamListener):
             )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if end_post_text is not None:
-                self._mastodon.status_post(
+                end_post = self._mastodon.status_post(
                     _truncate(end_post_text),
                     visibility=dm_state.visibility,
                     in_reply_to_id=dm_state.active_post_id,
+                )
+                self._post_calc_followups(
+                    end_post["id"],
+                    dm_state.visibility,
+                    end_post_calc_text,
+                    admin_commands._dm_mention_prefix(dm_state),
                 )
             return
 
@@ -893,6 +899,12 @@ class MastodonBotListener(StreamListener):
                     _truncate(post_text), **post_kwargs
                 )
                 _apply_game_post_side_effects(state, result, new_post["id"])
+                self._post_calc_followups(
+                    new_post["id"],
+                    result.game_post_visibility,
+                    result.game_post_calc_text,
+                    result.game_post_calc_prefix,
+                )
 
     def _reply(
         self,
@@ -1008,25 +1020,48 @@ class MastodonBotListener(StreamListener):
         """`_reply_with_calc`의 폴백: 본문(text)이 그 자체로 spoiler_text
         한도(500자)를 넘어 한 게시물로 합칠 수 없을 때, 본문을 평범한 답글로
         먼저 보내고 계산식을 별도의 CW(spoiler_text="계산식") 후속
-        게시물로 이어 붙인다. 계산식이 길면 "계산식(1)", "계산식(2)"...로
-        번호를 매긴 여러 게시물로 나눈다. 반환값은 (CW 게시물이 아닌)
-        본문 답글의 status dict다."""
+        게시물로 이어 붙인다. 반환값은 (CW 게시물이 아닌) 본문 답글의
+        status dict다."""
         reply_status = self._reply(in_reply_to_id, acct, visibility, text, media_ids)
+        self._post_calc_followups(
+            reply_status["id"], visibility, calc_text, prefix=f"@{acct}\n"
+        )
+        return reply_status
 
-        mention_prefix = f"@{acct}\n"
-        calc_chunks = _split_for_post(calc_text, len(mention_prefix))
+    def _post_calc_followups(
+        self,
+        in_reply_to_id: int,
+        visibility: Optional[str],
+        calc_text: str,
+        prefix: str = "",
+    ) -> None:
+        """계산식(calc_text)이 있으면 spoiler_text="계산식"을 붙인 CW
+        게시물로 in_reply_to_id에 답글로 이어 보낸다. 계산식이 길어 한
+        게시물에 안 들어가면 truncate하지 않고 "계산식(1)", "계산식(2)"...
+        로 번호를 매긴 여러 게시물로 나눠 순서대로 이어 보낸다.
+
+        `visibility`가 None이면(부모 게시물도 visibility를 명시하지 않고
+        계정 기본값을 따르는 경우) 이 후속 게시물도 동일하게 visibility
+        인자 자체를 생략해 계정 기본값을 따르게 한다.
+
+        `prefix`는 매 조각 앞에 반복해서 붙일 고정 접두어다 — 개별 커맨드
+        답글은 그 답글을 단 계정에게 알림이 가도록 "@계정\\n"을, DM
+        전투(visibility="direct")는 멘션되지 않은 게시물이 참가자에게
+        아예 보이지 않으므로 참가자 멘션을 반복해서 넘겨야 한다. 게임
+        진행 공지(game_post)처럼 특정 수신자가 없는 경우는 빈 문자열이면
+        된다."""
+        if not calc_text:
+            return
+        calc_chunks = _split_for_post(calc_text, len(prefix))
         multiple = len(calc_chunks) > 1
-        reply_to = reply_status["id"]
+        reply_to = in_reply_to_id
         for i, chunk in enumerate(calc_chunks, start=1):
             spoiler = f"계산식({i})" if multiple else "계산식"
-            calc_status = self._mastodon.status_post(
-                f"{mention_prefix}{chunk}",
-                in_reply_to_id=reply_to,
-                visibility=visibility,
-                spoiler_text=spoiler,
-            )
+            post_kwargs: dict = {"in_reply_to_id": reply_to, "spoiler_text": spoiler}
+            if visibility is not None:
+                post_kwargs["visibility"] = visibility
+            calc_status = self._mastodon.status_post(f"{prefix}{chunk}", **post_kwargs)
             reply_to = calc_status["id"]
-        return reply_status
 
 
 def _field_text(ps: PracticeBattleState) -> str:
@@ -1256,20 +1291,24 @@ def _handle_practice_command(
 
 def _handle_dm_battle_command(
     acct: str, text: str, state: "BotState", dm_state: DmBattleState
-) -> tuple[Optional[str], str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
+) -> tuple[
+    Optional[str], str, Optional[str], str, Optional[log_sheets.BattleCommandLog]
+]:
     """
     DM 전투 중 캐릭터 커맨드를 처리한다. handle_character_command를 그대로
     재사용하되, DM 전투는 스레드 답글이 유일한 실시간 확인 수단이므로 매
     답글에 현재 필드 상태(str(context))를 덧붙이고, 처리 후 전멸 여부를
     확인해 전멸 시 전투를 종료한다.
 
-    반환값: (reply_text_or_None, calc_text, end_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text_or_None, calc_text, end_post_text_or_None,
+    end_post_calc_text, battle_log_or_None)
 
     reply_text가 None이면 대괄호 커맨드 자체가 없는 답글(사담 등)이었다는
-    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. calc_text가
-    비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어 보낸다.
-    DM 전투는 스레드 하나가 계속 이어지는 구조라 대련/상시전투와 동일하게
-    처리한다(본 전투는 페이즈마다 게시물이 바뀌므로 대상이 아니다).
+    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. calc_text/
+    end_post_calc_text가 비어 있지 않으면 호출측이 spoiler_text="계산식"
+    후속 게시물로 이어 보낸다. DM 전투는 스레드 하나가 계속 이어지는
+    구조라 대련/상시전투와 동일하게 처리한다(본 전투는 페이즈마다 게시물이
+    바뀌므로 대상이 아니다).
     """
     response, calc_text, battle_log = handle_character_command(
         acct,
@@ -1281,15 +1320,16 @@ def _handle_dm_battle_command(
         silent_on_unrecognized=True,
     )
     if response is None:
-        return None, "", None, None
+        return None, "", None, "", None
     response = f"{response}\n\n{dm_state.session.context}"
 
     winner = admin_commands._check_dm_battle_wipe(dm_state)
     if winner is None:
-        return response, calc_text, None, battle_log
+        return response, calc_text, None, "", battle_log
 
-    end_post_text = admin_commands._end_dm_battle(dm_state, state, winner)
-    return response, calc_text, end_post_text, battle_log
+    end_body, end_calc = admin_commands._end_dm_battle(dm_state, state, winner)
+    end_post_text = f"{admin_commands._dm_mention_prefix(dm_state)}{end_body}"
+    return response, calc_text, end_post_text, end_calc, battle_log
 
 
 def main() -> None:

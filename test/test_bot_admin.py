@@ -158,9 +158,9 @@ def test_advance_phase_always_marks_field_image():
 
 
 def test_enemy_post_action_summary_includes_calculation(monkeypatch):
-    """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
-    표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
-    누락된다."""
+    """적 공격 정산(ENEMY_POST_ACTION) 게시물의 계산식은 본문(game_post_text)이
+    아니라 별도의 CW 후속 게시물용 game_post_calc_text로 분리돼야 한다 —
+    본문(+필드 시트 이미지)은 항상 짧고 바로 보이게 남겨야 하기 때문이다."""
     monkeypatch.setattr(
         log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
     )
@@ -180,8 +180,10 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     _cmd_advance_phase(state)  # → 아군 행동
     to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
 
-    assert "↳" in to_post_action.game_post_text
+    assert "1d6" not in to_post_action.game_post_text
     assert "적 캐릭터" in to_post_action.game_post_text
+    assert "1d6" in to_post_action.game_post_calc_text
+    assert "적 캐릭터" in to_post_action.game_post_calc_text
 
 
 def test_advance_phase_writes_back_post_action_damage(monkeypatch):

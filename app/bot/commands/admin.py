@@ -28,7 +28,6 @@ from utils.name_matching import resolve_matching_key, whitespace_tolerant_litera
 from bot.battle_reply_text import (
     format_battle_end_log_entries,
     format_battle_reply,
-    format_battle_reply_inline,
     format_eliminated_characters,
     format_final_hp_roster,
     format_round_end_log_entries,
@@ -133,6 +132,17 @@ class AdminCommandResult:
     # game_post_text 게시 시 강제할 visibility. None이면 계정 기본값을 따른다
     # (DM 전투는 세션 내내 최초 개시 멘션의 visibility로 고정)
     game_post_visibility: Optional[str] = None
+    # game_post_text에서 분리된 계산식. 비어 있지 않으면 game_post_text(+필드
+    # 시트 이미지) 게시 후 spoiler_text="계산식"을 붙인 접힌(CW) 후속
+    # 게시물로 이어 보낸다 — game_post_text 자체는 이미지와 함께 항상
+    # 바로 보이는 본문으로 남겨야 하므로(개별 답글과 달리 CW로 숨기지
+    # 않는다), calc_text처럼 spoiler_text에 합치지 않고 별도 게시물로 뗀다.
+    game_post_calc_text: str = ""
+    # game_post_calc_text를 CW 후속 게시물로 보낼 때 매 조각 앞에 붙일
+    # 접두어. DM 전투(visibility="direct")는 멘션되지 않은 게시물이 참가자에게
+    # 보이지 않으므로, 본문과 마찬가지로 계산식 후속 게시물에도 참가자 멘션을
+    # 반복해야 한다 — 본 전투는 빈 문자열(접두어 없음)로 둔다.
+    game_post_calc_prefix: str = ""
 
 
 def handle_admin_command(
@@ -155,7 +165,7 @@ def handle_admin_command(
         if _RE_CONTINUE.search(text):
             return _cmd_dm_battle_continue(dm_state, state)
         if _RE_END.search(text):
-            return AdminCommandResult(_cmd_dm_battle_end(dm_state, state))
+            return _cmd_dm_battle_end(dm_state, state)
         if m := _RE_PROXY.search(text):
             char_name = m.group(1).strip()
             cmd_str = m.group(2).strip()
@@ -203,7 +213,8 @@ def handle_admin_command(
         return _cmd_continue_battle(state)
 
     if _RE_END.search(text):
-        return AdminCommandResult(_cmd_end(state))
+        end_reply, end_calc = _cmd_end(state)
+        return AdminCommandResult(end_reply, calc_text=end_calc)
 
     if m := _RE_PROXY.search(text):
         char_name = m.group(1).strip()
@@ -363,13 +374,18 @@ def _cmd_battle_start(
         reply_parts.append(_SYSTEM_ERROR_MESSAGE)
     reply_text = "\n".join(reply_parts)
 
-    game_post = _make_phase_post_text(
+    game_post, game_post_calc = _make_phase_post_text(
         RoundPhaseType.ENEMY_PRE_ACTION,
         state.session.round_n,
         state.session,
         state.name_dict,
     )
-    return AdminCommandResult(reply_text, game_post, attach_field_image=True)
+    return AdminCommandResult(
+        reply_text,
+        game_post,
+        attach_field_image=True,
+        game_post_calc_text=game_post_calc,
+    )
 
 
 def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
@@ -450,7 +466,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
         else None
     )
 
-    game_post = _make_phase_post_text(
+    game_post, game_post_calc = _make_phase_post_text(
         new_phase,
         state.session.round_n,
         state.session,
@@ -469,7 +485,12 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     #   (game_post_text가 있더라도 None 처리하는 건 main.py에서)
     # 필드 상태가 str 대신 이미지로만 표시되므로, 모든 페이즈 전환 게시물에
     # 필드 시트 이미지를 첨부한다.
-    return AdminCommandResult(reply, game_post, attach_field_image=True)
+    return AdminCommandResult(
+        reply,
+        game_post,
+        attach_field_image=True,
+        game_post_calc_text=game_post_calc,
+    )
 
 
 def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
@@ -512,18 +533,24 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
         _log_system_error("공개 필드 시트 렌더링")
         system_error = True
 
-    game_post = _make_phase_post_text(
+    game_post, game_post_calc = _make_phase_post_text(
         new_phase, state.session.round_n, state.session, state.name_dict
     )
 
     error_suffix = f"\n{_SYSTEM_ERROR_MESSAGE}" if system_error else ""
     reply = f"◊ 라운드 {state.session.round_n} 시작{error_suffix}"
-    return AdminCommandResult(reply, game_post, attach_field_image=True)
+    return AdminCommandResult(
+        reply,
+        game_post,
+        attach_field_image=True,
+        game_post_calc_text=game_post_calc,
+    )
 
 
-def _cmd_end(state: "BotState") -> str:
+def _cmd_end(state: "BotState") -> tuple[str, str]:
+    """반환값: (reply_text, calc_text)."""
     if state.session is None or not state.session.started:
-        return "◊ 진행 중인 전투가 없습니다."
+        return "◊ 진행 중인 전투가 없습니다.", ""
 
     context = state.session.context
     system_error = False
@@ -578,20 +605,18 @@ def _cmd_end(state: "BotState") -> str:
     state.pending_participants.clear()
     state.pending_placements.clear()
 
+    battle_end_body, battle_end_calc = format_battle_end_log_entries(
+        context, battle_end_entries
+    )
     body_blocks = [
-        block
-        for block in (
-            format_final_hp_roster(context),
-            format_battle_end_log_entries(context, battle_end_entries),
-        )
-        if block
+        block for block in (format_final_hp_roster(context), battle_end_body) if block
     ]
     result = "◊ 전투 종료"
     if body_blocks:
         result += "\n\n" + "\n\n".join(body_blocks)
     if system_error:
         result += f"\n{_SYSTEM_ERROR_MESSAGE}"
-    return result
+    return result, battle_end_calc
 
 
 def _cmd_practice_prep(
@@ -831,42 +856,49 @@ def _make_phase_post_text(
     ] = None,
     round_end_log_entries: Optional[list[BattleLogEntry]] = None,
     eliminated_characters: Optional[list[CharacterId]] = None,
-) -> str:
-    # 필드 현황은 게시물에 첨부되는 공개 필드 시트 이미지로 표시하므로, 이
-    # 텍스트에는 str(session.context) 보드를 중복으로 넣지 않는다.
+) -> tuple[str, str]:
+    """(본문, 계산식) 튜플을 반환한다. 계산식이 없으면 두 번째 값은 빈
+    문자열이다 — 호출측이 본문(+필드 시트 이미지)을 먼저 올리고, 계산식이
+    있으면 그 게시물에 CW(spoiler_text="계산식") 후속 게시물로 이어 붙인다.
+
+    필드 현황은 게시물에 첨부되는 공개 필드 시트 이미지로 표시하므로, 이
+    텍스트에는 str(session.context) 보드를 중복으로 넣지 않는다."""
     if phase == RoundPhaseType.ENEMY_PRE_ACTION:
-        return f"◊ [라운드 {round_n}] 적군 행동 선언"
+        return f"◊ [라운드 {round_n}] 적군 행동 선언", ""
 
     if phase == RoundPhaseType.ALLY_ACTION:
         return (
             f"◊ [라운드 {round_n}] 아군 행동\n\n"
             "이 게시물에 답글로 커맨드를 입력해 주세요."
-        )
+        ), ""
 
     if phase == RoundPhaseType.ENEMY_POST_ACTION:
-        body = _format_enemy_post_action_results(
+        body, calc = _format_enemy_post_action_results(
             session.context, post_action_results or {}, name_dict
         )
-        return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n\n{body}"
+        return f"◊ [라운드 {round_n}] 적군 행동 정산 완료\n\n{body}", calc
 
     if phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
         header = f"◊ [라운드 {round_n} 종료]"
         tail = "버프/디버프 갱신 완료. [전투 속행] 또는 [전투 종료]를 입력하세요."
+        round_end_body, round_end_calc = format_round_end_log_entries(
+            session.context, round_end_log_entries or []
+        )
         body_blocks = [
             block
             for block in (
-                format_round_end_log_entries(
-                    session.context, round_end_log_entries or []
-                ),
+                round_end_body,
                 format_eliminated_characters(eliminated_characters or []),
             )
             if block
         ]
         if body_blocks:
-            return f"{header}\n\n{'\n\n'.join(body_blocks)}\n\n{tail}"
-        return f"{header}\n\n{tail}"
+            body = f"{header}\n\n{'\n\n'.join(body_blocks)}\n\n{tail}"
+        else:
+            body = f"{header}\n\n{tail}"
+        return body, round_end_calc
 
-    return ""
+    return "", ""
 
 
 def _damaged_target_mentions(
@@ -934,42 +966,20 @@ def _format_named_reply(
     return "\n\n".join(body_blocks), "\n\n".join(calc_blocks)
 
 
-def _format_named_reply_inline(
-    context: "BattlefieldContext",
-    char_id: CharacterId,
-    part_results: list[CommandPartProcessResult],
-    name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
-    *,
-    show_skill_preview: bool = False,
-) -> str:
-    """_format_named_reply와 같은 입력을 받지만, 계산식을 본문에 "↳" 줄로
-    그대로 포함한 단일 문자열을 반환한다 — 여러 캐릭터의 결과를 한
-    게시물에 모아 보여주는 집계용 게시물(적 후행 정산 등) 전용."""
-    blocks = []
-    for part_result in part_results:
-        block = format_battle_reply_inline(
-            context, char_id, [part_result], show_skill_preview=show_skill_preview
-        )
-        if not block:
-            continue
-        blocks.append(_prefix_named_block(char_id, block, part_result, name_dict))
-    return "\n\n".join(blocks)
-
-
 def _format_enemy_post_action_results(
     context: "BattlefieldContext",
     post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
     name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
-) -> str:
-    """ENEMY_POST_ACTION 정산 결과를 "{적 이름} 【헤더】/계산식" 블록으로
-    조립한다. 커맨드(파트) 하나당 블록 하나이며, 같은 적의 커맨드가
-    여러 개여도 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+) -> tuple[str, str]:
+    """ENEMY_POST_ACTION 정산 결과를 "{적 이름} 【헤더】" 블록으로 조립한
+    (본문, 계산식) 튜플을 반환한다. 커맨드(파트) 하나당 블록 하나이며,
+    같은 적의 커맨드가 여러 개여도 각각 별도 블록으로 빈 줄(\\n\\n)로
+    구분한다.
 
     이동은 PRE 선언 시점에 이미 답글로 안내되었으므로 여기서는 제외한다
-    (POST 재전개 시 move_list가 빈 채로 남아 헤더만 중복 출력되는 것을 막는다).
-    여러 캐릭터의 결과를 한 게시물에 모아 보여주는 집계용 게시물이라
-    계산식은 CW로 분리하지 않고 본문에 그대로 포함한다."""
-    blocks = []
+    (POST 재전개 시 move_list가 빈 채로 남아 헤더만 중복 출력되는 것을 막는다)."""
+    body_blocks = []
+    calc_blocks = []
     for user_id, part_results in post_action_results.items():
         non_move_results = [
             r
@@ -977,12 +987,13 @@ def _format_enemy_post_action_results(
             if r.expanded_part.original_part is None
             or r.expanded_part.original_part.type_ != ActionType.MOVE
         ]
-        block = _format_named_reply_inline(
-            context, user_id, non_move_results, name_dict
-        )
-        if block:
-            blocks.append(block)
-    return "\n\n".join(blocks) if blocks else "변동 없음"
+        body, calc = _format_named_reply(context, user_id, non_move_results, name_dict)
+        if body:
+            body_blocks.append(body)
+        if calc:
+            calc_blocks.append(calc)
+    body_text = "\n\n".join(body_blocks) if body_blocks else "변동 없음"
+    return body_text, "\n\n".join(calc_blocks)
 
 
 # ---------------------------------------------------------------------------
@@ -1124,14 +1135,21 @@ def _cmd_dm_battle_start(
         mentions=participant_accts,
     )
 
-    game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
+    mention_prefix = _dm_mention_prefix(dm_state)
+    phase_body, phase_calc = _make_phase_post_text(
         RoundPhaseType.ENEMY_PRE_ACTION, session.round_n, session, state.name_dict
     )
-    game_post += f"\n\n{session.context}"
+    game_post = f"{mention_prefix}{phase_body}\n\n{session.context}"
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
 
-    return AdminCommandResult("", game_post, dm_battle_to_register=dm_state)
+    return AdminCommandResult(
+        "",
+        game_post,
+        dm_battle_to_register=dm_state,
+        game_post_calc_text=phase_calc,
+        game_post_calc_prefix=mention_prefix,
+    )
 
 
 def _cmd_dm_battle_advance_phase(
@@ -1180,15 +1198,19 @@ def _cmd_dm_battle_advance_phase(
 
     winner = _check_dm_battle_wipe(dm_state)
     if winner is not None:
-        end_text = _end_dm_battle(dm_state, state, winner)
+        end_body, end_calc = _end_dm_battle(dm_state, state, winner)
+        mention_prefix = _dm_mention_prefix(dm_state)
         return AdminCommandResult(
             "◊ 페이즈 전환 처리 완료",
-            end_text,
+            f"{mention_prefix}{end_body}",
             game_post_reply_to_confirmation=True,
             game_post_visibility=dm_state.visibility,
+            game_post_calc_text=end_calc,
+            game_post_calc_prefix=mention_prefix,
         )
 
-    game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
+    mention_prefix = _dm_mention_prefix(dm_state)
+    phase_body, phase_calc = _make_phase_post_text(
         new_phase,
         session.round_n,
         session,
@@ -1197,7 +1219,7 @@ def _cmd_dm_battle_advance_phase(
         round_end_log_entries,
         eliminated_characters,
     )
-    game_post += f"\n\n{session.context}"
+    game_post = f"{mention_prefix}{phase_body}\n\n{session.context}"
 
     return AdminCommandResult(
         f"◊ 페이즈 전환: {new_phase.value}",
@@ -1205,6 +1227,8 @@ def _cmd_dm_battle_advance_phase(
         dm_battle_to_register=dm_state,
         game_post_reply_to_confirmation=True,
         game_post_visibility=dm_state.visibility,
+        game_post_calc_text=phase_calc,
+        game_post_calc_prefix=mention_prefix,
     )
 
 
@@ -1218,10 +1242,11 @@ def _cmd_dm_battle_continue(
         )
 
     new_phase = session.advance_phase()  # → ENEMY_PRE_ACTION
-    game_post = _dm_mention_prefix(dm_state) + _make_phase_post_text(
+    mention_prefix = _dm_mention_prefix(dm_state)
+    phase_body, phase_calc = _make_phase_post_text(
         new_phase, session.round_n, session, state.name_dict
     )
-    game_post += f"\n\n{session.context}"
+    game_post = f"{mention_prefix}{phase_body}\n\n{session.context}"
 
     return AdminCommandResult(
         f"◊ 라운드 {session.round_n} 시작",
@@ -1229,12 +1254,24 @@ def _cmd_dm_battle_continue(
         dm_battle_to_register=dm_state,
         game_post_reply_to_confirmation=True,
         game_post_visibility=dm_state.visibility,
+        game_post_calc_text=phase_calc,
+        game_post_calc_prefix=mention_prefix,
     )
 
 
-def _cmd_dm_battle_end(dm_state: DmBattleState, state: "BotState") -> str:
+def _cmd_dm_battle_end(
+    dm_state: DmBattleState, state: "BotState"
+) -> AdminCommandResult:
     """관리자가 [전투종료]로 강제 종료한다 — 전멸 시 자동 종료의 안전장치."""
-    return _end_dm_battle(dm_state, state, winner=None)
+    end_body, end_calc = _end_dm_battle(dm_state, state, winner=None)
+    mention_prefix = _dm_mention_prefix(dm_state)
+    return AdminCommandResult(
+        "",
+        f"{mention_prefix}{end_body}",
+        game_post_visibility=dm_state.visibility,
+        game_post_calc_text=end_calc,
+        game_post_calc_prefix=mention_prefix,
+    )
 
 
 def _cmd_dm_battle_proxy(
@@ -1319,12 +1356,14 @@ def _check_dm_battle_wipe(dm_state: DmBattleState) -> Optional[FactionType]:
 
 def _end_dm_battle(
     dm_state: DmBattleState, state: "BotState", winner: Optional[FactionType]
-) -> str:
+) -> tuple[str, str]:
     """DM 전투를 종료 처리한다(전멸 자동 종료/관리자 수동 종료 공용).
 
     본 전투의 _cmd_end와 동일하게 전투 종료 시점 버프 훅([재앙] 등) 처리 후
     변경된 HP를 "캐릭터" 시트에 반영하고, state.dm_battles에서 이 세션을
-    제거한다."""
+    제거한다. 반환값은 (본문, 계산식) — DM 참가자 멘션 접두어는 이 함수가
+    아니라 호출측이 붙인다(계산식 CW 후속 게시물에도 반복해서 붙여야
+    하므로 한 곳에서 관리한다)."""
     session = dm_state.session
     battle_end_entries = session.context.on_battle_end()
     if battle_end_entries:
@@ -1360,17 +1399,17 @@ def _end_dm_battle(
     if winner is not None:
         result += f"\n\n승자: {winner.value}"
 
+    battle_end_body, battle_end_calc = format_battle_end_log_entries(
+        session.context, battle_end_entries
+    )
     body_blocks = [
         block
-        for block in (
-            format_final_hp_roster(session.context),
-            format_battle_end_log_entries(session.context, battle_end_entries),
-        )
+        for block in (format_final_hp_roster(session.context), battle_end_body)
         if block
     ]
     if body_blocks:
         result += "\n\n" + "\n\n".join(body_blocks)
-    return f"{_dm_mention_prefix(dm_state)}{result}"
+    return result, battle_end_calc
 
 
 def find_dm_battle_by_field_id(

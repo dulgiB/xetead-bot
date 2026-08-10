@@ -550,9 +550,12 @@ def test_round_end_dot_produces_round_end_processing_block():
     )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
-    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+    body, calc = format_round_end_log_entries(
+        ctx, manager.get_last_round_end_log_entries()
+    )
 
     assert body == "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | -10 → 90/100"
+    assert calc == ""
 
 
 def test_round_end_hot_uses_plus_sign():
@@ -570,9 +573,12 @@ def test_round_end_hot_uses_plus_sign():
     )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
-    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+    body, calc = format_round_end_log_entries(
+        ctx, manager.get_last_round_end_log_entries()
+    )
 
     assert body == "【라운드 종료 처리 ▸ 아군 1】\n▹ 아군 1 | +7 → 57/100"
+    assert calc == ""
 
 
 def test_round_end_groups_multiple_targets_into_separate_blocks():
@@ -603,7 +609,9 @@ def test_round_end_groups_multiple_targets_into_separate_blocks():
     )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
-    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+    body, calc = format_round_end_log_entries(
+        ctx, manager.get_last_round_end_log_entries()
+    )
 
     assert body == (
         "【라운드 종료 처리 ▸ 적군 1】\n"
@@ -611,6 +619,7 @@ def test_round_end_groups_multiple_targets_into_separate_blocks():
         "【라운드 종료 처리 ▸ 아군 1】\n"
         "▹ 아군 1 | +7 → 57/100"
     )
+    assert calc == ""
 
 
 def test_round_end_returns_empty_string_when_nothing_fires():
@@ -622,9 +631,12 @@ def test_round_end_returns_empty_string_when_nothing_fires():
     )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
-    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
+    body, calc = format_round_end_log_entries(
+        ctx, manager.get_last_round_end_log_entries()
+    )
 
     assert body == ""
+    assert calc == ""
 
 
 def test_round_end_stack_proportional_dot_shows_calculation_line():
@@ -683,11 +695,12 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
     )
 
     manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
-    body = format_round_end_log_entries(ctx, manager.get_last_round_end_log_entries())
-
-    assert body == (
-        "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | -15 → 85/100\n↳ 3[Mark] × 5"
+    body, calc = format_round_end_log_entries(
+        ctx, manager.get_last_round_end_log_entries()
     )
+
+    assert body == "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | -15 → 85/100"
+    assert calc == "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | 3[Mark] × 5 → -15"
 
 
 # ── 적 스킬 선언 예고(블라인드/공개) ────────────────────────────────────────
