@@ -18,6 +18,7 @@ TRPG 캠페인의 전투를 자동 정산하는 Mastodon 봇.
 | `GOOGLE_SPREADSHEET_CREDENTIALS` | Google 서비스 계정 JSON (문자열)                |
 | `DB_SPREADSHEET_KEY`             | 스프레드시트 ID (내부용 자동화 DB)                  |
 | `FIELD_SPREADSHEET_KEY`          | 스프레드시트 ID (관중 공개용 실시간 전투 UI "필드" 시트)     |
+| `FIELD_LOG_SHEET_NAME`           | (선택) `DB_SPREADSHEET_KEY` 내 크래시 복구용 "필드" 워크시트 이름. 기본값 `필드`. 여러 배포(예: 운영/테스트)가 같은 `DB_SPREADSHEET_KEY`를 공유하면 반드시 배포별로 다른 값을 지정해야 한다 — 아니면 서로의 진행 중 전투 행을 upsert로 덮어쓴다 |
 
 ### 봇 시작
 
