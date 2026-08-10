@@ -11,6 +11,7 @@ from battle.objects.skill.effects import SkillEffectDamage, SkillEffectHeal  # n
 from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
+    handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
     handle_investigation_accept,
@@ -529,3 +530,54 @@ def test_transfer_item_requires_target(monkeypatch, potion_item):
     reply, log_info = handle_transfer_item(acct, "포션", None, 1, state)
 
     assert "대상을 지정" in reply
+
+
+def test_bag_lists_gold_and_items(monkeypatch, potion_item, bomb_item):
+    acct = "user1"
+    state = _make_state(acct)  # gold=10
+    inventory = Inventory({("동료", "포션"): 2, ("동료", "폭탄"): 1})
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"포션": potion_item, "폭탄": bomb_item},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert reply == (
+        "◊ 동료의 소지품\n"
+        "\n"
+        "▹ 소지금: 10G\n"
+        f"▹ 포션×2: {potion_item.description}\n"
+        f"▹ 폭탄×1: {bomb_item.description}"
+    )
+    assert log_info is not None
+
+
+def test_bag_shows_gold_only_when_no_items(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)  # gold=10
+    monkeypatch.setattr(
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {}
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_inventory",
+        lambda spreadsheet, cache=None: Inventory({}),
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert reply == "◊ 동료의 소지품\n\n▹ 소지금: 10G"
+
+
+def test_bag_rejects_unregistered_character(monkeypatch):
+    state = _make_state("user1")
+
+    reply, log_info = handle_bag("unregistered_user", state)
+
+    assert "등록된 캐릭터를 찾을 수 없습니다" in reply
+    assert log_info is None

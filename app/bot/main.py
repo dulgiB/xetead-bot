@@ -27,6 +27,7 @@ from bot.commands.noncombat import (
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
     finalize_investigation_overview_post,
+    handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
     handle_investigation_accept,
@@ -72,6 +73,7 @@ _RE_INVESTIGATION_BATTLE_SELF = re.compile(
 _RE_ACCEPT = re.compile(rf"\[{whitespace_tolerant_literal('수락')}]")
 _RE_DAILY_QUEST_START = re.compile(rf"\[{whitespace_tolerant_literal('의뢰')}]")
 _RE_INVESTIGATION_START = re.compile(rf"\[{whitespace_tolerant_literal('상시조사')}]")
+_RE_BAG = re.compile(rf"\[{whitespace_tolerant_literal('가방')}]")
 _MAX_POST_LENGTH = 500
 
 # 커맨드를 수신하는 페이즈 (active_phase_post_id 설정 대상)

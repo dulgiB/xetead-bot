@@ -264,6 +264,34 @@ def handle_transfer_item(
     return reply, NoncombatLogInfo(command_text=command_text, result=result_text)
 
 
+def handle_bag(acct: str, state: "BotState") -> tuple[str, Optional[NoncombatLogInfo]]:
+    """[가방] → 소지금과 보유 아이템 목록을 출력한다. 어떤 맥락에서도 사용 가능."""
+    command_text = "[가방]"
+    char_data = state.noncombat_char_dict.get(acct)
+    if char_data is None:
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+
+    try:
+        item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
+        inventory = load_inventory(state.spreadsheet, cache=state.sheet_cache)
+    except Exception as e:
+        msg = f"◊ 소지품 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
+
+    owned = inventory.items_for_character(char_data.name)
+    lines = [f"◊ {char_data.name}의 소지품", "", f"▹ 소지금: {char_data.gold}G"]
+    for item_name, count in owned.items():
+        description = item_dict[item_name].description if item_name in item_dict else ""
+        lines.append(f"▹ {item_name}×{count}: {description}")
+
+    reply = "\n".join(lines)
+    return reply, NoncombatLogInfo(
+        command_text=command_text, result=f"소지품 조회: {char_data.name}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 일일 의뢰
 # ---------------------------------------------------------------------------
