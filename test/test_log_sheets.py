@@ -483,3 +483,20 @@ def test_load_open_battle_rows_excludes_ended_and_parses_fields():
         {"name": "아군1", "faction": "아군", "position": 1, "remaining_cost": 3}
     ]
     assert row.meta == {"name": "진행중 전투"}
+
+
+def test_field_sheet_name_configurable_via_env(monkeypatch):
+    """bot_test와 bot(운영)이 DB_SPREADSHEET_KEY를 공유하므로, 크래시 복구용
+    "필드" 워크시트 이름을 고정하면 테스트 본전투가 운영 전투 행을 upsert로
+    덮어쓴다. FIELD_LOG_SHEET_NAME으로 배포별 워크시트를 분리할 수 있어야
+    하고, 설정하지 않으면 기존과 동일하게 "필드"를 써야 한다."""
+    import importlib
+
+    monkeypatch.setenv("FIELD_LOG_SHEET_NAME", "필드_테스트")
+    importlib.reload(log_sheets)
+    try:
+        assert log_sheets._FIELD_SHEET == "필드_테스트"
+    finally:
+        monkeypatch.delenv("FIELD_LOG_SHEET_NAME", raising=False)
+        importlib.reload(log_sheets)
+    assert log_sheets._FIELD_SHEET == "필드"

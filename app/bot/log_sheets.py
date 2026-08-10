@@ -9,6 +9,7 @@
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -68,7 +69,11 @@ class NoncombatLogInfo:
     error_trace: Optional[str] = None
 
 
-_FIELD_SHEET = "필드"
+# DB_SPREADSHEET_KEY는 bot_test와 bot(운영)이 완전히 같은 스프레드시트를
+# 공유한다 — 이름을 고정하면 테스트 본전투가 크래시 복구 대상 행을 실제
+# 운영 전투 행과 같은 자리에 upsert해 덮어쓴다. FIELD_LOG_SHEET_NAME으로
+# 환경별 워크시트를 분리한다(없으면 기존과 동일하게 "필드").
+_FIELD_SHEET = os.environ.get("FIELD_LOG_SHEET_NAME", "필드")
 _FIELD_HEADERS = [
     "id",
     "battle_type",
