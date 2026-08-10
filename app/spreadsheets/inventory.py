@@ -41,6 +41,15 @@ class Inventory:
     def get_count(self, char_name: str, item_id: str) -> int:
         return self._counts.get((char_name, item_id), 0)
 
+    def items_for_character(self, char_name: str) -> dict[str, int]:
+        """캐릭터가 보유한 (아이템 id → 개수) dict를 반환한다. 개수가 0인
+        아이템은 제외한다."""
+        return {
+            item_id: count
+            for (name, item_id), count in self._counts.items()
+            if name == char_name and count > 0
+        }
+
     def consume(self, char_name: str, item_id: str, amount: int = 1) -> None:
         """아이템을 amount만큼 소비한다. 메모리 개수를 차감한 뒤 시트에 반영한다."""
         new_count = max(0, self.get_count(char_name, item_id) - amount)

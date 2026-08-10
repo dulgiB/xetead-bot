@@ -246,7 +246,7 @@ def test_str_lists_active_buffs_with_duration_and_description(
     context_with_atk_buff_skill, buff_atk_data
 ):
     """str(context)는 이미지 없이도 버프/디버프를 확인할 수 있도록, 대상별로
-    "{이름} | [{버프}] ({기간})" 줄과 "↳ {설명}" 줄을 보여줘야 한다."""
+    "{이름} | [{버프}] ({기간})" 줄과 "　↳ {설명}" 줄을 보여줘야 한다."""
     ctx = context_with_atk_buff_skill
     buff_atk_data.description = "다음 공격의 대미지를 증가시킨다."
     ally_id = CharacterId("아군 1")
@@ -260,7 +260,7 @@ def test_str_lists_active_buffs_with_duration_and_description(
     text = str(ctx)
 
     assert (
-        "아군 1 | [공격력 증가] (3턴/0회)\n↳ 다음 공격의 대미지를 증가시킨다." in text
+        "아군 1 | [공격력 증가] (3턴/0회)\n　↳ 다음 공격의 대미지를 증가시킨다." in text
     )
 
 

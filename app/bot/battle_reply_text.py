@@ -98,26 +98,28 @@ def format_battle_end_log_entries(
 ) -> tuple[str, str]:
     """전투 종료 시점에 발동하는 효과(유예된 재앙 등)의 결과를 "【전투 종료
     처리】" 헤더 하나 아래 모든 대상의 결과를 나열한 (본문, 계산식) 튜플을
-    반환한다. 발동한 효과가 없으면 둘 다 빈 문자열이다."""
+    반환한다. 전투 종료 정산은 CW로 접어 두지 않고 한 번에 다 보여주는
+    편이 낫다는 판단으로, 계산식도 본문에 함께 포함시키고 두 번째 값은
+    항상 빈 문자열이다(호출측이 CW 후속 게시물을 만들지 않도록). 발동한
+    효과가 없으면 둘 다 빈 문자열이다."""
     if not entries:
         return "", ""
     lines = []
-    calc_lines = []
     for entry in entries:
         line, calc, final_value = _format_entry(context, entry)
         lines.append(line)
         if calc:
-            calc_lines.append(f"▹ {entry.target_name} | {calc} → {final_value}")
+            lines.append(f"　↳ {calc} → {final_value}")
     header = "【전투 종료 처리】"
     body = f"{header}\n" + "\n".join(lines)
-    calc = f"{header}\n" + "\n".join(calc_lines) if calc_lines else ""
+    calc = ""
     return body, calc
 
 
 def format_final_hp_roster(context: "BattlefieldContext") -> str:
     """전투 종료 시 필드에 남아 있는 모든 캐릭터의 최종 체력을
     "▹ {이름} | {현재 체력}/{최대 체력}" 목록으로 조립한다. 동료(소환수)는
-    맨 아래에 몰아서 나열하는 대신 owner 바로 아래에 "↳ {이름} | ..."로
+    맨 아래에 몰아서 나열하는 대신 owner 바로 아래에 "　↳ {이름} | ..."로
     중첩해서 보여준다 — owner가 이미 전장에서 제거되어 없는 예외적인
     경우에만 최상위 "▹" 줄로 보여준다."""
     lines = []
@@ -128,7 +130,7 @@ def format_final_hp_roster(context: "BattlefieldContext") -> str:
         lines.append(_format_roster_line(character, "▹"))
         companion_id = context.find_companion_id(char_id)
         if companion_id is not None and companion_id in context.characters:
-            lines.append(_format_roster_line(context.characters[companion_id], "↳"))
+            lines.append(_format_roster_line(context.characters[companion_id], "　↳"))
     return "\n".join(lines)
 
 
@@ -187,7 +189,7 @@ def _format_skill_preview(context: "BattlefieldContext", part: CommandPart) -> s
     assert part.skill_id is not None
     skill_data = context.get_skill_data_by_id(part.skill_id)
     text = skill_data.description if skill_data.revealed else _BLIND_SKILL_TEXT
-    return f"↳ {text}"
+    return f"　↳ {text}"
 
 
 def _format_header(caster_id: CharacterId, part: CommandPart) -> str:

@@ -11,6 +11,7 @@ from battle.objects.skill.effects import SkillEffectDamage, SkillEffectHeal  # n
 from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
+    handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
     handle_investigation_accept,
@@ -27,7 +28,7 @@ from helpers import get_test_preset  # noqa: E402
 from spreadsheets.inventory import Inventory  # noqa: E402
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet  # noqa: E402
 from spreadsheets.models.quest import (  # noqa: E402
-    DailyQuestData,
+    DailyQuestPools,
     DailyQuestResultMessageData,
     DailyQuestSuccessType,
     QuestData,
@@ -46,20 +47,19 @@ def _make_state(acct: str) -> BotState:
         spreadsheet=None,
         field_spreadsheet=None,
     )
-    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
-        quest_id="퀘스트1", bot_reply_post_id=123
-    )
+    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(bot_reply_post_id=123)
     return state
 
 
-def _daily_quest(
-    id_="q1",
-    client_name="길 잃은 어린아이로부터",
-    description="부모를 찾아 달라는",
-    location="",
-) -> DailyQuestData:
-    return DailyQuestData(
-        id=id_, client_name=client_name, description=description, location=location
+def _daily_quest_pools(
+    client_categories=("길 잃은",),
+    client_names=("어린아이로부터",),
+    quest_contents=("부모를 찾아 달라는",),
+) -> DailyQuestPools:
+    return DailyQuestPools(
+        client_categories=list(client_categories),
+        client_names=list(client_names),
+        quest_contents=list(quest_contents),
     )
 
 
@@ -119,7 +119,7 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
 
     result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
-    assert "사례로 1G를 획득했다" in result
+    assert "사례로 1G를 획득했다. (소지금: 11G)" in result
     assert acct not in state.noncombat.daily_quest_mid
     # 캐릭터 데이터는 매 커맨드마다 새로 읽으므로, 로컬 캐시가 아니라
     # 스프레드시트에 실제로 반영된 값(gold=11)을 검증한다.
@@ -219,7 +219,7 @@ def test_daily_quest_roll_adds_blank_line_before_completion_message(monkeypatch)
 
     result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
-    assert "\n\n의뢰를 완수했다. 사례로 1G를 획득했다." in result
+    assert "\n\n의뢰를 완수했다. 사례로 1G를 획득했다. (소지금: 11G)" in result
 
 
 def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
@@ -227,23 +227,18 @@ def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
     state = _make_state(acct)
     monkeypatch.setattr(
         noncombat_module,
-        "load_location_and_investigation",
-        lambda spreadsheet, cache=None: ("마을", True, [], {}),
-    )
-    monkeypatch.setattr(
-        noncombat_module,
-        "load_daily_quests",
-        lambda spreadsheet, cache=None: [
-            _daily_quest(
-                client_name="길 잃은 어린아이로부터", description="부모를 찾아 달라는"
-            )
-        ],
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=("길 잃은",),
+            client_names=("어린아이로부터",),
+            quest_contents=("부모를 찾아 달라는",),
+        ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
 
     assert result.startswith(
-        "길 잃은 어린아이로부터 부모를 찾아 달라는 의뢰를 받았다. 어떻게 할까?"
+        "길 잃은 어린아이로부터 부모를 찾아 달라는 의뢰를 맡겼다. 어떻게 할까?"
     )
     assert log_info is not None
 
@@ -256,39 +251,60 @@ def test_daily_quest_start_does_not_add_or_alter_particle(monkeypatch):
     state = _make_state(acct)
     monkeypatch.setattr(
         noncombat_module,
-        "load_location_and_investigation",
-        lambda spreadsheet, cache=None: ("마을", True, [], {}),
-    )
-    monkeypatch.setattr(
-        noncombat_module,
-        "load_daily_quests",
-        lambda spreadsheet, cache=None: [
-            _daily_quest(
-                client_name="마을 촌장으로부터", description="세금 장부를 정리해 달라는"
-            )
-        ],
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=("마을",),
+            client_names=("촌장으로부터",),
+            quest_contents=("세금 장부를 정리해 달라는",),
+        ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
 
     assert result.startswith(
-        "마을 촌장으로부터 세금 장부를 정리해 달라는 의뢰를 받았다. 어떻게 할까?"
+        "마을 촌장으로부터 세금 장부를 정리해 달라는 의뢰를 맡겼다. 어떻게 할까?"
     )
 
 
-def test_daily_quest_start_unavailable_when_investigation_inactive(monkeypatch):
-    """investigation_active가 꺼져 있으면 위치 무관(location='') 의뢰도 제공하지 않는다."""
+def test_daily_quest_start_combines_pools_independently(monkeypatch):
+    """client_category/client_name/quest_content 세 풀은 행 단위로 대응하지
+    않는 독립적인 테이블이므로, 풀 크기가 서로 달라도(2×1×3) 조합이 가능해야
+    한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(random, "choice", lambda seq: seq[0])
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=("장터", "마을"),
+            client_names=("아주머니로부터",),
+            quest_contents=(
+                "무거운 짐을 옮겨 달라는",
+                "약초를 채집해 달라는",
+                "순찰해 달라는",
+            ),
+        ),
+    )
+
+    result, log_info = handle_daily_quest_start(acct, state)
+
+    assert result.startswith(
+        "장터 아주머니로부터 무거운 짐을 옮겨 달라는 의뢰를 맡겼다. 어떻게 할까?"
+    )
+
+
+def test_daily_quest_start_unavailable_when_any_pool_empty(monkeypatch):
+    """id/row 단위 검증이 없으므로, 세 풀 중 하나라도 active인 값이 없으면
+    조합 자체가 불가능해 의뢰를 제공하지 않는다."""
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
         noncombat_module,
-        "load_location_and_investigation",
-        lambda spreadsheet, cache=None: ("마을", False, [], {}),
-    )
-    monkeypatch.setattr(
-        noncombat_module,
-        "load_daily_quests",
-        lambda spreadsheet, cache=None: [_daily_quest(location="")],
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=(),
+        ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
@@ -514,3 +530,89 @@ def test_transfer_item_requires_target(monkeypatch, potion_item):
     reply, log_info = handle_transfer_item(acct, "포션", None, 1, state)
 
     assert "대상을 지정" in reply
+
+
+def test_bag_lists_gold_and_items_with_cost_range_and_usable_suffix(
+    monkeypatch, potion_item
+):
+    acct = "user1"
+    state = _make_state(acct)  # gold=10
+    battle_only_item = ItemData(
+        id="화염병",
+        target_rule="SkillTargetRuleNamed",
+        cost=2,
+        attack_range=3,
+        effect=SkillEffectDamage(
+            ValueSourceType.FIXED, 15, ValueType.INTEGER, None, None
+        ),
+        description="적에게 화염 피해를 입힌다.",
+        usable_outside_battle=False,
+    )
+    inventory = Inventory({("동료", "포션"): 2, ("동료", "화염병"): 1})
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {
+            "포션": potion_item,
+            "화염병": battle_only_item,
+        },
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert reply == (
+        "◊ 동료의 소지품\n"
+        "\n"
+        "▹ 소지금: 10G\n"
+        f"▹ 포션×2: (코스트 {potion_item.cost}/사거리 {potion_item.attack_range}) "
+        f"{potion_item.description} 비전투 상황에서 사용 가능.\n"
+        "▹ 화염병×1: (코스트 2/사거리 3) 적에게 화염 피해를 입힌다."
+    )
+    assert log_info is not None
+
+
+def test_bag_shows_placeholder_when_item_info_missing(monkeypatch):
+    """인벤토리에는 있지만 '아이템' 시트에서 찾을 수 없는 항목(삭제된
+    아이템 등)은 코스트/사거리 없이 안내 문구만 보여준다."""
+    acct = "user1"
+    state = _make_state(acct)
+    inventory = Inventory({("동료", "단종된 아이템"): 1})
+    monkeypatch.setattr(
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {}
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert "▹ 단종된 아이템×1: (아이템 정보를 찾을 수 없습니다)" in reply
+
+
+def test_bag_shows_gold_only_when_no_items(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)  # gold=10
+    monkeypatch.setattr(
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {}
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_inventory",
+        lambda spreadsheet, cache=None: Inventory({}),
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert reply == "◊ 동료의 소지품\n\n▹ 소지금: 10G"
+
+
+def test_bag_rejects_unregistered_character(monkeypatch):
+    state = _make_state("user1")
+
+    reply, log_info = handle_bag("unregistered_user", state)
+
+    assert "등록된 캐릭터를 찾을 수 없습니다" in reply
+    assert log_info is None

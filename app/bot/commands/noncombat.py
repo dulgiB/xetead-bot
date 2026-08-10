@@ -11,8 +11,8 @@ from spreadsheets.models.quest import DailyQuestSuccessType
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.load_data import (
+    load_daily_quest_pools,
     load_daily_quest_result_messages,
-    load_daily_quests,
     load_general_quests,
     load_inventory,
     load_item_data,
@@ -264,6 +264,43 @@ def handle_transfer_item(
     return reply, NoncombatLogInfo(command_text=command_text, result=result_text)
 
 
+def handle_bag(acct: str, state: "BotState") -> tuple[str, Optional[NoncombatLogInfo]]:
+    """[가방] → 소지금과 보유 아이템 목록을 출력한다. 어떤 맥락에서도 사용 가능."""
+    command_text = "[가방]"
+    char_data = state.noncombat_char_dict.get(acct)
+    if char_data is None:
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+
+    try:
+        item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
+        inventory = load_inventory(state.spreadsheet, cache=state.sheet_cache)
+    except Exception as e:
+        msg = f"◊ 소지품 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
+
+    owned = inventory.items_for_character(char_data.name)
+    lines = [f"◊ {char_data.name}의 소지품", "", f"▹ 소지금: {char_data.gold}G"]
+    for item_name, count in owned.items():
+        item = item_dict.get(item_name)
+        if item is None:
+            lines.append(f"▹ {item_name}×{count}: (아이템 정보를 찾을 수 없습니다)")
+            continue
+        usable_suffix = (
+            " 비전투 상황에서 사용 가능." if item.usable_outside_battle else ""
+        )
+        lines.append(
+            f"▹ {item_name}×{count}: (코스트 {item.cost}/사거리 {item.attack_range}) "
+            f"{item.description}{usable_suffix}"
+        )
+
+    reply = "\n".join(lines)
+    return reply, NoncombatLogInfo(
+        command_text=command_text, result=f"소지품 조회: {char_data.name}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 일일 의뢰
 # ---------------------------------------------------------------------------
@@ -280,41 +317,34 @@ def handle_daily_quest_start(
 
     today = date.today().isoformat()
     if char_data.daily_quest_date == today:
-        msg = "◊ 오늘 이미 의뢰를 수행했습니다. 내일 다시 도전해 주세요!"
+        msg = "오늘은 이미 의뢰 하나를 해결했다. 의욕 넘치는 모험가에게도 휴식은 필요한 법이니 이만 쉬도록 하자."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        location, investigation_active, _, _ = load_location_and_investigation(
-            state.spreadsheet, cache=state.sheet_cache
-        )
-        daily_quests = load_daily_quests(state.spreadsheet, cache=state.sheet_cache)
+        pools = load_daily_quest_pools(state.spreadsheet, cache=state.sheet_cache)
     except Exception as e:
         msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    pool = [
-        q
-        for q in daily_quests
-        if investigation_active and (not q.location or q.location == location)
-    ]
-    if not pool:
-        msg = "◊ 현재 위치에서 받을 수 있는 의뢰가 없습니다."
+    if not (pools.client_categories and pools.client_names and pools.quest_contents):
+        msg = "◊ 현재 받을 수 있는 의뢰가 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    quest = random.choice(pool)
+    client_category = random.choice(pools.client_categories)
+    client_name = random.choice(pools.client_names)
+    quest_content = random.choice(pools.quest_contents)
 
-    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
-        quest_id=quest.id, bot_reply_post_id=0
-    )
+    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(bot_reply_post_id=0)
 
     reply = (
-        f"{quest.client_name} {quest.description} 의뢰를 받았다. 어떻게 할까?\n"
+        f"{client_category} {client_name} {quest_content} 의뢰를 맡겼다. 어떻게 할까?\n"
         "\n◊ [판정/(원하는 비전투 스테이터스)] 형식으로 답글을 달아 의뢰를 수행할 수 있습니다."
     )
     return reply, NoncombatLogInfo(
-        command_text=command_text, result=f"의뢰 배정: {quest.id} ({quest.client_name})"
+        command_text=command_text,
+        result=f"의뢰 배정: {client_category} {client_name} {quest_content}",
     )
 
 
@@ -391,7 +421,7 @@ def handle_daily_quest_roll(
         f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」\n{judgment}\n"
     )
     if save_succeeded:
-        result += "\n의뢰를 완수했다. 사례로 1G를 획득했다."
+        result += f"\n의뢰를 완수했다. 사례로 1G를 획득했다. (소지금: {new_gold}G)"
     else:
         result += (
             "의뢰 결과 저장에 실패했습니다. 이 답글에 다시 답글로 재시도해 주세요."

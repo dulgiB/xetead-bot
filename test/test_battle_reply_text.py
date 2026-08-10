@@ -745,7 +745,7 @@ def test_enemy_skill_preview_shows_description_when_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "【스킬_1 ▸ 아군 1】\n↳ 대상에게 고정 피해를 준다."
+    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ 대상에게 고정 피해를 준다."
 
 
 def test_enemy_skill_preview_blinds_description_when_not_revealed():
@@ -775,7 +775,7 @@ def test_enemy_skill_preview_blinds_description_when_not_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "【스킬_1 ▸ 아군 1】\n↳ [효과 미확인]"
+    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ [효과 미확인]"
 
 
 def test_skill_preview_omitted_when_show_skill_preview_is_false():
@@ -860,7 +860,7 @@ def test_format_eliminated_characters_empty_when_no_one_eliminated():
 
 def test_format_final_hp_roster_nests_companion_under_owner():
     """동료(소환수)는 항상 맨 아래에 나열되는 대신 owner 캐릭터 줄 바로
-    아래에 "↳ {이름} | ..."로 중첩되어야 한다."""
+    아래에 "　↳ {이름} | ..."로 중첩되어야 한다."""
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     ctx.add_character(
         get_test_preset("아군 1", max_hp=100),
@@ -879,7 +879,7 @@ def test_format_final_hp_roster_nests_companion_under_owner():
 
     roster = format_final_hp_roster(ctx)
 
-    assert roster == ("▹ 아군 1 | 100/100\n↳ 동료 | 26/26\n▹ 아군 2 | 50/50")
+    assert roster == ("▹ 아군 1 | 100/100\n　↳ 동료 | 26/26\n▹ 아군 2 | 50/50")
 
 
 def test_format_final_hp_roster_shows_orphaned_companion_at_top_level():
