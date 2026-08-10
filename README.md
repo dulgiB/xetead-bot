@@ -124,7 +124,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `quest_content_active`    | 이 `quest_content` 값을 뽑기 대상에 포함할지 (`TRUE`/`FALSE`)                                      |
 
 세 풀 중 하나라도 active인 값이 하나도 없으면 의뢰를 제공하지 않는다.
-`{client_category} {client_name} {quest_content} 의뢰를 받았다`로 이어붙여
+`{client_category} {client_name} {quest_content} 의뢰를 맡겼다`로 이어붙여
 출력한다.
 
 ### 일일 의뢰 결과 메시지 시트
@@ -659,8 +659,8 @@ Admin이 아니라 `char_dict`에 등록된 캐릭터 계정이 직접 멘션해
 
 ```
 캐릭터: @system [의뢰]
-  └→ 봇: {client_category} {client_name} {quest_content} 의뢰를 받았다. 어떻게 할까?
-        (예: 길 잃은 어린아이로부터 부모를 찾아 달라는 의뢰를 받았다. 어떻게 할까?)
+  └→ 봇: {client_category} {client_name} {quest_content} 의뢰를 맡겼다. 어떻게 할까?
+        (예: 길 잃은 어린아이로부터 부모를 찾아 달라는 의뢰를 맡겼다. 어떻게 할까?)
         (client_name에 조사까지 포함되어 있어야 함 — 봇은 조사를 붙이지 않는다)
         (스프레드시트 '일일 의뢰' 시트의 세 값 풀에서 각각 랜덤 선택해 조립)
 
