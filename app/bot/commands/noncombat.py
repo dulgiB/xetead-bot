@@ -283,8 +283,17 @@ def handle_bag(acct: str, state: "BotState") -> tuple[str, Optional[NoncombatLog
     owned = inventory.items_for_character(char_data.name)
     lines = [f"◊ {char_data.name}의 소지품", "", f"▹ 소지금: {char_data.gold}G"]
     for item_name, count in owned.items():
-        description = item_dict[item_name].description if item_name in item_dict else ""
-        lines.append(f"▹ {item_name}×{count}: {description}")
+        item = item_dict.get(item_name)
+        if item is None:
+            lines.append(f"▹ {item_name}×{count}: (아이템 정보를 찾을 수 없습니다)")
+            continue
+        usable_suffix = (
+            " 비전투 상황에서 사용 가능." if item.usable_outside_battle else ""
+        )
+        lines.append(
+            f"▹ {item_name}×{count}: (코스트 {item.cost}/사거리 {item.attack_range}) "
+            f"{item.description}{usable_suffix}"
+        )
 
     reply = "\n".join(lines)
     return reply, NoncombatLogInfo(

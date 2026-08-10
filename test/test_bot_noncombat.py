@@ -532,14 +532,30 @@ def test_transfer_item_requires_target(monkeypatch, potion_item):
     assert "대상을 지정" in reply
 
 
-def test_bag_lists_gold_and_items(monkeypatch, potion_item, bomb_item):
+def test_bag_lists_gold_and_items_with_cost_range_and_usable_suffix(
+    monkeypatch, potion_item
+):
     acct = "user1"
     state = _make_state(acct)  # gold=10
-    inventory = Inventory({("동료", "포션"): 2, ("동료", "폭탄"): 1})
+    battle_only_item = ItemData(
+        id="화염병",
+        target_rule="SkillTargetRuleNamed",
+        cost=2,
+        attack_range=3,
+        effect=SkillEffectDamage(
+            ValueSourceType.FIXED, 15, ValueType.INTEGER, None, None
+        ),
+        description="적에게 화염 피해를 입힌다.",
+        usable_outside_battle=False,
+    )
+    inventory = Inventory({("동료", "포션"): 2, ("동료", "화염병"): 1})
     monkeypatch.setattr(
         noncombat_module,
         "load_item_data",
-        lambda spreadsheet, cache=None: {"포션": potion_item, "폭탄": bomb_item},
+        lambda spreadsheet, cache=None: {
+            "포션": potion_item,
+            "화염병": battle_only_item,
+        },
     )
     monkeypatch.setattr(
         noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
@@ -551,10 +567,29 @@ def test_bag_lists_gold_and_items(monkeypatch, potion_item, bomb_item):
         "◊ 동료의 소지품\n"
         "\n"
         "▹ 소지금: 10G\n"
-        f"▹ 포션×2: {potion_item.description}\n"
-        f"▹ 폭탄×1: {bomb_item.description}"
+        f"▹ 포션×2: (코스트 {potion_item.cost}/사거리 {potion_item.attack_range}) "
+        f"{potion_item.description} 비전투 상황에서 사용 가능.\n"
+        "▹ 화염병×1: (코스트 2/사거리 3) 적에게 화염 피해를 입힌다."
     )
     assert log_info is not None
+
+
+def test_bag_shows_placeholder_when_item_info_missing(monkeypatch):
+    """인벤토리에는 있지만 '아이템' 시트에서 찾을 수 없는 항목(삭제된
+    아이템 등)은 코스트/사거리 없이 안내 문구만 보여준다."""
+    acct = "user1"
+    state = _make_state(acct)
+    inventory = Inventory({("동료", "단종된 아이템"): 1})
+    monkeypatch.setattr(
+        noncombat_module, "load_item_data", lambda spreadsheet, cache=None: {}
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert "▹ 단종된 아이템×1: (아이템 정보를 찾을 수 없습니다)" in reply
 
 
 def test_bag_shows_gold_only_when_no_items(monkeypatch):
