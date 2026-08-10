@@ -930,7 +930,7 @@ class MastodonBotListener(StreamListener):
         서로 답글로 이어붙인 스레드로 보낸다. 반환값은 그 스레드의 마지막
         게시물 status dict — 이 답글에 이어지는 후속 게시물(다음 라운드
         공지 등)이 스레드 맨 끝에 달리게 하기 위함이다."""
-        mention_prefix = f"@{acct}\n"
+        mention_prefix = f"@{acct} "
         chunks = _split_for_post(text, len(mention_prefix))
         status = self._mastodon.status_post(
             f"{mention_prefix}{chunks[0]}",
@@ -983,7 +983,7 @@ class MastodonBotListener(StreamListener):
                 in_reply_to_id, acct, visibility, text, calc_text, media_ids
             )
 
-        mention_prefix = f"@{acct}\n"
+        mention_prefix = f"@{acct} "
         # spoiler_text에 번호 접미사(" (N/N)")가 붙을 수 있으므로, 먼저
         # 접미사 없이 나눠 조각 수를 가늠한 뒤 필요하면 그 접미사 길이만큼
         # 예산을 줄여 다시 나눈다.
@@ -1035,7 +1035,7 @@ class MastodonBotListener(StreamListener):
         status dict다."""
         reply_status = self._reply(in_reply_to_id, acct, visibility, text, media_ids)
         self._post_calc_followups(
-            reply_status["id"], visibility, calc_text, prefix=f"@{acct}\n"
+            reply_status["id"], visibility, calc_text, prefix=f"@{acct} "
         )
         return reply_status
 

@@ -87,7 +87,7 @@ def _dm_mention_prefix(dm_state: "DmBattleState") -> str:
     이 프리픽스를 붙여야 참가자가 스레드를 계속 확인할 수 있다."""
     if not dm_state.mentions:
         return ""
-    return " ".join(f"@{a}" for a in dm_state.mentions) + "\n"
+    return " ".join(f"@{a}" for a in dm_state.mentions) + " "
 
 
 _VALID_COLUMNS = [
