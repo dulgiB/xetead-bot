@@ -14,7 +14,7 @@ from spreadsheets.inventory import Inventory
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from spreadsheets.models.quest import (
-    DailyQuestData,
+    DailyQuestPools,
     DailyQuestResultMessageData,
     QuestData,
 )
@@ -336,13 +336,32 @@ def load_char_data(
 # ---------------------------------------------------------------------------
 
 
-def load_daily_quests(
+def load_daily_quest_pools(
     spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
-) -> list[DailyQuestData]:
-    """'일일 의뢰' 시트를 읽어 DailyQuestData 리스트를 반환한다."""
+) -> DailyQuestPools:
+    """'일일 의뢰' 시트를 읽어 DailyQuestPools를 반환한다.
+
+    `client_category`/`client_name`/`quest_content` 세 컬럼 쌍은 각각
+    `xxx`(값), `xxx_active`(TRUE/FALSE) 쌍으로만 유효하며, 서로 다른
+    컬럼 쌍끼리는 같은 행에 있어도 대응 관계가 없다 — 값이 있고
+    `xxx_active`가 TRUE인 행만 각자의 풀에 담는다.
+    """
     ws = _worksheet(spreadsheet, "일일 의뢰", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
-    return [DailyQuestData.from_dict(r) for r in records if r.get("id")]
+
+    def _pool(value_col: str, active_col: str) -> list[str]:
+        return [
+            str(r[value_col])
+            for r in records
+            if str(r.get(value_col, "") or "")
+            and parse_spreadsheet_bool(r.get(active_col, False))
+        ]
+
+    return DailyQuestPools(
+        client_categories=_pool("client_category", "client_category_active"),
+        client_names=_pool("client_name", "client_name_active"),
+        quest_contents=_pool("quest_content", "quest_content_active"),
+    )
 
 
 def load_daily_quest_result_messages(

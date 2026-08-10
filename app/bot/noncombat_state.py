@@ -6,7 +6,6 @@ from typing import Optional
 class DailyQuestMidState:
     """[의뢰] 응답 후 플레이어의 판정 답글을 기다리는 중간 상태."""
 
-    quest_id: str
     bot_reply_post_id: int  # 봇이 의뢰를 알려준 포스트 ID
 
 

@@ -22,20 +22,19 @@ class DailyQuestResultMessageData:
 
 
 @dataclass(frozen=True)
-class DailyQuestData:
-    id: str
-    client_name: str  # "로부터"/"으로부터" 조사까지 포함해서 입력 (예: "노인으로부터")
-    description: str
-    location: str  # 빈 문자열이면 위치 무관
+class DailyQuestPools:
+    """'일일 의뢰' 시트에서 읽어온 세 값 풀.
 
-    @classmethod
-    def from_dict(cls, raw: dict) -> "DailyQuestData":
-        return cls(
-            id=raw["id"],
-            client_name=raw["client_name"],
-            description=raw["description"],
-            location=str(raw.get("location", "") or ""),
-        )
+    client_category/client_name/quest_content는 각 컬럼 쌍(`xxx`,
+    `xxx_active`)이 사실상 독립된 테이블이라 행 단위로 서로 대응하지
+    않는다 — 조립 시 각 풀에서 따로 하나씩 뽑는다.
+    """
+
+    client_categories: list[str]
+    client_names: list[
+        str
+    ]  # "로부터"/"으로부터" 조사까지 포함해서 입력 (예: "노인으로부터")
+    quest_contents: list[str]
 
 
 @dataclass(frozen=True)

@@ -11,8 +11,8 @@ from spreadsheets.models.quest import DailyQuestSuccessType
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.load_data import (
+    load_daily_quest_pools,
     load_daily_quest_result_messages,
-    load_daily_quests,
     load_general_quests,
     load_inventory,
     load_item_data,
@@ -284,37 +284,30 @@ def handle_daily_quest_start(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        location, investigation_active, _, _ = load_location_and_investigation(
-            state.spreadsheet, cache=state.sheet_cache
-        )
-        daily_quests = load_daily_quests(state.spreadsheet, cache=state.sheet_cache)
+        pools = load_daily_quest_pools(state.spreadsheet, cache=state.sheet_cache)
     except Exception as e:
         msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    pool = [
-        q
-        for q in daily_quests
-        if investigation_active and (not q.location or q.location == location)
-    ]
-    if not pool:
-        msg = "◊ 현재 위치에서 받을 수 있는 의뢰가 없습니다."
+    if not (pools.client_categories and pools.client_names and pools.quest_contents):
+        msg = "◊ 현재 받을 수 있는 의뢰가 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    quest = random.choice(pool)
+    client_category = random.choice(pools.client_categories)
+    client_name = random.choice(pools.client_names)
+    quest_content = random.choice(pools.quest_contents)
 
-    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
-        quest_id=quest.id, bot_reply_post_id=0
-    )
+    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(bot_reply_post_id=0)
 
     reply = (
-        f"{quest.client_name} {quest.description} 의뢰를 받았다. 어떻게 할까?\n"
+        f"{client_category} {client_name} {quest_content} 의뢰를 받았다. 어떻게 할까?\n"
         "\n◊ [판정/(원하는 비전투 스테이터스)] 형식으로 답글을 달아 의뢰를 수행할 수 있습니다."
     )
     return reply, NoncombatLogInfo(
-        command_text=command_text, result=f"의뢰 배정: {quest.id} ({quest.client_name})"
+        command_text=command_text,
+        result=f"의뢰 배정: {client_category} {client_name} {quest_content}",
     )
 
 

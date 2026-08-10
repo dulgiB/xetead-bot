@@ -27,7 +27,7 @@ from helpers import get_test_preset  # noqa: E402
 from spreadsheets.inventory import Inventory  # noqa: E402
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet  # noqa: E402
 from spreadsheets.models.quest import (  # noqa: E402
-    DailyQuestData,
+    DailyQuestPools,
     DailyQuestResultMessageData,
     DailyQuestSuccessType,
     QuestData,
@@ -46,20 +46,19 @@ def _make_state(acct: str) -> BotState:
         spreadsheet=None,
         field_spreadsheet=None,
     )
-    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
-        quest_id="퀘스트1", bot_reply_post_id=123
-    )
+    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(bot_reply_post_id=123)
     return state
 
 
-def _daily_quest(
-    id_="q1",
-    client_name="길 잃은 어린아이로부터",
-    description="부모를 찾아 달라는",
-    location="",
-) -> DailyQuestData:
-    return DailyQuestData(
-        id=id_, client_name=client_name, description=description, location=location
+def _daily_quest_pools(
+    client_categories=("길 잃은",),
+    client_names=("어린아이로부터",),
+    quest_contents=("부모를 찾아 달라는",),
+) -> DailyQuestPools:
+    return DailyQuestPools(
+        client_categories=list(client_categories),
+        client_names=list(client_names),
+        quest_contents=list(quest_contents),
     )
 
 
@@ -227,17 +226,12 @@ def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
     state = _make_state(acct)
     monkeypatch.setattr(
         noncombat_module,
-        "load_location_and_investigation",
-        lambda spreadsheet, cache=None: ("마을", True, [], {}),
-    )
-    monkeypatch.setattr(
-        noncombat_module,
-        "load_daily_quests",
-        lambda spreadsheet, cache=None: [
-            _daily_quest(
-                client_name="길 잃은 어린아이로부터", description="부모를 찾아 달라는"
-            )
-        ],
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=("길 잃은",),
+            client_names=("어린아이로부터",),
+            quest_contents=("부모를 찾아 달라는",),
+        ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
@@ -256,17 +250,12 @@ def test_daily_quest_start_does_not_add_or_alter_particle(monkeypatch):
     state = _make_state(acct)
     monkeypatch.setattr(
         noncombat_module,
-        "load_location_and_investigation",
-        lambda spreadsheet, cache=None: ("마을", True, [], {}),
-    )
-    monkeypatch.setattr(
-        noncombat_module,
-        "load_daily_quests",
-        lambda spreadsheet, cache=None: [
-            _daily_quest(
-                client_name="마을 촌장으로부터", description="세금 장부를 정리해 달라는"
-            )
-        ],
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=("마을",),
+            client_names=("촌장으로부터",),
+            quest_contents=("세금 장부를 정리해 달라는",),
+        ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
@@ -276,19 +265,45 @@ def test_daily_quest_start_does_not_add_or_alter_particle(monkeypatch):
     )
 
 
-def test_daily_quest_start_unavailable_when_investigation_inactive(monkeypatch):
-    """investigation_active가 꺼져 있으면 위치 무관(location='') 의뢰도 제공하지 않는다."""
+def test_daily_quest_start_combines_pools_independently(monkeypatch):
+    """client_category/client_name/quest_content 세 풀은 행 단위로 대응하지
+    않는 독립적인 테이블이므로, 풀 크기가 서로 달라도(2×1×3) 조합이 가능해야
+    한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(random, "choice", lambda seq: seq[0])
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=("장터", "마을"),
+            client_names=("아주머니로부터",),
+            quest_contents=(
+                "무거운 짐을 옮겨 달라는",
+                "약초를 채집해 달라는",
+                "순찰해 달라는",
+            ),
+        ),
+    )
+
+    result, log_info = handle_daily_quest_start(acct, state)
+
+    assert result.startswith(
+        "장터 아주머니로부터 무거운 짐을 옮겨 달라는 의뢰를 받았다. 어떻게 할까?"
+    )
+
+
+def test_daily_quest_start_unavailable_when_any_pool_empty(monkeypatch):
+    """id/row 단위 검증이 없으므로, 세 풀 중 하나라도 active인 값이 없으면
+    조합 자체가 불가능해 의뢰를 제공하지 않는다."""
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
         noncombat_module,
-        "load_location_and_investigation",
-        lambda spreadsheet, cache=None: ("마을", False, [], {}),
-    )
-    monkeypatch.setattr(
-        noncombat_module,
-        "load_daily_quests",
-        lambda spreadsheet, cache=None: [_daily_quest(location="")],
+        "load_daily_quest_pools",
+        lambda spreadsheet, cache=None: _daily_quest_pools(
+            client_categories=(),
+        ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
