@@ -828,6 +828,13 @@ class MastodonBotListener(StreamListener):
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
+        # 14. [가방] — 소지금/아이템 확인 (어떤 맥락에서도 사용 가능)
+        if _RE_BAG.search(text):
+            response, log_info = handle_bag(acct, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
+            return
+
     def _post_admin_result(
         self,
         result: AdminCommandResult,
