@@ -2,8 +2,8 @@ import logging
 import random
 import re
 import traceback
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Callable, Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
@@ -76,7 +76,9 @@ _RE_END = re.compile(rf"\[{whitespace_tolerant_literal('전투종료')}]")
 _RE_INVESTIGATION_BATTLE = re.compile(rf"\[{whitespace_tolerant_literal('상시전투')}]")
 _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
 _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생')}]")
-_RE_PROXY = re.compile(r"(?:^|\n)\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[.+])\s*$", re.DOTALL)
+_RE_PROXY = re.compile(
+    r"^\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[[^\[\]\n]+])\s*$", re.MULTILINE
+)
 
 
 def _dm_mention_prefix(dm_state: "DmBattleState") -> str:
@@ -111,6 +113,10 @@ class AdminCommandResult:
     set_practice_active_post: bool = False
     # 프록시 커맨드(_cmd_proxy)로 캐릭터 커맨드가 정산된 경우 로그_전투 기록용 자료
     battle_log: Optional[BattleCommandLog] = None
+    # 한 메시지에 줄바꿈으로 여러 프록시 커맨드가 실려 각각 별도의
+    # BattleCommandLog가 나온 경우 battle_log(단일) 대신 여기에 담는다.
+    # 두 필드 모두 _persist_battle_log가 순서대로 처리한다.
+    battle_logs: list[BattleCommandLog] = field(default_factory=list)
     # reply_text에서 분리된 계산식. 비어 있지 않으면 reply_text 게시 후
     # spoiler_text="계산식"을 붙인 접힌(CW) 후속 게시물로 이어 보낸다.
     calc_text: str = ""
@@ -145,6 +151,35 @@ class AdminCommandResult:
     game_post_calc_prefix: str = ""
 
 
+def _dispatch_proxy_commands(
+    text: str,
+    run: Callable[[str, str], tuple[str, str, Optional[BattleCommandLog]]],
+) -> Optional[AdminCommandResult]:
+    """text에서 줄 단위로 "(◊ )이름 [커맨드]" 형태와 매칭되는 모든 프록시
+    커맨드를 찾아 run()으로 하나씩 처리하고, 결과를 답글/계산식은 빈 줄로
+    이어붙이고 battle_log는 battle_logs 리스트로 모아 하나의
+    AdminCommandResult로 합친다. 매칭되는 줄이 하나도 없으면 None을
+    반환해 호출측이 다음 분기로 넘어가게 한다."""
+    matches = list(_RE_PROXY.finditer(text))
+    if not matches:
+        return None
+    reply_parts = []
+    calc_parts = []
+    battle_logs = []
+    for m in matches:
+        reply_text, calc_text, battle_log = run(m.group(1).strip(), m.group(2).strip())
+        reply_parts.append(reply_text)
+        if calc_text:
+            calc_parts.append(calc_text)
+        if battle_log is not None:
+            battle_logs.append(battle_log)
+    return AdminCommandResult(
+        "\n\n".join(reply_parts),
+        battle_logs=battle_logs,
+        calc_text="\n\n".join(calc_parts),
+    )
+
+
 def handle_admin_command(
     text: str,
     state: "BotState",
@@ -166,15 +201,11 @@ def handle_admin_command(
             return _cmd_dm_battle_continue(dm_state, state)
         if _RE_END.search(text):
             return _cmd_dm_battle_end(dm_state, state)
-        if m := _RE_PROXY.search(text):
-            char_name = m.group(1).strip()
-            cmd_str = m.group(2).strip()
-            reply_text, calc_text, battle_log = _cmd_dm_battle_proxy(
-                dm_state, char_name, cmd_str, state
-            )
-            return AdminCommandResult(
-                reply_text, battle_log=battle_log, calc_text=calc_text
-            )
+        if result := _dispatch_proxy_commands(
+            text,
+            lambda name, cmd: _cmd_dm_battle_proxy(dm_state, name, cmd, state),
+        ):
+            return result
         return AdminCommandResult(
             "◊ 전투 진행 중에는 [진행]/[전투속행]/[전투종료] 또는 "
             "'{캐릭터 이름} [커맨드]' 형식의 프록시 커맨드만 사용할 수 있습니다."
@@ -196,10 +227,12 @@ def handle_admin_command(
     if _RE_INVESTIGATION_BATTLE.search(text):
         return _cmd_investigation_battle(text, mentions or [], state, visibility)
 
-    if m := _RE_MANUAL_PLACE.search(text):
-        name = m.group(1).strip()
-        faction_col_str = m.group(2).strip()
-        return AdminCommandResult(_cmd_manual_place(name, faction_col_str, state))
+    if manual_place_matches := list(_RE_MANUAL_PLACE.finditer(text)):
+        replies = [
+            _cmd_manual_place(m.group(1).strip(), m.group(2).strip(), state)
+            for m in manual_place_matches
+        ]
+        return AdminCommandResult("\n".join(replies))
 
     if _RE_BATTLE_START.search(text):
         name_match = _RE_BATTLE_NAME.search(text)
@@ -216,13 +249,10 @@ def handle_admin_command(
         end_reply, end_calc = _cmd_end(state)
         return AdminCommandResult(end_reply, calc_text=end_calc)
 
-    if m := _RE_PROXY.search(text):
-        char_name = m.group(1).strip()
-        cmd_str = m.group(2).strip()
-        reply_text, calc_text, battle_log = _cmd_proxy(char_name, cmd_str, state)
-        return AdminCommandResult(
-            reply_text, battle_log=battle_log, calc_text=calc_text
-        )
+    if result := _dispatch_proxy_commands(
+        text, lambda name, cmd: _cmd_proxy(name, cmd, state)
+    ):
+        return result
 
     return AdminCommandResult("◊ 알 수 없는 관리자 커맨드입니다.")
 

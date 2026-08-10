@@ -86,8 +86,8 @@ class _TextExtractor(HTMLParser):
 
     `<p>`/`<br>` 등 블록 경계에서 줄바꿈을 넣지 않으면 여러 문단이 그대로
     이어붙어 "묘사 문단\n\n◊ 커맨드" 같은 여러 줄짜리 입력이 한 줄로
-    뭉개진다 — 프록시 커맨드가 마지막 줄만 파싱하도록 하려면 문단 구분이
-    plain text에도 살아있어야 한다."""
+    뭉개진다 — 프록시 커맨드는 줄 단위로 매칭되므로(여러 개를 한 메시지에
+    함께 실을 수 있다) 문단 구분이 plain text에도 살아있어야 한다."""
 
     _BLOCK_TAGS = {"p", "br", "div"}
 
@@ -861,6 +861,8 @@ class MastodonBotListener(StreamListener):
                     result.calc_text,
                 )
             _persist_battle_log(state, result.battle_log, str(reply_status["id"]))
+            for extra_log in result.battle_logs:
+                _persist_battle_log(state, extra_log, str(reply_status["id"]))
 
             if result.set_preparation_post:
                 state.preparation_status_id = reply_status["id"]

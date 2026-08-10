@@ -251,6 +251,54 @@ def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     )
 
 
+def test_handle_admin_command_processes_multiple_proxy_commands_in_one_message():
+    """상시전투/DM전투 배치가 이미 한 메시지에 여러 [배치/...]를 받아들이는
+    것처럼, 프록시 커맨드도 줄바꿈으로 구분된 여러 "◊ 이름 [커맨드]"를
+    한 메시지에서 모두 처리해야 한다 — 적마다 매번 별도 게시물을 보내는
+    번거로움을 없애기 위함."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적1"] = get_test_preset("적1")
+    state.name_dict["적2"] = get_test_preset("적2")
+    state.pending_placements.append(
+        ("적1", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.pending_placements.append(
+        ("적2", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    result = admin_module.handle_admin_command(
+        "◊ 적1 [공격/유효 캐릭터]\n◊ 적2 [공격/유효 캐릭터]", state
+    )
+
+    assert "적1" in result.reply_text
+    assert "적2" in result.reply_text
+    assert len(result.battle_logs) == 2
+
+
+def test_manual_place_accepts_multiple_placements_in_one_message():
+    """[배치/...]도 프록시 커맨드와 마찬가지로 한 메시지에 여러 개를 줄바꿈으로
+    함께 보내면 전부 pending_placements에 등록되어야 한다."""
+    state = _make_state()
+    state.name_dict["적1"] = get_test_preset("적1")
+    state.name_dict["적2"] = get_test_preset("적2")
+
+    result = admin_module.handle_admin_command(
+        "[배치/적1/적군 1열]\n[배치/적2/적군 2열]", state
+    )
+
+    assert "적1" in result.reply_text
+    assert "적2" in result.reply_text
+    assert state.pending_placements == [
+        ("적1", FactionType.ENEMY, BattlefieldColumnIndex.from_str("1")),
+        ("적2", FactionType.ENEMY, BattlefieldColumnIndex.from_str("2")),
+    ]
+
+
 def test_continue_battle_marks_round_start_for_field_image():
     """[전투속행]은 다음 라운드 시작(ENEMY_PRE_ACTION 진입)이므로 이미지를
     붙여야 한다."""
