@@ -28,6 +28,7 @@ from battle.objects.skill.models import SkillData
 from bot.battle_reply_text import (
     format_battle_reply,
     format_eliminated_characters,
+    format_final_hp_roster,
     format_round_end_log_entries,
 )
 from helpers import get_test_preset
@@ -825,3 +826,41 @@ def test_format_eliminated_characters_lists_names_without_trailing_label():
 
 def test_format_eliminated_characters_empty_when_no_one_eliminated():
     assert format_eliminated_characters([]) == ""
+
+
+def test_format_final_hp_roster_nests_companion_under_owner():
+    """동료(소환수)는 항상 맨 아래에 나열되는 대신 owner 캐릭터 줄 바로
+    아래에 "↳ {이름} | ..."로 중첩되어야 한다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("아군 1", max_hp=100),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("동료", max_hp=26), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("아군 2", max_hp=50),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(1),
+    )
+    ctx.companion_owners[CharacterId("동료")] = CharacterId("아군 1")
+
+    roster = format_final_hp_roster(ctx)
+
+    assert roster == ("▹ 아군 1 | 100/100\n↳ 동료 | 26/26\n▹ 아군 2 | 50/50")
+
+
+def test_format_final_hp_roster_shows_orphaned_companion_at_top_level():
+    """owner가 전투 중 이미 전장에서 제거되어 없다면, 그 동료는 중첩 없이
+    최상위 "▹" 줄로 보여야 한다(누락되면 안 된다)."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("동료", max_hp=26), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.companion_owners[CharacterId("동료")] = CharacterId("사라진 오너")
+
+    roster = format_final_hp_roster(ctx)
+
+    assert roster == "▹ 동료 | 26/26"
