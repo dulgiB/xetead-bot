@@ -98,19 +98,21 @@ def format_battle_end_log_entries(
 ) -> tuple[str, str]:
     """전투 종료 시점에 발동하는 효과(유예된 재앙 등)의 결과를 "【전투 종료
     처리】" 헤더 하나 아래 모든 대상의 결과를 나열한 (본문, 계산식) 튜플을
-    반환한다. 발동한 효과가 없으면 둘 다 빈 문자열이다."""
+    반환한다. 전투 종료 정산은 CW로 접어 두지 않고 한 번에 다 보여주는
+    편이 낫다는 판단으로, 계산식도 본문에 함께 포함시키고 두 번째 값은
+    항상 빈 문자열이다(호출측이 CW 후속 게시물을 만들지 않도록). 발동한
+    효과가 없으면 둘 다 빈 문자열이다."""
     if not entries:
         return "", ""
     lines = []
-    calc_lines = []
     for entry in entries:
         line, calc, final_value = _format_entry(context, entry)
         lines.append(line)
         if calc:
-            calc_lines.append(f"▹ {entry.target_name} | {calc} → {final_value}")
+            lines.append(f"　↳ {calc} → {final_value}")
     header = "【전투 종료 처리】"
     body = f"{header}\n" + "\n".join(lines)
-    calc = f"{header}\n" + "\n".join(calc_lines) if calc_lines else ""
+    calc = ""
     return body, calc
 
 
