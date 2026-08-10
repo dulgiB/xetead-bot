@@ -384,7 +384,7 @@ def handle_daily_quest_roll(
         f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」\n{judgment}\n"
     )
     if save_succeeded:
-        result += "\n의뢰를 완수했다. 사례로 1G를 획득했다."
+        result += f"\n의뢰를 완수했다. 사례로 1G를 획득했다. (소지금: {new_gold}G)"
     else:
         result += (
             "의뢰 결과 저장에 실패했습니다. 이 답글에 다시 답글로 재시도해 주세요."

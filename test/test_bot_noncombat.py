@@ -118,7 +118,7 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
 
     result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
-    assert "사례로 1G를 획득했다" in result
+    assert "사례로 1G를 획득했다. (소지금: 11G)" in result
     assert acct not in state.noncombat.daily_quest_mid
     # 캐릭터 데이터는 매 커맨드마다 새로 읽으므로, 로컬 캐시가 아니라
     # 스프레드시트에 실제로 반영된 값(gold=11)을 검증한다.
@@ -218,7 +218,7 @@ def test_daily_quest_roll_adds_blank_line_before_completion_message(monkeypatch)
 
     result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
-    assert "\n\n의뢰를 완수했다. 사례로 1G를 획득했다." in result
+    assert "\n\n의뢰를 완수했다. 사례로 1G를 획득했다. (소지금: 11G)" in result
 
 
 def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
