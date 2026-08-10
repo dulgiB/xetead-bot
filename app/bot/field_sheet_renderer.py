@@ -162,6 +162,13 @@ def _build_faction_block(
 
     for col_idx, column in enumerate(_BATTLEFIELD_COLUMNS):
         slots = context.position_map[faction][column]
+        # position_map은 슬롯 인덱스(0~2)를 키로 갖는데, 캐릭터가 전장에서
+        # 빠지면 그 슬롯 키만 pop되고 나머지 슬롯은 그대로 남는다(예: 슬롯0이
+        # 빠지면 {1: b, 2: c}). 그 인덱스를 그대로 행에 매핑하면 필드
+        # 시트에서 헤더와 가장 가까운 "앞" 칸이 빈칸으로 보이게 된다 —
+        # 실제 슬롯 번호와 무관하게 남아 있는 순서대로 앞(main_row_start)부터
+        # 채워 빈칸이 생기지 않게 한다.
+        occupants = [slots[i] for i in sorted(slots.keys())]
         sheet_col = col_idx + 2  # B=2
 
         for slot in range(CHARACTER_PER_COLUMN):
@@ -170,10 +177,10 @@ def _build_faction_block(
             buff_row = name_row + 2
             buff_cell = rowcol_to_a1(buff_row, sheet_col)
 
-            char_id = slots.get(slot)
-            if char_id is None:
+            if slot >= len(occupants):
                 notes[buff_cell] = ""
                 continue
+            char_id = occupants[slot]
 
             char = context.characters[char_id]
             grid[name_row - block_top][col_idx] = _format_name_line(char)

@@ -29,9 +29,9 @@ from PIL import Image, ImageChops
 from bot.sheet_cache import SheetCache
 
 _FIELD_SHEET = "필드"
-_EXPORT_RANGE = "A1:M28"
+_EXPORT_RANGE = "A1:M32"
 _RASTER_DPI = 200
-_CROP_PADDING = 10
+_CROP_PADDING = 0
 
 
 def _export_url(spreadsheet_id: str, gid: int, range_a1: str) -> str:

@@ -158,9 +158,9 @@ def test_advance_phase_always_marks_field_image():
 
 
 def test_enemy_post_action_summary_includes_calculation(monkeypatch):
-    """적 공격 정산(ENEMY_POST_ACTION) 게시물에도 대미지 계산식(↳ ...)이
-    표시되어야 한다 — HP 증감 요약만으로는 계수/주사위 계산 과정이
-    누락된다."""
+    """적 공격 정산(ENEMY_POST_ACTION) 게시물의 계산식은 본문(game_post_text)이
+    아니라 별도의 CW 후속 게시물용 game_post_calc_text로 분리돼야 한다 —
+    본문(+필드 시트 이미지)은 항상 짧고 바로 보이게 남겨야 하기 때문이다."""
     monkeypatch.setattr(
         log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
     )
@@ -180,8 +180,10 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     _cmd_advance_phase(state)  # → 아군 행동
     to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
 
-    assert "↳" in to_post_action.game_post_text
+    assert "1d6" not in to_post_action.game_post_text
     assert "적 캐릭터" in to_post_action.game_post_text
+    assert "1d6" in to_post_action.game_post_calc_text
+    assert "적 캐릭터" in to_post_action.game_post_calc_text
 
 
 def test_advance_phase_writes_back_post_action_damage(monkeypatch):
@@ -240,13 +242,61 @@ def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     )
     _cmd_battle_start(state)
 
-    reply_text, _battle_log = admin_module._cmd_proxy(
+    reply_text, _calc_text, _battle_log = admin_module._cmd_proxy(
         "적 캐릭터", "[이동/3열 - 공격/유효 캐릭터]", state
     )
 
     assert reply_text == (
         "적 캐릭터 【이동 ▸ 3열】\n\n적 캐릭터 【공격 ▸ 유효 캐릭터】"
     )
+
+
+def test_handle_admin_command_processes_multiple_proxy_commands_in_one_message():
+    """상시전투/DM전투 배치가 이미 한 메시지에 여러 [배치/...]를 받아들이는
+    것처럼, 프록시 커맨드도 줄바꿈으로 구분된 여러 "◊ 이름 [커맨드]"를
+    한 메시지에서 모두 처리해야 한다 — 적마다 매번 별도 게시물을 보내는
+    번거로움을 없애기 위함."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적1"] = get_test_preset("적1")
+    state.name_dict["적2"] = get_test_preset("적2")
+    state.pending_placements.append(
+        ("적1", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.pending_placements.append(
+        ("적2", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    result = admin_module.handle_admin_command(
+        "◊ 적1 [공격/유효 캐릭터]\n◊ 적2 [공격/유효 캐릭터]", state
+    )
+
+    assert "적1" in result.reply_text
+    assert "적2" in result.reply_text
+    assert len(result.battle_logs) == 2
+
+
+def test_manual_place_accepts_multiple_placements_in_one_message():
+    """[배치/...]도 프록시 커맨드와 마찬가지로 한 메시지에 여러 개를 줄바꿈으로
+    함께 보내면 전부 pending_placements에 등록되어야 한다."""
+    state = _make_state()
+    state.name_dict["적1"] = get_test_preset("적1")
+    state.name_dict["적2"] = get_test_preset("적2")
+
+    result = admin_module.handle_admin_command(
+        "[배치/적1/적군 1열]\n[배치/적2/적군 2열]", state
+    )
+
+    assert "적1" in result.reply_text
+    assert "적2" in result.reply_text
+    assert state.pending_placements == [
+        ("적1", FactionType.ENEMY, BattlefieldColumnIndex.from_str("1")),
+        ("적2", FactionType.ENEMY, BattlefieldColumnIndex.from_str("2")),
+    ]
 
 
 def test_continue_battle_marks_round_start_for_field_image():
@@ -592,6 +642,8 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
         _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
     )
 
+    # 계산식이 있으면 본문(요약)은 spoiler_text로, 계산식은 CW 처리된
+    # status로 들어간 게시물 하나로 합쳐 보낸다.
     reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
     char_reply = reply_calls[-1]
     assert char_reply["media_ids"] is None
@@ -599,6 +651,62 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     # "@계정 커맨드파트헤더"처럼 멘션 바로 뒤에 내용이 붙으면 가독성이
     # 나빠지므로, 멘션 다음은 줄바꿈으로 시작해야 한다.
     assert char_reply["status"].startswith("@ally_acct\n")
+
+
+def test_character_command_reply_merges_calc_into_single_cw_post(monkeypatch):
+    """계산식이 있는 커맨드 답글은 게시물 두 개(본문 + CW 후속)가 아니라,
+    본문을 spoiler_text로, 계산식을 status로 넣은 게시물 하나로 합쳐
+    보내야 한다. 계산식 줄 끝에는 최종 값("→ 값")이 붙어야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
+    monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    active_post_id = state.active_phase_post_id
+
+    before_calls = len(mastodon.status_post_calls)
+    listener.on_notification(
+        _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
+    )
+    new_calls = mastodon.status_post_calls[before_calls:]
+
+    # 계산식이 있는 답글은 게시물 하나로 끝나야 한다 (본문 + 별도 CW 후속
+    # 게시물로 두 개가 되면 안 된다).
+    assert len(new_calls) == 1
+    call = new_calls[0]
+
+    target = state.session.context.characters[CharacterId("적 캐릭터")]
+    dealt = 100 - target.status.curr_hp
+    assert call["spoiler_text"] == (
+        f"【공격 ▸ 적 캐릭터】\n▹ 적 캐릭터 | -{dealt} → {target.status.curr_hp}/100"
+    )
+    assert "↳" not in call["spoiler_text"]
+    assert "@ally_acct" not in call["spoiler_text"]
+
+    assert call["status"].startswith("@ally_acct\n")
+    assert "【공격 ▸ 적 캐릭터】" in call["status"]
+    assert f"→ -{dealt}" in call["status"]
 
 
 def test_main_battle_idle_chat_still_gets_error_reply(monkeypatch):
@@ -970,11 +1078,11 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
     state.practice = ps
 
     first_acct = side_to_acct[ps.first_mover]
-    _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
+    _, _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
     assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
 
     second_acct = side_to_acct[ps.second_mover]
-    _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+    _, _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
 
     assert "종료" in game_post
     assert "승자: 1팀" in game_post
@@ -1093,7 +1201,7 @@ def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_erro
     )
     state.practice = ps
 
-    reply, game_post, battle_log = _handle_practice_command(
+    reply, _calc_text, game_post, battle_log = _handle_practice_command(
         "acct_a", "[이동/2] [이동/3]", state
     )
 
@@ -1541,8 +1649,13 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
         _make_notification("player_acct", 3, active_post_id, "[공격/고블린]")
     )
 
-    char_reply = mastodon.status_post_calls[-1]
-    assert str(dm_state.session.context) in char_reply["status"]
+    # 계산식이 있으면 본문(필드 상태가 덧붙은 텍스트)은 spoiler_text로,
+    # 계산식은 status(계산식만 담긴 CW 본문)로 들어간다 — 답글로 온 첫
+    # 게시물 호출을 확인하고 사용자에게 실제로 보이는 두 필드를 합쳐 확인한다.
+    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
+    char_reply = reply_calls[-1]
+    visible_text = char_reply.get("spoiler_text", "") + char_reply["status"]
+    assert str(dm_state.session.context) in visible_text
 
 
 def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):

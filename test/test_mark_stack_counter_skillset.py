@@ -426,14 +426,12 @@ class TestPassiveSkill:
 
         before = len(ctx.results)
         manager.process_command(parse_character_command(caster, "[공격/적군]", ctx))
-        reply = format_battle_reply(ctx, caster, ctx.results[before:])
+        reply, calc = format_battle_reply(ctx, caster, ctx.results[before:])
 
         assert reply == (
-            "【공격 ▸ 적군】\n"
-            "▹ 적군 | -100 → 900/1000\n"
-            "↳ (100 + 0[0d6])\n"
-            "▹ 적군 | [Mark]×1 부여 → 최종 1"
+            "【공격 ▸ 적군】\n▹ 적군 | -100 → 900/1000\n▹ 적군 | [Mark]×1 부여 → 최종 1"
         )
+        assert calc == "【공격 ▸ 적군】\n▹ 적군 | (100 + 0[0d6]) → -100"
 
 
 class TestCost2Skill:
@@ -720,10 +718,11 @@ class TestMarkCounterBuff:
         before = len(ctx.results)
         manager.process_command(parse_character_command(enemy, "[이동/2열]", ctx))
         hp_after = ctx.characters[enemy].status.curr_hp
-        reply = format_battle_reply(ctx, enemy, ctx.results[before:])
+        reply, calc = format_battle_reply(ctx, enemy, ctx.results[before:])
 
         assert hp_before == hp_after
         assert reply == "【이동 ▸ 2열】"
+        assert calc == ""
 
     def test_reply_decomposes_coefficient_and_stack_with_source_labels(self):
         """반격 계산식은 (버프 계수 × 스택)을 미리 곱한 값 하나가 아니라, 각각
@@ -733,12 +732,12 @@ class TestMarkCounterBuff:
 
         before = len(ctx.results)
         manager.process_command(parse_character_command(enemy, "[이동/2열]", ctx))
-        reply = format_battle_reply(ctx, enemy, ctx.results[before:])
+        reply, calc = format_battle_reply(ctx, enemy, ctx.results[before:])
 
-        assert reply == (
+        assert reply == "【이동 ▸ 2열】\n▹ 적군 | -140 → 860/1000"
+        assert calc == (
             "【이동 ▸ 2열】\n"
-            "▹ 적군 | -140 → 860/1000\n"
-            "↳ (100 + 0[0d6]) × (0.7[MarkCounter 계수] × 2[Mark])"
+            "▹ 적군 | (100 + 0[0d6]) × (0.7[MarkCounter 계수] × 2[Mark]) → -140"
         )
 
 
