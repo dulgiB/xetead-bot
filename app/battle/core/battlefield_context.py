@@ -94,6 +94,7 @@ class BattlefieldContext:
         ally_label: str = FactionType.ALLY.value,
         enemy_label: str = FactionType.ENEMY.value,
         ally_first: bool = False,
+        compact_columns: bool = False,
     ) -> str:
         """필드 상황을 텍스트로 그린다. position_map은 항상 FactionType
         기준이라(대련의 SideType도 PracticeBattlefieldContext 내부에서
@@ -102,9 +103,17 @@ class BattlefieldContext:
 
         `ally_first`는 두 블록 중 어느 쪽을 먼저 그릴지만 바꾼다 — 라벨과
         실제 데이터(FactionType) 매핑 자체는 건드리지 않으므로 안전하다.
-        기본값 False(적군 먼저)는 본 전투 필드 이미지와 같은 순서다."""
+        기본값 False(적군 먼저)는 본 전투 필드 이미지와 같은 순서다.
+
+        `compact_columns=True`면 아무도 없는 열은 아예 줄을 그리지 않는다
+        — 본 전투는 필드 이미지가 따로 있어 7열 전체를 텍스트로도 보여줘야
+        하지만, 대련/상시전투는 텍스트가 유일한 필드 표시 수단이면서도
+        게시물 길이 제한(500자) 안에 버프 요약까지 넣어야 해서 빈 열까지
+        다 그리면 길이가 금방 초과된다."""
         enemy_str = []
         for column_idx, enemies in self.position_map[FactionType.ENEMY].items():
+            if compact_columns and not enemies:
+                continue
             enemy_list: list[CombatCharacter | str] = []
             for i in range(CHARACTER_PER_COLUMN):
                 if i in enemies.keys():
@@ -118,6 +127,8 @@ class BattlefieldContext:
 
         ally_str = []
         for column_idx, allies in self.position_map[FactionType.ALLY].items():
+            if compact_columns and not allies:
+                continue
             ally_list: list[CombatCharacter | str] = []
             for i in range(CHARACTER_PER_COLUMN):
                 if i in allies.keys():
@@ -129,8 +140,10 @@ class BattlefieldContext:
                 f"[{column_idx}] " + " | ".join(str(ally) for ally in ally_list)
             )
 
-        enemy_block = f"{enemy_label}\n{'\n'.join(enemy_str)}"
-        ally_block = f"{ally_label}\n{'\n'.join(ally_str)}"
+        enemy_block = (
+            f"{enemy_label}\n{'\n'.join(enemy_str) if enemy_str else '(없음)'}"
+        )
+        ally_block = f"{ally_label}\n{'\n'.join(ally_str) if ally_str else '(없음)'}"
         board = (
             f"{ally_block}\n\n{enemy_block}"
             if ally_first
