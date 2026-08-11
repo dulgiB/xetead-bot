@@ -648,6 +648,10 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id == state.practice.active_post_id
         ):
             practice_visibility = state.practice.visibility
+            # 정산 게시물(game_post)에 참여자 전원을 멘션하려면 호출 전에
+            # 미리 담아둬야 한다 — 전투가 이번 커맨드로 종료되면
+            # _handle_practice_command 내부에서 state.practice가 None이 된다.
+            practice_participants = list(state.practice.expected_accts)
             reply, calc_text, game_post, battle_log = _handle_practice_command(
                 acct, text, state
             )
@@ -666,8 +670,12 @@ class MastodonBotListener(StreamListener):
                 # 이 캐릭터 커맨드의 in_reply_to_id였던 게시물)에 다시 답글로
                 # 달면, 캐릭터의 커맨드 답글과 다음 라운드 공지가 같은 부모의
                 # 형제 게시물이 되어 스레드가 두 갈래로 갈라진다.
+                # 정산(라운드 전환/종료) 게시물은 바로 위 답글 작성자만
+                # 자동으로 알림을 받으므로, 대련/상시전투 참여자 전원이
+                # 알림을 받도록 멘션을 명시적으로 붙인다.
+                mention_prefix = _practice_mention_prefix(practice_participants)
                 new_post = self._mastodon.status_post(
-                    _truncate(game_post),
+                    _truncate(f"{mention_prefix}{game_post}"),
                     visibility=practice_visibility,
                     in_reply_to_id=reply_status["id"],
                 )
@@ -1073,6 +1081,16 @@ class MastodonBotListener(StreamListener):
                 post_kwargs["visibility"] = visibility
             calc_status = self._mastodon.status_post(f"{prefix}{chunk}", **post_kwargs)
             reply_to = calc_status["id"]
+
+
+def _practice_mention_prefix(participants: list[str]) -> str:
+    """대련/상시전투 참여자 멘션 텍스트를 만든다. 정산(라운드 전환/종료)
+    게시물은 바로 위 답글(캐릭터 커맨드에 대한 봇의 응답)에 이어 붙는
+    별도 게시물이라, 명시적으로 멘션하지 않으면 그 답글 작성자를 제외한
+    나머지 참여자는 알림을 받지 못한다."""
+    if not participants:
+        return ""
+    return " ".join(f"@{a}" for a in participants) + " "
 
 
 def _field_text(ps: PracticeBattleState) -> str:
