@@ -79,6 +79,11 @@ _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생
 _RE_PROXY = re.compile(
     r"^\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[[^\[\]\n]+])\s*$", re.MULTILINE
 )
+# "[판정: 선착 1인, 55분까지]"처럼 콜론을 쓰는 안내문 표기 — 캐릭터용
+# "[판정/스탯]" 커맨드(슬래시)와는 형식이 달라 실제 판정 커맨드로 오인되지
+# 않는다. admin이 플레이어 안내문에 이 표기를 쓰면서 봇을 실수로 멘션해도
+# "알 수 없는 관리자 커맨드입니다" 오류를 내지 않고 조용히 무시한다.
+_RE_JUDGE_ANNOUNCE = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*:[^\]]*]")
 
 
 def _dm_mention_prefix(dm_state: "DmBattleState") -> str:
@@ -253,6 +258,9 @@ def handle_admin_command(
         text, lambda name, cmd: _cmd_proxy(name, cmd, state)
     ):
         return result
+
+    if _RE_JUDGE_ANNOUNCE.search(text):
+        return AdminCommandResult("")
 
     return AdminCommandResult("◊ 알 수 없는 관리자 커맨드입니다.")
 

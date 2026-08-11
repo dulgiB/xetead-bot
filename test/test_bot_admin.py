@@ -1012,6 +1012,21 @@ def test_admin_can_no_longer_start_practice_directly(monkeypatch):
     assert "알 수 없는 관리자 커맨드" in reply["status"]
 
 
+def test_judge_announce_colon_form_is_silently_ignored():
+    """ "[판정: 선착 1인, 55분까지]"처럼 콜론을 쓴 안내문은 캐릭터용
+    "[판정/스탯]" 커맨드(슬래시)와 형식이 다르므로, admin이 플레이어 안내문에
+    이 표기를 쓰며 봇을 실수로 멘션해도 "알 수 없는 관리자 커맨드" 오류
+    없이 조용히 무시되어야 한다."""
+    state = _make_state()
+
+    result = admin_module.handle_admin_command(
+        "어떻게 할까? [판정: 선착 1인, 55분까지] [마법 4/지식 4/인간 4]", state
+    )
+
+    assert result.reply_text == ""
+    assert result.game_post_text is None
+
+
 def test_investigation_battle_remains_admin_only(monkeypatch):
     """상시전투는 대련과 달리 여전히 Admin 전용 명령어다 — 등록된 캐릭터가
     직접 [상시전투]를 보내도 아무 처리도 되면 안 된다(대련 경로로 잘못
