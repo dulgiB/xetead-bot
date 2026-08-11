@@ -1173,6 +1173,88 @@ def test_investigation_field_text_still_shows_enemy_before_ally():
     assert text.index("적군\n") < text.index("아군\n")
 
 
+def test_practice_field_text_hides_empty_columns():
+    """대련/상시전투 필드 텍스트는 게시물 길이 제한(500자) 안에 버프 요약도
+    함께 넣어야 하므로, 캐릭터가 배치되지 않은 열은 아예 줄을 그리지 않아야
+    한다 — 7열 전부를 항상 그리면 대부분 빈 칸("-")뿐인데도 길이가 금방
+    한도를 넘긴다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ps = PracticeBattleState(
+        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=False
+    )
+
+    text = main_module._field_text(ps)
+
+    assert "[1]" in text
+    assert "[2]" not in text
+    assert "[7]" not in text
+
+
+def test_practice_retire_command_removes_character_and_continues_when_teammate_remains():
+    """[탈락]은 선공/후공 순서와 무관하게 즉시 처리되며, 같은 편에 남은
+    캐릭터가 있으면 전투가 계속돼야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("A2"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
+    ps.start_round()
+
+    state = BotState(
+        char_dict={
+            "acct_a": get_test_preset("A"),
+            "acct_a2": get_test_preset("A2"),
+            "acct_b": get_test_preset("B"),
+        },
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    reply, _calc, game_post, _log = _handle_practice_command("acct_a", "[탈락]", state)
+
+    assert "탈락" in reply
+    assert CharacterId("A") not in ctx.characters
+    assert game_post is None  # 종료 게시물 없음 — 같은 편에 A2가 남아 있다
+    assert state.practice is not None
+
+
+def test_practice_retire_command_ends_battle_when_side_wiped():
+    """1v1에서 [탈락]으로 한쪽이 전멸하면 그 즉시 상대 팀 승리로 대련이
+    종료돼야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
+    ps.start_round()
+
+    state = BotState(
+        char_dict={
+            "acct_a": get_test_preset("A"),
+            "acct_b": get_test_preset("B"),
+        },
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    reply, _calc, game_post, _log = _handle_practice_command("acct_a", "[탈락]", state)
+
+    assert "탈락" in reply
+    assert game_post is not None
+    assert "종료" in game_post
+    assert "승자: 2팀" in game_post
+    assert state.practice is None
+
+
 def test_practice_winner_uses_hp_ratio_not_absolute_total():
     """팀 인원/최대 체력 총량이 다르면 절대 체력 합 비교는 불공평하다 —
     예를 들어 1팀(50/100=50%)이 2팀(60/200=30%)보다 체력 비율은 높지만

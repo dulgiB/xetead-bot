@@ -19,7 +19,7 @@ from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from utils.name_matching import whitespace_tolerant_literal
 
-from bot.battle_reply_text import format_battle_reply
+from bot.battle_reply_text import format_battle_reply, format_eliminated_characters
 from bot.commands import admin as admin_commands
 from bot.commands.admin import AdminCommandResult, handle_admin_command
 from bot.commands.character import handle_character_command
@@ -67,6 +67,7 @@ _RE_DECLARATION = re.compile(
 _RE_INVESTIGATION_DECLARATION = re.compile(
     rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([^\[\]]+)]"
 )
+_RE_PRACTICE_RETIRE = re.compile(rf"\[{whitespace_tolerant_literal('탈락')}]")
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
     rf"\[{whitespace_tolerant_literal('상시전투')}]"
 )
@@ -1088,6 +1089,7 @@ def _field_text(ps: PracticeBattleState) -> str:
         ally_label=ps.side_label(SideType.SIDE_1),
         enemy_label=ps.side_label(SideType.SIDE_2),
         ally_first=not ps.is_investigation,
+        compact_columns=True,
     )
 
 
@@ -1190,6 +1192,40 @@ def _handle_practice_command(
 
     if char_id not in ps.context.characters:
         return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None, None
+
+    if _RE_PRACTICE_RETIRE.search(text):
+        # 탈락은 턴 순서와 무관한 자진 기권 커맨드라, 선공/후공 페이즈
+        # 검증(manager.process_command)을 거치지 않고 즉시 처리한다.
+        side = ps.context.get_side(char_id)
+        ps.context.remove_character(char_id)
+        reply_text = format_eliminated_characters([char_id])
+        battle_log = log_sheets.BattleCommandLog(
+            field_id=str(ps.prep_post_id),
+            round_n=ps.round_n,
+            phase=ps.phase.value if ps.phase is not None else "",
+            battle_type=_practice_battle_type(ps),
+            command_text=text,
+        )
+
+        if ps.total_hp_by_side(side) > 0:
+            # 같은 편에 남은 캐릭터가 있으면 전투는 계속된다.
+            return reply_text, "", None, battle_log
+
+        battle_mode = "상시전투" if ps.is_investigation else "대련"
+        winner_label = ps.side_label(ps.winner())
+        game_post = (
+            f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
+            f"승자: {winner_label}\n\n"
+            f"{_field_text(ps)}"
+        )
+        _upsert_practice_field_row(
+            state,
+            ps,
+            phase_value=ps.phase.value if ps.phase is not None else "",
+            ended=True,
+        )
+        state.practice = None
+        return reply_text, "", game_post, battle_log
 
     current_phase = ps.phase
     if current_phase is None:
