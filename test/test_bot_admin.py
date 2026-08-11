@@ -935,6 +935,68 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     assert round_call["in_reply_to_id"] != active_post_id
 
 
+def test_practice_settlement_post_mentions_all_participants(monkeypatch):
+    """정산(라운드 전환/종료) 게시물은 바로 위 답글(행동한 캐릭터의 커맨드
+    응답)에 이어 붙는 별도 게시물이라, 명시적으로 멘션하지 않으면 방금
+    행동한 사람 외의 참여자는 알림을 받지 못해 다음 턴 게시물을 놓칠 수
+    있다 — 대련 참여자 전원이 멘션돼야 한다."""
+    state = _make_state()
+    char_dict = {
+        "swordsman_acct": get_test_preset("검사"),
+        "archer_acct": get_test_preset("궁수"),
+    }
+    name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification(
+            "swordsman_acct", 1, 0, "[대련]", extra_mentions=["archer_acct"]
+        )
+    )
+    prep_post_id = state.practice.prep_post_id
+
+    listener.on_notification(
+        _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/3열]")
+    )
+    listener.on_notification(
+        _make_notification("archer_acct", 3, prep_post_id, "[2팀/5열]")
+    )
+
+    active_post_id = state.practice.active_post_id
+    first_acct, second_name = (
+        ("swordsman_acct", "궁수")
+        if state.practice.first_mover.value == "1팀"
+        else ("archer_acct", "검사")
+    )
+    listener.on_notification(
+        _make_notification(first_acct, 4, active_post_id, f"[공격/{second_name}]")
+    )
+
+    round_call = mastodon.status_post_calls[-1]
+    assert "@swordsman_acct" in round_call["status"]
+    assert "@archer_acct" in round_call["status"]
+
+
 def test_practice_can_be_started_directly_by_character_account(monkeypatch):
     """대련은 상시전투와 달리 Admin 명령어가 아니라 캐릭터 전용 명령어다 —
     등록된 캐릭터 계정이 직접 [대련] @상대를 멘션하면, 발신자 본인과 함께
