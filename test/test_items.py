@@ -159,6 +159,48 @@ def test_item_not_in_inventory_raises(item_bomb):
         manager.process_command(cmd)
 
 
+def test_item_from_dict_allows_missing_effect_as_key_item():
+    """스토리 진행용 키 아이템은 전투 효과 없이 소지 자체가 목적이라
+    effect_0이 비어 있을 수 있다 — 예전에는 이 경우 ItemData.from_dict()가
+    ValueError를 던져 봇 시작 자체가 죽었다(item_dict 로딩이 부팅 경로에
+    있으므로)."""
+    row = {
+        "id": "수상한 양탄자",
+        "target_rule": "SkillTargetRuleSelf",
+        "cost": 0,
+        "range": 0,
+        "effect_0": "",
+        "description": "용도 불명의 양탄자.",
+        "usable_outside_battle": "FALSE",
+    }
+
+    item = ItemData.from_dict(row)
+
+    assert item.effect is None
+
+
+def test_key_item_without_effect_cannot_be_used_in_battle():
+    """effect가 없는 키 아이템은 전투 중 [아이템] 커맨드로 사용하려 하면
+    명시적인 오류로 거부돼야 한다(효과가 없다는 이유로 조용히 무시되거나
+    크래시하면 안 된다)."""
+    key_item = ItemData(
+        id="수상한 양탄자",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+    )
+    ctx = _make_context({"수상한 양탄자": key_item}, {("아군 1", "수상한 양탄자"): 1})
+    manager = _ally_action_manager(ctx)
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+
+    cmd = parse_character_command(CharacterId("아군 1"), "[수상한 양탄자]", ctx)
+    with pytest.raises(CommandValidationError):
+        manager.process_command(cmd)
+
+
 def test_unregistered_item_raises(item_bomb):
     """'아이템' 시트에 없는 아이템은 사용할 수 없어야 한다."""
     ctx = _make_context({"폭탄": item_bomb}, {("아군 1", "존재하지 않는 아이템"): 5})

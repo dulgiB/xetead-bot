@@ -400,6 +400,19 @@ def bomb_item() -> ItemData:
     )
 
 
+@pytest.fixture
+def key_item() -> ItemData:
+    """전투/비전투 효과 없이 소지 자체가 목적인 스토리 키 아이템."""
+    return ItemData(
+        id="수상한 양탄자",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        usable_outside_battle=True,
+    )
+
+
 def _make_state_with_name_dict(acct: str, char_name: str, curr_hp: int) -> BotState:
     state = _make_state(acct)
     state.noncombat_char_dict[acct] = NoncombatCharacterDataFromSpreadsheet(
@@ -454,6 +467,29 @@ def test_use_item_rejects_unsupported_effect_type(monkeypatch, bomb_item):
     )
 
     reply, log_info = handle_use_item(acct, "폭탄", None, 1, state)
+
+    assert "지원하지 않는 효과" in reply
+    assert log_info is not None
+
+
+def test_use_item_rejects_key_item_without_effect(monkeypatch, key_item):
+    """effect가 없는(None) 키 아이템도 대미지 아이템과 동일하게 "지원하지
+    않는 효과"로 거부돼야 한다 — isinstance(None, SkillEffectHeal)이
+    False이므로 크래시 없이 자연스럽게 같은 분기를 탄다."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"수상한 양탄자": key_item},
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_inventory",
+        lambda spreadsheet, cache=None: Inventory({("동료", "수상한 양탄자"): 1}),
+    )
+
+    reply, log_info = handle_use_item(acct, "수상한 양탄자", None, 1, state)
 
     assert "지원하지 않는 효과" in reply
     assert log_info is not None

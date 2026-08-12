@@ -1,6 +1,6 @@
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Optional, Type
 
 from battle.objects.models import CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
@@ -30,15 +30,16 @@ class ItemData:
     target_rule: str
     cost: int
     attack_range: int
-    effect: SkillEffectBase
+    # 스토리 진행용 키 아이템은 전투/비전투 효과 없이 소지 자체가 목적이라
+    # effect_0이 비어 있을 수 있다 — None이면 사용(전투 내 [아이템] 커맨드,
+    # 비전투 [사용])이 모두 명시적으로 거부된다.
+    effect: Optional[SkillEffectBase]
     description: str = ""
     usable_outside_battle: bool = False
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "ItemData":
         effect = parse_skill_effect(data, 0)
-        if effect is None:
-            raise ValueError(f"아이템({data.get('id')})에 효과(effect_0)가 없습니다.")
 
         return ItemData(
             id=str(data["id"]),
