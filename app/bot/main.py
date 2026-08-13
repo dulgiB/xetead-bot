@@ -50,7 +50,7 @@ from bot import field_restore, log_sheets
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data
-from bot.noncombat_state import NonCombatState
+from bot.noncombat_state import DailyQuestMidState, NonCombatState
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 from bot.sheet_cache import SheetCache
@@ -1484,6 +1484,26 @@ def _handle_dm_battle_command(
     return response, calc_text, end_post_text, end_calc, battle_log
 
 
+def _restore_daily_quest_mid_state(state: "BotState") -> int:
+    """캐릭터 시트의 daily_quest_status_id 컬럼을 읽어, 봇 재기동으로
+    사라진 NonCombatState.daily_quest_mid를 복원한다(finalize_daily_quest_mid
+    참고 — 의뢰 판정 대기 중일 때만 이 컬럼이 채워져 있다). 반환값은
+    복원된 건수."""
+    restored = 0
+    for acct, char_data in state.noncombat_char_dict.items():
+        if not char_data.daily_quest_status_id:
+            continue
+        try:
+            post_id = int(char_data.daily_quest_status_id)
+        except ValueError:
+            continue
+        state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
+            bot_reply_post_id=post_id
+        )
+        restored += 1
+    return restored
+
+
 def main() -> None:
     # 버프/스킬/패시브/아이템/인벤토리는 평상시엔 여기서 로드해도 바로
     # stale해지므로 쓰지 않고, 전투 세션(본 전투/DM 전투/대련/상시전투) 시작
@@ -1509,6 +1529,7 @@ def main() -> None:
         spreadsheet=spreadsheet,
         field_spreadsheet=field_spreadsheet,
     )
+    restored_daily_quest_count = _restore_daily_quest_mid_state(state)
 
     mastodon = Mastodon(
         access_token=os.environ["MASTODON_ACCESS_TOKEN"],
@@ -1518,6 +1539,8 @@ def main() -> None:
     me = mastodon.me()
     logger.info("봇 시작: @%s", me["acct"])
     logger.info("등록된 캐릭터: %d명", len(char_dict))
+    if restored_daily_quest_count:
+        logger.info("일일 의뢰 진행 상태 복원: %d건", restored_daily_quest_count)
 
     try:
         restored_summaries = field_restore.restore_all(

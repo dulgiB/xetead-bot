@@ -11,6 +11,7 @@ from battle.objects.skill.effects import SkillEffectDamage, SkillEffectHeal  # n
 from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
+    finalize_daily_quest_mid,
     handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
@@ -25,6 +26,7 @@ from bot.commands.noncombat import (  # noqa: E402
     parse_use_item_args,
 )
 from bot.main import BotState  # noqa: E402
+from bot.main import _restore_daily_quest_mid_state  # noqa: E402
 from bot.noncombat_state import DailyQuestMidState  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
 from spreadsheets.inventory import Inventory  # noqa: E402
@@ -388,6 +390,85 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
     assert saved_calls == [(None, "동료", 11, saved_calls[0][3])]
     assert log_info is not None
     assert log_info.error_trace is None
+
+
+def test_finalize_daily_quest_mid_persists_status_id_and_updates_in_memory_state(
+    monkeypatch,
+):
+    acct = "user1"
+    state = _make_state(acct)
+    saved_calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_character_daily_quest_status_id",
+        lambda *a, **k: saved_calls.append(a),
+    )
+
+    finalize_daily_quest_mid(acct, 999, state)
+
+    assert state.noncombat.daily_quest_mid[acct].bot_reply_post_id == 999
+    assert saved_calls == [(None, "동료", "999")]
+
+
+def test_finalize_daily_quest_mid_tolerates_persist_failure(monkeypatch):
+    """스프레드시트 저장이 실패해도 인메모리 mid_state는 정상 갱신되고,
+    예외가 호출측까지 전파되면 안 된다 — 재기동 복원만 안 될 뿐, 이 프로세스가
+    떠 있는 동안은 정상 진행돼야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("시트 접근 실패")
+
+    monkeypatch.setattr(
+        noncombat_module, "update_character_daily_quest_status_id", _boom
+    )
+
+    finalize_daily_quest_mid(acct, 999, state)
+
+    assert state.noncombat.daily_quest_mid[acct].bot_reply_post_id == 999
+
+
+def test_restore_daily_quest_mid_state_reads_status_id_column():
+    acct = "user1"
+    state = BotState(
+        char_dict={},
+        name_dict={},
+        noncombat_char_dict={
+            acct: NoncombatCharacterDataFromSpreadsheet(
+                name="동료", daily_quest_status_id="555"
+            ),
+            "user2": NoncombatCharacterDataFromSpreadsheet(name="다른캐릭터"),
+        },
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+
+    restored = _restore_daily_quest_mid_state(state)
+
+    assert restored == 1
+    assert state.noncombat.daily_quest_mid[acct].bot_reply_post_id == 555
+    assert "user2" not in state.noncombat.daily_quest_mid
+
+
+def test_restore_daily_quest_mid_state_skips_malformed_status_id():
+    acct = "user1"
+    state = BotState(
+        char_dict={},
+        name_dict={},
+        noncombat_char_dict={
+            acct: NoncombatCharacterDataFromSpreadsheet(
+                name="동료", daily_quest_status_id="not-a-number"
+            ),
+        },
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+
+    restored = _restore_daily_quest_mid_state(state)
+
+    assert restored == 0
+    assert acct not in state.noncombat.daily_quest_mid
 
 
 def test_daily_quest_roll_reports_failure_and_keeps_mid_when_save_fails(monkeypatch):
