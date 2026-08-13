@@ -15,6 +15,7 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_daily_quest_roll,
     handle_daily_quest_start,
     handle_investigation_accept,
+    handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
     handle_transfer_item,
@@ -32,6 +33,7 @@ from spreadsheets.models.quest import (  # noqa: E402
     DailyQuestResultMessageData,
     DailyQuestSuccessType,
     QuestData,
+    QuestLocationData,
 )
 
 
@@ -92,17 +94,223 @@ def test_handle_roll_reply_labels_dice_part_with_1d6(monkeypatch):
     assert "◊ 판정: 2[육체] + 6[1d6] → 「8」" in result
 
 
-def test_handle_investigation_accept_returns_log_info():
+def _quest_location(
+    location_id: str = "아도스",
+    active: bool = True,
+    description: str = "항구 마을이다.",
+) -> QuestLocationData:
+    return QuestLocationData(id=location_id, active=active, description=description)
+
+
+def _quest(
+    location_id: str = "아도스",
+    quest_type: str = "운반",
+    venue: str = "광장",
+    name: str = "광장 의뢰",
+    description: str = "어쩌구",
+    subtype: str = "상시",
+    reward: str = "6G",
+    available_until: str = "다음 스토리 진행 전까지",
+    taken_by: str = "",
+) -> QuestData:
+    return QuestData(
+        id=f"{location_id}_{quest_type}",
+        active=False,
+        location=venue,
+        name=name,
+        description=description,
+        type=quest_type,
+        subtype=subtype,
+        reward=reward,
+        available_until=available_until,
+        taken_by=taken_by,
+    )
+
+
+def test_handle_investigation_accept_returns_log_info(monkeypatch):
     """[수락]도 마찬가지로 NoncombatLogInfo를 반환해 로그에 남아야 한다."""
     acct = "user1"
     state = _make_state(acct)
-    state.noncombat.investigation_acct_to_quest_id[acct] = "q1"
+    state.noncombat.investigation_overview_quest[999] = "아도스_운반"
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
+    )
+    monkeypatch.setattr(noncombat_module, "update_quest_taken_by", lambda *a, **k: None)
 
-    result, log_info = handle_investigation_accept(acct, state)
+    result, log_info = handle_investigation_accept(acct, [], state, in_reply_to_id=999)
 
     assert "수주했습니다" in result
     assert log_info is not None
     assert log_info.command_text == "[수락]"
+
+
+def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch):
+    """[수락] 답글에 멘션된 인원 전원(+ 발신자)이 참여자로 등록되고, '일반 의뢰'
+    시트의 taken_by에 쉼표로 이어붙여 기록되어야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    state.noncombat.investigation_overview_quest[999] = "아도스_운반"
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
+    )
+    calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_quest_taken_by",
+        lambda spreadsheet, quest_id, taken_by, cache=None: calls.append(
+            (quest_id, taken_by)
+        ),
+    )
+
+    result, log_info = handle_investigation_accept(
+        acct, ["user2", "user3"], state, in_reply_to_id=999
+    )
+
+    # 참여자 전원 멘션은 handle_investigation_accept 자체가 아니라 main.py의
+    # _reply(mention_accts=...)가 게시물 맨 앞에 붙인다 — 여기서는 taken_by에
+    # 전원이 정확히 기록됐는지와 로그에 남는지만 확인한다.
+    assert "수주했습니다" in result
+    assert calls == [("아도스_운반", "user1,user2,user3")]
+    assert log_info is not None
+    assert log_info.result == "의뢰 수주: 광장 의뢰 (user1, user2, user3)"
+
+
+def test_investigation_accept_allows_different_quests_in_same_location(monkeypatch):
+    """같은 장소의 서로 다른 의뢰(운반/탐사)는 서로 다른 인원이 각각 독립적으로
+    수주할 수 있어야 한다 — 한 명이 하나를 수주해도 다른 의뢰는 막히지 않는다."""
+    state = _make_state("user1")
+    state.noncombat.investigation_overview_quest[100] = "아도스_운반"
+    state.noncombat.investigation_overview_quest[101] = "아도스_탐사"
+    taken_by_store: dict[str, str] = {}
+
+    def fake_load(spreadsheet, cache=None):
+        return _quest_location(), [
+            _quest(quest_type="운반", taken_by=taken_by_store.get("아도스_운반", "")),
+            _quest(
+                quest_type="탐사",
+                venue="상점가",
+                taken_by=taken_by_store.get("아도스_탐사", ""),
+            ),
+        ]
+
+    def fake_update(spreadsheet, quest_id, taken_by, cache=None):
+        taken_by_store[quest_id] = taken_by
+
+    monkeypatch.setattr(noncombat_module, "load_general_quest_sheet", fake_load)
+    monkeypatch.setattr(noncombat_module, "update_quest_taken_by", fake_update)
+
+    result1, _log1 = handle_investigation_accept("user1", [], state, in_reply_to_id=100)
+    result2, _log2 = handle_investigation_accept("user2", [], state, in_reply_to_id=101)
+
+    assert "수주했습니다" in result1
+    assert "수주했습니다" in result2
+    assert taken_by_store == {"아도스_운반": "user1", "아도스_탐사": "user2"}
+
+
+def test_investigation_accept_rejects_already_taken_quest(monkeypatch):
+    """taken_by가 이미 채워진 의뢰는 다시 [수락]할 수 없다."""
+    state = _make_state("user1")
+    state.noncombat.investigation_overview_quest[999] = "아도스_운반"
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [_quest(taken_by="user9")],
+        ),
+    )
+
+    result, log_info = handle_investigation_accept(
+        "user1", [], state, in_reply_to_id=999
+    )
+
+    assert "이미 다른 인원이 수주한 의뢰" in result
+
+
+def test_investigation_accept_rejects_character_already_busy_in_same_location(
+    monkeypatch,
+):
+    """같은 장소에서 이미 다른 의뢰를 수주한 캐릭터는 그 장소의 또 다른 의뢰를
+    수주할 수 없다 (taken_by 기준 판정)."""
+    state = _make_state("user1")
+    state.noncombat.investigation_overview_quest[101] = "아도스_탐사"
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [
+                _quest(quest_type="운반", taken_by="user1,user2"),
+                _quest(quest_type="탐사", venue="상점가"),
+            ],
+        ),
+    )
+
+    result, log_info = handle_investigation_accept(
+        "user1", [], state, in_reply_to_id=101
+    )
+
+    assert "이미 다른 의뢰를 수주한 캐릭터가 있어" in result
+    assert "@user1" in result
+
+
+def test_investigation_start_uses_location_description_as_menu_intro(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(description="한적한 항구 마을이다. 어디로 가 볼까?"),
+            [
+                _quest(quest_type="운반", venue="광장"),
+                _quest(quest_type="탐사", venue="상점가"),
+                _quest(quest_type="전투", venue="항구"),
+            ],
+        ),
+    )
+
+    result, log_info = handle_investigation_start(acct, state)
+
+    assert result.startswith("한적한 항구 마을이다. 어디로 가 볼까?")
+    assert "▸ [광장]" in result
+    assert "▸ [상점가]" in result
+    assert "▸ [항구]" in result
+
+
+def test_investigation_venue_choice_formats_quest_card(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [_quest(venue="광장", name="광장 의뢰", description="어쩌구")],
+        ),
+    )
+
+    result, log_info = handle_investigation_venue_choice(acct, "광장", state)
+
+    assert result == (
+        "[광장](으)로 이동했다.\n"
+        "\n"
+        "어쩌구\n"
+        "\n"
+        "[일반 의뢰] 광장 의뢰\n"
+        "▸ 계열: 운반 - 상시\n"
+        "▸ 클리어 가능 기간: 다음 스토리 진행 전까지\n"
+        "▸ 보상: 6G\n"
+        "\n"
+        "이 의뢰를 수락할까?\n"
+        "\n"
+        "◊ 의뢰를 받으려면 답글로 의뢰에 참여할 인원 전원을 멘션하면서 [수락]을 입력해 주세요."
+    )
+    assert state.noncombat.investigation_acct_to_quest_id[acct] == "아도스_운반"
 
 
 def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
@@ -318,28 +526,18 @@ def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
     수주로 이어지는 것을 방지)."""
     acct = "user1"
     state = _make_state(acct)
-    state.noncombat.investigation_venue_to_quest = {"장소A": "q1"}
     monkeypatch.setattr(
         noncombat_module,
-        "load_general_quests",
-        lambda spreadsheet, cache=None: [
-            QuestData(
-                id="q1",
-                name="퀘스트1",
-                description="설명",
-                type="탐사",
-                subtype="상시",
-                location="",
-                venue_name="장소A",
-                reward="10G",
-                available_until="",
-            )
-        ],
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [_quest(venue="장소A", name="퀘스트1", description="설명")],
+        ),
     )
 
     # 1. 유효한 장소를 선택 → quest_id가 저장된다
     handle_investigation_venue_choice(acct, "장소A", state)
-    assert state.noncombat.investigation_acct_to_quest_id.get(acct) == "q1"
+    assert state.noncombat.investigation_acct_to_quest_id.get(acct) == "아도스_운반"
 
     # 2. 같은 메뉴에 존재하지 않는 장소를 다시 입력 → 실패 응답이지만
     #    이전에 저장된 quest_id는 지워져야 한다

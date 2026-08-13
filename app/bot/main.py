@@ -785,9 +785,12 @@ class MastodonBotListener(StreamListener):
             and _RE_ACCEPT.search(text)
         ):
             response, log_info = handle_investigation_accept(
-                acct, state, in_reply_to_id
+                acct, mentions or [], state, in_reply_to_id
             )
-            reply_status = self._reply(status_id, acct, visibility, response)
+            expected_accts = [acct] + [m for m in (mentions or []) if m != acct]
+            reply_status = self._reply(
+                status_id, acct, visibility, response, mention_accts=expected_accts
+            )
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
@@ -933,13 +936,22 @@ class MastodonBotListener(StreamListener):
         visibility: str,
         text: str,
         media_ids: Optional[list] = None,
+        mention_accts: Optional[list[str]] = None,
     ) -> dict:
         """답글을 보낸다. 계산식이 길어 한 게시물 길이 한도를 넘으면
         truncate로 뒷부분을 잘라내지 않고, 줄 단위로 나눈 여러 게시물을
         서로 답글로 이어붙인 스레드로 보낸다. 반환값은 그 스레드의 마지막
         게시물 status dict — 이 답글에 이어지는 후속 게시물(다음 라운드
-        공지 등)이 스레드 맨 끝에 달리게 하기 위함이다."""
-        mention_prefix = f"@{acct} "
+        공지 등)이 스레드 맨 끝에 달리게 하기 위함이다.
+
+        mention_accts를 주면 발신자(acct) 한 명 대신 그 목록 전원을 앞에
+        멘션한다 (대련/DM 전투의 참여자 전원 멘션과 동일한 목적 — 여러
+        캐릭터가 함께 엮인 결과를 모두에게 알려야 할 때 사용)."""
+        mention_prefix = (
+            " ".join(f"@{a}" for a in mention_accts) + " "
+            if mention_accts
+            else f"@{acct} "
+        )
         chunks = _split_for_post(text, len(mention_prefix))
         status = self._mastodon.status_post(
             f"{mention_prefix}{chunks[0]}",

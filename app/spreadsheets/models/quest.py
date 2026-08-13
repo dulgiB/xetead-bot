@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from utils.spreadsheet_bool import parse_spreadsheet_bool
+
 
 class DailyQuestSuccessType(str, Enum):
     GREAT_SUCCESS = "대성공"
@@ -38,27 +40,56 @@ class DailyQuestPools:
 
 
 @dataclass(frozen=True)
-class QuestData:
+class QuestLocationData:
+    """'일반 의뢰' 시트에서 장소 자체를 나타내는 행.
+
+    `id`가 장소 이름이고 `name`이 비어 있는 행이 장소 행이다. 그 장소에
+    속한 의뢰 행들의 `id`는 `{장소 이름}_{의뢰 type}`로 고정된다
+    (`load_general_quest_sheet` 참고).
+    """
+
     id: str
+    active: bool
+    description: str
+
+    @classmethod
+    def from_dict(cls, raw: dict) -> "QuestLocationData":
+        return cls(
+            id=str(raw["id"]),
+            active=parse_spreadsheet_bool(raw.get("active", False)),
+            description=str(raw.get("description", "") or ""),
+        )
+
+
+@dataclass(frozen=True)
+class QuestData:
+    """'일반 의뢰' 시트에서 실제 의뢰를 나타내는 행 (`id` = `{장소 이름}_{type}`)."""
+
+    id: str
+    active: bool
+    location: str  # 세부 장소 표시 이름 (예: 광장/상점가/항구)
     name: str
     description: str
     type: str  # 운반 / 탐사 / 전투
     subtype: str  # 상시 / 일반
-    location: str
-    venue_name: str
     reward: str
     available_until: str
+    taken_by: str  # 이 의뢰를 수주한 캐릭터 acct들을 쉼표로 이어붙인 문자열 (없으면 "")
 
     @classmethod
     def from_dict(cls, raw: dict) -> "QuestData":
         return cls(
-            id=raw["id"],
-            name=raw["name"],
-            description=raw["description"],
-            type=raw.get("type", ""),
-            subtype=raw.get("subtype", ""),
+            id=str(raw["id"]),
+            active=parse_spreadsheet_bool(raw.get("active", False)),
             location=str(raw.get("location", "") or ""),
-            venue_name=str(raw.get("venue_name", "") or ""),
+            name=str(raw.get("name", "") or ""),
+            description=str(raw.get("description", "") or ""),
+            type=str(raw.get("type", "") or ""),
+            subtype=str(raw.get("subtype", "") or ""),
             reward=str(raw.get("reward", "") or ""),
             available_until=str(raw.get("available_until", "") or ""),
+            taken_by=str(raw.get("taken_by", "") or ""),
         )
+
+    def taken_by_list(self) -> list[str]:
+        return [a.strip() for a in self.taken_by.split(",") if a.strip()]
