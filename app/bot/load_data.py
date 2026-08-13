@@ -17,6 +17,7 @@ from spreadsheets.models.quest import (
     DailyQuestPools,
     DailyQuestResultMessageData,
     QuestData,
+    QuestLocationData,
 )
 from utils.spreadsheet_bool import parse_spreadsheet_bool
 
@@ -375,42 +376,37 @@ def load_daily_quest_result_messages(
     ]
 
 
-def load_general_quests(
+def load_general_quest_sheet(
     spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
-) -> list[QuestData]:
-    """'일반 의뢰' 시트를 읽어 QuestData 리스트를 반환한다."""
+) -> tuple[Optional[QuestLocationData], list[QuestData]]:
+    """'일반 의뢰' 시트를 읽어 (활성 장소, 그 장소에 속한 의뢰 목록)을 반환한다.
+
+    시트의 각 행은 `name`이 비어 있으면 장소 행(id=장소 이름), 채워져 있으면
+    의뢰 행(id=`{장소 이름}_{type}`)이다. `active=TRUE`인 장소 행이 현재
+    위치이며, 그 장소의 id를 접두사로 갖는 의뢰 행들만 반환한다. 활성 장소가
+    없으면 (None, [])을 반환한다.
+    """
     ws = _worksheet(spreadsheet, "일반 의뢰", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
-    return [QuestData.from_dict(r) for r in records if r.get("id")]
 
+    active_location: Optional[QuestLocationData] = None
+    for r in records:
+        if not r.get("id") or r.get("name"):
+            continue
+        if parse_spreadsheet_bool(r.get("active", False)):
+            active_location = QuestLocationData.from_dict(r)
+            break
 
-def load_location_and_investigation(
-    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
-) -> tuple[str, bool, list[str], dict[str, str]]:
-    """'현위치' 시트(1행)에서 (현재_위치, 상시조사_활성, [venue1..3], {venue→지문}) 반환.
+    if active_location is None:
+        return None, []
 
-    현위치 시트 컬럼:
-      location | investigation_active
-      venue_1 | venue_1_desc | venue_2 | venue_2_desc | venue_3 | venue_3_desc
-    """
-    ws = _worksheet(spreadsheet, "현위치", cache)
-    records = ws.get_all_records(value_render_option=_UNFORMATTED)
-    if not records:
-        return "", False, [], {}
-
-    row = records[0]
-    location = str(row.get("location", "") or "")
-    investigation_active = parse_spreadsheet_bool(
-        row.get("investigation_active", False)
-    )
-    venue_pairs = [
-        (str(row.get("venue_1", "") or ""), str(row.get("venue_1_desc", "") or "")),
-        (str(row.get("venue_2", "") or ""), str(row.get("venue_2_desc", "") or "")),
-        (str(row.get("venue_3", "") or ""), str(row.get("venue_3_desc", "") or "")),
+    prefix = f"{active_location.id}_"
+    quests = [
+        QuestData.from_dict(r)
+        for r in records
+        if r.get("name") and str(r.get("id", "")).startswith(prefix)
     ]
-    venues = [v for v, _ in venue_pairs if v]
-    venue_desc = {v: d for v, d in venue_pairs if v}
-    return location, investigation_active, venues, venue_desc
+    return active_location, quests
 
 
 def update_character_gold_and_quest_date(
@@ -496,6 +492,42 @@ def update_character_curr_hp(
     raise RuntimeError(
         f"캐릭터 '{char_name}'을 캐릭터/에너미 시트에서 찾을 수 없습니다."
     )
+
+
+def update_quest_taken_by(
+    spreadsheet: gspread.Spreadsheet,
+    quest_id: str,
+    taken_by: str,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """'일반 의뢰' 시트에서 해당 quest_id 행을 찾아 taken_by를 갱신한다."""
+    ws = _worksheet(spreadsheet, "일반 의뢰", cache)
+    values = (
+        cache.get_all_values("일반 의뢰")
+        if cache is not None
+        else ws.get_values(pad_values=True)
+    )
+    if not values:
+        raise RuntimeError(
+            "일반 의뢰 시트에 필수 컬럼이 없습니다: 헤더가 비어 있습니다"
+        )
+    header, rows = values[0], values[1:]
+
+    try:
+        id_col = header.index("id")
+        taken_by_col = header.index("taken_by") + 1
+    except ValueError as e:
+        raise RuntimeError(f"일반 의뢰 시트에 필수 컬럼이 없습니다: {e}") from e
+
+    for idx, row in enumerate(rows, start=2):
+        row_id = row[id_col] if id_col < len(row) else None
+        if row_id == quest_id:
+            ws.update_cell(idx, taken_by_col, taken_by)
+            if cache is not None:
+                cache.invalidate("일반 의뢰")
+            return
+
+    raise RuntimeError(f"의뢰 '{quest_id}'를 일반 의뢰 시트에서 찾을 수 없습니다.")
 
 
 def _load_enemy_skill_sheet(

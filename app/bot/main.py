@@ -31,6 +31,7 @@ from bot.commands.noncombat import (
     handle_daily_quest_roll,
     handle_daily_quest_start,
     handle_investigation_accept,
+    handle_investigation_decline,
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
@@ -768,7 +769,7 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id in nc.get_investigation_menu_post_ids()
         ):
             menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
-            if menu_acct == acct:
+            if menu_acct == acct and count_bracket_groups(text) >= 1:
                 venue_name = text.strip().strip("[]")
                 response, log_info = handle_investigation_venue_choice(
                     acct, venue_name, state
@@ -776,6 +777,8 @@ class MastodonBotListener(StreamListener):
                 post = self._reply(status_id, acct, visibility, response)
                 _persist_noncombat_log(state, log_info, str(post["id"]))
                 finalize_investigation_overview_post(acct, post["id"], state)
+            # menu_acct != acct(타인의 메뉴 게시물)이거나 대괄호 커맨드 자체가
+            # 없는 답글(사담 등)이면 조용히 무시한다.
             return
 
         # 8. 상시조사 수락 답글 (의뢰 개요 포스트에 대한 [수락] 답글)
@@ -785,9 +788,12 @@ class MastodonBotListener(StreamListener):
             and _RE_ACCEPT.search(text)
         ):
             response, log_info = handle_investigation_accept(
-                acct, state, in_reply_to_id
+                acct, mentions or [], state, in_reply_to_id
             )
-            reply_status = self._reply(status_id, acct, visibility, response)
+            expected_accts = [acct] + [m for m in (mentions or []) if m != acct]
+            reply_status = self._reply(
+                status_id, acct, visibility, response, mention_accts=expected_accts
+            )
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
@@ -840,6 +846,19 @@ class MastodonBotListener(StreamListener):
         # 14. [가방] — 소지금/아이템 확인 (어떤 맥락에서도 사용 가능)
         if _RE_BAG.search(text):
             response, log_info = handle_bag(acct, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
+            return
+
+        # 15. 의뢰 개요 포스트에 대한 그 외의 답글 ([수락]도 아니고 위의 다른
+        # 커맨드에도 매칭되지 않음) — 의뢰를 받지 않고 떠난 것으로 안내
+        if (
+            in_reply_to_id is not None
+            and in_reply_to_id in nc.get_investigation_overview_post_ids()
+        ):
+            response, log_info = handle_investigation_decline(
+                acct, state, in_reply_to_id
+            )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
@@ -933,13 +952,22 @@ class MastodonBotListener(StreamListener):
         visibility: str,
         text: str,
         media_ids: Optional[list] = None,
+        mention_accts: Optional[list[str]] = None,
     ) -> dict:
         """답글을 보낸다. 계산식이 길어 한 게시물 길이 한도를 넘으면
         truncate로 뒷부분을 잘라내지 않고, 줄 단위로 나눈 여러 게시물을
         서로 답글로 이어붙인 스레드로 보낸다. 반환값은 그 스레드의 마지막
         게시물 status dict — 이 답글에 이어지는 후속 게시물(다음 라운드
-        공지 등)이 스레드 맨 끝에 달리게 하기 위함이다."""
-        mention_prefix = f"@{acct} "
+        공지 등)이 스레드 맨 끝에 달리게 하기 위함이다.
+
+        mention_accts를 주면 발신자(acct) 한 명 대신 그 목록 전원을 앞에
+        멘션한다 (대련/DM 전투의 참여자 전원 멘션과 동일한 목적 — 여러
+        캐릭터가 함께 엮인 결과를 모두에게 알려야 할 때 사용)."""
+        mention_prefix = (
+            " ".join(f"@{a}" for a in mention_accts) + " "
+            if mention_accts
+            else f"@{acct} "
+        )
         chunks = _split_for_post(text, len(mention_prefix))
         status = self._mastodon.status_post(
             f"{mention_prefix}{chunks[0]}",

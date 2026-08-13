@@ -1,3 +1,4 @@
+import os
 import random
 import re
 import traceback
@@ -13,18 +14,15 @@ from utils.name_matching import resolve_matching_key, whitespace_tolerant_litera
 from bot.load_data import (
     load_daily_quest_pools,
     load_daily_quest_result_messages,
-    load_general_quests,
+    load_general_quest_sheet,
     load_inventory,
     load_item_data,
-    load_location_and_investigation,
     update_character_curr_hp,
     update_character_gold_and_quest_date,
+    update_quest_taken_by,
 )
 from bot.log_sheets import NoncombatLogInfo
-from bot.noncombat_state import (
-    DailyQuestMidState,
-    InvestigationQuestStatus,
-)
+from bot.noncombat_state import DailyQuestMidState
 
 if TYPE_CHECKING:
     from bot.main import BotState
@@ -36,6 +34,10 @@ _RE_TRANSFER_ITEM = re.compile(
 )
 
 FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
+
+# main.py와 별개로 읽는다 — bot.main이 이 모듈을 import하므로(순환 import),
+# 여기서 bot.main.ADMIN_MASTODON_ID를 직접 가져올 수 없다.
+ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
 
 
 def parse_stat_name(text: str) -> Optional[str]:
@@ -444,17 +446,12 @@ def handle_daily_quest_roll(
 def handle_investigation_start(
     acct: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[상시조사] → 현위치 시트를 읽어 4개 선택지 메뉴 반환."""
+    """[상시조사] → '일반 의뢰' 시트의 활성 장소를 읽어 선택지 메뉴 반환."""
     command_text = "[상시조사]"
-    nc = state.noncombat
-
-    if nc.investigation_accepted.get(acct):
-        msg = "◊ 이번 구간에서 이미 의뢰를 수주했습니다."
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     try:
-        location, investigation_active, venues, venue_desc = (
-            load_location_and_investigation(state.spreadsheet, cache=state.sheet_cache)
+        location, quests = load_general_quest_sheet(
+            state.spreadsheet, cache=state.sheet_cache
         )
     except Exception as e:
         msg = f"◊ 조사 정보를 불러오는 중 오류가 발생했습니다: {e}"
@@ -462,40 +459,18 @@ def handle_investigation_start(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    if not investigation_active or not venues:
+    if location is None or not quests:
         msg = "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    try:
-        general_quests = load_general_quests(state.spreadsheet, cache=state.sheet_cache)
-    except Exception as e:
-        msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
-        return msg, NoncombatLogInfo(
-            command_text=command_text, result=msg, error_trace=traceback.format_exc()
-        )
-
-    # venue → quest_id 매핑 갱신 (location 우선 매칭, 없으면 location 무관)
-    venue_to_quest: dict[str, str] = {}
-    for venue in venues:
-        matches = [
-            q
-            for q in general_quests
-            if q.venue_name == venue and (not location or q.location == location)
-        ]
-        if not matches:
-            matches = [q for q in general_quests if q.venue_name == venue]
-        if matches:
-            venue_to_quest[venue] = matches[0].id
-    nc.investigation_venue_to_quest = venue_to_quest
-    nc.investigation_venue_to_desc = venue_desc
-
-    lines = ["어디로 가 볼까?"]
-    for venue in venues:
-        lines.append(f"▸ [{venue}]")
+    lines = [location.description]
+    for quest in quests:
+        lines.append(f"▸ [{quest.location}]")
     lines.append(f"▸ {FREE_EXPLORE_LABEL} (자율 탐사)")
     reply = "\n".join(lines)
     return reply, NoncombatLogInfo(
-        command_text=command_text, result=f"메뉴 제공: {', '.join(venues)}"
+        command_text=command_text,
+        result=f"메뉴 제공: {', '.join(q.location for q in quests)}",
     )
 
 
@@ -508,26 +483,14 @@ def finalize_investigation_menu_post(
 def handle_investigation_venue_choice(
     acct: str, venue_name: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """장소 선택 → 일반 의뢰 시트를 읽어 개요 반환."""
+    """장소 선택 → '일반 의뢰' 시트를 읽어 개요 반환."""
     command_text = f"[상시조사/{venue_name}]"
     nc = state.noncombat
 
-    venue_name = resolve_matching_key(
-        venue_name, nc.investigation_venue_to_quest.keys()
-    )
-    quest_id = nc.investigation_venue_to_quest.get(venue_name)
-    if quest_id is None:
-        # 이 답글은 유효한 의뢰 개요가 아니므로, 이전에 선택했던 의뢰가 남아 있다면
-        # 지워 [수락] 시 엉뚱한(예전) 의뢰가 수주되는 것을 방지한다.
-        nc.investigation_acct_to_quest_id.pop(acct, None)
-        if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
-            msg = "자유롭게 일대를 돌아다니며 정보를 수집할 수 있습니다."
-            return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-        msg = f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-
     try:
-        general_quests = load_general_quests(state.spreadsheet, cache=state.sheet_cache)
+        location, quests = load_general_quest_sheet(
+            state.spreadsheet, cache=state.sheet_cache
+        )
     except Exception as e:
         nc.investigation_acct_to_quest_id.pop(acct, None)
         msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
@@ -535,43 +498,46 @@ def handle_investigation_venue_choice(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    quest_dict = {q.id: q for q in general_quests}
-    quest = quest_dict.get(quest_id)
-    if quest is None:
+    if location is None or not quests:
         nc.investigation_acct_to_quest_id.pop(acct, None)
-        msg = "◊ 의뢰 정보를 찾을 수 없습니다."
+        msg = f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    existing = nc.quest_status.get(quest_id)
-    if existing and existing.participants:
+    venue_lookup = {q.location: q for q in quests}
+    matched_venue = resolve_matching_key(venue_name, venue_lookup.keys())
+    quest = venue_lookup.get(matched_venue)
+    if quest is None:
+        # 이 답글은 유효한 의뢰 개요가 아니므로, 이전에 선택했던 의뢰가 남아 있다면
+        # 지워 [수락] 시 엉뚱한(예전) 의뢰가 수주되는 것을 방지한다.
         nc.investigation_acct_to_quest_id.pop(acct, None)
-        desc = nc.investigation_venue_to_desc.get(venue_name, "")
-        lines = [f"[{venue_name}]에서는 이미 누군가가 의뢰를 수주했습니다."]
-        if desc:
-            lines.append(desc)
-        lines.append("자율 탐사를 진행할 수 있습니다.")
-        reply = "\n".join(lines)
-        return reply, NoncombatLogInfo(
-            command_text=command_text, result=f"{venue_name}: 이미 수주된 의뢰"
-        )
+        if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
+            msg = (
+                "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
+                f"정보를 수집할 수 있다. @{ADMIN_MASTODON_ID}"
+            )
+            return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+        msg = f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    nc.investigation_acct_to_quest_id[acct] = quest_id
+    nc.investigation_acct_to_quest_id[acct] = quest.id
 
     reward_desc = quest.reward if quest.reward else "미정"
     lines = [
-        f"[{venue_name}]에서 의뢰를 발견했습니다.",
-        f"▸ 의뢰명: {quest.name}",
+        f"[{quest.location}](으)로 이동했다.",
+        "",
+        quest.description,
+        "",
+        f"[일반 의뢰] {quest.name}",
         f"▸ 계열: {quest.type} - {quest.subtype}",
+        f"▸ 클리어 가능 기간: {quest.available_until}",
+        f"▸ 보상: {reward_desc}",
+        "",
+        "이 의뢰를 수락할까?",
+        "",
+        "◊ 의뢰를 받으려면 답글로 의뢰에 참여할 인원 전원을 멘션하면서 [수락]을 "
+        "입력해 주세요. 의뢰를 받는 대신 이 장소에서 자율 탐사를 진행하려면 "
+        "키워드가 없는 답글을 보내 주세요.",
     ]
-    if quest.available_until:
-        lines.append(f"▸ 클리어 가능 기간: {quest.available_until}")
-    lines.append(f"▸ 보상: {reward_desc}")
-    lines.append("")
-    lines.append(quest.description)
-    lines.append("")
-    lines.append("이 의뢰를 수락할까?")
-    lines.append("")
-    lines.append("◊ 수락하려면 답글로 [수락]을 입력해 주세요.")
     reply = "\n".join(lines)
     return reply, NoncombatLogInfo(
         command_text=command_text, result=f"의뢰 개요 제공: {quest.name}"
@@ -581,60 +547,119 @@ def handle_investigation_venue_choice(
 def finalize_investigation_overview_post(
     acct: str, post_id: int, state: "BotState"
 ) -> None:
-    state.noncombat.investigation_overview_post_id[acct] = post_id
+    nc = state.noncombat
+    quest_id = nc.investigation_acct_to_quest_id.pop(acct, None)
+    if quest_id is not None:
+        nc.investigation_overview_quest[post_id] = quest_id
 
 
 def handle_investigation_accept(
     acct: str,
+    mentions: list[str],
     state: "BotState",
     in_reply_to_id: Optional[int] = None,
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[수락] → 의뢰 참여자 등록.
+    """[수락] → 답글에 멘션된 인원 전원(+ 발신자)을 참여자로 등록하고 '일반
+    의뢰' 시트의 taken_by에 기록한다.
 
-    자신의 탐사 흐름이거나, 이미 수락된 의뢰의 개요 게시물에 답글로 합류할 수 있다.
+    같은 장소의 의뢰 3개(운반/탐사/전투)는 서로 다른 인원이 각각 독립적으로
+    수주할 수 있다 — 다만 한 캐릭터가 그중 이미 하나를 수주한 채 다른 의뢰를
+    또 수주할 수는 없다(taken_by 기준으로 확인).
     """
     command_text = "[수락]"
     nc = state.noncombat
 
-    if nc.investigation_accepted.get(acct):
-        msg = "◊ 이번 구간에서 이미 의뢰를 수주했습니다."
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-
-    quest_id = nc.investigation_acct_to_quest_id.get(acct)
-
-    # 자신의 탐사 흐름이 없으면 in_reply_to_id로 타인의 의뢰에 합류
-    if quest_id is None and in_reply_to_id is not None:
-        for qid, status in nc.quest_status.items():
-            if status.overview_post_id == in_reply_to_id:
-                quest_id = qid
-                break
-
+    quest_id = (
+        nc.investigation_overview_quest.get(in_reply_to_id)
+        if in_reply_to_id is not None
+        else None
+    )
     if quest_id is None:
         msg = "◊ 수락할 의뢰가 없습니다. 먼저 [상시조사]로 의뢰를 확인해 주세요."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    # 의뢰 이름을 일반 의뢰 시트에서 실시간 조회
-    quest_name = quest_id
     try:
-        general_quests = load_general_quests(state.spreadsheet, cache=state.sheet_cache)
-        quest = next((q for q in general_quests if q.id == quest_id), None)
-        if quest:
-            quest_name = quest.name
-    except Exception:
-        pass
-
-    if quest_id not in nc.quest_status:
-        nc.quest_status[quest_id] = InvestigationQuestStatus(
-            quest_id=quest_id,
-            overview_post_id=nc.investigation_overview_post_id.get(acct, 0),
+        _, quests = load_general_quest_sheet(state.spreadsheet, cache=state.sheet_cache)
+    except Exception as e:
+        msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    status = nc.quest_status[quest_id]
-    if acct not in status.participants:
-        status.participants.append(acct)
+    quest = next((q for q in quests if q.id == quest_id), None)
+    if quest is None:
+        msg = "◊ 의뢰 정보를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    nc.investigation_accepted[acct] = quest_id
-    reply = f"◊ 수락 확인. 「{quest_name}」 의뢰를 수주했습니다."
-    return reply, NoncombatLogInfo(
-        command_text=command_text, result=f"의뢰 수주: {quest_name}"
+    if quest.taken_by_list():
+        msg = "◊ 이미 다른 인원이 수주한 의뢰입니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    participants = [acct] + [m for m in mentions if m != acct]
+
+    already_busy = {a for q in quests for a in q.taken_by_list()}
+    conflicts = [p for p in participants if p in already_busy]
+    if conflicts:
+        msg = (
+            "◊ 이미 다른 의뢰를 수주한 캐릭터가 있어 수락할 수 없습니다: "
+            + ", ".join(f"@{c}" for c in conflicts)
+        )
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=f"수주 중복: {', '.join(conflicts)}"
+        )
+
+    try:
+        update_quest_taken_by(
+            state.spreadsheet, quest_id, ",".join(participants), cache=state.sheet_cache
+        )
+    except Exception as e:
+        msg = f"◊ 의뢰 수주 처리 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
+
+    reply = (
+        f"「{quest.name}」 의뢰를 받았다!\n\n"
+        f"◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @{ADMIN_MASTODON_ID}"
     )
+    return reply, NoncombatLogInfo(
+        command_text=command_text,
+        result=f"의뢰 수주: {quest.name} ({', '.join(participants)})",
+    )
+
+
+def handle_investigation_decline(
+    acct: str,
+    state: "BotState",
+    in_reply_to_id: Optional[int] = None,
+) -> tuple[str, Optional[NoncombatLogInfo]]:
+    """의뢰 개요 게시물에 [수락]도 다른 인식 가능한 커맨드도 아닌 답글이
+    달리면 → 의뢰를 받지 않고 자리를 떠난 것으로 안내하고, GM이 이어서
+    서술할 수 있도록 admin을 태그한다."""
+    command_text = "(의뢰 개요 답글, 미수락)"
+    nc = state.noncombat
+
+    quest_id = (
+        nc.investigation_overview_quest.get(in_reply_to_id)
+        if in_reply_to_id is not None
+        else None
+    )
+    if quest_id is None:
+        msg = "◊ 의뢰 정보를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    try:
+        _, quests = load_general_quest_sheet(state.spreadsheet, cache=state.sheet_cache)
+    except Exception as e:
+        msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
+
+    quest = next((q for q in quests if q.id == quest_id), None)
+    location = quest.location if quest else ""
+
+    msg = (
+        f"의뢰는 수락하지 않고 {location} 일대를 둘러보기로 했다. @{ADMIN_MASTODON_ID}"
+    )
+    return msg, NoncombatLogInfo(command_text=command_text, result="의뢰 미수락")
