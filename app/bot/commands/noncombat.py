@@ -1,3 +1,4 @@
+import os
 import random
 import re
 import traceback
@@ -33,6 +34,10 @@ _RE_TRANSFER_ITEM = re.compile(
 )
 
 FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
+
+# main.py와 별개로 읽는다 — bot.main이 이 모듈을 import하므로(순환 import),
+# 여기서 bot.main.ADMIN_MASTODON_ID를 직접 가져올 수 없다.
+ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
 
 
 def parse_stat_name(text: str) -> Optional[str]:
@@ -506,7 +511,10 @@ def handle_investigation_venue_choice(
         # 지워 [수락] 시 엉뚱한(예전) 의뢰가 수주되는 것을 방지한다.
         nc.investigation_acct_to_quest_id.pop(acct, None)
         if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
-            msg = "자유롭게 일대를 돌아다니며 정보를 수집할 수 있습니다."
+            msg = (
+                "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
+                f"정보를 수집할 수 있다. @{ADMIN_MASTODON_ID}"
+            )
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
         msg = f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -608,8 +616,48 @@ def handle_investigation_accept(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    reply = f"◊ 수락 확인. 「{quest.name}」 의뢰를 수주했습니다."
+    reply = (
+        f"「{quest.name}」 의뢰를 받았다!\n\n"
+        f"◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @{ADMIN_MASTODON_ID}"
+    )
     return reply, NoncombatLogInfo(
         command_text=command_text,
         result=f"의뢰 수주: {quest.name} ({', '.join(participants)})",
     )
+
+
+def handle_investigation_decline(
+    acct: str,
+    state: "BotState",
+    in_reply_to_id: Optional[int] = None,
+) -> tuple[str, Optional[NoncombatLogInfo]]:
+    """의뢰 개요 게시물에 [수락]도 다른 인식 가능한 커맨드도 아닌 답글이
+    달리면 → 의뢰를 받지 않고 자리를 떠난 것으로 안내하고, GM이 이어서
+    서술할 수 있도록 admin을 태그한다."""
+    command_text = "(의뢰 개요 답글, 미수락)"
+    nc = state.noncombat
+
+    quest_id = (
+        nc.investigation_overview_quest.get(in_reply_to_id)
+        if in_reply_to_id is not None
+        else None
+    )
+    if quest_id is None:
+        msg = "◊ 의뢰 정보를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    try:
+        _, quests = load_general_quest_sheet(state.spreadsheet, cache=state.sheet_cache)
+    except Exception as e:
+        msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
+
+    quest = next((q for q in quests if q.id == quest_id), None)
+    location = quest.location if quest else ""
+
+    msg = (
+        f"의뢰는 수락하지 않고 {location} 일대를 둘러보기로 했다. @{ADMIN_MASTODON_ID}"
+    )
+    return msg, NoncombatLogInfo(command_text=command_text, result="의뢰 미수락")

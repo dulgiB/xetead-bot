@@ -31,6 +31,7 @@ from bot.commands.noncombat import (
     handle_daily_quest_roll,
     handle_daily_quest_start,
     handle_investigation_accept,
+    handle_investigation_decline,
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
@@ -768,7 +769,7 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id in nc.get_investigation_menu_post_ids()
         ):
             menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
-            if menu_acct == acct:
+            if menu_acct == acct and count_bracket_groups(text) >= 1:
                 venue_name = text.strip().strip("[]")
                 response, log_info = handle_investigation_venue_choice(
                     acct, venue_name, state
@@ -776,6 +777,8 @@ class MastodonBotListener(StreamListener):
                 post = self._reply(status_id, acct, visibility, response)
                 _persist_noncombat_log(state, log_info, str(post["id"]))
                 finalize_investigation_overview_post(acct, post["id"], state)
+            # menu_acct != acct(타인의 메뉴 게시물)이거나 대괄호 커맨드 자체가
+            # 없는 답글(사담 등)이면 조용히 무시한다.
             return
 
         # 8. 상시조사 수락 답글 (의뢰 개요 포스트에 대한 [수락] 답글)
@@ -843,6 +846,19 @@ class MastodonBotListener(StreamListener):
         # 14. [가방] — 소지금/아이템 확인 (어떤 맥락에서도 사용 가능)
         if _RE_BAG.search(text):
             response, log_info = handle_bag(acct, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
+            return
+
+        # 15. 의뢰 개요 포스트에 대한 그 외의 답글 ([수락]도 아니고 위의 다른
+        # 커맨드에도 매칭되지 않음) — 의뢰를 받지 않고 떠난 것으로 안내
+        if (
+            in_reply_to_id is not None
+            and in_reply_to_id in nc.get_investigation_overview_post_ids()
+        ):
+            response, log_info = handle_investigation_decline(
+                acct, state, in_reply_to_id
+            )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return

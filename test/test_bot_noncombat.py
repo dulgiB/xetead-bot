@@ -15,6 +15,7 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_daily_quest_roll,
     handle_daily_quest_start,
     handle_investigation_accept,
+    handle_investigation_decline,
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
@@ -141,7 +142,7 @@ def test_handle_investigation_accept_returns_log_info(monkeypatch):
 
     result, log_info = handle_investigation_accept(acct, [], state, in_reply_to_id=999)
 
-    assert "수주했습니다" in result
+    assert "의뢰를 받았다" in result
     assert log_info is not None
     assert log_info.command_text == "[수락]"
 
@@ -173,7 +174,10 @@ def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch
     # 참여자 전원 멘션은 handle_investigation_accept 자체가 아니라 main.py의
     # _reply(mention_accts=...)가 게시물 맨 앞에 붙인다 — 여기서는 taken_by에
     # 전원이 정확히 기록됐는지와 로그에 남는지만 확인한다.
-    assert "수주했습니다" in result
+    assert result == (
+        "「광장 의뢰」 의뢰를 받았다!\n\n"
+        "◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @test-admin"
+    )
     assert calls == [("아도스_운반", "user1,user2,user3")]
     assert log_info is not None
     assert log_info.result == "의뢰 수주: 광장 의뢰 (user1, user2, user3)"
@@ -206,8 +210,8 @@ def test_investigation_accept_allows_different_quests_in_same_location(monkeypat
     result1, _log1 = handle_investigation_accept("user1", [], state, in_reply_to_id=100)
     result2, _log2 = handle_investigation_accept("user2", [], state, in_reply_to_id=101)
 
-    assert "수주했습니다" in result1
-    assert "수주했습니다" in result2
+    assert "의뢰를 받았다" in result1
+    assert "의뢰를 받았다" in result2
     assert taken_by_store == {"아도스_운반": "user1", "아도스_탐사": "user2"}
 
 
@@ -256,6 +260,33 @@ def test_investigation_accept_rejects_character_already_busy_in_same_location(
 
     assert "이미 다른 의뢰를 수주한 캐릭터가 있어" in result
     assert "@user1" in result
+
+
+def test_investigation_decline_reports_location_and_tags_admin(monkeypatch):
+    """의뢰 개요 게시물에 [수락]도 다른 커맨드도 아닌 답글이 오면, 그 의뢰의
+    location을 채운 안내 문구 + admin 태그로 응답해야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    state.noncombat.investigation_overview_quest[999] = "아도스_운반"
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
+    )
+
+    result, log_info = handle_investigation_decline(acct, state, in_reply_to_id=999)
+
+    assert result == "의뢰는 수락하지 않고 광장 일대를 둘러보기로 했다. @test-admin"
+    assert log_info is not None
+
+
+def test_investigation_decline_without_known_overview_post_errors(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+
+    result, log_info = handle_investigation_decline(acct, state, in_reply_to_id=999)
+
+    assert "찾을 수 없습니다" in result
 
 
 def test_investigation_start_uses_location_description_as_menu_intro(monkeypatch):
@@ -311,6 +342,27 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "◊ 의뢰를 받으려면 답글로 의뢰에 참여할 인원 전원을 멘션하면서 [수락]을 입력해 주세요."
     )
     assert state.noncombat.investigation_acct_to_quest_id[acct] == "아도스_운반"
+
+
+def test_investigation_venue_choice_free_explore_tags_admin(monkeypatch):
+    """메뉴에 없는 장소(자율 탐사 포함)를 고르면 GM이 후속 진행을 알 수
+    있도록 메시지 끝에 admin 계정을 태그해야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
+    )
+
+    result, log_info = handle_investigation_venue_choice(
+        acct, "그 외의 장소를 찾아본다.", state
+    )
+
+    assert result == (
+        "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
+        "정보를 수집할 수 있다. @test-admin"
+    )
 
 
 def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
