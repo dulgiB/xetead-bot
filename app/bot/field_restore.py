@@ -78,7 +78,7 @@ def restore_all(
                 )
             else:
                 summary = _restore_practice_battle(
-                    state, row, buff_dict, skill_dict, item_dict
+                    state, row, buff_dict, skill_dict, passive_skill_dict, item_dict
                 )
         except Exception:
             logger.exception(
@@ -226,7 +226,12 @@ def _restore_dm_battle(
 
 
 def _restore_practice_battle(
-    state: "BotState", row: FieldRow, buff_dict: dict, skill_dict: dict, item_dict: dict
+    state: "BotState",
+    row: FieldRow,
+    buff_dict: dict,
+    skill_dict: dict,
+    passive_skill_dict: dict,
+    item_dict: dict,
 ) -> Optional[str]:
     if state.practice is not None:
         logger.warning(
@@ -263,7 +268,9 @@ def _restore_practice_battle(
         )
         return None
 
-    context = PracticeBattlefieldContext(buff_dict, skill_dict, item_dict)
+    context = PracticeBattlefieldContext(
+        buff_dict, skill_dict, passive_skill_dict, item_dict
+    )
     manager = PracticeRoundManager(context)
 
     restored = 0

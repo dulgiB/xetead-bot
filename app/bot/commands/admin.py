@@ -666,14 +666,16 @@ def _cmd_practice_prep(
     (
         buff_dict,
         skill_dict,
-        _passive_skill_dict,
+        passive_skill_dict,
         item_dict,
         _inventory,
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
-    context = PracticeBattlefieldContext(buff_dict, skill_dict, item_dict)
+    context = PracticeBattlefieldContext(
+        buff_dict, skill_dict, passive_skill_dict, item_dict
+    )
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,
@@ -1049,14 +1051,16 @@ def _cmd_investigation_battle(
     (
         buff_dict,
         skill_dict,
-        _passive_skill_dict,
+        passive_skill_dict,
         item_dict,
         _inventory,
         state.char_dict,
         state.name_dict,
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
-    context = PracticeBattlefieldContext(buff_dict, skill_dict, item_dict)
+    context = PracticeBattlefieldContext(
+        buff_dict, skill_dict, passive_skill_dict, item_dict
+    )
     manager = PracticeRoundManager(context)
     state.practice = PracticeBattleState(
         context=context,

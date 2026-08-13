@@ -196,7 +196,7 @@ def test_restore_practice_battle_restores_hp_and_movers():
         },
     )
 
-    summary = field_restore._restore_practice_battle(state, row, {}, {}, {})
+    summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert summary is not None
     assert state.practice is not None
@@ -239,7 +239,7 @@ def test_restore_practice_battle_marks_investigation_type():
         },
     )
 
-    field_restore._restore_practice_battle(state, row, {}, {}, {})
+    field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert state.practice.is_investigation is True
 
@@ -262,7 +262,7 @@ def test_restore_practice_battle_skips_second_open_slot():
         },
     )
 
-    summary = field_restore._restore_practice_battle(state, row, {}, {}, {})
+    summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert summary is None
     assert state.practice is not None  # 그대로 유지(덮어쓰지 않음)
