@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import time
 import traceback
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -455,6 +456,13 @@ class MastodonBotListener(StreamListener):
         self._mastodon = mastodon
         self._state = state
         self._bot_acct = bot_acct
+
+    def on_abort(self, err: Exception) -> None:
+        """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
+        run_async=True + reconnect_async=True로 실행 중이면 라이브러리가
+        백그라운드 스레드 안에서 알아서 재연결을 재시도하므로 여기서는
+        가시성을 위해 로그만 남긴다 — 프로세스는 죽지 않는다."""
+        logger.warning("스트리밍 연결이 끊어져 재연결을 시도합니다: %s", err)
 
     def _capture_field_media_ids(self, state: "BotState") -> list:
         """공개 필드 시트를 이미지로 캡처해 업로드하고 media_id 리스트를 반환한다.
@@ -1530,7 +1538,20 @@ def main() -> None:
         except Exception:
             logger.exception("재기동 복원 안내 DM 전송 실패")
 
-    mastodon.stream_user(MastodonBotListener(mastodon, state, me["acct"]))
+    # run_async=True + reconnect_async=True: 스트리밍 연결이 끊어져도(네트워크
+    # 순단 등) 라이브러리가 백그라운드 스레드 안에서 재연결만 재시도하고
+    # 프로세스 자체는 죽지 않는다. 기본값(run_async=False)은 재연결 로직이
+    # 전혀 없어 연결이 끊기는 즉시 예외가 여기까지 전파되어 프로세스가
+    # 죽고 Docker의 restart:always로만 복구되는데, 그때마다 스프레드시트
+    # 전체 재로드 + 미종료 전투 복원(field_restore.restore_all())을 다시
+    # 거쳐야 해서 단순 네트워크 순단에도 매번 콜드 재시작이 발생했다.
+    handle = mastodon.stream_user(
+        MastodonBotListener(mastodon, state, me["acct"]),
+        run_async=True,
+        reconnect_async=True,
+    )
+    while handle.is_alive():
+        time.sleep(60)
 
 
 if __name__ == "__main__":
