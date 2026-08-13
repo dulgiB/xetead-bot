@@ -19,6 +19,11 @@ include = ["battle*", "bots*", "spreadsheets*", "story*", "utils*"]
 
 [tool.ruff]
 [tool.ruff.lint]
+# ruff 0.16.0부터 설정 없이 두면 기본 활성 규칙이 59개에서 413개로
+# 대폭 확장된다(E4/E7/E9/F만 켜져 있던 예전 기본값이 사라짐 —
+# https://astral.sh/blog/ruff-v0.16.0). 의도치 않게 전체 규칙셋으로
+# 넘어가지 않도록 예전과 동일한 범위(E4, E7, E9, F)로 명시 고정한다.
+select = ["E4", "E7", "E9", "F"]
 [tool.ruff.format]
 
 [tool.mypy]
@@ -48,6 +53,6 @@ log_date_format = "%Y-%m-%d %H:%M:%S"
 dev = [
     "mypy>=2.3.0",
     "pytest>=9.1.1",
-    "ruff>=0.15.19",
+    "ruff>=0.16.2",
     "types-regex>=2026.7.19.20260720",
 ]
