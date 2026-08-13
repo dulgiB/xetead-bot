@@ -1123,9 +1123,13 @@ def _practice_mention_prefix(participants: list[str]) -> str:
 
 
 def _field_text(ps: PracticeBattleState) -> str:
-    """대련/상시전투 필드 상태 텍스트. 상시전투는 side_label()이 이미
-    "아군"/"적군"을 쓰므로 그대로, 대련은 "1팀"/"2팀"으로 진영 헤더가
-    바뀐다(본 전투용 BattlefieldContext.__str__ 기본값인 "아군"/"적군" 대신).
+    """대련/상시전투 필드 상태 텍스트(위치 보드 + 버프/디버프 요약). 진행
+    중인 전투 게시물에 쓴다 — 전투 종료 게시물에는 버프/디버프 요약이
+    더 이상 의미가 없으므로 대신 _field_board()를 쓴다.
+
+    상시전투는 side_label()이 이미 "아군"/"적군"을 쓰므로 그대로, 대련은
+    "1팀"/"2팀"으로 진영 헤더가 바뀐다(본 전투용 BattlefieldContext.__str__
+    기본값인 "아군"/"적군" 대신).
 
     상시전투는 본 전투 필드 이미지와 같은 순서(적군 먼저)를 유지하지만,
     대련은 "2팀"이 항상 먼저 출력되는 게 팀 번호 순서와 어긋나 헷갈리므로
@@ -1137,6 +1141,28 @@ def _field_text(ps: PracticeBattleState) -> str:
         ally_first=not ps.is_investigation,
         compact_columns=True,
     )
+
+
+def _field_board(ps: PracticeBattleState) -> str:
+    """대련/상시전투 필드 위치 보드(버프/디버프 요약 제외). 전투 종료
+    게시물처럼 남은 버프/디버프 목록이 더 이상 의미 없는 자리에 쓴다."""
+    return ps.context.format_position_board(
+        ally_label=ps.side_label(SideType.SIDE_1),
+        enemy_label=ps.side_label(SideType.SIDE_2),
+        ally_first=not ps.is_investigation,
+        compact_columns=True,
+    )
+
+
+def _winner_roster_text(ps: PracticeBattleState, winner: Optional[SideType]) -> str:
+    """승자 팀 명단을 "(이름1, 이름2)" 형식으로 반환한다. 승자가 없으면
+    (동점) 빈 문자열."""
+    if winner is None:
+        return ""
+    names = [char.id.name for char in ps.context.get_side_characters(winner)]
+    if not names:
+        return ""
+    return f" ({', '.join(names)})"
 
 
 def _start_investigation_battle(state: "BotState") -> str:
@@ -1258,11 +1284,12 @@ def _handle_practice_command(
             return reply_text, "", None, battle_log
 
         battle_mode = "상시전투" if ps.is_investigation else "대련"
-        winner_label = ps.side_label(ps.winner())
+        winner = ps.winner()
+        winner_label = ps.side_label(winner)
         game_post = (
             f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
-            f"승자: {winner_label}\n\n"
-            f"{_field_text(ps)}"
+            f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
+            f"{_field_board(ps)}"
         )
         _upsert_practice_field_row(
             state,
@@ -1330,11 +1357,12 @@ def _handle_practice_command(
         hp2 = ps.total_hp_by_side(SideType.SIDE_2)
         if hp1 == 0 or hp2 == 0:
             ps.end_round()
-            winner_label = ps.side_label(ps.winner())
+            winner = ps.winner()
+            winner_label = ps.side_label(winner)
             game_post = (
                 f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
-                f"승자: {winner_label}\n\n"
-                f"{_field_text(ps)}"
+                f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
+                f"{_field_board(ps)}"
             )
             _upsert_practice_field_row(
                 state, ps, phase_value=current_phase.value, ended=True
@@ -1360,11 +1388,12 @@ def _handle_practice_command(
     hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
     if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
-        winner_label = ps.side_label(ps.winner())
+        winner = ps.winner()
+        winner_label = ps.side_label(winner)
         game_post = (
             f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
-            f"승자: {winner_label}\n\n"
-            f"{_field_text(ps)}"
+            f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
+            f"{_field_board(ps)}"
         )
         _upsert_practice_field_row(
             state, ps, phase_value=current_phase.value, ended=True

@@ -1166,6 +1166,91 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
     assert state.practice is None
 
 
+def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
+    """대련 종료 게시물에는 남아 있는 버프/디버프 요약이 나오면 안 되고,
+    "승자: N팀" 뒤에 그 팀의 생존 캐릭터 명단이 "(이름, 이름)" 형식으로
+    붙어야 한다."""
+    dot_buff = BuffData(
+        id="맹독",
+        buff_class_name="BuffDamageOverTime",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER,
+        value=999,
+        condition_=None,
+        condition_value=None,
+        is_debuff=True,
+        description="",
+    )
+    atk_buff = BuffData(
+        id="공격력 증가",
+        buff_class_name="BuffAtk",
+        duration_turn_value=5,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER,
+        value=3,
+        condition_=None,
+        condition_value=None,
+        is_debuff=False,
+        description="",
+    )
+    ctx = PracticeBattlefieldContext(
+        buff_dict={"맹독": dot_buff, "공격력 증가": atk_buff}, skill_dict={}
+    )
+    ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(get_test_preset("C"), SideType.SIDE_1, BattlefieldColumnIndex(1))
+    ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=CharacterId("A"), applied_to=CharacterId("B"), buff_id="맹독"
+        )
+    )
+    # 승자 측(A)에 살아남는 버프를 걸어, 종료 요약에서 실제로 숨겨지는지 확인.
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=CharacterId("A"),
+            applied_to=CharacterId("A"),
+            buff_id="공격력 증가",
+        )
+    )
+
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
+    ps.start_round()
+
+    side_to_acct = {SideType.SIDE_1: "acct_a", SideType.SIDE_2: "acct_b"}
+    state = BotState(
+        char_dict={
+            "acct_a": get_test_preset("A"),
+            "acct_c": get_test_preset("C"),
+            "acct_b": get_test_preset("B"),
+        },
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    first_acct = side_to_acct[ps.first_mover]
+    _, _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
+    assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
+
+    second_acct = side_to_acct[ps.second_mover]
+    _, _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+
+    assert "종료" in game_post
+    assert "승자: 1팀 (A, C)" in game_post
+    # HP 보드는 여전히 나와야 한다.
+    assert "1팀" in game_post and "2팀" in game_post
+    # 버프/디버프 요약(대괄호 라벨 + 설명줄)은 나오면 안 된다.
+    assert "[공격력 증가]" not in game_post
+    assert "↳" not in game_post
+    assert state.practice is None
+
+
 def test_practice_field_text_uses_team_labels_not_faction_labels():
     """대련은 아군/적군 구도가 아니므로, 필드 상황 텍스트도 팀 커맨드([1팀/...])와
     맞춰 "1팀"/"2팀" 헤더를 써야 한다 — 본 전투용 "아군"/"적군" 표현이 새어
