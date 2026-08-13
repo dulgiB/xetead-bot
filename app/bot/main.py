@@ -32,6 +32,7 @@ from bot.commands.noncombat import (
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
     finalize_investigation_overview_post,
+    handle_1d100,
     handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
@@ -81,6 +82,7 @@ _RE_ACCEPT = re.compile(rf"\[{whitespace_tolerant_literal('수락')}]")
 _RE_DAILY_QUEST_START = re.compile(rf"\[{whitespace_tolerant_literal('의뢰')}]")
 _RE_INVESTIGATION_START = re.compile(rf"\[{whitespace_tolerant_literal('상시조사')}]")
 _RE_BAG = re.compile(rf"\[{whitespace_tolerant_literal('가방')}]")
+_RE_1D100 = re.compile(r"\[\s*1\s*d\s*100\s*]", re.IGNORECASE)
 _MAX_POST_LENGTH = 500
 
 # 커맨드를 수신하는 페이즈 (active_phase_post_id 설정 대상)
@@ -858,6 +860,13 @@ class MastodonBotListener(StreamListener):
         # 14. [가방] — 소지금/아이템 확인 (어떤 맥락에서도 사용 가능)
         if _RE_BAG.search(text):
             response, log_info = handle_bag(acct, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
+            return
+
+        # 14.5. [1D100] — 독립 굴림 (대소문자 무관, 어떤 맥락에서도 사용 가능)
+        if _RE_1D100.search(text):
+            response, log_info = handle_1d100(acct, state)
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return

@@ -12,6 +12,7 @@ from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
     finalize_daily_quest_mid,
+    handle_1d100,
     handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
@@ -968,6 +969,29 @@ def test_bag_rejects_unregistered_character(monkeypatch):
     state = _make_state("user1")
 
     reply, log_info = handle_bag("unregistered_user", state)
+
+    assert "등록된 캐릭터를 찾을 수 없습니다" in reply
+    assert log_info is None
+
+
+def test_handle_1d100_reply_format(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(random, "randint", lambda a, b: 42)
+
+    reply, log_info = handle_1d100(acct, state)
+
+    assert reply == "◊ 1d100 → 「42」"
+    assert log_info is not None
+    assert log_info.command_text == "[1D100]"
+    assert log_info.dice_roll == "42"
+    assert log_info.error_trace is None
+
+
+def test_handle_1d100_rejects_unregistered_character():
+    state = _make_state("user1")
+
+    reply, log_info = handle_1d100("unregistered_user", state)
 
     assert "등록된 캐릭터를 찾을 수 없습니다" in reply
     assert log_info is None

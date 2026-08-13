@@ -111,6 +111,22 @@ def handle_roll(
     )
 
 
+def handle_1d100(
+    acct: str, state: "BotState"
+) -> tuple[str, Optional[NoncombatLogInfo]]:
+    """[1D100] → 1~100 사이의 굴림 결과를 반환한다."""
+    command_text = "[1D100]"
+    char_data = state.noncombat_char_dict.get(acct)
+    if char_data is None:
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+
+    roll = random.randint(1, 100)
+    reply = f"◊ 1d100 → 「{roll}」"
+    return reply, NoncombatLogInfo(
+        command_text=command_text, dice_roll=str(roll), result=f"「{roll}」"
+    )
+
+
 # ---------------------------------------------------------------------------
 # 비전투 아이템 사용/양도
 # ---------------------------------------------------------------------------
