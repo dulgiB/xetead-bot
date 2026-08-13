@@ -25,8 +25,20 @@ class BuffContainer:
 
     def add(self, add_event: "BuffAddData"):
         buff_data = self._context.get_buff_data_by_id(add_event.buff_id)
-        target_uid = BuffUid(
-            add_event.given_by, add_event.applied_to, buff_data.buff_class_name
+        buff_class = buff_data.get_buff_class()
+        # PARTITION_UID_BY_VALUE인 버프는 이번에 부여될 값(재정의 우선)이
+        # 기존 인스턴스와 달라야 별개로 유지된다 — build_uid()가 uid 계산을
+        # BuffBase.__init__과 동일한 규칙으로 공유한다.
+        uid_value = (
+            add_event.value_override
+            if add_event.value_override is not None
+            else buff_data.value
+        )
+        target_uid = buff_class.build_uid(
+            add_event.given_by,
+            add_event.applied_to,
+            buff_data.buff_class_name,
+            uid_value,
         )
         existing = next((b for b in self._buffs if b.uid == target_uid), None)
 

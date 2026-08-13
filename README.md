@@ -315,9 +315,10 @@ PYTHONPATH=app uv run python app/bot/main.py
 - 영문 (A–Z, a–z)
 - 숫자 (0–9)
 - 공백
+- 언더스코어(`_`), `!`, `^`
 
 ```
-가능: 오크A, Monster1, 아군 기사
+가능: 오크A, Monster1, 아군 기사, 스킬_1!, 스킬^^
 불가: 오크-A, 몬스터@1
 ```
 
@@ -418,6 +419,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `BuffCounterDamageOnEnemyMove`            | 사거리 내 적이 이동할 때마다 반격 대미지 (대상 디버프 스택에 비례)     |
 | `BuffHealAndBuffStackOnDealingDamage`     | 대미지를 줄 때마다 그 대미지의 %만큼 자가 회복 + 조건 충족 시 참조 버프 1스택 부여 (버프_패시브 전용) |
 | `BuffReduceCostNextRound`                 | 다음 라운드 시작 시 1회, 코스트를 지정한 만큼 감소             |
+| `BuffIgnite`                              | 부여 시점 대상의 열을 저장해두는 디버프. 지속시간이 끝나는 라운드 종료 시점에 대상이 그 열에 그대로 있으면 부여자 공격 굴림 150% 대미지. 서로 다른 열로 부여되면 동시에 여러 개 유지 가능(재부여 판정에 열 값도 반영) |
 
 ### 도발 상세
 
