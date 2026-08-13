@@ -25,10 +25,10 @@ if TYPE_CHECKING:
 kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{HangulJamoExtendedA}\p{HangulJamoExtendedB}"
 # 캐릭터/스킬/아이템 id에 언더스코어가 포함되는 경우(예: "스킬_1")가 있어
 # 이름·대상에 쓰이는 문자 집합에도 언더스코어를 포함한다. 마찬가지로
-# "!"가 들어간 스킬명(예: "스킬_1!")과 "^"가 들어간 스킬명(예: "스킬_1^^")도
-# 있어 함께 포함한다. "^"는 문자 클래스([...]) 맨 앞에 오면 부정(negation)으로
-# 해석되므로 반드시 클래스 끝에 둔다.
-name_charset = rf"{kr_charset}0-9A-Za-z_!^"
+# "!"가 들어간 스킬명(예: "스킬_1!")과 "^"/"~"가 들어간 스킬명
+# (예: "스킬_1^^", "스킬~1")도 있어 함께 포함한다. "^"는 문자 클래스([...])
+# 맨 앞에 오면 부정(negation)으로 해석되므로 반드시 클래스 끝에 둔다.
+name_charset = rf"{kr_charset}0-9A-Za-z_!^~"
 
 _이동 = whitespace_tolerant_literal("이동")
 _공격 = whitespace_tolerant_literal("공격")
