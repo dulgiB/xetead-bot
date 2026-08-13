@@ -345,6 +345,12 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 3. `app/battle/objects/buff/buffs/__init__.py`에 export 추가
 4. 스프레드시트 "버프" 시트에 `buff_name` 컬럼(데이터클래스 필드명은 `buff_class_name`)에 클래스 이름 등록
 
+같은 부여자가 같은 대상에게 값(예: 열 번호)만 다르게 여러 번 부여했을 때 하나로
+병합되지 않고 동시에 여러 개 유지돼야 하는 버프(`BuffIgnite` 등)는
+`PARTITION_UID_BY_VALUE: ClassVar[bool] = True`를 오버라이드한다. 기본값
+`False`는 기존처럼 (given_by, applied_to, buff_class_name) 기준으로만
+재부여를 판정한다(값이 달라도 지속시간만 갱신하고 값을 덮어씀).
+
 ### 스킬 효과 추가
 
 1. `app/battle/objects/skill/effects/` 에 `SkillEffectBase` 상속 클래스 작성

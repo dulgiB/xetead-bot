@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional, Self
+from typing import TYPE_CHECKING, ClassVar, Literal, Optional, Self
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_events import BuffEvent
@@ -110,26 +110,33 @@ class BuffDurationCounter:
 
 
 class BuffBase(abc.ABC):
+    # True로 오버라이드하면 uid 계산에 value가 포함되어, 같은 given_by/
+    # applied_to/buff_class_name 조합이라도 value(예: 부여 시점에 스냅샷한
+    # 열 번호)가 다르면 별개의 버프 인스턴스로 동시에 유지된다(재부여 시
+    # 하나로 병합되지 않음). 같은 value로 재부여하면 기존과 동일하게
+    # 지속시간만 갱신된다. 기본값 False는 기존 "재부여 시 지속시간만 갱신,
+    # 값은 덮어쓰기" 동작을 그대로 유지한다.
+    PARTITION_UID_BY_VALUE: ClassVar[bool] = False
+
     def __init__(
         self,
         given_by: CharacterId,
         applied_to: CharacterId,
         data: BuffData,
         initial_stack: int = 1,
+        value_override: Optional[int] = None,
     ):
         self.id = data.id
-        self.uid = BuffUid(
-            given_by,
-            applied_to,
-            data.buff_class_name,
-        )
-
         self.given_by = given_by
         self.applied_to = applied_to
 
         # 값은 버프 생성 시점에 정해져서 이후 변동되지 않는다.
-        self.value = data.value
+        self.value = value_override if value_override is not None else data.value
         self.value_type = data.value_type
+
+        self.uid = self.build_uid(
+            given_by, applied_to, data.buff_class_name, self.value
+        )
 
         self.duration = BuffDurationCounter(
             data.duration_turn_value,
@@ -145,6 +152,22 @@ class BuffBase(abc.ABC):
 
         # 다른 버프의 id를 참조해야 하는 효과 전용(대부분의 버프는 쓰지 않음).
         self.reference_buff_id = data.reference_buff_id
+
+    @classmethod
+    def build_uid(
+        cls,
+        given_by: CharacterId,
+        applied_to: CharacterId,
+        class_name: str,
+        value: int,
+    ) -> BuffUid:
+        """BuffContainer.add()의 중복/재부여 판정과 __init__이 공유하는 uid
+        계산. PARTITION_UID_BY_VALUE가 False인 대부분의 버프는 value를
+        무시해 기존과 동일하게 (given_by, applied_to, class_name) 기준으로
+        판정한다."""
+        if cls.PARTITION_UID_BY_VALUE:
+            return BuffUid(given_by, applied_to, f"{class_name}:{value}")
+        return BuffUid(given_by, applied_to, class_name)
 
     @classmethod
     def _create_bare(

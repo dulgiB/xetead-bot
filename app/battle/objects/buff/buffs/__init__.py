@@ -31,6 +31,7 @@ from .buff_heal_and_buff_stack_on_dealing_damage import (  # noqa: F401
     BuffHealAndBuffStackOnDealingDamage,
 )
 from .buff_heal_over_time import BuffHealOverTime  # noqa: F401
+from .buff_ignite import BuffIgnite  # noqa: F401
 from .buff_no_damage import BuffNoDamage  # noqa: F401
 from .buff_no_heal import BuffNoHeal  # noqa: F401
 from .buff_received_damage import (  # noqa: F401

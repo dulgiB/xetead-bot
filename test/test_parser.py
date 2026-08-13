@@ -26,18 +26,18 @@ def _dummy_skill(skill_id: str) -> SkillData:
 @pytest.fixture
 def ctx() -> BattlefieldContext:
     """파서가 이름만으로 스킬/아이템을 판별할 수 있도록, 테스트에서 쓰는
-    스킬명("스킬1", "스킬2", "스킬_1!")을 실제로 보유한 캐릭터를 배치한다."""
+    스킬명("스킬1", "스킬2", "스킬_1^!")을 실제로 보유한 캐릭터를 배치한다."""
     context = BattlefieldContext(
         buff_dict={},
         skill_dict={
             "스킬1": _dummy_skill("스킬1"),
             "스킬2": _dummy_skill("스킬2"),
-            "스킬_1!": _dummy_skill("스킬_1!"),
+            "스킬_1^!": _dummy_skill("스킬_1^!"),
         },
     )
     context.add_character(
         get_test_preset(
-            "테스트", skill_1_id="스킬1", skill_2_id="스킬2", skill_3_id="스킬_1!"
+            "테스트", skill_1_id="스킬1", skill_2_id="스킬2", skill_3_id="스킬_1^!"
         ),
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
@@ -159,17 +159,17 @@ def ctx() -> BattlefieldContext:
                 ],
             ),
         ),
-        # 언더스코어와 "!"가 포함된 스킬명/대상명 — 실제 캐릭터/스킬 id
-        # 명명 규칙에 이 두 문자가 쓰이는 경우가 있으므로 파싱 가능해야 한다.
+        # 언더스코어와 "!"/"^"가 포함된 스킬명/대상명 — 실제 캐릭터/스킬 id
+        # 명명 규칙에 이 문자들이 쓰이는 경우가 있으므로 파싱 가능해야 한다.
         (
-            "[스킬_1!/대상_1!]",
+            "[스킬_1^!/대상_1^!]",
             CharacterCommand(
                 user_id=_USER,
                 parts=[
                     CommandPart(
                         type_=ActionType.SKILL,
-                        skill_id="스킬_1!",
-                        targets=[CharacterId("대상_1!")],
+                        skill_id="스킬_1^!",
+                        targets=[CharacterId("대상_1^!")],
                     )
                 ],
             ),

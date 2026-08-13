@@ -79,6 +79,10 @@ class BuffData:
             return condition_class(value=self.condition_value)
         return None
 
+    def get_buff_class(self) -> Type["BuffBase"]:
+        buff_module = importlib.import_module("battle.objects.buff.buffs")
+        return getattr(buff_module, self.buff_class_name)
+
     def to_buff_instance(
         self,
         given_by: CharacterId,
@@ -86,17 +90,14 @@ class BuffData:
         initial_stack: int = 1,
         value_override: Optional[int] = None,
     ) -> "BuffBase":
-        buff_module = importlib.import_module("battle.objects.buff.buffs")
-        buff_class: Type["BuffBase"] = getattr(buff_module, self.buff_class_name)
-        instance = buff_class(
+        buff_class = self.get_buff_class()
+        return buff_class(
             given_by=given_by,
             applied_to=applied_to,
             data=self,
             initial_stack=initial_stack,
+            value_override=value_override,
         )
-        if value_override is not None:
-            instance.value = value_override
-        return instance
 
 
 @dataclass

@@ -1,4 +1,7 @@
 from .effect_add_buff import SkillEffectAddBuff  # noqa: F401
+from .effect_add_buff_at_target_column import (  # noqa: F401
+    SkillEffectAddBuffAtTargetColumn,
+)
 from .effect_add_buff_if_holder_has_formation_buff import (  # noqa: F401
     SkillEffectAddBuffIfHolderHasFormationBuff,
 )

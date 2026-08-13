@@ -170,6 +170,7 @@
 | `SkillEffectAddBuff`                             | 대상에게 버프 부여                                                       |
 | `SkillEffectAddBuffIfTargetHasReferencedBuff`    | 대상이 reference_buff_id 버프를 이미 보유하고 있을 때만 buff_id 버프 부여(선행 디버프 요구 콤보) |
 | `SkillEffectAddBuffWithReferencedStackValue`     | holder의 reference_buff_id 버프 스택 수 × value%를 스냅샷한 수치로 buff_id 버프 부여. required_target_buff_id가 있으면 그 버프를 보유하고 아직 buff_id가 없는 대상에게만 |
+| `SkillEffectAddBuffAtTargetColumn`               | 대상의 현재 위치(열)를 스냅샷한 수치로 buff_id 버프 부여(부여 이후 대상이 이동해도 이미 부여된 버프의 수치는 갱신되지 않음) |
 | `SkillEffectRemoveDebuffs`                       | 대상의 패시브가 아닌 디버프를 전부 제거                                         |
 | `SkillEffectAddBuffIfHolderHasFormationBuff`     | 시전자가 [Formation] 버프를 보유한 상태일 때만 대상에게 버프 부여                     |
 | `SkillEffectShieldOrReflectIfTargetHasFormationBuff` | 대상이 [Formation] 보유 시 대체 버프(보통 [반사]), 아니면 기본 버프(보통 [방어막]) 부여 |
