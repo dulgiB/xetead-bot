@@ -339,7 +339,9 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "\n"
         "이 의뢰를 수락할까?\n"
         "\n"
-        "◊ 의뢰를 받으려면 답글로 의뢰에 참여할 인원 전원을 멘션하면서 [수락]을 입력해 주세요."
+        "◊ 의뢰를 받으려면 답글로 의뢰에 참여할 인원 전원을 멘션하면서 [수락]을 "
+        "입력해 주세요. 의뢰를 받는 대신 이 장소에서 자율 탐사를 진행하려면 "
+        "키워드가 없는 답글을 보내 주세요."
     )
     assert state.noncombat.investigation_acct_to_quest_id[acct] == "아도스_운반"
 
