@@ -430,6 +430,10 @@ def test_finalize_daily_quest_mid_tolerates_persist_failure(monkeypatch):
 
 
 def test_restore_daily_quest_mid_state_reads_status_id_column():
+    """bot_reply_post_id는 문자열 그대로 복원되어야 한다 — mastodon.py의
+    게시물 ID는 실제로 str 서브클래스(MaybeSnowflakeIdType)라, int로
+    캐스팅하면 실제 알림에서 오는 in_reply_to_id와 더 이상 같지 않게 되어
+    매칭에 항상 실패한다(재기동 복원이 조용히 무력화되는 회귀 케이스)."""
     acct = "user1"
     state = BotState(
         char_dict={},
@@ -447,28 +451,10 @@ def test_restore_daily_quest_mid_state_reads_status_id_column():
     restored = _restore_daily_quest_mid_state(state)
 
     assert restored == 1
-    assert state.noncombat.daily_quest_mid[acct].bot_reply_post_id == 555
+    assert state.noncombat.daily_quest_mid[acct].bot_reply_post_id == "555"
     assert "user2" not in state.noncombat.daily_quest_mid
-
-
-def test_restore_daily_quest_mid_state_skips_malformed_status_id():
-    acct = "user1"
-    state = BotState(
-        char_dict={},
-        name_dict={},
-        noncombat_char_dict={
-            acct: NoncombatCharacterDataFromSpreadsheet(
-                name="동료", daily_quest_status_id="not-a-number"
-            ),
-        },
-        spreadsheet=None,
-        field_spreadsheet=None,
-    )
-
-    restored = _restore_daily_quest_mid_state(state)
-
-    assert restored == 0
-    assert acct not in state.noncombat.daily_quest_mid
+    # 실제 알림에서 in_reply_to_id로 오는 값(문자열)과 그대로 매칭돼야 한다.
+    assert "555" in state.noncombat.get_daily_quest_post_ids()
 
 
 def test_daily_quest_roll_reports_failure_and_keeps_mid_when_save_fails(monkeypatch):
