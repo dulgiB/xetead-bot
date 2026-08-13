@@ -235,6 +235,10 @@ def expand_character_command(
 
             target_characters = item_used.target_rule.get_targets(part.targets)
 
+            # 효과 없는 소지용 아이템(effect=None)은 try_expansion_if_valid()의
+            # 사전 검증(error_item_has_no_effect)에서 이미 걸러져 여기까지
+            # 오지 않는다.
+            assert item_used.data.effect is not None
             debuff_clear_list = item_used.data.effect.get_debuff_clear_targets(
                 context, target_characters
             )

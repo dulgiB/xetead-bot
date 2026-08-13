@@ -17,6 +17,7 @@ from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
     error_item_does_not_exist,
+    error_item_has_no_effect,
     error_item_not_usable_here,
     error_no_item_in_inventory,
     error_no_remaining_cost,
@@ -248,6 +249,8 @@ def try_expansion_if_valid(
                 raise CommandValidationError(error_item_does_not_exist(part.item_id))
             if context.inventory.get_count(command.user_id.name, part.item_id) <= 0:
                 raise CommandValidationError(error_no_item_in_inventory(part.item_id))
+            if context.get_item_data_by_id(part.item_id).effect is None:
+                raise CommandValidationError(error_item_has_no_effect(part.item_id))
 
     # 커맨드 전체의 코스트를 한꺼번에 산출한다 — 되는 데까지 처리해주지 않고
     # 전체 코스트가 부족하면 아예 미처리한다.
