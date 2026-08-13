@@ -1488,17 +1488,23 @@ def _restore_daily_quest_mid_state(state: "BotState") -> int:
     """캐릭터 시트의 daily_quest_status_id 컬럼을 읽어, 봇 재기동으로
     사라진 NonCombatState.daily_quest_mid를 복원한다(finalize_daily_quest_mid
     참고 — 의뢰 판정 대기 중일 때만 이 컬럼이 채워져 있다). 반환값은
-    복원된 건수."""
+    복원된 건수.
+
+    bot_reply_post_id는 타입 힌트만 int일 뿐 실제로는(mastodon.py가 게시물
+    ID를 MaybeSnowflakeIdType(str 서브클래스)로 다루므로) 코드베이스 어디서도
+    진짜 int로 변환되지 않는다 — 다른 모든 경로는 항상 타입 힌트가 없는
+    dict 접근(post["id"] 등, mypy가 Any로 취급)으로만 이 값을 다루기 때문에
+    이 불일치가 지금까지 드러나지 않았을 뿐이다. 여기서 int()로 캐스팅하면
+    라운드트립한 값이 실제 알림에서 오는 in_reply_to_id(str 서브클래스)와
+    더 이상 같지 않아 매칭에 항상 실패한다 — 시트에서 읽은 문자열
+    (daily_quest_status_id: str, 명시적으로 타입이 있어 Any로 가려지지
+    않음)을 그대로 써야 한다."""
     restored = 0
     for acct, char_data in state.noncombat_char_dict.items():
         if not char_data.daily_quest_status_id:
             continue
-        try:
-            post_id = int(char_data.daily_quest_status_id)
-        except ValueError:
-            continue
         state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
-            bot_reply_post_id=post_id
+            bot_reply_post_id=char_data.daily_quest_status_id  # type: ignore[arg-type]
         )
         restored += 1
     return restored
