@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import re
@@ -18,6 +19,7 @@ from bot.load_data import (
     load_inventory,
     load_item_data,
     update_character_curr_hp,
+    update_character_daily_quest_status_id,
     update_character_gold_and_quest_date,
     update_quest_taken_by,
 )
@@ -26,6 +28,8 @@ from bot.noncombat_state import DailyQuestMidState
 
 if TYPE_CHECKING:
     from bot.main import BotState
+
+logger = logging.getLogger(__name__)
 
 _RE_ROLL = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*/\s*([^]]+)]")
 _RE_USE_ITEM = re.compile(rf"\[{whitespace_tolerant_literal('사용')}\s*/\s*([^\]]+)]")
@@ -351,10 +355,29 @@ def handle_daily_quest_start(
 
 
 def finalize_daily_quest_mid(acct: str, post_id: int, state: "BotState") -> None:
-    """봇이 의뢰 안내 게시물을 올린 뒤, 해당 포스트 ID를 mid_state에 기록한다."""
+    """봇이 의뢰 안내 게시물을 올린 뒤, 해당 포스트 ID를 mid_state에 기록한다.
+
+    스프레드시트에도 함께 기록해 둔다 — 봇이 재기동되면 인메모리 mid_state는
+    사라지지만(main()의 재기동 복원이 대상으로 삼지 않음), 이 판정 대기
+    포스트 ID를 캐릭터 시트에서 다시 읽어 복원할 수 있다. 저장에 실패해도
+    사용자에게는 이미 의뢰 안내 게시물이 정상적으로 전달된 뒤라 진행 자체를
+    막지 않는다 — 재기동 복원만 안 될 뿐, 지금 이 프로세스가 살아있는 동안은
+    인메모리 mid_state로 정상 진행된다.
+    """
     mid = state.noncombat.daily_quest_mid.get(acct)
-    if mid is not None:
-        mid.bot_reply_post_id = post_id
+    if mid is None:
+        return
+    mid.bot_reply_post_id = post_id
+
+    char_data = state.noncombat_char_dict.get(acct)
+    if char_data is None:
+        return
+    try:
+        update_character_daily_quest_status_id(
+            state.spreadsheet, char_data.name, str(post_id), cache=state.sheet_cache
+        )
+    except Exception:
+        logger.exception("일일 의뢰 진행 상태 저장 실패(재기동 복원용)")
 
 
 def handle_daily_quest_roll(

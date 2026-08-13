@@ -54,6 +54,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `stat_physical`, `stat_knowledge`, `stat_human`, `stat_magic`, `stat_technology` | 비전투 스탯 (0–5) — 육체·지식·인간·마법·기술     |
 | `gold`                                                                           | 보유 골드                             |
 | `daily_quest_date`                                                               | 마지막 일일 의뢰 날짜 (`YYYY-MM-DD`)       |
+| `daily_quest_status_id` (선택)                                                     | `[의뢰]` 판정 대기 중인 봇 게시물 ID. 진행 중이 아니면 빈 칸. 봇 재기동 시 이 컬럼으로 진행 상태를 복원한다(컬럼 자체가 없으면 재기동 복원 없이 기존처럼 동작) |
 
 ### 에너미 시트
 

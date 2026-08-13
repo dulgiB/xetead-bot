@@ -13,6 +13,7 @@ from bot.load_data import (  # noqa: E402
     mark_enemy_skill_revealed,
     reveal_declared_enemy_skills,
     update_character_curr_hp,
+    update_character_daily_quest_status_id,
     update_character_gold_and_quest_date,
 )
 from bot.sheet_cache import SheetCache  # noqa: E402
@@ -170,6 +171,62 @@ def test_update_character_gold_and_quest_date_raises_when_not_found():
         assert False, "예외가 발생해야 한다"
     except RuntimeError:
         pass
+
+
+def test_update_character_gold_and_quest_date_also_clears_status_id_when_present():
+    """의뢰 완수 시 daily_quest_status_id도 함께 비워야 재기동 복원 대상에서
+    빠진다."""
+    rows = [
+        ["name", "gold", "daily_quest_date", "daily_quest_status_id"],
+        ["아군1", "0", "", "123456"],
+    ]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_gold_and_quest_date(spreadsheet, "아군1", 1, "2026-08-03")
+
+    ws = spreadsheet.worksheet("캐릭터")
+    assert (2, 2, 1) in ws.written
+    assert (2, 3, "2026-08-03") in ws.written
+    assert (2, 4, "") in ws.written
+
+
+def test_update_character_gold_and_quest_date_skips_status_id_when_column_missing():
+    """기존(daily_quest_status_id 컬럼이 없는) 캐릭터 시트에서도 gold/
+    daily_quest_date 갱신 자체는 그대로 동작해야 한다."""
+    rows = [["name", "gold", "daily_quest_date"], ["아군1", "0", ""]]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_gold_and_quest_date(spreadsheet, "아군1", 1, "2026-08-03")
+
+    ws = spreadsheet.worksheet("캐릭터")
+    assert (2, 2, 1) in ws.written
+    assert (2, 3, "2026-08-03") in ws.written
+    assert len(ws.written) == 2
+
+
+def test_update_character_daily_quest_status_id_writes_matching_row():
+    rows = [
+        ["name", "daily_quest_status_id"],
+        ["아군1", ""],
+        ["아군2", ""],
+    ]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_daily_quest_status_id(spreadsheet, "아군2", "999")
+
+    ws = spreadsheet.worksheet("캐릭터")
+    assert (3, 2, "999") in ws.written
+
+
+def test_update_character_daily_quest_status_id_noop_when_column_missing():
+    """daily_quest_status_id 컬럼 자체가 없는 시트에서는 조용히 아무 것도
+    쓰지 않아야 한다(기존 [의뢰] 흐름을 깨면 안 됨)."""
+    rows = [["name", "gold"], ["아군1", "0"]]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_daily_quest_status_id(spreadsheet, "아군1", "999")
+
+    assert spreadsheet.worksheet("캐릭터").written == []
 
 
 def test_mark_enemy_skill_revealed_writes_true_to_matching_row():

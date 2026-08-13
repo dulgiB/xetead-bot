@@ -416,7 +416,13 @@ def update_character_gold_and_quest_date(
     today: str,
     cache: Optional[SheetCache] = None,
 ) -> None:
-    """캐릭터 시트에서 해당 캐릭터 행을 찾아 gold, daily_quest_date를 갱신한다."""
+    """캐릭터 시트에서 해당 캐릭터 행을 찾아 gold, daily_quest_date를 갱신한다.
+
+    "daily_quest_status_id" 컬럼이 있으면 함께 비운다 — 의뢰가 완료돼
+    더 이상 판정 답글을 기다리지 않는다는 뜻이라, 봇 재기동 복원 대상에서
+    빠져야 한다(update_character_daily_quest_status_id 참고). 이 컬럼은
+    선택 사항이라 없는 시트에서는 조용히 건너뛴다.
+    """
     ws = _worksheet(spreadsheet, "캐릭터", cache)
     values = (
         cache.get_all_values("캐릭터")
@@ -432,6 +438,11 @@ def update_character_gold_and_quest_date(
         date_col = header.index("daily_quest_date") + 1
     except ValueError as e:
         raise RuntimeError(f"캐릭터 시트에 필수 컬럼이 없습니다: {e}") from e
+    status_col = (
+        header.index("daily_quest_status_id") + 1
+        if "daily_quest_status_id" in header
+        else None
+    )
     name_col = header.index("name") if "name" in header else None
 
     for idx, row in enumerate(rows, start=2):
@@ -445,11 +456,54 @@ def update_character_gold_and_quest_date(
             # update()의 기본값 raw=True(ValueInputOption.raw)로 그대로 저장한다.
             ws.update([[new_gold]], gspread.utils.rowcol_to_a1(idx, gold_col))
             ws.update([[today]], gspread.utils.rowcol_to_a1(idx, date_col))
+            if status_col is not None:
+                ws.update([[""]], gspread.utils.rowcol_to_a1(idx, status_col))
             if cache is not None:
                 cache.invalidate("캐릭터")
             return
 
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
+
+
+def update_character_daily_quest_status_id(
+    spreadsheet: gspread.Spreadsheet,
+    char_name: str,
+    status_id: str,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """캐릭터 시트에서 해당 캐릭터 행을 찾아 daily_quest_status_id를 갱신한다.
+
+    [의뢰] 진행 중 봇이 판정 답글을 기다리는 게시물 ID를 저장해 두면, 봇
+    재기동으로 인메모리 상태(NonCombatState.daily_quest_mid)가 사라져도
+    이어서 진행할 수 있다(main()의 재기동 복원 참고). status_id=""로
+    부르면 진행 중 표시를 지운다.
+
+    "daily_quest_status_id" 컬럼 자체가 없는 시트에서는 조용히 아무 것도
+    하지 않는다 — 이 컬럼은 선택 사항이라, 아직 추가하지 않은 캐릭터
+    시트에서도 기존 [의뢰] 흐름 자체는(재기동 복원 없이) 그대로 동작해야
+    한다.
+    """
+    ws = _worksheet(spreadsheet, "캐릭터", cache)
+    values = (
+        cache.get_all_values("캐릭터")
+        if cache is not None
+        else ws.get_values(pad_values=True)
+    )
+    if not values:
+        return
+    header, rows = values[0], values[1:]
+    if "daily_quest_status_id" not in header:
+        return
+    status_col = header.index("daily_quest_status_id") + 1
+    name_col = header.index("name") if "name" in header else None
+
+    for idx, row in enumerate(rows, start=2):
+        name = row[name_col] if name_col is not None and name_col < len(row) else None
+        if name == char_name:
+            ws.update([[status_id]], gspread.utils.rowcol_to_a1(idx, status_col))
+            if cache is not None:
+                cache.invalidate("캐릭터")
+            return
 
 
 def update_character_curr_hp(
