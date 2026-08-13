@@ -19,7 +19,11 @@ from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from utils.name_matching import whitespace_tolerant_literal
 
-from bot.battle_reply_text import format_battle_reply, format_eliminated_characters
+from bot.battle_reply_text import (
+    format_battle_end_log_entries,
+    format_battle_reply,
+    format_eliminated_characters,
+)
 from bot.commands import admin as admin_commands
 from bot.commands.admin import AdminCommandResult, handle_admin_command
 from bot.commands.character import handle_character_command
@@ -1165,6 +1169,16 @@ def _winner_roster_text(ps: PracticeBattleState, winner: Optional[SideType]) -> 
     return f" ({', '.join(names)})"
 
 
+def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
+    """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())을 처리하고,
+    그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
+    없으면 빈 문자열). **반드시 ps.winner() 호출보다 먼저 불러야 한다** —
+    이 훅으로 바뀐 HP가 승패 판정에도 반영돼야 하기 때문이다."""
+    battle_end_entries = ps.context.on_battle_end()
+    body, _calc = format_battle_end_log_entries(ps.context, battle_end_entries)
+    return body
+
+
 def _start_investigation_battle(state: "BotState") -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
     assert (
@@ -1284,12 +1298,14 @@ def _handle_practice_command(
             return reply_text, "", None, battle_log
 
         battle_mode = "상시전투" if ps.is_investigation else "대련"
+        battle_end_body = _apply_practice_battle_end_effects(ps)
         winner = ps.winner()
         winner_label = ps.side_label(winner)
+        body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
         game_post = (
             f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
             f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
-            f"{_field_board(ps)}"
+            + "\n\n".join(body_blocks)
         )
         _upsert_practice_field_row(
             state,
@@ -1357,12 +1373,16 @@ def _handle_practice_command(
         hp2 = ps.total_hp_by_side(SideType.SIDE_2)
         if hp1 == 0 or hp2 == 0:
             ps.end_round()
+            battle_end_body = _apply_practice_battle_end_effects(ps)
             winner = ps.winner()
             winner_label = ps.side_label(winner)
+            body_blocks = [
+                block for block in (_field_board(ps), battle_end_body) if block
+            ]
             game_post = (
                 f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
                 f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
-                f"{_field_board(ps)}"
+                + "\n\n".join(body_blocks)
             )
             _upsert_practice_field_row(
                 state, ps, phase_value=current_phase.value, ended=True
@@ -1388,12 +1408,14 @@ def _handle_practice_command(
     hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
     if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
+        battle_end_body = _apply_practice_battle_end_effects(ps)
         winner = ps.winner()
         winner_label = ps.side_label(winner)
+        body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
         game_post = (
             f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
             f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
-            f"{_field_board(ps)}"
+            + "\n\n".join(body_blocks)
         )
         _upsert_practice_field_row(
             state, ps, phase_value=current_phase.value, ended=True

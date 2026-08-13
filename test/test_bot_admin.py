@@ -1251,6 +1251,76 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
     assert state.practice is None
 
 
+def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_calc():
+    """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())이 대련에서도
+    승자 계산 전에 반영돼야 하고, 그 결과(계산식 포함)가 종료 메시지에
+    나와야 한다."""
+    curse_buff = BuffData(
+        id="재앙",
+        buff_class_name="BuffCatastrophe",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=None,
+        value=0,
+        condition_=None,
+        condition_value=None,
+        is_debuff=False,
+        description="",
+        max_stack=20,
+    )
+    ctx = PracticeBattlefieldContext(buff_dict={"재앙": curse_buff}, skill_dict={})
+    # PracticeBattlefieldContext.add_character()는 curr_hp를 항상
+    # max_hp // 2로 초기화하므로(initial_hp는 무시됨), A/B 모두 시작
+    # 시점엔 정확히 50%로 동률이다.
+    ctx.add_character(
+        get_test_preset("A", max_hp=100), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("B", max_hp=100), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
+    # 재앙 5스택 × 3 = 15 감소. A만 이 훅으로 50 → 35(35%)까지 깎여
+    # B(50%)보다 열세가 되므로, 승자 계산이 반드시 이 훅 이후에 일어나야
+    # B(2팀)가 승리로 나온다.
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=CharacterId("A"),
+            applied_to=CharacterId("A"),
+            buff_id="재앙",
+            stack_value=5,
+        )
+    )
+
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, round_limit=1)
+    ps.start_round()
+
+    side_to_acct = {SideType.SIDE_1: "acct_a", SideType.SIDE_2: "acct_b"}
+    state = BotState(
+        char_dict={
+            "acct_a": get_test_preset("A"),
+            "acct_b": get_test_preset("B"),
+        },
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+    )
+    state.practice = ps
+
+    first_acct = side_to_acct[ps.first_mover]
+    _handle_practice_command(first_acct, "[이동/2]", state)
+    second_acct = side_to_acct[ps.second_mover]
+    _, _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+
+    assert "종료" in game_post
+    assert ctx.characters[CharacterId("A")].status.curr_hp == 35
+    assert "승자: 2팀 (B)" in game_post
+    assert "【전투 종료 처리】" in game_post
+    assert "→" in game_post
+    assert state.practice is None
+
+
 def test_practice_field_text_uses_team_labels_not_faction_labels():
     """대련은 아군/적군 구도가 아니므로, 필드 상황 텍스트도 팀 커맨드([1팀/...])와
     맞춰 "1팀"/"2팀" 헤더를 써야 한다 — 본 전투용 "아군"/"적군" 표현이 새어
