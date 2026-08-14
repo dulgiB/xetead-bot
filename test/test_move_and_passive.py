@@ -294,7 +294,7 @@ def test_voluntary_enemy_move_reaction_damage_bundles_into_move_reply():
     manager.process_command(cmd)
     reply, calc = format_battle_reply(ctx, enemy_id, ctx.results[before:])
 
-    assert reply == "【이동 ▸ 2열】\n▹ 적군 1 | -10 → 90/100"
+    assert reply == "▹ 적군 1 | 2열로 이동\n▹ 적군 1 | -10 → 90/100"
     assert calc == ""
 
 
