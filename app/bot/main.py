@@ -204,9 +204,7 @@ def _upsert_practice_field_row(
             cache=state.sheet_cache,
         )
     except Exception:
-        logger.exception(
-            "필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.field_id
-        )
+        logger.exception("필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.field_id)
 
 
 def _update_practice_field_active_post(state: "BotState") -> None:
@@ -225,9 +223,7 @@ def _update_practice_field_active_post(state: "BotState") -> None:
             cache=state.sheet_cache,
         )
     except Exception:
-        logger.exception(
-            "필드 메타 갱신 실패 (대련/상시전투 field_id=%s)", ps.field_id
-        )
+        logger.exception("필드 메타 갱신 실패 (대련/상시전투 field_id=%s)", ps.field_id)
 
 
 def _apply_game_post_side_effects(
@@ -644,9 +640,7 @@ class MastodonBotListener(StreamListener):
                     logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
                     if ps.all_declared():
                         game_post_text = _start_investigation_battle(state)
-                        mention_prefix = _practice_mention_prefix(
-                            ps.expected_accts
-                        )
+                        mention_prefix = _practice_mention_prefix(ps.expected_accts)
                         prev_post_id = ps.prep_post_id
                         ps.prep_post_id = 0
                         new_post = self._mastodon.status_post(
@@ -693,9 +687,7 @@ class MastodonBotListener(StreamListener):
                     )
                     if ps.all_declared() and ps.teams_valid():
                         game_post_text = _start_practice_battle(state)
-                        mention_prefix = _practice_mention_prefix(
-                            ps.expected_accts
-                        )
+                        mention_prefix = _practice_mention_prefix(ps.expected_accts)
                         prev_post_id = ps.prep_post_id
                         ps.prep_post_id = 0
                         new_post = self._mastodon.status_post(
