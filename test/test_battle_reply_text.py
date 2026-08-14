@@ -55,7 +55,7 @@ def _run(
     return format_battle_reply(ctx, caster_id, new_results)
 
 
-def test_move_command_is_header_only():
+def test_move_command_shows_destination_column():
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
@@ -65,7 +65,7 @@ def test_move_command_is_header_only():
 
     reply, calc = _run(ctx, manager, caster_id, "[이동/3]")
 
-    assert reply == "【이동 ▸ 3열】"
+    assert reply == "▹ 아군 1 | 3열로 이동"
     assert calc == ""
 
 
@@ -85,13 +85,12 @@ def test_attack_command_separates_damage_and_calculation():
     reply, calc = _run(ctx, manager, caster_id, "[공격/적군 1]")
 
     lines = reply.splitlines()
-    assert lines[0] == "【공격 ▸ 적군 1】"
     target = ctx.characters[CharacterId("적군 1")]
     assert (
-        lines[1]
+        lines[0]
         == f"▹ 적군 1 | -{100 - target.status.curr_hp} → {target.status.curr_hp}/100"
     )
-    assert len(lines) == 2
+    assert len(lines) == 1
     assert "↳" not in reply
 
     calc_lines = calc.splitlines()
@@ -126,7 +125,7 @@ def test_fixed_damage_skill_omits_calculation_line():
 
     reply, calc = _run(ctx, manager, caster_id, "[강타/적군 1]")
 
-    assert reply == "【강타 ▸ 적군 1】\n▹ 적군 1 | -20 → 80/100"
+    assert reply == "▹ 적군 1 | -20 → 80/100"
     assert calc == ""
 
 
@@ -163,7 +162,7 @@ def test_self_targeted_skill_header_uses_caster_name():
 
     reply, _calc = _run(ctx, manager, caster_id, "[집중하기]")
 
-    assert reply == "【집중하기 ▸ 아군 1】\n▹ 아군 1 | [집중] 부여 (2턴)"
+    assert reply == "▹ 아군 1 | [집중] 부여 (2턴)"
 
 
 def test_skill_with_damage_and_debuff_clear_combines_lines_in_effect_order():
@@ -209,9 +208,7 @@ def test_skill_with_damage_and_debuff_clear_combines_lines_in_effect_order():
 
     reply, _calc = _run(ctx, manager, caster_id, "[정화 일격/적군 1]")
 
-    assert reply == (
-        "【정화 일격 ▸ 적군 1】\n▹ 적군 1 | -10 → 90/100\n▹ 적군 1 | 모든 디버프 제거"
-    )
+    assert reply == "▹ 적군 1 | -10 → 90/100\n▹ 적군 1 | 모든 디버프 제거"
 
 
 def test_item_command_header_uses_item_name():
@@ -240,10 +237,10 @@ def test_item_command_header_uses_item_name():
 
     reply, _calc = _run(ctx, manager, caster_id, "[포션]")
 
-    assert reply == "【포션 ▸ 아군 1】\n▹ 아군 1 | +15 → 65/100"
+    assert reply == "▹ 아군 1 | +15 → 65/100"
 
 
-def test_multiple_parts_are_joined_by_blank_line():
+def test_multiple_parts_results_are_joined_without_headers():
     skill = SkillData(
         id="찌르기",
         target_rule="SkillTargetRuleNamed",
@@ -268,17 +265,22 @@ def test_multiple_parts_are_joined_by_blank_line():
 
     reply, _calc = _run(ctx, manager, caster_id, "[이동/3 - 찌르기/적군 1]")
 
-    assert reply == ("【이동 ▸ 3열】\n\n【찌르기 ▸ 적군 1】\n▹ 적군 1 | -5 → 95/100")
+    assert reply == ("▹ 아군 1 | 3열로 이동\n▹ 적군 1 | -5 → 95/100")
 
 
-def test_column_targeted_skill_header_shows_input_column():
+def test_column_targeted_skill_calc_header_shows_input_column():
+    """계산식(접힌 본문) 블록의 헤더는 실제 대상이 아니라 입력된 열
+    번호를 그대로 보여줘야 한다 — 본문(요약)에는 더 이상 헤더가 없으므로
+    calc 쪽에서만 검증한다."""
     skill = SkillData(
         id="광역기",
         target_rule="SkillTargetRuleColumn",
         target_count=1,
         cost=0,
         effects=[
-            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+            SkillEffectDamage(
+                ValueSourceType.STAT_ATK, 150, ValueType.INTEGER, None, None
+            )
         ],
         description="",
     )
@@ -286,7 +288,7 @@ def test_column_targeted_skill_header_shows_input_column():
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="광역기"),
+        get_test_preset("아군 1", skill_1_id="광역기", atk=6),
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
@@ -294,9 +296,10 @@ def test_column_targeted_skill_header_shows_input_column():
         get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
 
-    reply, _calc = _run(ctx, manager, caster_id, "[광역기/1열]")
+    reply, calc = _run(ctx, manager, caster_id, "[광역기/1열]")
 
-    assert reply.startswith("【광역기 ▸ 1열】\n")
+    assert reply == "▹ 적군 1 | -9 → 91/100"
+    assert calc == "【광역기 ▸ 1열】\n▹ 적군 1 | 6 × 1.5[계수] → -9"
 
 
 def test_move_effect_inside_skill_shows_target_and_position():
@@ -327,7 +330,7 @@ def test_move_effect_inside_skill_shows_target_and_position():
     reply, _calc = _run(ctx, manager, caster_id, "[당기기/적군 1]")
 
     # 적군 1은 4열(BattlefieldColumnIndex(3))에서 시전자(1열) 쪽으로 1칸 이동 → 3열.
-    assert reply == "【당기기 ▸ 적군 1】\n▹ 적군 1 | 3열로 이동"
+    assert reply == "▹ 적군 1 | 3열로 이동"
 
 
 def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
@@ -385,11 +388,7 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
 
     reply, calc = _run(ctx, manager, caster_id, "[저주 방출/적군 1]")
 
-    assert reply == (
-        "【저주 방출 ▸ 적군 1】\n"
-        "▹ 아군 1 | [저주]×2 소모 → 최종 1\n"
-        "▹ 적군 1 | -2 → 98/100"
-    )
+    assert reply == ("▹ 아군 1 | [저주]×2 소모 → 최종 1\n▹ 적군 1 | -2 → 98/100")
     assert calc == "【저주 방출 ▸ 적군 1】\n▹ 적군 1 | 2[저주] × 1 → -2"
 
 
@@ -453,11 +452,7 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
     reply, calc = _run(ctx, manager, caster_id, "[이중 타격/적군 1]")
 
     # STAT_ATK(다이스 없음) 6 × 1.5[계수] = 9, 스택 소모 5 × 3[계수] = 15 → 합계 24
-    assert reply == (
-        "【이중 타격 ▸ 적군 1】\n"
-        "▹ 아군 1 | [저주]×5 소모 → 최종 0\n"
-        "▹ 적군 1 | -24 → 76/100"
-    )
+    assert reply == ("▹ 아군 1 | [저주]×5 소모 → 최종 0\n▹ 적군 1 | -24 → 76/100")
     assert (
         calc == "【이중 타격 ▸ 적군 1】\n▹ 적군 1 | 6 × 1.5[계수] + 5[저주] × 3 → -24"
     )
@@ -492,7 +487,7 @@ def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
 
     reply, calc = _run(ctx, manager, caster_id, "[연타/적군 1]")
 
-    assert reply == ("【연타 ▸ 적군 1】\n▹ 적군 1 | -15 → 85/100")
+    assert reply == "▹ 적군 1 | -15 → 85/100"
     assert calc == "【연타 ▸ 적군 1】\n▹ 적군 1 | 10 + 5 → -15"
 
 
@@ -745,7 +740,7 @@ def test_enemy_skill_preview_shows_description_when_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ 대상에게 고정 피해를 준다."
+    assert reply == "　↳ 대상에게 고정 피해를 준다."
 
 
 def test_enemy_skill_preview_blinds_description_when_not_revealed():
@@ -775,7 +770,7 @@ def test_enemy_skill_preview_blinds_description_when_not_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ [효과 미확인]"
+    assert reply == "　↳ [효과 미확인]"
 
 
 def test_skill_preview_omitted_when_show_skill_preview_is_false():
@@ -804,6 +799,8 @@ def test_skill_preview_omitted_when_show_skill_preview_is_false():
     caster_id, new_results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
     reply, _calc = format_battle_reply(ctx, caster_id, new_results)
 
+    # 대미지는 POST에서 정산되므로 PRE 선언 시점엔 보여줄 결과 줄이 없다 —
+    # 이 경우엔 예외적으로 헤더가 커맨드 접수 확인 역할을 한다.
     assert reply == "【스킬_1 ▸ 아군 1】"
 
 

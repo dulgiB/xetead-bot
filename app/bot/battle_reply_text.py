@@ -2,16 +2,18 @@
 텍스트로 조립한다.
 
 `BattlefieldContext.results`(커맨드 처리 후 `context.results[before:]`로 얻는
-`list[CommandPartProcessResult]`)를 파트(행동) 하나당 하나의
-"【헤더】\n본문" 블록으로 변환하고, 여러 파트가 있으면 빈 줄로 이어붙인다.
+`list[CommandPartProcessResult]`)를 헤더 없이 "▹ 대상 | 결과" 줄만으로
+조립하고, 여러 파트의 결과 줄을 그대로 이어붙인다(파트 사이 구분 없음) —
+어떤 커맨드/스킬이었는지보다 최종 결과만 한눈에 보여주는 요약이 목적이다.
 
 계산식(주사위/계수 등)은 본문과 분리해서 반환한다 — 답글이 길어지는 주범이라
 호출측(봇 인터페이스)이 본문을 CW(content warning) 게시물의 spoiler_text로,
 계산식을 그 게시물의 (접힌) 본문으로 넣어 게시물 하나로 합치거나(개별 커맨드
 답글), 본문+이미지를 먼저 올리고 계산식만 별도의 CW 후속 게시물로 이어
 붙인다(적 후행 정산·라운드/전투 종료 처리 등 이미지가 함께 붙는 집계용
-게시물). 계산식 줄 끝에는 그 계산이 만들어낸 최종 값을 "→ 값" 형태로
-덧붙여, 계산식만 펼쳐 봐도 결과를 바로 알 수 있게 한다.
+게시물). 계산식은 파트(행동)별로 "【헤더】" 블록으로 묶여 어떤 커맨드의
+계산인지 알 수 있다. 계산식 줄 끝에는 그 계산이 만들어낸 최종 값을
+"→ 값" 형태로 덧붙여, 계산식만 펼쳐 봐도 결과를 바로 알 수 있게 한다.
 """
 
 from typing import TYPE_CHECKING, Optional
@@ -40,8 +42,12 @@ def format_battle_reply(
     """(본문, 계산식) 튜플을 반환한다. 표시할 계산식이 없으면 두 번째 값은
     빈 문자열이다.
 
-    `show_skill_preview=True`이면 SKILL 파트 헤더 아래에 그 스킬의 효과
-    설명을 예고 줄로 덧붙인다 (적군 PRE 선언 답글 전용 — 본 전투/DM 전투에서만
+    본문(spoiler_text로 항상 바로 보이는 요약)은 헤더 없이 "▹ 대상 | 결과"
+    줄만 파트 구분 없이 이어붙인다 — 어떤 스킬/커맨드였는지보다 최종
+    결과만 한눈에 보여주는 편이 낫다는 판단.
+
+    `show_skill_preview=True`이면 SKILL 파트마다 그 스킬의 효과 설명을
+    예고 줄로 덧붙인다 (적군 PRE 선언 답글 전용 — 본 전투/DM 전투에서만
     사용된다). 스킬이 아직 공개되지 않았으면(`SkillData.revealed=False`)
     설명 대신 블라인드 문구를 보여준다."""
     bodies = []
@@ -50,10 +56,11 @@ def format_battle_reply(
         body, calc_block = _format_part(
             context, caster_id, part_result, show_skill_preview
         )
-        bodies.append(body)
+        if body:
+            bodies.append(body)
         if calc_block:
             calc_blocks.append(calc_block)
-    return "\n\n".join(bodies), "\n\n".join(calc_blocks)
+    return "\n".join(bodies), "\n\n".join(calc_blocks)
 
 
 def format_eliminated_characters(eliminated: list[CharacterId]) -> str:
@@ -146,16 +153,7 @@ def _header_and_log_entries(
     part = part_result.expanded_part.original_part
     assert isinstance(part, CommandPart)
     header = _format_header(caster_id, part)
-
-    log_entries = part_result.log_entries
-    if part.type_ == ActionType.MOVE:
-        # 최상위 [이동] 커맨드는 헤더가 이미 "어디로 이동했는지"를 보여주므로
-        # 그 자체를 나타내는 MOVE 종류 로그는 중복이라 제외한다(스킬 효과로서의
-        # 이동과 다름). 다만 그 이동이 ON_ENEMY_MOVE 반격 등을 유발했다면
-        # extra_log_entries를 통해 다른 종류(DAMAGE 등)의 로그가 함께 실려
-        # 있을 수 있으므로 그건 그대로 보여준다.
-        log_entries = [e for e in log_entries if e.kind != BattleLogEntryKind.MOVE]
-    return part, header, log_entries
+    return part, header, part_result.log_entries
 
 
 def _format_part(
@@ -177,7 +175,10 @@ def _format_part(
         if calc:
             calc_lines.append(f"▹ {entry.target_name} | {calc} → {final_value}")
 
-    body = header if not body_lines else header + "\n" + "\n".join(body_lines)
+    # 적 후행 정산으로 미뤄지는 공격 등, 이 시점엔 아직 아무 결과도 없는
+    # 파트(예: PRE 선언)는 보여줄 결과 줄이 없다 — 그래도 커맨드가
+    # 접수됐다는 확인 자체는 필요하므로 이때만 예외적으로 헤더로 대체한다.
+    body = "\n".join(body_lines) if body_lines else header
     calc_block = f"{header}\n" + "\n".join(calc_lines) if calc_lines else ""
     return body, calc_block
 
