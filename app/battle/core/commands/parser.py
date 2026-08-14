@@ -33,7 +33,13 @@ name_charset = rf"{kr_charset}0-9A-Za-z_!^~"
 _이동 = whitespace_tolerant_literal("이동")
 _공격 = whitespace_tolerant_literal("공격")
 
-command_base_format = regex.compile(r".*\[\s*(?P<command>.+)\s*].*")
+command_base_format = regex.compile(r".*\[\s*(?P<command>.+)\s*].*", regex.DOTALL)
+# DOTALL: 나레이션과 대괄호 커맨드가 서로 다른 문단에 있으면(Mastodon 답글에서
+# 줄바꿈 입력 시 <p>로 분리되어 평문에도 개행이 남는다 — _TextExtractor 참고)
+# 두 `.*`가 기본 설정(개행 미매칭)으로는 문단 경계를 건너뛰지 못해 매치
+# 자체가 실패했다. 그 결과 parse_character_command()가 None을 반환해
+# 실제로는 유효한 커맨드가 "대괄호 없는 사담"으로 조용히 무시되는 문제가
+# 있었다(에러 메시지도 없어 플레이어가 원인을 알기 어렵다).
 
 # command_base_format의 두 .* 가 모두 탐욕적이라, 대괄호 그룹이 여러 개인
 # 입력("[A] [B]")은 마지막 그룹만 command로 캡처되고 앞쪽은 조용히 버려진다

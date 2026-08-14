@@ -223,3 +223,14 @@ def test_multiple_bracket_groups_silently_drops_earlier_ones_without_hyphen(ctx)
         user_id=_USER,
         parts=[CommandPart(type_=ActionType.SKILL, skill_id="스킬1", targets=[])],
     )
+
+
+def test_narration_and_command_split_across_paragraphs_still_parses(ctx):
+    """나레이션과 대괄호 커맨드가 서로 다른 문단에 있어도(Mastodon 답글에서
+    줄바꿈 입력 시 평문에도 개행이 남는다) 커맨드가 정상 인식돼야 한다 —
+    command_base_format이 개행을 못 건너뛰어 None을 반환하던 회귀 테스트다."""
+    result = parse_character_command(_USER, "나레이션 문단\n[이동/1]", ctx)
+    assert result == CharacterCommand(
+        user_id=_USER,
+        parts=[CommandPart(type_=ActionType.MOVE, targets=[BattlefieldColumnIndex(0)])],
+    )
