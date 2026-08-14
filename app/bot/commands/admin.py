@@ -712,7 +712,7 @@ def _cmd_proxy(
                 None,
             )
 
-        field_id = str(ps.prep_post_id)
+        field_id = ps.field_id
         round_n = ps.round_n
         phase = ps.phase.value if ps.phase is not None else ""
 

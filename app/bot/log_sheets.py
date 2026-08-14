@@ -314,9 +314,11 @@ def upsert_field_row(
     data_rows = all_values[1:]
 
     row_idx = None
+    matched_by_id = False
     for i, row in enumerate(data_rows, start=2):
         if row and row[0] == field_id:
             row_idx = i
+            matched_by_id = True
             break
 
     if row_idx is None and battle_type in _SINGLE_SLOT_BATTLE_TYPES:
@@ -331,8 +333,18 @@ def upsert_field_row(
     if row_idx is not None:
         existing = all_values[row_idx - 1]
         existing = existing + [""] * (len(_FIELD_HEADERS) - len(existing))
-        started_at = existing[2] or _now()
-        ended_at = _now() if ended else existing[3]
+        if matched_by_id:
+            started_at = existing[2] or _now()
+            ended_at = _now() if ended else existing[3]
+        else:
+            # field_id가 아니라 battle_type만 일치해 재사용하는 행 — 이전
+            # (다른) 전투가 쓰던 슬롯이므로 그 전투의 started_at/ended_at을
+            # 그대로 물려받으면 안 된다. 특히 ended_at을 물려받으면 이제 막
+            # 시작한 전투가 시작하자마자 "이미 종료됨"으로 보여
+            # load_open_battle_rows()의 재기동 복원 대상에서 빠지는 버그가
+            # 된다.
+            started_at = _now()
+            ended_at = _now() if ended else ""
         new_row: list[str | int | float] = [
             field_id,
             battle_type.value,

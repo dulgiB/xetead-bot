@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import threading
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -193,7 +194,7 @@ def _upsert_practice_field_row(
     try:
         log_sheets.upsert_field_row(
             state.spreadsheet,
-            str(ps.prep_post_id),
+            ps.field_id,
             battle_type=_practice_battle_type(ps),
             round_n=ps.round_n,
             phase=phase_value,
@@ -204,7 +205,7 @@ def _upsert_practice_field_row(
         )
     except Exception:
         logger.exception(
-            "필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id
+            "필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.field_id
         )
 
 
@@ -219,13 +220,13 @@ def _update_practice_field_active_post(state: "BotState") -> None:
     try:
         log_sheets.update_field_meta(
             state.spreadsheet,
-            str(ps.prep_post_id),
+            ps.field_id,
             {"active_post_id": ps.active_post_id},
             cache=state.sheet_cache,
         )
     except Exception:
         logger.exception(
-            "필드 메타 갱신 실패 (대련/상시전투 field_id=%s)", ps.prep_post_id
+            "필드 메타 갱신 실패 (대련/상시전투 field_id=%s)", ps.field_id
         )
 
 
@@ -348,7 +349,7 @@ def _persist_battle_log(
                 log_sheets.FieldBattleType.INVESTIGATION,
             )
             and state.practice is not None
-            and battle_log.field_id == str(state.practice.prep_post_id)
+            and battle_log.field_id == state.practice.field_id
         ):
             phase = state.practice.phase
             log_sheets.upsert_field_row(
@@ -452,12 +453,17 @@ def reload_char_data(state: BotState) -> None:
     state.noncombat_char_dict = noncombat_char_dict
 
 
+_STREAM_WATCHDOG_CHECK_INTERVAL_SEC = 20
+_STREAM_WATCHDOG_STALE_THRESHOLD_SEC = 60
+
+
 class MastodonBotListener(StreamListener):
     def __init__(self, mastodon: Mastodon, state: BotState, bot_acct: str) -> None:
         super().__init__()
         self._mastodon = mastodon
         self._state = state
         self._bot_acct = bot_acct
+        self._last_event_at = time.monotonic()
 
     def on_abort(self, err: Exception) -> None:
         """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
@@ -465,6 +471,45 @@ class MastodonBotListener(StreamListener):
         백그라운드 스레드 안에서 알아서 재연결을 재시도하므로 여기서는
         가시성을 위해 로그만 남긴다 — 프로세스는 죽지 않는다."""
         logger.warning("스트리밍 연결이 끊어져 재연결을 시도합니다: %s", err)
+
+    def handle_heartbeat(self) -> None:
+        """서버가 15초 간격으로 보내는 하트비트(':thump', mastodon/streaming/
+        index.js). watchdog()이 silent hang을 판단하는 기준 시각이라, 실제
+        이벤트가 뜸해도 하트비트만 계속 오면 여기서 계속 갱신된다."""
+        self._last_event_at = time.monotonic()
+
+    def on_any_event(self, name: str, data=None, for_stream=None) -> None:
+        """실제 이벤트(멘션 등) 수신 시각도 watchdog 기준에 반영한다."""
+        self._last_event_at = time.monotonic()
+
+    def watchdog(self, handle) -> None:
+        """연결이 예외 없이 응답만 멎는 silent hang을 감지해 강제 재연결시킨다.
+
+        `on_abort`는 라이브러리가 연결 종료를 예외로 감지했을 때만 불린다.
+        그런데 리버스 프록시의 idle 타임아웃 등으로 TCP 연결 자체는 살아있는
+        채 서버 응답(하트비트 포함)만 완전히 멎는 경우, requests의 read
+        timeout(기본 300초)에만 기대면 재연결이 걸리지 않을 수 있다 — 실제로
+        정상적인 새 알림이 서버에 도착했는데도 봇이 30분 넘게 아무것도 처리
+        못한 채 멈춰 있던 장애가 있었다. 하트비트 최종 수신 시각을 직접
+        추적해 임계값을 넘기면 현재 연결을 강제로 닫아, 라이브러리의 기존
+        reconnect_async 경로(on_abort → 백그라운드 재연결)를 타게 만든다."""
+        while handle.is_alive():
+            time.sleep(_STREAM_WATCHDOG_CHECK_INTERVAL_SEC)
+            idle_sec = time.monotonic() - self._last_event_at
+            if idle_sec < _STREAM_WATCHDOG_STALE_THRESHOLD_SEC:
+                continue
+            logger.warning(
+                "스트리밍 워치독: %.0f초간 하트비트/이벤트가 없어 연결을 강제로 "
+                "끊고 재연결을 유도합니다",
+                idle_sec,
+            )
+            connection = getattr(handle, "connection", None)
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    logger.exception("스트리밍 워치독: 연결 강제 종료 실패")
+            self._last_event_at = time.monotonic()
 
     def _capture_field_media_ids(self, state: "BotState") -> list:
         """공개 필드 시트를 이미지로 캡처해 업로드하고 media_id 리스트를 반환한다.
@@ -599,10 +644,13 @@ class MastodonBotListener(StreamListener):
                     logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
                     if ps.all_declared():
                         game_post_text = _start_investigation_battle(state)
+                        mention_prefix = _practice_mention_prefix(
+                            ps.expected_accts
+                        )
                         prev_post_id = ps.prep_post_id
                         ps.prep_post_id = 0
                         new_post = self._mastodon.status_post(
-                            _truncate(game_post_text),
+                            _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
                             in_reply_to_id=prev_post_id,
                         )
@@ -645,10 +693,13 @@ class MastodonBotListener(StreamListener):
                     )
                     if ps.all_declared() and ps.teams_valid():
                         game_post_text = _start_practice_battle(state)
+                        mention_prefix = _practice_mention_prefix(
+                            ps.expected_accts
+                        )
                         prev_post_id = ps.prep_post_id
                         ps.prep_post_id = 0
                         new_post = self._mastodon.status_post(
-                            _truncate(game_post_text),
+                            _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
                             in_reply_to_id=prev_post_id,
                         )
@@ -1216,6 +1267,7 @@ def _start_investigation_battle(state: "BotState") -> str:
 
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
+    ps.field_id = str(ps.prep_post_id)
     ps.start_round()
     _upsert_practice_field_row(
         state, ps, phase_value=ps.phase.value if ps.phase else ""
@@ -1254,6 +1306,7 @@ def _start_practice_battle(state: "BotState") -> str:
 
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
+    ps.field_id = str(ps.prep_post_id)
     ps.start_round()
     _upsert_practice_field_row(
         state, ps, phase_value=ps.phase.value if ps.phase else ""
@@ -1303,7 +1356,7 @@ def _handle_practice_command(
         ps.context.remove_character(char_id)
         reply_text = format_eliminated_characters([char_id])
         battle_log = log_sheets.BattleCommandLog(
-            field_id=str(ps.prep_post_id),
+            field_id=ps.field_id,
             round_n=ps.round_n,
             phase=ps.phase.value if ps.phase is not None else "",
             battle_type=_practice_battle_type(ps),
@@ -1337,7 +1390,7 @@ def _handle_practice_command(
     if current_phase is None:
         return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", "", None, None
 
-    field_id = str(ps.prep_post_id)
+    field_id = ps.field_id
     round_n = ps.round_n
 
     if count_bracket_groups(text) >= 2:
@@ -1583,11 +1636,16 @@ def main() -> None:
     # 죽고 Docker의 restart:always로만 복구되는데, 그때마다 스프레드시트
     # 전체 재로드 + 미종료 전투 복원(field_restore.restore_all())을 다시
     # 거쳐야 해서 단순 네트워크 순단에도 매번 콜드 재시작이 발생했다.
+    listener = MastodonBotListener(mastodon, state, me["acct"])
     handle = mastodon.stream_user(
-        MastodonBotListener(mastodon, state, me["acct"]),
+        listener,
         run_async=True,
         reconnect_async=True,
     )
+    watchdog_thread = threading.Thread(
+        target=listener.watchdog, args=(handle,), daemon=True
+    )
+    watchdog_thread.start()
     while handle.is_alive():
         time.sleep(60)
 
