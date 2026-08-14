@@ -274,6 +274,7 @@ def _restore_practice_battle(
     manager = PracticeRoundManager(context)
 
     restored = 0
+    expected_accts: list[str] = []
     for entry in row.characters:
         name = entry.get("name", "")
         data = state.name_dict.get(name)
@@ -298,6 +299,13 @@ def _restore_practice_battle(
             if "curr_hp" in entry:
                 char.status.curr_hp = entry["curr_hp"]
         restored += 1
+        # expected_accts는 라운드 전환 게시물에서 참여자 전원을 멘션하는 데
+        # 쓰인다(_practice_mention_prefix) — 필드 시트 스냅샷에는 담기지
+        # 않으므로, 복원된 각 캐릭터의 mastodon_id로 다시 채워야 한다.
+        # 그렇지 않으면 재기동 이후의 모든 라운드 전환 게시물이 멘션 없이
+        # 게시되어 참여자들이 알림을 못 받는다.
+        if data.mastodon_id and data.mastodon_id not in expected_accts:
+            expected_accts.append(data.mastodon_id)
 
     if restored == 0:
         logger.warning(
@@ -316,13 +324,19 @@ def _restore_practice_battle(
         # 대련/상시전투는 라운드가 시작된 뒤로는 항상 prep_post_id=0(포지션
         # 선언 접수 종료 표시)이다 — "필드" 행 자체가 start_round() 이후에만
         # 만들어지므로, 복원 대상 행이 존재한다는 것 자체가 이미 이 단계를
-        # 지났다는 뜻이다. row.field_id는 시트에서 이 행을 찾는 키였을 뿐,
-        # 여기 그대로 쓰면 준비 단계로 잘못 되돌아간다.
+        # 지났다는 뜻이다. row.field_id를 여기 그대로 prep_post_id로 쓰면
+        # 준비 단계로 잘못 되돌아간다.
         prep_post_id=0,
+        # 다만 "필드"/"로그_전투" 시트 기록의 영속 키(field_id)는 prep_post_id와
+        # 별개로 이어져야 한다 — row.field_id(시트에서 이 행을 찾은 실제 키)를
+        # 그대로 물려받지 않으면, 재기동 이후의 모든 기록이 field_id="0"으로
+        # 뒤섞여 원래 게시물 스레드와의 연결이 끊긴다.
+        field_id=row.field_id,
         active_post_id=meta.get("active_post_id"),
         visibility=meta.get("visibility", "public"),
         first_mover=first_mover,
         second_mover=second_mover,
+        expected_accts=expected_accts,
         is_investigation=(row.battle_type == FieldBattleType.INVESTIGATION),
     )
     state.practice = ps

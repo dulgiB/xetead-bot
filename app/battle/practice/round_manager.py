@@ -64,7 +64,22 @@ class PracticeRoundManager:
         self._phase = phase
 
     def end_round(self) -> None:
-        """라운드 종료 버프 처리. 다음 턴은 to_phase(FIRST_MOVER_ACTION)로 시작한다."""
+        """라운드 종료 버프 처리. 다음 턴은 to_phase(FIRST_MOVER_ACTION)로 시작한다.
+
+        본 전투(RoundManager)는 ENEMY_POST_ACTION 페이즈에서
+        on_enemy_post_action()/on_enemy_post_action_resolved()를 호출해
+        "적 후행 시" 트리거 패시브(예: 피격 시 [유예된 재앙] 스택을 쌓는
+        패시브)를 평가한다. 대련은 PRE/POST 구분 없이 선공/후공을 각각
+        process_ally_command()로 즉시 처리하는 대칭 구조라 이 훅을 호출하는
+        지점이 아예 없었고, 그 결과 이 트리거를 쓰는 패시브가 대련에서는
+        전혀 발동하지 않았다. 대련은 라운드당 지연 공격 정산 단계가 따로
+        없어 두 훅을 순서상 구분할 지점이 없으므로, 그 라운드의 모든 행동이
+        끝난 이 시점(damaged_this_round가 확정된 뒤)에 두 훅을 함께 평가해
+        본 전투와 동일한 결과를 낸다. _apply_round_events()가 버프 타이밍만
+        보고 진영을 가리지 않으므로 SIDE_1/SIDE_2 양쪽 모두에 대칭으로
+        적용된다."""
+        self._context.buff_container.on_enemy_post_action()
+        self._context.buff_container.on_enemy_post_action_resolved()
         self._context.on_finish_round()
         self._phase = None
 

@@ -20,6 +20,15 @@ class PracticeBattleState:
     prep_post_id: int = 0
     active_post_id: Optional[int] = None
 
+    # "필드"/"로그_전투" 시트에서 이 세션을 식별하는 영속 키. 라운드가
+    # 시작되는 시점(_start_practice_battle/_start_investigation_battle)에
+    # 그때의 prep_post_id로 한 번 고정된다 — prep_post_id 자체는 라운드
+    # 시작 후 0으로 리셋되고(포지션 선언 접수 종료 표시) 재기동 복원 시에도
+    # 항상 0이라, prep_post_id를 시트 키로 그대로 재사용하면 재기동 이후
+    # 모든 기록이 field_id="0"으로 뒤섞인다 — 이 필드는 그 두 가지 역할을
+    # 분리하기 위한 것이다.
+    field_id: str = ""
+
     # 진행 게시물 visibility — 최초 [대련]/[상시전투] 개시 멘션의 visibility로
     # 고정해, 세션 내내 게시되는 퍼블릭 게시물들이 이 값을 그대로 따르게 한다.
     visibility: str = "public"
