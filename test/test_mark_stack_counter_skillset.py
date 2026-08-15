@@ -428,9 +428,7 @@ class TestPassiveSkill:
         manager.process_command(parse_character_command(caster, "[공격/적군]", ctx))
         reply, calc = format_battle_reply(ctx, caster, ctx.results[before:])
 
-        assert reply == (
-            "【공격 ▸ 적군】\n▹ 적군 | -100 → 900/1000\n▹ 적군 | [Mark]×1 부여 → 최종 1"
-        )
+        assert reply == ("▹ 적군 | -100 → 900/1000\n▹ 적군 | [Mark]×1 부여 → 최종 1")
         assert calc == "【공격 ▸ 적군】\n▹ 적군 | (100 + 0[0d6]) → -100"
 
 
@@ -692,7 +690,7 @@ class TestMarkCounterBuff:
 
     def test_no_damage_and_no_trigger_when_target_has_no_mark_stack(self):
         """[Mark] 스택이 0이면 대미지가 발생하지 않을 뿐 아니라, 답글에도
-        이동 헤더만 남고 대미지 항목 자체가 생기지 않아야 한다."""
+        이동 결과만 남고 대미지 항목 자체가 생기지 않아야 한다."""
         ctx = _make_context()
         manager = _setup_enemy_pre_phase(ctx)
         enemy = CharacterId("적군")
@@ -721,7 +719,7 @@ class TestMarkCounterBuff:
         reply, calc = format_battle_reply(ctx, enemy, ctx.results[before:])
 
         assert hp_before == hp_after
-        assert reply == "【이동 ▸ 2열】"
+        assert reply == "▹ 적군 | 2열로 이동"
         assert calc == ""
 
     def test_reply_decomposes_coefficient_and_stack_with_source_labels(self):
@@ -734,7 +732,7 @@ class TestMarkCounterBuff:
         manager.process_command(parse_character_command(enemy, "[이동/2열]", ctx))
         reply, calc = format_battle_reply(ctx, enemy, ctx.results[before:])
 
-        assert reply == "【이동 ▸ 2열】\n▹ 적군 | -140 → 860/1000"
+        assert reply == "▹ 적군 | 2열로 이동\n▹ 적군 | -140 → 860/1000"
         assert calc == (
             "【이동 ▸ 2열】\n"
             "▹ 적군 | (100 + 0[0d6]) × (0.7[MarkCounter 계수] × 2[Mark]) → -140"

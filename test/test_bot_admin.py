@@ -229,8 +229,10 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
 
 def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     """관리자 프록시로 대행한 PRE 선언 답글도 POST 정산과 마찬가지로,
-    CommandPart(파트)별 헤더 앞에 대행한 캐릭터의 이름이 붙어야 한다 —
-    답글 자체만으로는 누가 행동했는지 알 수 없기 때문이다."""
+    CommandPart(파트)별 결과 줄(또는, 아직 결과가 없는 파트라면 헤더) 앞에
+    대행한 캐릭터의 이름이 붙어야 한다 — 답글 자체만으로는 누가 행동했는지
+    알 수 없기 때문이다. 공격의 대미지는 POST에서 정산되므로 PRE 선언
+    답글에는 결과 줄이 없어 헤더가 그대로 남는다."""
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -247,7 +249,7 @@ def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     )
 
     assert reply_text == (
-        "적 캐릭터 【이동 ▸ 3열】\n\n적 캐릭터 【공격 ▸ 유효 캐릭터】"
+        "적 캐릭터 ▹ 적 캐릭터 | 3열로 이동\n\n적 캐릭터 【공격 ▸ 유효 캐릭터】"
     )
 
 
@@ -699,7 +701,7 @@ def test_character_command_reply_merges_calc_into_single_cw_post(monkeypatch):
     target = state.session.context.characters[CharacterId("적 캐릭터")]
     dealt = 100 - target.status.curr_hp
     assert call["spoiler_text"] == (
-        f"【공격 ▸ 적 캐릭터】\n▹ 적 캐릭터 | -{dealt} → {target.status.curr_hp}/100"
+        f"▹ 적 캐릭터 | -{dealt} → {target.status.curr_hp}/100"
     )
     assert "↳" not in call["spoiler_text"]
     assert "@ally_acct" not in call["spoiler_text"]
