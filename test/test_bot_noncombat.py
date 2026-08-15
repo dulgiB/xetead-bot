@@ -561,14 +561,14 @@ def test_daily_quest_start_formats_client_name_and_description(monkeypatch):
         lambda spreadsheet, cache=None: _daily_quest_pools(
             client_categories=("길 잃은",),
             client_names=("어린아이로부터",),
-            quest_contents=("부모를 찾아 달라는",),
+            quest_contents=("부모를 찾아달라고 의뢰했다",),
         ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
 
     assert result.startswith(
-        "길 잃은 어린아이로부터 부모를 찾아 달라는 의뢰를 맡겼다. 어떻게 할까?"
+        "길 잃은 어린아이로부터 부모를 찾아달라고 의뢰했다. 어떻게 할까?"
     )
     assert log_info is not None
 
@@ -585,14 +585,14 @@ def test_daily_quest_start_does_not_add_or_alter_particle(monkeypatch):
         lambda spreadsheet, cache=None: _daily_quest_pools(
             client_categories=("마을",),
             client_names=("촌장으로부터",),
-            quest_contents=("세금 장부를 정리해 달라는",),
+            quest_contents=("세금 장부를 정리해달라고 의뢰했다",),
         ),
     )
 
     result, log_info = handle_daily_quest_start(acct, state)
 
     assert result.startswith(
-        "마을 촌장으로부터 세금 장부를 정리해 달라는 의뢰를 맡겼다. 어떻게 할까?"
+        "마을 촌장으로부터 세금 장부를 정리해달라고 의뢰했다. 어떻게 할까?"
     )
 
 
@@ -610,9 +610,9 @@ def test_daily_quest_start_combines_pools_independently(monkeypatch):
             client_categories=("장터", "마을"),
             client_names=("아주머니로부터",),
             quest_contents=(
-                "무거운 짐을 옮겨 달라는",
-                "약초를 채집해 달라는",
-                "순찰해 달라는",
+                "무거운 짐을 옮겨달라고 의뢰했다",
+                "약초를 채집해달라고 의뢰했다",
+                "순찰해달라고 의뢰했다",
             ),
         ),
     )
@@ -620,7 +620,7 @@ def test_daily_quest_start_combines_pools_independently(monkeypatch):
     result, log_info = handle_daily_quest_start(acct, state)
 
     assert result.startswith(
-        "장터 아주머니로부터 무거운 짐을 옮겨 달라는 의뢰를 맡겼다. 어떻게 할까?"
+        "장터 아주머니로부터 무거운 짐을 옮겨달라고 의뢰했다. 어떻게 할까?"
     )
 
 
