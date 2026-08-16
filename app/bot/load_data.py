@@ -87,21 +87,7 @@ def load_battle_data(
     skill_dict: dict[str, SkillData] = {
         str(r["id"]): SkillData.from_dict(r) for r in char_skill_raw if r.get("id")
     }
-    try:
-        enemy_skill_raw = _worksheet(db, "스킬_에너미", cache).get_all_records(
-            value_render_option=_UNFORMATTED
-        )
-        skill_dict.update(
-            {
-                str(r["id"]): SkillData.from_dict(r)
-                for r in enemy_skill_raw
-                if r.get("id")
-            }
-        )
-    except gspread.exceptions.WorksheetNotFound:
-        logger.warning(
-            "'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다."
-        )
+    skill_dict.update(load_enemy_skill_dict(db, cache=cache))
 
     passive_buff_dict = load_passive_buff_data(db, cache=cache)
 
@@ -135,6 +121,56 @@ def load_battle_data(
         name_dict,
         noncombat_char_dict,
     )
+
+
+def load_enemy_skill_dict(
+    spreadsheet: gspread.Spreadsheet,
+    cache: Optional[SheetCache] = None,
+) -> dict[str, SkillData]:
+    """'스킬_에너미' 시트만 읽어 스킬 id → SkillData dict를 반환한다.
+
+    load_battle_data()의 skill_dict는 '스킬_캐릭터'와 병합되어 어느 스킬이
+    '스킬_에너미' 출신인지 구분할 수 없다. 에너미 스킬만 따로 검사해야 하는
+    곳(예: find_unreachable_enemy_buffs())에서 이 함수를 쓴다.
+    """
+    try:
+        enemy_skill_raw = _worksheet(spreadsheet, "스킬_에너미", cache).get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning(
+            "'스킬_에너미' 시트를 찾을 수 없습니다. 에너미 스킬 없이 로드합니다."
+        )
+        return {}
+    return {
+        str(r["id"]): SkillData.from_dict(r) for r in enemy_skill_raw if r.get("id")
+    }
+
+
+def find_unreachable_enemy_buffs(
+    enemy_skill_dict: dict[str, SkillData],
+) -> list[tuple[str, str]]:
+    """어느 페이즈에서도 절대 부여되지 못하는 버프 부여 효과를 가진 에너미
+    스킬을 찾는다. (스킬 id, 버프 id) 쌍의 리스트를 반환한다.
+
+    에너미가 선언한 커맨드의 effect는 apply_timing이 None이면
+    CommandPartCalculator._process_buff_add()가 PRE/POST 페이즈 각각에서
+    BuffAddData.add_timing이 정확히 그 페이즈와 같을 때만 버프를 추가한다
+    (command_calculator.py 참고). 그래서 apply_timing도 buff_add_timing도
+    모두 비어 있는 효과는 PRE에서도 POST에서도 조건을 만족하지 못해 버프가
+    조용히 드롭된다 — 아군 스킬(ALLY_ACTION)은 add_timing을 검사하지 않아
+    이 문제가 없으므로, 반드시 '스킬_에너미' 출신 스킬만 검사해야 한다.
+    """
+    broken: list[tuple[str, str]] = []
+    for skill in enemy_skill_dict.values():
+        for effect in skill.effects:
+            if (
+                effect.buff_id is not None
+                and effect.apply_timing is None
+                and effect.buff_add_timing is None
+            ):
+                broken.append((skill.id, effect.buff_id))
+    return broken
 
 
 def load_all_data() -> tuple[

@@ -30,6 +30,7 @@ from bot.main import BotState, MastodonBotListener, _handle_practice_command  # 
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
+from test_load_battle_data import _base_sheets, _FakeSpreadsheet  # noqa: E402
 
 
 def _make_state(**pending) -> BotState:
@@ -88,6 +89,89 @@ def test_battle_start_marks_round_start_for_field_image():
     result = _cmd_battle_start(state)
 
     assert result.attach_field_image is True
+
+
+def test_battle_start_blocked_and_retryable_for_broken_enemy_buff_timing():
+    """'스킬_에너미' 시트에 buff_add_timing이 비어 있어 어느 페이즈에도 버프가
+    적용될 수 없는 스킬이 있으면 전투가 시작되면 안 된다 — 그대로 시작되면
+    그 버프가 실전에서 조용히 빠진 채 진행되고, 이미 배치·시작된 전투는
+    되돌릴 수 없어 시트를 고쳐도 재시도가 안 된다. 대신 pending_placements가
+    그대로 남아 있어 시트 수정 후 [전투개시]를 다시 입력하면 재시도할 수
+    있어야 하고, 문제의 구체적인 내용은 admin_dm_text로만 전달되어야 하며
+    공개 답글은 아예 남기지 않아야 한다(DM 알림만으로 충분하다)."""
+    placements = [("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))]
+    state = _make_state(pending_placements=list(placements))
+    state.spreadsheet = _FakeSpreadsheet(
+        _base_sheets(
+            **{
+                "스킬_에너미": [
+                    {
+                        "id": "고장난 스킬",
+                        "target_rule": "SkillTargetRuleColumn",
+                        "target_count": 1,
+                        "cost": 1,
+                        "effect_0": "SkillEffectAddBuff",
+                        "value_type_0": "버프",
+                        "buff_name_0": "디버프_1",
+                        "description": "",
+                    }
+                ]
+            }
+        )
+    )
+
+    result = _cmd_battle_start(state)
+
+    assert state.session.started is False
+    assert len(state.session.context.characters) == 0
+    assert state.pending_placements == placements  # 재시도를 위해 그대로 남아야 함
+    assert result.admin_dm_text is not None
+    assert "고장난 스킬" in result.admin_dm_text
+    assert "디버프_1" in result.admin_dm_text
+    assert result.reply_text == ""
+    assert result.game_post_text is None
+
+    # 시트를 고친 뒤(=이 fixture에서는 "정상 스킬"뿐인 새 스프레드시트로
+    # 교체해 시뮬레이션) 같은 상태로 재시도하면 정상적으로 전투가 시작돼야 한다.
+    state.spreadsheet = _FakeSpreadsheet(_base_sheets())
+    retry_result = _cmd_battle_start(state)
+
+    assert state.session.started is True
+    assert retry_result.admin_dm_text is None
+
+
+def test_battle_start_admin_dm_is_none_when_enemy_buff_timing_is_valid():
+    """'스킬_에너미' 시트에 문제가 없으면 admin_dm_text가 비어 있어야 한다
+    (매번 admin에게 DM이 가면 오히려 알림이 무의미해진다)."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    state.spreadsheet = _FakeSpreadsheet(
+        _base_sheets(
+            **{
+                "스킬_에너미": [
+                    {
+                        "id": "정상 스킬",
+                        "target_rule": "SkillTargetRuleColumn",
+                        "target_count": 1,
+                        "cost": 1,
+                        "effect_0": "SkillEffectAddBuff",
+                        "value_type_0": "버프",
+                        "buff_name_0": "디버프_2",
+                        "buff_add_timing_0": "적 행동 선언",
+                        "description": "",
+                    }
+                ]
+            }
+        )
+    )
+
+    result = _cmd_battle_start(state)
+
+    assert result.admin_dm_text is None
+    assert state.session.started is True
 
 
 def test_battle_start_reports_error_for_defeated_participant():
