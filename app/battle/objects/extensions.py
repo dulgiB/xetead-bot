@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from battle.core.commands.models import CommandPart
 from battle.objects.define import ActionType, BattlefieldColumnIndex
@@ -13,7 +13,16 @@ def get_total_cost(
 ) -> int:
     user_pos = context.find_character_position(user)
     assert user_pos is not None
-    return sum(_get_part_cost(part, user_pos, context) for part in parts)
+    total = 0
+    for part in parts:
+        total += _get_part_cost(part, user_pos, context)
+        # 같은 커맨드 안에 이동이 여러 번 나뉘어 있으면, 그다음 파트(이동 포함)의
+        # 코스트는 원래 위치가 아니라 이 이동이 적용된 뒤의 위치를 기준으로
+        # 계산해야 한다 — 실제 적용(command_calculator._process_move)과 사거리
+        # 검증(command_processors.py)이 이미 순차 갱신 방식이므로 코스트도 맞춰야 한다.
+        if part.type_ == ActionType.MOVE and part.targets is not None:
+            user_pos = cast(BattlefieldColumnIndex, part.targets[0])
+    return total
 
 
 def _get_part_cost(
