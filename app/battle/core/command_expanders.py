@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import cast
 
 from battle.core.battlefield_context import BattlefieldContext
@@ -30,6 +31,24 @@ from battle.objects.define import (
     ValueSourceType,
 )
 from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
+from battle.objects.skill.target_functions import (
+    SkillTargetRule,
+    SkillTargetRuleAllyColumn,
+    SkillTargetRuleColumn,
+)
+
+
+def _mark_ignores_taunt_if_column_target(
+    target_rule: SkillTargetRule, damage_list: list[DamageData]
+) -> list[DamageData]:
+    """열 광역 target rule(SkillTargetRuleColumn/AllyColumn)로 생성된
+    대미지는 도발 리다이렉트를 적용하지 않는다 — 열에 있는 각 대상이
+    "이동해서 벗어날지, 맞고 버틸지"를 개별적으로 판단해야 하는 설계라,
+    도발이 적용되면 열 전체 대미지가 도발자 한 명에게 몰려 그 설계가
+    무너진다."""
+    if not isinstance(target_rule, (SkillTargetRuleColumn, SkillTargetRuleAllyColumn)):
+        return damage_list
+    return [replace(damage, ignores_taunt=True) for damage in damage_list]
 
 
 def expand_admin_command(
@@ -210,6 +229,9 @@ def expand_character_command(
                         context, command.user_id, target_characters, raw_targets
                     )
                 )
+                damage_list = _mark_ignores_taunt_if_column_target(
+                    skill_used.target_rule, damage_list
+                )
                 data_per_effect_list.append(
                     CommandPartDataPerEffect(
                         move_list=move_list,
@@ -246,6 +268,9 @@ def expand_character_command(
                 item_used.data.effect.expand(
                     context, command.user_id, target_characters
                 )
+            )
+            damage_list = _mark_ignores_taunt_if_column_target(
+                item_used.target_rule, damage_list
             )
 
             parts_list.append(

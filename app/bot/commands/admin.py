@@ -34,7 +34,12 @@ from bot.battle_reply_text import (
 )
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
-from bot.load_data import load_battle_data, reveal_declared_enemy_skills
+from bot.load_data import (
+    find_unreachable_enemy_buffs,
+    load_battle_data,
+    load_enemy_skill_dict,
+    reveal_declared_enemy_skills,
+)
 from bot.log_sheets import (
     BattleCommandLog,
     FieldBattleType,
@@ -154,6 +159,10 @@ class AdminCommandResult:
     # 보이지 않으므로, 본문과 마찬가지로 계산식 후속 게시물에도 참가자 멘션을
     # 반복해야 한다 — 본 전투는 빈 문자열(접두어 없음)로 둔다.
     game_post_calc_prefix: str = ""
+    # 비어 있지 않으면 reply_text/game_post_text와 별개로 admin에게만
+    # visibility="direct" DM으로 조용히 보낸다 — 스프레드시트 설정 오류처럼
+    # 플레이어에게 노출하면 안 되지만 admin은 알아야 하는 내용용.
+    admin_dm_text: Optional[str] = None
 
 
 def _dispatch_proxy_commands(
@@ -325,6 +334,42 @@ def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str
     return f"◊ {name}({faction.value} {column}열)을 수동 배치 목록에 추가했습니다."
 
 
+def _check_enemy_skill_timing_config(state: "BotState") -> Optional[str]:
+    """'스킬_에너미' 시트에 어느 페이즈에서도 절대 부여될 수 없는 버프 부여
+    효과(apply_timing/buff_add_timing이 모두 비어 있는 조합, 원인은
+    find_unreachable_enemy_buffs() 참고)가 있으면 admin에게만 보낼 경고
+    문구를 만든다. 반환값이 None이 아니면 _cmd_battle_start()가 전투 시작
+    자체를 막는다 — 이 상태로 전투가 시작되면 그 버프가 실전에서 조용히
+    빠진 채로 진행되고, 이미 배치·시작된 전투는 되돌릴 수 없어 admin이
+    시트를 고쳐도 재시도가 안 되기 때문이다. 스프레드시트 데이터 오타
+    문제라 공개 답글에 노출하면 안 되고(플레이어에게 내부 설정 문제를
+    드러내는 셈), admin의 DM으로만 조용히 전달해야 한다 — 그래서 여기서는
+    문구만 만들고 AdminCommandResult.admin_dm_text에 담아 반환한다.
+
+    스프레드시트 접근 자체가 실패하면(네트워크 오류 등) 검증을 아예 할 수
+    없다는 뜻이라, 이 실패로 전투 개시 자체를 막지는 않는다 — 예외를
+    삼키고 서버 로그에만 남긴다."""
+    try:
+        enemy_skill_dict = load_enemy_skill_dict(
+            state.spreadsheet, cache=state.sheet_cache
+        )
+    except Exception:
+        _log_system_error("에너미 스킬 버프 타이밍 검증")
+        return None
+
+    broken = find_unreachable_enemy_buffs(enemy_skill_dict)
+    if not broken:
+        return None
+
+    lines = "\n".join(f"- {skill_id}: [{buff_id}]" for skill_id, buff_id in broken)
+    return (
+        "◊ '스킬_에너미' 시트에 buff_add_timing이 비어 있어 어느 페이즈에도 "
+        "적용되지 않는 버프 부여 효과가 있습니다. 해당 스킬의 "
+        "buff_add_timing_N 컬럼을 '적 행동 선언' 또는 '적 공격 정산'으로 "
+        f"채워주세요.\n{lines}"
+    )
+
+
 def _cmd_battle_start(
     state: "BotState", battle_name: Optional[str] = None
 ) -> AdminCommandResult:
@@ -338,6 +383,19 @@ def _cmd_battle_start(
         return AdminCommandResult(
             "◊ 배치된 캐릭터가 없습니다. 참전 신청이나 [배치/...] 커맨드를 먼저 입력하세요."
         )
+
+    # 0. 스프레드시트 설정 검증 — 배치/전투 시작을 실제로 진행하기 전에
+    # 먼저 확인해야 한다. pending_placements/pending_participants를 비우거나
+    # state.session.start()를 호출한 뒤에 문제를 발견하면 그 상태를 되돌릴
+    # 수 없어(캐릭터가 이미 배치되고 전투가 시작된 채로) admin이 시트를
+    # 고친 뒤 [전투개시]를 다시 입력해도 재시도가 되지 않는다. 여기서
+    # 막으면 pending_* 값이 그대로 남아 있어 그대로 재시도할 수 있다.
+    # reply_text=""(+ game_post_text 없음)면 _post_admin_result()가 공개
+    # 게시물을 아예 남기지 않는다 — DM 알림만으로 충분하고, 플레이어에게는
+    # "왜 전투가 시작 안 됐는지" 자체를 노출할 필요가 없다.
+    admin_dm_text = _check_enemy_skill_timing_config(state)
+    if admin_dm_text is not None:
+        return AdminCommandResult("", admin_dm_text=admin_dm_text)
 
     # 1. 수동 배치 처리 (pending_placements)
     errors: list[str] = []

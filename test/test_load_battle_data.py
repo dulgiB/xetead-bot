@@ -4,7 +4,7 @@
 
 import gspread
 
-from bot.load_data import load_battle_data
+from bot.load_data import find_unreachable_enemy_buffs, load_battle_data
 from bot.sheet_cache import SheetCache
 
 
@@ -187,3 +187,77 @@ def test_load_battle_data_shares_sheet_metadata_via_cache():
     load_battle_data(spreadsheet, cache=cache)
 
     assert spreadsheet.fetch_sheet_metadata_call_count == 1
+
+
+def test_find_unreachable_enemy_buffs_detects_missing_timing():
+    """apply_timing과 buff_add_timing이 둘 다 비어 있는 에너미 스킬의 버프
+    부여 효과는, PRE에서도 POST에서도 CommandPartCalculator._process_buff_add()의
+    add_timing 일치 조건을 통과하지 못해 버프가 조용히 드롭된다 — 이 조합을
+    감지해야 한다."""
+    sheets = _base_sheets(
+        **{
+            "스킬_에너미": [
+                {
+                    "id": "고장난 스킬",
+                    "target_rule": "SkillTargetRuleColumn",
+                    "target_count": 1,
+                    "cost": 1,
+                    "effect_0": "SkillEffectAddBuff",
+                    "value_type_0": "버프",
+                    "buff_name_0": "디버프_1",
+                    "description": "",
+                },
+                {
+                    "id": "정상 스킬",
+                    "target_rule": "SkillTargetRuleColumn",
+                    "target_count": 1,
+                    "cost": 1,
+                    "effect_0": "SkillEffectAddBuff",
+                    "value_type_0": "버프",
+                    "buff_name_0": "디버프_2",
+                    "buff_add_timing_0": "적 행동 선언",
+                    "description": "",
+                },
+            ]
+        }
+    )
+    spreadsheet = _FakeSpreadsheet(sheets)
+
+    (_buff_dict, skill_dict, *_rest) = load_battle_data(spreadsheet)
+    broken = find_unreachable_enemy_buffs(
+        {
+            skill_id: data
+            for skill_id, data in skill_dict.items()
+            if skill_id in ("고장난 스킬", "정상 스킬")
+        }
+    )
+
+    assert broken == [("고장난 스킬", "디버프_1")]
+
+
+def test_find_unreachable_enemy_buffs_ignores_explicit_apply_timing():
+    """effect_apply_timing_N이 명시돼 있으면(에너미 스킬 전체 처리 분기라
+    add_timing을 검사하지 않음) buff_add_timing이 비어 있어도 정상이다."""
+    sheets = _base_sheets(
+        **{
+            "스킬_에너미": [
+                {
+                    "id": "즉시 처리 스킬",
+                    "target_rule": "SkillTargetRuleColumn",
+                    "target_count": 1,
+                    "cost": 1,
+                    "effect_0": "SkillEffectAddBuff",
+                    "value_type_0": "버프",
+                    "buff_name_0": "디버프_3",
+                    "effect_apply_timing_0": "적 행동 선언",
+                    "description": "",
+                }
+            ]
+        }
+    )
+    spreadsheet = _FakeSpreadsheet(sheets)
+
+    (_buff_dict, skill_dict, *_rest) = load_battle_data(spreadsheet)
+    broken = find_unreachable_enemy_buffs(skill_dict)
+
+    assert broken == []

@@ -1009,6 +1009,19 @@ class MastodonBotListener(StreamListener):
                     result.game_post_calc_prefix,
                 )
 
+        if result.admin_dm_text:
+            # 플레이어에게 공개되는 reply_text/game_post_text와는 완전히
+            # 별개로, admin에게만 조용히 알려야 하는 내용(스프레드시트 설정
+            # 오류 등)을 DM으로 보낸다 — 재기동 복원 안내(main() 하단)와
+            # 동일한 스타일.
+            try:
+                self._mastodon.status_post(
+                    f"@{ADMIN_MASTODON_ID} {result.admin_dm_text}",
+                    visibility="direct",
+                )
+            except Exception:
+                logger.exception("admin DM 전송 실패")
+
     def _reply(
         self,
         in_reply_to_id: int,

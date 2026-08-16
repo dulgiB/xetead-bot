@@ -232,6 +232,92 @@ def test_insufficient_cost_raises(battle_setup):
         manager.process_command(cmd)
 
 
+def test_split_move_costs_same_as_direct_move(empty_context):
+    """4열에서 7열로 한 번에 이동([이동/7열])하든, 한 칸씩 나눠서
+    이동([이동/5열-이동/6열-이동/7열])하든 실제 이동 거리는 3칸으로 같으므로
+    코스트도 동일하게 3이어야 한다. 각 이동 파트는 커맨드 실행 전 원래
+    위치가 아니라, 직전 이동이 적용된 뒤의 위치를 기준으로 코스트를
+    계산해야 한다."""
+    manager = RoundManager(empty_context)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
+    )
+    user_id = CharacterId("아군 1")
+    empty_context.add_character(
+        get_test_preset(user_id.name, max_cost=3),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(3),  # 4열
+    )
+
+    cmd = parse_character_command(
+        user_id, "[이동/5열-이동/6열-이동/7열]", empty_context
+    )
+    manager.process_command(cmd)
+
+    assert empty_context.find_character_position(user_id) == BattlefieldColumnIndex(6)
+    assert empty_context.characters[user_id].status.remaining_cost == 0
+
+
+def test_split_move_with_action_between_uses_updated_position_for_cost(empty_context):
+    """[이동/5열-공격/대상-이동/6열]처럼 이동 사이에 다른 액션이 끼어 있어도,
+    두 번째 이동의 코스트는 원래 위치(4열)가 아니라 첫 번째 이동이 적용된
+    뒤의 위치(5열)를 기준으로 계산해야 한다."""
+    manager = RoundManager(empty_context)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
+    )
+    user_id = CharacterId("아군 1")
+    empty_context.add_character(
+        get_test_preset(user_id.name, max_cost=3),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(3),  # 4열
+    )
+    empty_context.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(3)
+    )
+
+    cmd = parse_character_command(
+        user_id, "[이동/5열-공격/적군 1-이동/6열]", empty_context
+    )
+    manager.process_command(cmd)
+
+    assert empty_context.find_character_position(user_id) == BattlefieldColumnIndex(5)
+    assert empty_context.characters[user_id].status.remaining_cost == 0
+
+
+def test_split_move_still_raises_when_actually_insufficient(empty_context):
+    """나눠서 이동해도 실제 이동 거리가 줄어드는 것은 아니므로, 코스트가
+    진짜로 부족하면 여전히 CommandValidationError가 발생해야 하고, 일부
+    이동조차 적용되지 않은 채(원자적으로) 커맨드 전체가 거부되어야 한다."""
+    manager = RoundManager(empty_context)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ALLY_ACTION
+        )
+    )
+    user_id = CharacterId("아군 1")
+    empty_context.add_character(
+        get_test_preset(user_id.name, max_cost=2),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(3),  # 4열
+    )
+
+    cmd = parse_character_command(
+        user_id, "[이동/5열-이동/6열-이동/7열]", empty_context
+    )
+    with pytest.raises(CommandValidationError):
+        manager.process_command(cmd)
+
+    # 검증 단계에서 통째로 거부되어야 하며, 첫 이동(4열→5열)조차 부분
+    # 적용되어서는 안 된다.
+    assert empty_context.find_character_position(user_id) == BattlefieldColumnIndex(3)
+    assert empty_context.characters[user_id].status.remaining_cost == 2
+
+
 def test_str_has_no_buff_section_when_no_buffs_active(empty_context):
     """전장에 걸린 버프/디버프가 없으면 str(context)에 버프 안내 섹션이
     추가되면 안 된다(필드 표현 텍스트만 그대로 나온다)."""

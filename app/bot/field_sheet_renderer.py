@@ -38,6 +38,7 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId
+from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from bot.sheet_cache import SheetCache
 
 if TYPE_CHECKING:
@@ -254,9 +255,21 @@ def _format_buff_cell(
 
     display_lines = []
     note_lines = []
+    seen_passive_labels: set[str] = set()
     for buff in buffs:
-        icon = "▾" if buff.is_debuff else "▴"
         label = buff.display_id_label()
+        # 패시브 스킬 하나가 buff_mod_event(즉시 적용 수치 보정)와 effects(트리거
+        # 발동 효과)를 동시에 가지면 PassiveSkillWrapperBuff.create()가 역할별로
+        # 나뉜 버프 인스턴스를 여러 개 등록한다(passive_skill.py 참고) — 게임
+        # 로직상으로는 각자 다른 타이밍에 독립적으로 발동해야 해서 반드시
+        # 그렇게 나뉘어 있어야 하지만, 사람이 보는 필드 시트에는 같은 패시브
+        # 스킬 하나로만 보여야 하므로 같은 라벨의 두 번째 이후 인스턴스는
+        # 건너뛴다.
+        if isinstance(buff, PassiveSkillWrapperBuff):
+            if label in seen_passive_labels:
+                continue
+            seen_passive_labels.add(label)
+        icon = "▾" if buff.is_debuff else "▴"
         stack_count = buff.stack_count if buff.max_stack is not None else None
         display_lines.append(f"{icon} {label}{buff.duration.display_text(stack_count)}")
         description = buff.get_description(context)

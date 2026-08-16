@@ -252,7 +252,9 @@ class CommandPartCalculator:
             for damage_calc in mutable.damage_data_list:
                 original = damage_calc.base.target_id
                 final, reduction = self._resolve_redirect(
-                    damage_calc.base.attacker_id, original
+                    damage_calc.base.attacker_id,
+                    original,
+                    ignores_taunt=damage_calc.base.ignores_taunt,
                 )
                 if final != original:
                     damage_calc.base = replace(damage_calc.base, target_id=final)
@@ -272,17 +274,22 @@ class CommandPartCalculator:
         self: "CommandPartCalculator",
         attacker_id: CharacterId,
         original_target: CharacterId,
+        ignores_taunt: bool = False,
     ) -> tuple[CharacterId, float]:
         """도발(공격자 기준) → 희생 방어(대상 기준) 순으로 최종 대상을 결정한다.
+
+        ignores_taunt=True(열 광역기 등)면 도발 리다이렉트 단계를 건너뛴다.
 
         반환: (최종 대상, 희생 방어 경감 퍼센트). 희생 방어가 없으면 경감은 0.
         """
         final = original_target
         reduction: float = 0
-        # 도발: 공격자가 도발 상태면 도발자를 노린다.
-        taunt_target = self._get_target_override(attacker_id)
-        if taunt_target is not None and taunt_target in self.context.characters:
-            final = taunt_target
+        # 도발: 공격자가 도발 상태면 도발자를 노린다. 단, 열 광역기 등
+        # ignores_taunt 항목은 대상별 개별 판단이 설계 의도이므로 건너뛴다.
+        if not ignores_taunt:
+            taunt_target = self._get_target_override(attacker_id)
+            if taunt_target is not None and taunt_target in self.context.characters:
+                final = taunt_target
         # 희생 방어: 현재 대상이 보호 중이면 보호자가 대신 맞는다.
         sacrifice = self._consume_sacrifice_protector(final)
         if sacrifice is not None:
