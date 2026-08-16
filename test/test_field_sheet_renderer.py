@@ -1,18 +1,19 @@
 from battle.core.battlefield_context import BattlefieldContext
+from battle.objects.buff.buffs import BuffGivenDamage
 from battle.objects.define import (
     BattlefieldColumnIndex,
     FactionType,
     ValueSourceType,
     ValueType,
 )
-from battle.objects.models import CharacterId
+from battle.objects.models import BuffUid, CharacterId
 from battle.objects.passive_skill.models import (
     PassiveSkillData,
     PassiveSkillTargetType,
     PassiveSkillTrigger,
 )
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
-from battle.objects.skill.effects import SkillEffectDamage
+from battle.objects.skill.effects import SkillEffectAddBuff, SkillEffectDamage
 from bot.field_sheet_renderer import (
     _ALLY_MAIN_ROW_START,
     _build_faction_block,
@@ -49,6 +50,52 @@ def test_format_buff_cell_describes_passive_wrapped_buff_without_crashing():
 
     assert "테스트 패시브" in display_text
     assert "테스트 패시브 설명" in note_text
+
+
+def test_format_buff_cell_dedupes_passive_with_both_buff_mod_and_effects():
+    """패시브 스킬 하나가 buff_mod_event(즉시 수치 보정)와 effects(트리거
+    발동 효과)를 동시에 가지면 PassiveSkillWrapperBuff.create()가 역할별로
+    나뉜 버프 인스턴스 2개를 반환한다 — 실제 게임 로직상 필요한 분리지만,
+    필드 시트에는 같은 패시브 스킬 하나로만 보여야 한다(중복 표시 방지)."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+
+    buff_mod_template = BuffGivenDamage._create_bare(
+        id_="이중 역할 패시브",
+        uid=BuffUid(ally_id, ally_id, "BuffGivenDamage"),
+        given_by=ally_id,
+        applied_to=ally_id,
+        value=-60,
+        value_type=ValueType.PERCENT,
+    )
+    passive_data = PassiveSkillData(
+        id="이중 역할 패시브",
+        trigger=PassiveSkillTrigger.ROUND_END,
+        target_type=PassiveSkillTargetType.SELF,
+        effects=[
+            SkillEffectAddBuff(
+                value_source=None,
+                value=None,
+                value_type=None,
+                buff_id=None,
+                buff_add_timing=None,
+            )
+        ],
+        description="이중 역할 패시브 설명",
+        buff_mod_event=buff_mod_template.create_event(),
+    )
+    wrappers = PassiveSkillWrapperBuff.create(ally_id, passive_data)
+    assert len(wrappers) == 2  # buff_mod 역할 1개 + effects 역할 1개
+    for wrapper in wrappers:
+        ctx.buff_container.add_passive_wrapper(wrapper)
+
+    display_text, note_text = _format_buff_cell(ctx, ally_id)
+
+    assert display_text.count("이중 역할 패시브") == 1
+    assert note_text.count("이중 역할 패시브 설명") == 1
 
 
 def test_build_faction_block_pushes_remaining_slots_forward_after_removal():
