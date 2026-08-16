@@ -368,6 +368,13 @@ class DamageData:
     # BuffApplyDebuffOnDealingDamage)를 발동시키지 않는다. 버프 반격 등
     # 파생 대미지가 원래 패시브를 재귀적으로 유발하지 않도록 하는 용도.
     triggers_given_damage_passives: bool = True
+    # True면 도발(BuffTaunt 등 get_target_override) 리다이렉트를 적용하지
+    # 않는다. 열 광역기는 "이동에 코스트를 써서 열을 벗어날지, 대미지를
+    # 맞고 버틸지"가 각 대상별 판단이어야 하는데, 도발을 적용하면 열 전체
+    # 대미지가 도발자 한 명에게 몰려 그 설계가 무너지므로 열 광역
+    # target rule(SkillTargetRuleColumn/SkillTargetRuleAllyColumn)에서
+    # 생성된 항목은 command_expanders.py에서 이 값을 True로 표시한다.
+    ignores_taunt: bool = False
 
 
 @dataclass(frozen=True)

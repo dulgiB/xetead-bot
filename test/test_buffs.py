@@ -912,6 +912,69 @@ class TestBuffTaunt:
         assert not any(b.id == "디버프" for b in dealer_buffs)
         assert any(b.id == "디버프" for b in taunter_buffs)
 
+    def test_taunt_does_not_redirect_column_aoe_damage(self):
+        """열 광역 스킬(SkillTargetRuleColumn)은 시전자가 도발 상태여도
+        대미지가 도발자에게 몰리지 않고, 열에 있는 각 대상이 그대로 맞아야
+        한다 — 대상별로 이동/피격을 개별 판단해야 하는 설계이기 때문."""
+        taunt_buff = make_buff_data("도발", "BuffTaunt")
+        taunt_skill = make_buff_skill("도발 스킬", "도발")
+        aoe_skill = SkillData(
+            id="열 공격",
+            target_rule="SkillTargetRuleColumn",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(
+                    value_source=ValueSourceType.FIXED,
+                    value=10,
+                    value_type=ValueType.INTEGER,
+                    buff_id=None,
+                    buff_add_timing=None,
+                )
+            ],
+            description="",
+        )
+        ctx = make_context(
+            taunt_buff, skill_dict={"도발 스킬": taunt_skill, "열 공격": aoe_skill}
+        )
+        manager = setup_enemy_pre_phase(ctx)
+
+        # 도발자는 열 공격의 대상 열(0열)과 다른 열에 있어야 한다 — 도발이
+        # 리다이렉트를 일으키지 않는지 검증하려는 것이지, 도발자가 원래부터
+        # 그 열에 있어서 맞는 것과 구분해야 하기 때문이다.
+        ctx.add_character(
+            get_test_preset("도발자", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(3),
+        )
+        ctx.add_character(
+            get_test_preset("공격수1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("공격수2"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군", skill_1_id="열 공격"),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(1),
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[열 공격/1열]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자"), "[도발 스킬/적군]", ctx)
+        )
+
+        hp_taunter_before = ctx.characters[CharacterId("도발자")].status.curr_hp
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        assert ctx.characters[CharacterId("도발자")].status.curr_hp == hp_taunter_before
+        assert ctx.characters[CharacterId("공격수1")].status.curr_hp == 100 - 10
+        assert ctx.characters[CharacterId("공격수2")].status.curr_hp == 100 - 10
+
 
 class TestBuffDuration:
     """버프 지속 시간(TURN/COUNT) 공통 동작 테스트."""
