@@ -23,7 +23,7 @@ from bot.load_data import (
     update_character_gold_and_quest_date,
     update_quest_taken_by,
 )
-from bot.log_sheets import NoncombatLogInfo
+from bot.log_sheets import NoncombatLogInfo, append_ledger_row
 from bot.noncombat_state import DailyQuestMidState
 
 if TYPE_CHECKING:
@@ -457,6 +457,18 @@ def handle_daily_quest_roll(
     # 저장에 실패하면 mid 상태를 남겨 두어 같은 게시물에 재시도할 수 있게 한다.
     if save_succeeded:
         del state.noncombat.daily_quest_mid[acct]
+        try:
+            append_ledger_row(
+                state.spreadsheet,
+                today,
+                char_data.name,
+                "일일 의뢰",
+                1,
+                new_gold,
+                cache=state.sheet_cache,
+            )
+        except Exception:
+            logger.exception("가계부 기록 실패")
 
     result = (
         f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」\n{judgment}\n"
