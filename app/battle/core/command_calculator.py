@@ -622,6 +622,11 @@ def _build_damage_entry(
             c.roll_display if c.roll_display is not None else str(c.result_value)
             for c in calcs
         )
+    # dict.fromkeys로 등장 순서를 유지한 채 중복 라벨을 제거한다(같은
+    # 반응형 버프가 이 대상에게 두 구성요소를 냈다면 라벨이 겹칠 수 있음).
+    source_labels = tuple(
+        dict.fromkeys(c.base.source_label for c in calcs if c.base.source_label)
+    )
     return BattleLogEntry(
         target_name=target_id.name,
         kind=BattleLogEntryKind.DAMAGE,
@@ -630,6 +635,7 @@ def _build_damage_entry(
         value=total_value,
         hp_after=last.hp_after,
         max_hp=last.max_hp,
+        source_labels=source_labels,
     )
 
 

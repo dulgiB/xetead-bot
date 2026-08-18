@@ -28,6 +28,7 @@ from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionTyp
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
+from bot.battle_reply_text import format_battle_reply
 from helpers import get_test_preset
 
 
@@ -580,6 +581,34 @@ class TestReflectBuff:
         assert reflected.value == 40
         assert reflected.roll_display is not None
         assert "반사 계수" in reflected.roll_display
+
+    def test_reply_summary_labels_reflected_damage_with_buff_id_and_holder(self):
+        """반사 대미지는 공격자(Formation) 본인의 행동이 아니라 [반사] 보유자가
+        되돌려보낸 대미지이므로, 답글 요약에도 "[반사: 적군]"으로 발생 원인이
+        드러나야 한다."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        attacker = CharacterId("Formation")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Formation", atk=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=target, applied_to=target, buff_id="반사")
+        )
+
+        before = len(ctx.results)
+        manager.process_command(parse_character_command(attacker, "[공격/적군]", ctx))
+        reply, _calc = format_battle_reply(ctx, attacker, ctx.results[before:])
+
+        assert "[반사: 적군]" in reply
 
     def test_reflect_amplifies_with_attackers_given_damage_buff(self):
         """공격자에게 "주는 대미지 증가" 버프가 있으면 반사량도 함께 커진다."""

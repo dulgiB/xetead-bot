@@ -62,12 +62,14 @@ class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
         if not has_marked_attacker:
             return
 
+        label = f"{self.label}: {holder.name}"
         new_damage_calc = make_coefficient_damage_calc(
             attacker_id=holder,
             target_id=target_id,
             value_source=ValueSourceType.STAT_ATK_ROLL,
-            source_name=f"{self.label}: {holder.name}",
+            source_name=label,
             coefficient_value=self._PERCENT,
+            source_label=label,
         )
         apply_pure_damage_modifiers_to(
             new_damage_calc, holder, target_id, calculator, effect_seq_number

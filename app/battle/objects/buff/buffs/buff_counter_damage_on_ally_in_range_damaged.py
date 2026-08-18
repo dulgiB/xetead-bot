@@ -60,12 +60,14 @@ class CounterDamageOnAllyInRangeDamagedEvent(BuffEvent):
         )
         percent = self._SELF_PERCENT if is_self_hit else self._ALLY_PERCENT
 
+        label = f"{self.label}: {holder.name}"
         new_damage_calc = make_coefficient_damage_calc(
             attacker_id=holder,
             target_id=attacker_id,
             value_source=ValueSourceType.STAT_ATK_ROLL,
-            source_name=f"{self.label}: {holder.name}",
+            source_name=label,
             coefficient_value=percent,
+            source_label=label,
         )
         apply_pure_damage_modifiers_to(
             new_damage_calc, holder, attacker_id, calculator, effect_seq_number

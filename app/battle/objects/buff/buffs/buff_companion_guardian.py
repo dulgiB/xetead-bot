@@ -25,6 +25,12 @@ class CompanionGuardianEvent(BuffEvent):
     _SPLIT_PERCENT: ClassVar[int] = 50
     _COUNTER_PERCENT: ClassVar[int] = 80
 
+    # 계산식 modifier의 source_name으로 쓸 표시 라벨. "버프" 시트에 등록된
+    # 실제 버프 이름을 그대로 보여줘야 하므로, BuffCompanionGuardian.create_event()가
+    # self.display_id_label()을 담아 넘긴다 — 코드에 이름을 하드코딩하면
+    # 데이터를 시트에서 바꿔도 계산식엔 옛 이름이 그대로 남는다.
+    label: str
+
     @property
     def priority(self) -> BuffEventCalculatePriority:
         return BuffEventCalculatePriority.NORMAL
@@ -55,7 +61,7 @@ class CompanionGuardianEvent(BuffEvent):
             dc.base.target_id == companion_id for dc in effect_data.damage_data_list
         )
         split_modifier = FloatValueModifier(
-            source_name="CompanionBuff1",
+            source_name=self.label,
             value=-self._SPLIT_PERCENT,
             applies_to_fixed=True,
         )
@@ -101,13 +107,15 @@ class CompanionGuardianEvent(BuffEvent):
         )
         if attacker_alive:
             assert attacker_or_target is not None  # attacker_alive가 이미 보장
+            counter_label = f"{self.label}(반격)"
             effect_data.damage_data_list.append(
                 make_coefficient_damage_calc(
                     attacker_id=holder,
                     target_id=attacker_or_target,
                     value_source=ValueSourceType.STAT_ATK_ROLL,
-                    source_name="CompanionBuff1(반격)",
+                    source_name=counter_label,
                     coefficient_value=self._COUNTER_PERCENT,
+                    source_label=counter_label,
                 )
             )
 
@@ -123,4 +131,6 @@ class BuffCompanionGuardian(BuffBase):
         return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> BuffEvent:
-        return CompanionGuardianEvent(condition=self.condition)
+        return CompanionGuardianEvent(
+            condition=self.condition, label=self.display_id_label()
+        )

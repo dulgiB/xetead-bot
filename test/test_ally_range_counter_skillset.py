@@ -416,6 +416,29 @@ class TestPassiveSkill:
         # 50 × 50%[PassiveSkill] × (1 - 0.5)[받는대미지감소_테스트] = 12(내림).
         assert enemy_hp_before - enemy_hp_after == 12
 
+    def test_reply_summary_labels_counter_damage_with_buff_id_and_holder(self):
+        """반격 대미지는 명아_테스트(공격받은 아군) 본인이 아니라 Sentinel이
+        대신 가한 대미지이므로, 답글 요약에도 "[PassiveSkill: Sentinel]"로
+        발생 원인이 드러나야 한다 — 원래 피격 아군 줄에는 라벨이 붙지 않는다."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        self._add_holder_and_ally(ctx)
+        enemy = CharacterId("적군")
+        ally2 = CharacterId("아군2")
+        ctx.buff_container.add(
+            _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
+        )
+
+        before = len(ctx.results)
+        manager.process_command(parse_character_command(enemy, "[공격/아군2]", ctx))
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+        reply, _calc = format_battle_reply(ctx, enemy, ctx.results[before:])
+
+        assert "[PassiveSkill: Sentinel]" in reply
+        for line in reply.splitlines():
+            if line.startswith(f"▹ {ally2.name} "):
+                assert "[" not in line
+
     def test_no_counter_when_holder_has_no_buff(self):
         ctx = _make_context()
         manager = _setup_enemy_pre_phase(ctx)
