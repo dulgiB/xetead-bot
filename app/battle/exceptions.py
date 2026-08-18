@@ -61,6 +61,10 @@ def error_item_has_no_effect(item_id: str) -> str:
     return f"'{item_id}'은(는) 소지용 아이템이라 사용할 수 없습니다."
 
 
+def error_item_not_usable_in_battle(item_id: str) -> str:
+    return f"'{item_id}'은(는) 전투 중에는 사용할 수 없습니다."
+
+
 def error_skill_or_item_not_registered(name: str) -> str:
     return f"'{name}'은(는) 등록된 스킬도 아이템도 아닙니다."
 

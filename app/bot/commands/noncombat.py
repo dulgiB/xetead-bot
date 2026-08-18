@@ -6,7 +6,7 @@ import traceback
 from datetime import date
 from typing import TYPE_CHECKING, Optional
 
-from battle.objects.define import ValueSourceType
+from battle.objects.define import ItemType, ValueSourceType
 from battle.objects.skill.effects import SkillEffectHeal
 from spreadsheets.models.noncombat import NON_COMBAT_STATS, NoncombatStatType
 from spreadsheets.models.quest import DailyQuestSuccessType
@@ -18,6 +18,7 @@ from bot.load_data import (
     load_general_quest_sheet,
     load_inventory,
     load_item_data,
+    load_mysterious_potion_effects,
     update_character_curr_hp,
     update_character_daily_quest_status_id,
     update_character_gold_and_quest_date,
@@ -36,6 +37,18 @@ _RE_USE_ITEM = re.compile(rf"\[{whitespace_tolerant_literal('사용')}\s*/\s*([^
 _RE_TRANSFER_ITEM = re.compile(
     rf"\[{whitespace_tolerant_literal('양도')}\s*/\s*([^\]]+)]"
 )
+
+# "수상한 물약"이 뽑은 효과 텍스트 중 체력 회복을 뜻하는 것만 캐릭터
+# 스프레드시트에 반영한다 (예: "체력이 1 회복된다.", "체력이 100 회복된다.").
+_RE_MYSTERIOUS_POTION_HEAL_EFFECT = re.compile(r"^체력이 (\d+) 회복된다\.$")
+MYSTERIOUS_POTION_ITEM_NAME = "수상한 물약"
+
+# [가방] 목록에서 item_type별로 덧붙일 안내 문구.
+_BAG_ITEM_TYPE_SUFFIX: dict[ItemType, str] = {
+    ItemType.CONSUMABLE: " 비전투 상황에서도 사용 가능.",
+    ItemType.NONCOMBAT_CONSUMABLE: " 비전투 전용.",
+    ItemType.CHARM: " 부적.",
+}
 
 FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
 
@@ -152,7 +165,9 @@ def handle_use_item(
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[사용/아이템(/대상)(/개수)] → 비전투 상황에서 즉시 아이템 효과를 적용한다.
 
-    현재는 회복(Heal) 효과만 지원한다.
+    "소모품"(item_type)은 전투용 스테이터스를 그대로 재사용해 회복(Heal) 효과만
+    지원한다. "비전투 소모품"은 effect가 없고 자신만을 대상으로 아이템별
+    전용 로직(_dispatch_noncombat_only_item)으로 처리된다.
     """
     command_text = (
         f"[사용/{item_name}"
@@ -180,16 +195,35 @@ def handle_use_item(
     if item is None:
         msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-    if not item.usable_outside_battle:
+    if item.item_type not in (ItemType.CONSUMABLE, ItemType.NONCOMBAT_CONSUMABLE):
         msg = f"◊ '{item_name}'은(는) 비전투 상황에서 사용할 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-    if not isinstance(item.effect, SkillEffectHeal):
-        msg = f"◊ '{item_name}'은(는) 비전투 상황에서 지원하지 않는 효과입니다. (회복 아이템만 사용 가능)"
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    if item.item_type == ItemType.NONCOMBAT_CONSUMABLE:
+        resolved_target = resolve_matching_key(target_char_name, state.name_dict.keys())
+        if resolved_target != user_name:
+            msg = f"◊ '{item_name}'은(는) 자신에게만 사용할 수 있습니다."
+            return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     owned = inventory.get_count(user_name, item_name)
     if owned < count:
         msg = f"◊ 보유한 「{item_name}」의 수가 부족합니다. (현재 {owned}개)"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    if item.item_type == ItemType.NONCOMBAT_CONSUMABLE:
+        try:
+            inventory.consume(user_name, item_name, count)
+        except Exception as e:
+            msg = f"◊ 아이템 사용 처리 중 오류가 발생했습니다: {e}"
+            return msg, NoncombatLogInfo(
+                command_text=command_text,
+                result=msg,
+                error_trace=traceback.format_exc(),
+            )
+        return _dispatch_noncombat_only_item(item_name, user_name, state, command_text)
+
+    if not isinstance(item.effect, SkillEffectHeal):
+        msg = f"◊ '{item_name}'은(는) 비전투 상황에서 지원하지 않는 효과입니다. (회복 아이템만 사용 가능)"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     target_char_name = resolve_matching_key(target_char_name, state.name_dict.keys())
@@ -227,6 +261,61 @@ def handle_use_item(
         dice_roll=f"{item.effect.value_source.value}×{count}",
         result=result_text,
     )
+
+
+def _dispatch_noncombat_only_item(
+    item_name: str, user_name: str, state: "BotState", command_text: str
+) -> tuple[str, Optional[NoncombatLogInfo]]:
+    """item_type="비전투 소모품"인 아이템의 전용 로직으로 분기한다.
+
+    현재는 "수상한 물약"만 구현돼 있다 — 아직 전용 로직이 없는 다른 비전투
+    소모품은 안내 메시지만 반환한다(인벤토리 소비는 이미 호출측에서 끝난 뒤라
+    되돌리지 않는다).
+    """
+    if item_name == MYSTERIOUS_POTION_ITEM_NAME:
+        return _handle_mysterious_potion(user_name, state, command_text)
+    msg = f"◊ '{item_name}'의 사용 효과가 아직 구현되지 않았습니다."
+    return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+
+def _handle_mysterious_potion(
+    user_name: str, state: "BotState", command_text: str
+) -> tuple[str, Optional[NoncombatLogInfo]]:
+    """"수상한 물약" 사용 → "수상한 효과" 시트에서 무작위 효과 텍스트를 뽑아
+    답글로 낸다. 체력 회복을 뜻하는 텍스트("체력이 N 회복된다.")면 캐릭터
+    스프레드시트에도 반영하고 답글 뒤에 회복 후 체력을 덧붙인다.
+    """
+    try:
+        effects = load_mysterious_potion_effects(
+            state.spreadsheet, cache=state.sheet_cache
+        )
+    except Exception as e:
+        msg = f"◊ 수상한 효과 정보를 불러오는 중 오류가 발생했습니다: {e}"
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=msg, error_trace=traceback.format_exc()
+        )
+    if not effects:
+        msg = "◊ '수상한 물약'의 효과 목록이 비어 있습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    effect_text = random.choice(effects)
+    reply = f"◊ '수상한 물약'을 사용했다: {effect_text}"
+
+    heal_match = _RE_MYSTERIOUS_POTION_HEAL_EFFECT.match(effect_text)
+    target_data = state.name_dict.get(user_name)
+    if heal_match and target_data is not None:
+        heal_amount = int(heal_match.group(1))
+        prev_hp = target_data.curr_hp or 0
+        new_hp = min(target_data.max_hp, prev_hp + heal_amount)
+        try:
+            update_character_curr_hp(
+                state.spreadsheet, user_name, new_hp, cache=state.sheet_cache
+            )
+            reply += f" ({new_hp}/{target_data.max_hp})"
+        except Exception as e:
+            reply += f"\n◊ 체력 반영 중 오류가 발생했습니다: {e}"
+
+    return reply, NoncombatLogInfo(command_text=command_text, result=effect_text)
 
 
 def handle_transfer_item(
@@ -309,9 +398,7 @@ def handle_bag(acct: str, state: "BotState") -> tuple[str, Optional[NoncombatLog
         if item is None:
             lines.append(f"▹ {item_name}×{count}: (아이템 정보를 찾을 수 없습니다)")
             continue
-        usable_suffix = (
-            " 비전투 상황에서 사용 가능." if item.usable_outside_battle else ""
-        )
+        usable_suffix = _BAG_ITEM_TYPE_SUFFIX.get(item.item_type, "")
         lines.append(
             f"▹ {item_name}×{count}: (코스트 {item.cost}/사거리 {item.attack_range}) "
             f"{item.description}{usable_suffix}"

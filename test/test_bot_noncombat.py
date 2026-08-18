@@ -6,7 +6,7 @@ import random  # noqa: E402
 from datetime import date  # noqa: E402
 
 import pytest  # noqa: E402
-from battle.objects.define import ValueSourceType, ValueType  # noqa: E402
+from battle.objects.define import ItemType, ValueSourceType, ValueType  # noqa: E402
 from battle.objects.item.models import ItemData  # noqa: E402
 from battle.objects.skill.effects import SkillEffectDamage, SkillEffectHeal  # noqa: E402
 from bot import commands as _  # noqa: E402, F401
@@ -769,7 +769,7 @@ def potion_item() -> ItemData:
         effect=SkillEffectHeal(
             ValueSourceType.FIXED, 20, ValueType.INTEGER, None, None
         ),
-        usable_outside_battle=True,
+        item_type=ItemType.CONSUMABLE,
     )
 
 
@@ -784,7 +784,7 @@ def bomb_item() -> ItemData:
         effect=SkillEffectDamage(
             ValueSourceType.FIXED, 30, ValueType.INTEGER, None, None
         ),
-        usable_outside_battle=True,
+        item_type=ItemType.CONSUMABLE,
     )
 
 
@@ -797,7 +797,7 @@ def key_item() -> ItemData:
         cost=0,
         attack_range=0,
         effect=None,
-        usable_outside_battle=True,
+        item_type=ItemType.CONSUMABLE,
     )
 
 
@@ -840,7 +840,8 @@ def test_use_item_heals_self_and_consumes_inventory(monkeypatch, potion_item):
 
 
 def test_use_item_rejects_unsupported_effect_type(monkeypatch, bomb_item):
-    """usable_outside_battle=True라도 회복이 아닌 효과(대미지 등)는 비전투에서 지원하지 않는다."""
+    """item_type="소모품"(비전투에서도 사용 가능)이라도 회복이 아닌 효과(대미지 등)는
+    비전투에서 지원하지 않는다."""
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
     monkeypatch.setattr(
@@ -883,12 +884,14 @@ def test_use_item_rejects_key_item_without_effect(monkeypatch, key_item):
     assert log_info is not None
 
 
-def test_use_item_rejects_when_not_usable_outside_battle(monkeypatch, potion_item):
+def test_use_item_rejects_when_item_type_not_usable_outside_battle(
+    monkeypatch, potion_item
+):
     from dataclasses import replace
 
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
-    battle_only_potion = replace(potion_item, usable_outside_battle=False)
+    battle_only_potion = replace(potion_item, item_type=ItemType.BATTLE_CONSUMABLE)
     monkeypatch.setattr(
         noncombat_module,
         "load_item_data",
@@ -923,6 +926,142 @@ def test_use_item_rejects_when_insufficient_inventory(monkeypatch, potion_item):
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
     assert "수가 부족" in reply
+
+
+def test_use_item_rejects_target_other_than_self_for_noncombat_only_item(monkeypatch):
+    """item_type="비전투 소모품"은 자신 외의 대상을 지정하면 거부돼야 한다
+    (target_rule이 비어 있어도 이 검증은 item_type만으로 동작한다)."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    state.name_dict["동료2"] = get_test_preset("동료2")
+    potion = ItemData(
+        id="수상한 물약",
+        target_rule="",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"수상한 물약": potion},
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_inventory",
+        lambda spreadsheet, cache=None: Inventory({("동료", "수상한 물약"): 1}),
+    )
+
+    reply, log_info = handle_use_item(acct, "수상한 물약", "동료2", 1, state)
+
+    assert "자신에게만 사용할 수 있습니다" in reply
+
+
+def test_use_item_reports_unimplemented_noncombat_only_item(monkeypatch):
+    """"수상한 물약" 외의 비전투 소모품은 전용 로직이 아직 없으므로 안내
+    메시지를 낸다(인벤토리는 이미 소비된다)."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    charm = ItemData(
+        id="정체불명의 씨앗",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    inventory = Inventory({("동료", "정체불명의 씨앗"): 1})
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"정체불명의 씨앗": charm},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+
+    reply, log_info = handle_use_item(acct, "정체불명의 씨앗", None, 1, state)
+
+    assert "아직 구현되지 않았습니다" in reply
+    assert inventory.get_count("동료", "정체불명의 씨앗") == 0
+
+
+def test_use_mysterious_potion_reports_random_effect(monkeypatch):
+    """"수상한 물약" 사용 시 "수상한 효과" 시트의 텍스트 중 하나를 그대로 출력한다."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    potion = ItemData(
+        id="수상한 물약",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    inventory = Inventory({("동료", "수상한 물약"): 1})
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"수상한 물약": potion},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_mysterious_potion_effects",
+        lambda spreadsheet, cache=None: ["배가 조금 아프다."],
+    )
+
+    reply, log_info = handle_use_item(acct, "수상한 물약", None, 1, state)
+
+    assert "배가 조금 아프다." in reply
+    assert inventory.get_count("동료", "수상한 물약") == 0
+    assert log_info is not None
+    assert log_info.result == "배가 조금 아프다."
+
+
+def test_use_mysterious_potion_heal_effect_updates_hp(monkeypatch):
+    """"체력이 N 회복된다." 효과가 뽑히면 캐릭터 스프레드시트에 반영하고
+    답글 뒤에 "(회복 후 체력/최대 체력)"을 덧붙인다."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    potion = ItemData(
+        id="수상한 물약",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    inventory = Inventory({("동료", "수상한 물약"): 1})
+    recorded_hp: dict = {}
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"수상한 물약": potion},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_mysterious_potion_effects",
+        lambda spreadsheet, cache=None: ["체력이 100 회복된다."],
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_character_curr_hp",
+        lambda spreadsheet, name, hp, cache=None: recorded_hp.__setitem__(name, hp),
+    )
+
+    reply, log_info = handle_use_item(acct, "수상한 물약", None, 1, state)
+
+    max_hp = state.name_dict["동료"].max_hp
+    assert "체력이 100 회복된다." in reply
+    assert reply.endswith(f" ({max_hp}/{max_hp})")
+    assert recorded_hp == {"동료": max_hp}
 
 
 def test_transfer_item_moves_between_characters(monkeypatch, potion_item):
@@ -970,7 +1109,7 @@ def test_bag_lists_gold_and_items_with_cost_range_and_usable_suffix(
             ValueSourceType.FIXED, 15, ValueType.INTEGER, None, None
         ),
         description="적에게 화염 피해를 입힌다.",
-        usable_outside_battle=False,
+        item_type=ItemType.BATTLE_CONSUMABLE,
     )
     inventory = Inventory({("동료", "포션"): 2, ("동료", "화염병"): 1})
     monkeypatch.setattr(
@@ -992,7 +1131,7 @@ def test_bag_lists_gold_and_items_with_cost_range_and_usable_suffix(
         "\n"
         "▹ 소지금: 10G\n"
         f"▹ 포션×2: (코스트 {potion_item.cost}/사거리 {potion_item.attack_range}) "
-        f"{potion_item.description} 비전투 상황에서 사용 가능.\n"
+        f"{potion_item.description} 비전투 상황에서도 사용 가능.\n"
         "▹ 화염병×1: (코스트 2/사거리 3) 적에게 화염 피해를 입힌다."
     )
     assert log_info is not None
