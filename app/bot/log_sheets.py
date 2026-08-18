@@ -55,6 +55,7 @@ class BattleCommandLog:
     phase: str
     battle_type: FieldBattleType
     command_text: str
+    mastodon_id: str = ""
     entries: list[BattleLogEntry] = field(default_factory=list)
     error_trace: Optional[str] = None
 
@@ -91,6 +92,7 @@ _BATTLE_LOG_HEADERS = [
     "round",
     "phase",
     "timestamp",
+    "mastodon_id",
     "command_text",
     "dice_roll",
     "result",
@@ -528,6 +530,7 @@ def append_battle_log(
     entries: list[BattleLogEntry],
     reply_ref: str = "",
     error_trace: Optional[str] = None,
+    mastodon_id: str = "",
     cache: Optional[SheetCache] = None,
 ) -> None:
     """커맨드 정산 결과를 로그_전투에 기록한다.
@@ -547,6 +550,7 @@ def append_battle_log(
                 round_n,
                 phase,
                 timestamp,
+                mastodon_id,
                 command_text,
                 "",
                 "",
@@ -563,6 +567,7 @@ def append_battle_log(
             round_n,
             phase,
             timestamp,
+            mastodon_id,
             command_text,
             entry.roll_display or "",
             entry.result,

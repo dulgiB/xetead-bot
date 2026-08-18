@@ -199,6 +199,7 @@ def _dispatch_proxy_commands(
 def handle_admin_command(
     text: str,
     state: "BotState",
+    acct: str = "",
     mentions: list[str] | None = None,
     visibility: str = "public",
     in_reply_to_id: Optional[int] = None,
@@ -206,6 +207,10 @@ def handle_admin_command(
     """
     어드민 커맨드 텍스트를 파싱해 처리하고 AdminCommandResult를 반환한다.
     game_post_text가 None이 아니면 호출측에서 퍼블릭 게시물로 게시한다.
+
+    `acct`는 이 커맨드를 입력한(멘션을 보낸) mastodon 계정 핸들이다 —
+    프록시 커맨드(대신 입력)는 캐릭터 본인이 아니라 이 admin 계정이
+    입력했다는 의미이므로, 로그_전투에는 캐릭터가 아닌 이 값이 기록된다.
     """
     dm_state = (
         state.dm_battles.get(in_reply_to_id) if in_reply_to_id is not None else None
@@ -219,7 +224,7 @@ def handle_admin_command(
             return _cmd_dm_battle_end(dm_state, state)
         if result := _dispatch_proxy_commands(
             text,
-            lambda name, cmd: _cmd_dm_battle_proxy(dm_state, name, cmd, state),
+            lambda name, cmd: _cmd_dm_battle_proxy(dm_state, name, cmd, state, acct),
         ):
             return result
         return AdminCommandResult(
@@ -266,7 +271,7 @@ def handle_admin_command(
         return AdminCommandResult(end_reply, calc_text=end_calc)
 
     if result := _dispatch_proxy_commands(
-        text, lambda name, cmd: _cmd_proxy(name, cmd, state)
+        text, lambda name, cmd: _cmd_proxy(name, cmd, state, acct)
     ):
         return result
 
@@ -756,7 +761,7 @@ def _cmd_practice_prep(
 
 
 def _cmd_proxy(
-    char_name: str, cmd_str: str, state: "BotState"
+    char_name: str, cmd_str: str, state: "BotState", acct: str = ""
 ) -> tuple[str, str, Optional[BattleCommandLog]]:
     """반환값: (reply_text, calc_text, battle_log_or_None). calc_text가
     비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어
@@ -796,6 +801,7 @@ def _cmd_proxy(
                     else FieldBattleType.PRACTICE
                 ),
                 command_text=cmd_str,
+                mastodon_id=acct,
                 entries=entries,
             )
             reply_text, calc_text = format_battle_reply(
@@ -813,6 +819,7 @@ def _cmd_proxy(
                     else FieldBattleType.PRACTICE
                 ),
                 command_text=cmd_str,
+                mastodon_id=acct,
                 error_trace=traceback.format_exc(),
             )
             return f"◊ {e}", "", battle_log
@@ -868,6 +875,7 @@ def _cmd_proxy(
             phase=phase.value,
             battle_type=FieldBattleType.MAIN,
             command_text=cmd_str,
+            mastodon_id=acct,
             entries=entries,
         )
         reply_text, calc_text = _format_named_reply(
@@ -892,6 +900,7 @@ def _cmd_proxy(
             phase=phase.value,
             battle_type=FieldBattleType.MAIN,
             command_text=cmd_str,
+            mastodon_id=acct,
             error_trace=traceback.format_exc(),
         )
         return f"◊ {e}", "", battle_log
@@ -1461,7 +1470,11 @@ def _cmd_dm_battle_end(
 
 
 def _cmd_dm_battle_proxy(
-    dm_state: DmBattleState, char_name: str, cmd_str: str, state: "BotState"
+    dm_state: DmBattleState,
+    char_name: str,
+    cmd_str: str,
+    state: "BotState",
+    acct: str = "",
 ) -> tuple[str, str, Optional[BattleCommandLog]]:
     """반환값: (reply_text, calc_text, battle_log_or_None)."""
     session = dm_state.session
@@ -1498,6 +1511,7 @@ def _cmd_dm_battle_proxy(
             phase=phase.value,
             battle_type=FieldBattleType.DM,
             command_text=cmd_str,
+            mastodon_id=acct,
             entries=entries,
         )
         reply_text, calc_text = _format_named_reply(
@@ -1519,6 +1533,7 @@ def _cmd_dm_battle_proxy(
             phase=phase.value,
             battle_type=FieldBattleType.DM,
             command_text=cmd_str,
+            mastodon_id=acct,
             error_trace=traceback.format_exc(),
         )
         return f"◊ {e}\n\n{session.context}", "", battle_log
