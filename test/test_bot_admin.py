@@ -6,6 +6,7 @@ import contextlib
 import itertools
 from pathlib import Path
 
+from battle.core.commands.define import RoundPhaseType  # noqa: E402
 from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
 from battle.objects.buff.models import BuffData  # noqa: E402
 from battle.objects.define import (  # noqa: E402
@@ -14,6 +15,8 @@ from battle.objects.define import (  # noqa: E402
     ValueType,
 )
 from battle.objects.models import CharacterId  # noqa: E402
+from battle.objects.skill.effects import SkillEffectAddBuff  # noqa: E402
+from battle.objects.skill.models import SkillData  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import SideType  # noqa: E402
 from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
@@ -244,7 +247,10 @@ def test_advance_phase_always_marks_field_image():
 def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     """적 공격 정산(ENEMY_POST_ACTION) 게시물의 계산식은 본문(game_post_text)이
     아니라 별도의 CW 후속 게시물용 game_post_calc_text로 분리돼야 한다 —
-    본문(+필드 시트 이미지)은 항상 짧고 바로 보이게 남겨야 하기 때문이다."""
+    본문(+필드 시트 이미지)은 항상 짧고 바로 보이게 남겨야 하기 때문이다.
+    어느 적이 한 행동인지는 본문에 표시하지 않는다 — 여러 적의 결과를 한
+    게시물에 모아 보여주므로, 필요하면 계산식(CW 후속 게시물, 이름이
+    붙어 있다)을 펼쳐서 확인하면 된다."""
     monkeypatch.setattr(
         log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
     )
@@ -265,9 +271,76 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
 
     assert "1d6" not in to_post_action.game_post_text
-    assert "적 캐릭터" in to_post_action.game_post_text
+    assert "적 캐릭터" not in to_post_action.game_post_text
     assert "1d6" in to_post_action.game_post_calc_text
     assert "적 캐릭터" in to_post_action.game_post_calc_text
+
+
+def test_enemy_post_action_summary_lists_unique_granted_buff_info(monkeypatch):
+    """적 공격 정산 게시물 하단에는 이번 정산에서 새로 부여된 버프의 설명을
+    "【버프 정보】\n▹ [버프id]: 설명" 형식으로 모아 보여줘야 한다. 같은
+    버프(열 광역기로 두 명에게 동시에 부여)가 여러 명에게 적용돼도 설명은
+    buff_id 기준으로 한 번만 나와야 한다."""
+    monkeypatch.setattr(
+        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
+    )
+    buff = BuffData(
+        id="테스트디버프",
+        buff_class_name="BuffReceivedDamage",
+        duration_turn_value=2,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.PERCENT,
+        value=15,
+        condition_=None,
+        condition_value=None,
+        is_debuff=True,
+        description="받는 대미지가 15% 증가한다.",
+    )
+    skill = SkillData(
+        id="마킹",
+        target_rule="SkillTargetRuleColumn",
+        target_count=1,
+        cost=1,
+        effects=[
+            SkillEffectAddBuff(
+                value_source=None,
+                value=None,
+                value_type=None,
+                buff_id="테스트디버프",
+                buff_add_timing=RoundPhaseType.ENEMY_POST_ACTION,
+            )
+        ],
+        description="",
+    )
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+            ("유효 캐릭터2", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["유효 캐릭터2"] = get_test_preset("유효 캐릭터2")
+    state.session = BattleSession(
+        buff_dict={"테스트디버프": buff}, skill_dict={"마킹": skill}
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터", skill_1_id="마킹")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    admin_module._cmd_proxy("적 캐릭터", "[마킹/1열]", state)
+
+    _cmd_advance_phase(state)  # → 아군 행동
+    to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
+
+    assert to_post_action.game_post_text.count("【버프 정보】") == 1
+    assert (
+        to_post_action.game_post_text.count(
+            "▹ [테스트디버프]: 받는 대미지가 15% 증가한다."
+        )
+        == 1
+    )
 
 
 def test_advance_phase_writes_back_post_action_damage(monkeypatch):
@@ -311,12 +384,42 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
     assert "유효 캐릭터" in ws.recorded_hp
 
 
+def test_proxy_repeated_attacks_on_same_target_merge_into_one_summary_line():
+    """프록시(관리자 대행)로 같은 대상을 여러 번 공격해도(예: [공격/대상 -
+    공격/대상 - 공격/대상]) 답글 요약에는 체력 변화가 합산된 한 줄로만
+    보여야 한다 — 프록시 경로는 파트를 하나씩 잘라 개별 블록으로 조립하므로
+    (_format_named_reply), 직접 커맨드 경로와 별도로 확인해야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터", max_hp=500)
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+    _cmd_advance_phase(state)  # → 아군 행동
+
+    reply_text, _calc_text, _battle_log = admin_module._cmd_proxy(
+        "유효 캐릭터", "[공격/적 캐릭터 - 공격/적 캐릭터 - 공격/적 캐릭터]", state
+    )
+
+    target = state.session.context.characters[CharacterId("적 캐릭터")]
+    total_damage = 500 - target.status.curr_hp
+    assert reply_text == (
+        f"유효 캐릭터 ▹ 적 캐릭터 | -{total_damage} → {target.status.curr_hp}/500"
+    )
+
+
 def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     """관리자 프록시로 대행한 PRE 선언 답글도 POST 정산과 마찬가지로,
     CommandPart(파트)별 결과 줄(또는, 아직 결과가 없는 파트라면 헤더) 앞에
     대행한 캐릭터의 이름이 붙어야 한다 — 답글 자체만으로는 누가 행동했는지
     알 수 없기 때문이다. 공격의 대미지는 POST에서 정산되므로 PRE 선언
-    답글에는 결과 줄이 없어 헤더가 그대로 남는다."""
+    답글에는 결과 줄이 없어 헤더가 그대로 남는다. 단, 이동처럼 결과 줄이
+    이미 "▹ {이름} | ..."로 캐릭터 이름을 보여주는 경우(대상이 항상 시전자
+    자신)는 앞에 이름을 또 붙이면 중복이라 접두어를 생략한다."""
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -333,7 +436,7 @@ def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     )
 
     assert reply_text == (
-        "적 캐릭터 ▹ 적 캐릭터 | 3열로 이동\n\n적 캐릭터 【공격 ▸ 유효 캐릭터】"
+        "▹ 적 캐릭터 | 3열로 이동\n\n적 캐릭터 【공격 ▸ 유효 캐릭터】"
     )
 
 

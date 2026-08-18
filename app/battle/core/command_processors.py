@@ -95,6 +95,7 @@ def process_ally_command(
             CommandPartProcessResult(
                 expanded_part=part_data,
                 log_entries=build_log_entries(calculator),
+                redirect_map=calculator.redirect_map,
             )
         )
 
@@ -133,6 +134,7 @@ def process_enemy_command_on_pre_action(
             CommandPartProcessResult(
                 expanded_part=part_data,
                 log_entries=build_log_entries(calculator),
+                redirect_map=calculator.redirect_map,
             )
         )
 
@@ -175,6 +177,7 @@ def try_process_enemy_command_on_post_action(
                 CommandPartProcessResult(
                     expanded_part=post_part,
                     log_entries=build_log_entries(calculator),
+                    redirect_map=calculator.redirect_map,
                 )
             )
     return results
