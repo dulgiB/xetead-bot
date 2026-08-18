@@ -125,6 +125,7 @@ def handle_character_command(
             phase=phase.value,
             battle_type=battle_type,
             command_text=text,
+            mastodon_id=acct,
             entries=entries,
         )
         reply_text, calc_text = format_battle_reply(
@@ -142,6 +143,7 @@ def handle_character_command(
             phase=phase.value,
             battle_type=battle_type,
             command_text=text,
+            mastodon_id=acct,
             error_trace=traceback.format_exc(),
         )
         return f"◊ {e}", "", battle_log

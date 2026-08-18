@@ -316,6 +316,7 @@ def _persist_battle_log(
             battle_log.entries,
             reply_ref=reply_ref,
             error_trace=battle_log.error_trace,
+            mastodon_id=battle_log.mastodon_id,
             cache=state.sheet_cache,
         )
 
@@ -594,6 +595,7 @@ class MastodonBotListener(StreamListener):
             result: AdminCommandResult = handle_admin_command(
                 text,
                 state,
+                acct=acct,
                 mentions=mentions or [],
                 visibility=visibility,
                 in_reply_to_id=in_reply_to_id,
@@ -1366,6 +1368,7 @@ def _handle_practice_command(
             phase=ps.phase.value if ps.phase is not None else "",
             battle_type=_practice_battle_type(ps),
             command_text=text,
+            mastodon_id=acct,
         )
 
         if ps.total_hp_by_side(side) > 0:
@@ -1425,6 +1428,7 @@ def _handle_practice_command(
             phase=current_phase.value,
             battle_type=_practice_battle_type(ps),
             command_text=text,
+            mastodon_id=acct,
             entries=entries,
         )
         reply_text, calc_text = format_battle_reply(
@@ -1437,6 +1441,7 @@ def _handle_practice_command(
             phase=current_phase.value,
             battle_type=_practice_battle_type(ps),
             command_text=text,
+            mastodon_id=acct,
             error_trace=traceback.format_exc(),
         )
         return f"◊ {e}", "", None, battle_log
