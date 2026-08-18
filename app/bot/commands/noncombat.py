@@ -43,11 +43,34 @@ _RE_TRANSFER_ITEM = re.compile(
 _RE_MYSTERIOUS_POTION_HEAL_EFFECT = re.compile(r"^체력이 (\d+) 회복된다\.$")
 MYSTERIOUS_POTION_ITEM_NAME = "수상한 물약"
 
-# [가방] 목록에서 item_type별로 덧붙일 안내 문구.
+# [가방] 목록에서 item_type별로 설명 뒤에 덧붙일 안내 문구. "비전투 소모품"은
+# 설명 자체로 비전투 전용임이 자명하므로 별도 문구를 붙이지 않는다. "부적"은
+# 뒤가 아니라 설명 앞에 붙는 라벨이라 여기 대신 _BAG_DESCRIPTION_PREFIX에 있다.
 _BAG_ITEM_TYPE_SUFFIX: dict[ItemType, str] = {
     ItemType.CONSUMABLE: " 비전투 상황에서도 사용 가능.",
-    ItemType.NONCOMBAT_CONSUMABLE: " 비전투 전용.",
-    ItemType.CHARM: " 부적.",
+}
+
+# [가방] 목록에서 item_type별로 설명 앞에 붙일 라벨.
+_BAG_DESCRIPTION_PREFIX: dict[ItemType, str] = {
+    ItemType.CHARM: "부적. ",
+}
+
+# "기타"/"비전투 소모품"/"부적"은 코스트·사거리가 항상 0이므로 [가방]에서
+# 생략한다.
+_BAG_ITEM_TYPES_WITHOUT_COST_RANGE = (
+    ItemType.ETC,
+    ItemType.NONCOMBAT_CONSUMABLE,
+    ItemType.CHARM,
+)
+
+# "소모품"은 target_rule에 따라 "(개체/1 · 코스트 N · 사거리 M)"처럼 대상
+# 표기를 코스트/사거리와 함께 한 덩어리로 붙인다.
+_ITEM_TARGET_RULE_LABELS: dict[str, str] = {
+    "SkillTargetRuleSelf": "자신",
+    "SkillTargetRuleNamed": "개체/1",
+    "SkillTargetRuleNamedWithColumn": "개체+열/1",
+    "SkillTargetRuleColumn": "열/1",
+    "SkillTargetRuleAllyColumn": "열/1",
 }
 
 FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
@@ -399,8 +422,21 @@ def handle_bag(acct: str, state: "BotState") -> tuple[str, Optional[NoncombatLog
             lines.append(f"▹ {item_name}×{count}: (아이템 정보를 찾을 수 없습니다)")
             continue
         usable_suffix = _BAG_ITEM_TYPE_SUFFIX.get(item.item_type, "")
+        description_prefix = _BAG_DESCRIPTION_PREFIX.get(item.item_type, "")
+
+        info_parts = []
+        if item.item_type == ItemType.CONSUMABLE:
+            target_label = _ITEM_TARGET_RULE_LABELS.get(
+                item.target_rule, item.target_rule
+            )
+            info_parts.append(target_label)
+        if item.item_type not in _BAG_ITEM_TYPES_WITHOUT_COST_RANGE:
+            info_parts.append(f"코스트 {item.cost}")
+            info_parts.append(f"사거리 {item.attack_range}")
+        info_prefix = f"({' · '.join(info_parts)}) " if info_parts else ""
+
         lines.append(
-            f"▹ {item_name}×{count}: (코스트 {item.cost}/사거리 {item.attack_range}) "
+            f"▹ {item_name}×{count}: {info_prefix}{description_prefix}"
             f"{item.description}{usable_suffix}"
         )
 

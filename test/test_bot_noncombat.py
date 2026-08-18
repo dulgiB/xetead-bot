@@ -1130,11 +1130,138 @@ def test_bag_lists_gold_and_items_with_cost_range_and_usable_suffix(
         "◊ 동료의 소지품\n"
         "\n"
         "▹ 소지금: 10G\n"
-        f"▹ 포션×2: (코스트 {potion_item.cost}/사거리 {potion_item.attack_range}) "
+        f"▹ 포션×2: (자신 · 코스트 {potion_item.cost} · 사거리 {potion_item.attack_range}) "
         f"{potion_item.description} 비전투 상황에서도 사용 가능.\n"
-        "▹ 화염병×1: (코스트 2/사거리 3) 적에게 화염 피해를 입힌다."
+        "▹ 화염병×1: (코스트 2 · 사거리 3) 적에게 화염 피해를 입힌다."
     )
     assert log_info is not None
+
+
+def test_bag_omits_cost_range_for_types_without_battle_slot(monkeypatch):
+    """"기타"/"비전투 소모품"/"부적"은 코스트·사거리가 항상 0이므로
+    [가방]에서 코스트/사거리 표기를 생략한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    key_item = ItemData(
+        id="수상한 양탄자",
+        target_rule="",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        description="용도 불명의 양탄자.",
+        item_type=ItemType.ETC,
+    )
+    potion = ItemData(
+        id="수상한 물약",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        description="마셔 봐야 아는 물약.",
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    charm = ItemData(
+        id="행운의 부적",
+        target_rule="",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        description="지니고 있으면 운이 좋아진다.",
+        item_type=ItemType.CHARM,
+    )
+    inventory = Inventory(
+        {
+            ("동료", "수상한 양탄자"): 1,
+            ("동료", "수상한 물약"): 1,
+            ("동료", "행운의 부적"): 1,
+        }
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {
+            "수상한 양탄자": key_item,
+            "수상한 물약": potion,
+            "행운의 부적": charm,
+        },
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert "코스트" not in reply
+    assert "사거리" not in reply
+    assert "▹ 수상한 양탄자×1: 용도 불명의 양탄자." in reply
+    assert "▹ 수상한 물약×1: 마셔 봐야 아는 물약." in reply
+    assert "비전투 전용" not in reply
+    assert "▹ 행운의 부적×1: 부적. 지니고 있으면 운이 좋아진다." in reply
+
+
+def test_bag_shows_target_label_for_consumable_item(monkeypatch):
+    """"소모품"은 target_rule에 따라 "(대상라벨 · 코스트 N · 사거리 M)"
+    형태로 코스트/사거리와 한 덩어리로 붙인다."""
+    acct = "user1"
+    state = _make_state(acct)
+    self_potion = ItemData(
+        id="자가 물약",
+        target_rule="SkillTargetRuleSelf",
+        cost=1,
+        attack_range=0,
+        effect=SkillEffectHeal(
+            ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
+        ),
+        description="체력을 회복한다.",
+        item_type=ItemType.CONSUMABLE,
+    )
+    named_potion = ItemData(
+        id="지정 물약",
+        target_rule="SkillTargetRuleNamed",
+        cost=1,
+        attack_range=1,
+        effect=SkillEffectHeal(
+            ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
+        ),
+        description="체력을 회복한다.",
+        item_type=ItemType.CONSUMABLE,
+    )
+    column_potion = ItemData(
+        id="살포 물약",
+        target_rule="SkillTargetRuleAllyColumn",
+        cost=1,
+        attack_range=1,
+        effect=SkillEffectHeal(
+            ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
+        ),
+        description="체력을 회복한다.",
+        item_type=ItemType.CONSUMABLE,
+    )
+    inventory = Inventory(
+        {
+            ("동료", "자가 물약"): 1,
+            ("동료", "지정 물약"): 1,
+            ("동료", "살포 물약"): 1,
+        }
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {
+            "자가 물약": self_potion,
+            "지정 물약": named_potion,
+            "살포 물약": column_potion,
+        },
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+
+    reply, log_info = handle_bag(acct, state)
+
+    assert "(자신 · 코스트 1 · 사거리 0) 체력을 회복한다." in reply
+    assert "(개체/1 · 코스트 1 · 사거리 1) 체력을 회복한다." in reply
+    assert "(열/1 · 코스트 1 · 사거리 1) 체력을 회복한다." in reply
 
 
 def test_bag_shows_placeholder_when_item_info_missing(monkeypatch):
