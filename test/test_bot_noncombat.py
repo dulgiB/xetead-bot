@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 
 import random  # noqa: E402
+from datetime import date  # noqa: E402
 
 import pytest  # noqa: E402
 from battle.objects.define import ValueSourceType, ValueType  # noqa: E402
@@ -391,6 +392,73 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
     assert saved_calls == [(None, "동료", 11, saved_calls[0][3])]
     assert log_info is not None
     assert log_info.error_trace is None
+
+
+def test_daily_quest_roll_appends_ledger_row_on_success(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+    )
+    ledger_calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "append_ledger_row",
+        lambda *a, **k: ledger_calls.append((a, k)),
+    )
+
+    handle_daily_quest_roll(acct, "육체", state)
+
+    assert len(ledger_calls) == 1
+    args, kwargs = ledger_calls[0]
+    assert args == (
+        None,
+        date.today().isoformat(),
+        "동료",
+        "일일 의뢰",
+        1,
+        11,
+    )
+    assert kwargs == {"cache": state.sheet_cache}
+
+
+def test_daily_quest_roll_skips_ledger_row_when_save_fails(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("시트 접근 실패")
+
+    monkeypatch.setattr(noncombat_module, "update_character_gold_and_quest_date", _boom)
+    ledger_calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "append_ledger_row",
+        lambda *a, **k: ledger_calls.append((a, k)),
+    )
+
+    handle_daily_quest_roll(acct, "육체", state)
+
+    assert ledger_calls == []
+
+
+def test_daily_quest_roll_tolerates_ledger_append_failure(monkeypatch):
+    """가계부 기록이 실패해도 의뢰 완수 자체(골드 지급, 응답)는 정상 진행돼야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+    )
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("시트 접근 실패")
+
+    monkeypatch.setattr(noncombat_module, "append_ledger_row", _boom)
+
+    result, _log_info = handle_daily_quest_roll(acct, "육체", state)
+
+    assert "사례로 1G를 획득했다. (소지금: 11G)" in result
+    assert acct not in state.noncombat.daily_quest_mid
 
 
 def test_finalize_daily_quest_mid_persists_status_id_and_updates_in_memory_state(
