@@ -732,7 +732,9 @@ class TestMarkCounterBuff:
         manager.process_command(parse_character_command(enemy, "[이동/2열]", ctx))
         reply, calc = format_battle_reply(ctx, enemy, ctx.results[before:])
 
-        assert reply == "▹ 적군 | 2열로 이동\n▹ 적군 | -140 → 860/1000"
+        assert reply == (
+            "▹ 적군 | 2열로 이동\n▹ 적군 | -140 → 860/1000 [MarkCounter: MarkStacker]"
+        )
         assert calc == (
             "【이동 ▸ 2열】\n"
             "▹ 적군 | (100 + 0[0d6]) × (0.7[MarkCounter 계수] × 2[Mark]) → -140"

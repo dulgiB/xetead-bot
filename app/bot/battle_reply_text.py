@@ -88,12 +88,15 @@ def merge_damage_heal_lines(
     part_results: list[CommandPartProcessResult],
 ) -> dict[tuple[BattleLogEntryKind, str], str]:
     """part_results 전체에 걸쳐 같은 (종류, 대상) 조합의 대미지/회복을
-    합산해 "▹ 대상 | ±합계 → hp/max" 한 줄로 미리 조립해 둔다. 최종
-    hp_after/max_hp는 등장 순서상 마지막 항목의 값을 쓴다(그 시점이
-    실제로 가장 최신 상태이므로)."""
+    합산해 "▹ 대상 | ±합계 → hp/max [라벨...]" 한 줄로 미리 조립해 둔다.
+    최종 hp_after/max_hp는 등장 순서상 마지막 항목의 값을 쓴다(그 시점이
+    실제로 가장 최신 상태이므로). 라벨(entry.source_labels)은 등장 순서를
+    유지한 채 파트 전체에 걸쳐 중복 제거해 모은다 — 반격/반사/코모이디아류처럼
+    같은 대상이 여러 반응형 버프의 대상이 됐을 때도 라벨이 하나씩만 남는다."""
     totals: dict[tuple[BattleLogEntryKind, str], int] = {}
     last_hp_after: dict[tuple[BattleLogEntryKind, str], Optional[int]] = {}
     last_max_hp: dict[tuple[BattleLogEntryKind, str], Optional[int]] = {}
+    labels: dict[tuple[BattleLogEntryKind, str], list[str]] = {}
     for part_result in part_results:
         for entry in part_result.log_entries:
             if entry.kind not in _MERGEABLE_KINDS or entry.value is None:
@@ -102,17 +105,23 @@ def merge_damage_heal_lines(
             totals[key] = totals.get(key, 0) + entry.value
             last_hp_after[key] = entry.hp_after
             last_max_hp[key] = entry.max_hp
+            key_labels = labels.setdefault(key, [])
+            for label in entry.source_labels:
+                if label not in key_labels:
+                    key_labels.append(label)
 
     lines: dict[tuple[BattleLogEntryKind, str], str] = {}
     for key, total in totals.items():
         _kind, target_name = key
         sign = "-" if key[0] == BattleLogEntryKind.DAMAGE else "+"
         hp_after = last_hp_after[key]
+        label_suffix = "".join(f" [{label}]" for label in labels.get(key, []))
         if hp_after is None:
-            lines[key] = f"▹ {target_name} | {sign}{total}"
+            lines[key] = f"▹ {target_name} | {sign}{total}{label_suffix}"
         else:
             lines[key] = (
-                f"▹ {target_name} | {sign}{total} → {hp_after}/{last_max_hp[key]}"
+                f"▹ {target_name} | {sign}{total} → "
+                f"{hp_after}/{last_max_hp[key]}{label_suffix}"
             )
     return lines
 
@@ -379,11 +388,13 @@ def _format_damage_or_heal(
     # 같은 커맨드에서 같은 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상),
     # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
     final_value = f"{sign}{entry.value}"
+    label_suffix = "".join(f" [{label}]" for label in entry.source_labels)
     if entry.hp_after is None:
         # 대미지로 사망해 전장에서 제거된 경우 등 — 잔여 체력을 보여줄 수 없다.
-        line = f"▹ {entry.target_name} | {final_value}"
+        line = f"▹ {entry.target_name} | {final_value}{label_suffix}"
     else:
         line = (
-            f"▹ {entry.target_name} | {final_value} → {entry.hp_after}/{entry.max_hp}"
+            f"▹ {entry.target_name} | {final_value} → "
+            f"{entry.hp_after}/{entry.max_hp}{label_suffix}"
         )
     return line, entry.roll_display, final_value

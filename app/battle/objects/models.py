@@ -375,6 +375,11 @@ class DamageData:
     # target rule(SkillTargetRuleColumn/SkillTargetRuleAllyColumn)에서
     # 생성된 항목은 command_expanders.py에서 이 값을 True로 표시한다.
     ignores_taunt: bool = False
+    # 반격/반사/코모이디아류처럼 이 대미지를 실제로 가한 쪽이 공격자 본인이
+    # 아니라 제3자(버프 보유자)일 때, 답글 요약에 "[라벨]"로 그 발생 원인을
+    # 밝히기 위한 표시용 문자열. None이면 캐릭터 본인의 직접 행동으로 간주해
+    # 요약에 아무것도 덧붙이지 않는다.
+    source_label: Optional[str] = None
 
 
 @dataclass(frozen=True)

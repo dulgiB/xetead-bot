@@ -71,6 +71,7 @@ class ReflectEvent(BuffEvent):
                         value=BaseValueIndicator(
                             value_source=ValueSourceType.FIXED, value=reflect_value
                         ),
+                        source_label=f"{self.buff_label}: {holder.name}",
                     ),
                     roll_display=(
                         f"{given_calc_display} × "

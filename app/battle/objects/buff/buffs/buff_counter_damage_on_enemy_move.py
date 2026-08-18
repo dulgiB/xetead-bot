@@ -55,6 +55,7 @@ class CounterDamageOnEnemyMoveEvent(BuffEvent):
                     (self.reference_buff_id, stack * 100),
                 ),
                 triggers_given_damage_passives=False,
+                source_label=f"{self.buff_label}: {holder.name}",
             )
         )
 

@@ -25,6 +25,7 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.exceptions import CommandValidationError
+from battle.objects.buff.buffs.buff_companion_guardian import BuffCompanionGuardian
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
@@ -33,11 +34,12 @@ from battle.objects.define import (
     ValueSourceType,
     ValueType,
 )
-from battle.objects.models import CharacterId
+from battle.objects.models import BuffUid, CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData, PassiveSkillTargetType
 from battle.objects.passive_skill.passive_skill import _resolve_targets
 from battle.objects.skill.effects import SkillEffectAddBuff, SkillEffectDamage
 from battle.objects.skill.models import SkillData
+from bot.battle_reply_text import format_battle_reply
 from helpers import get_test_preset
 
 OWNER = CharacterId("CompanionGuardian")
@@ -587,6 +589,48 @@ class TestCompanionGuardianSplitAndCounter:
         assert companion_damage == 30
         # 반격: 공격 굴림 80% (milestone_n=0이므로 atk=100 그대로 굴림 → 80).
         assert enemy_damage == 80
+
+    def test_split_and_counter_modifier_labels_follow_buff_id_not_hardcoded(self):
+        """분담/반격 modifier의 source_name(계산식에 노출되는 이름)은 "버프"
+        시트에 등록된 실제 buff id를 그대로 따라야 한다 — 코드에 이름을
+        하드코딩해 두면 시트에서 버프 id를 바꿔도 계산식엔 옛 이름이 그대로
+        남는다. "CompanionBuff1"과 다른 id("다른이름버프")로 만든 인스턴스가
+        실제로 그 id를 라벨로 쓰는지 create_event()로 직접 확인한다."""
+        buff = BuffCompanionGuardian._create_bare(
+            id_="다른이름버프",
+            uid=BuffUid(OWNER, OWNER, "BuffCompanionGuardian"),
+            given_by=OWNER,
+            applied_to=OWNER,
+        )
+        event = buff.create_event()
+        assert event.label == "다른이름버프"
+        assert event.label != "CompanionBuff1"
+
+    def test_reply_summary_labels_counter_damage_with_buff_id(self):
+        """반격 대미지는 시전자(적군) 본인의 행동이 아니라 [CompanionBuff1]
+        보유자가 대신 가한 대미지이므로, 답글 요약에도 "[CompanionBuff1(반격)]"으로
+        발생 원인이 드러나야 한다 — 분담분(owner/동료가 원래 받는 몫)은 여전히
+        시전자 본인의 공격이므로 라벨이 붙지 않는다."""
+        ctx = self._make_ready_context()
+        ctx.on_battle_start()
+        manager = _setup_ally_phase(ctx)
+        enemy = CharacterId("적군")
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+        before = len(ctx.results)
+        manager.process_command(
+            parse_character_command(enemy, "[고정대미지스킬/CompanionGuardian]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        reply, _calc = format_battle_reply(ctx, enemy, ctx.results[before:])
+
+        assert "▹ 적군 | -80" in reply
+        assert "[CompanionBuff1(반격)]" in reply
+        for line in reply.splitlines():
+            if line.startswith(f"▹ {OWNER.name} "):
+                assert "[" not in line
 
     def test_incoming_random_roll_damage_is_split_from_a_single_roll(self, monkeypatch):
         """분담 대상 대미지가 STAT_ATK_ROLL(공격 굴림)처럼 매 get_value() 호출마다

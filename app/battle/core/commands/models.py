@@ -177,6 +177,10 @@ class BattleLogEntry:
     # 그대로 들고 있는다.
     hp_after: Optional[int] = None
     max_hp: Optional[int] = None
+    # 반격/반사/코모이디아류처럼 제3자(버프 보유자)가 대신 가한 대미지의
+    # 발생 원인 라벨들(DamageData.source_label을 모아 중복 제거한 것). 답글
+    # 요약 줄에 "[라벨]"로 덧붙인다 — 캐릭터 본인의 직접 행동이면 비어 있다.
+    source_labels: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
