@@ -110,6 +110,9 @@ _NONCOMBAT_LOG_HEADERS = [
     "reply_ref",
 ]
 
+_LEDGER_SHEET = "가계부"
+_LEDGER_HEADERS = ["날짜", "캐릭터", "변동 사유", "금액", "최종 소지금"]
+
 
 def _now() -> str:
     # Google Sheets의 USER_ENTERED는 ISO 8601의 "T" 구분자·타임존 접미사가
@@ -605,5 +608,35 @@ def append_noncombat_log(
             error_trace or "",
             reply_ref,
         ],
+        value_input_option=ValueInputOption.user_entered,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 가계부
+# ---------------------------------------------------------------------------
+
+
+def append_ledger_row(
+    spreadsheet: gspread.Spreadsheet,
+    date_str: str,
+    char_name: str,
+    reason: str,
+    amount: int,
+    new_balance: int,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """ "가계부" 시트에 소지금 변동 내역 한 행을 추가한다.
+
+    `date_str`은 호출측이 이미 계산해 둔 "오늘"(예: 일일 의뢰 완수 시
+    `daily_quest_date`에 쓰는 값과 동일한 date.today().isoformat())을 그대로
+    받는다 — 같은 트랜잭션 안에서 날짜를 두 번 다른 시점에 계산해 자정
+    경계에서 어긋나는 것을 방지한다.
+    """
+    ws = _get_or_create_worksheet(
+        spreadsheet, _LEDGER_SHEET, _LEDGER_HEADERS, cache=cache
+    )
+    ws.append_row(
+        [date_str, char_name, reason, amount, new_balance],
         value_input_option=ValueInputOption.user_entered,
     )
