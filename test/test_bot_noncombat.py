@@ -735,7 +735,7 @@ def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
         acct, "존재하지 않는 장소", state
     )
 
-    assert "이번 조사의 장소가 아닙니다" in result
+    assert "등록되지 않은 장소입니다" in result
     assert acct not in state.noncombat.investigation_acct_to_quest_id
     assert log_info is not None
 
@@ -905,7 +905,7 @@ def test_use_item_rejects_when_item_type_not_usable_outside_battle(
 
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
-    assert "사용할 수 없습니다" in reply
+    assert reply == "◊ 사용할 수 없는 아이템입니다."
     assert log_info is not None
 
 
@@ -955,7 +955,7 @@ def test_use_item_rejects_target_other_than_self_for_noncombat_only_item(monkeyp
 
     reply, log_info = handle_use_item(acct, "수상한 물약", "동료2", 1, state)
 
-    assert "자신에게만 사용할 수 있습니다" in reply
+    assert reply == "◊ 자신에게만 사용할 수 있는 아이템입니다."
 
 
 def test_use_item_reports_unimplemented_noncombat_only_item(monkeypatch):
@@ -1016,7 +1016,11 @@ def test_use_mysterious_potion_reports_random_effect(monkeypatch):
 
     reply, log_info = handle_use_item(acct, "수상한 물약", None, 1, state)
 
-    assert "배가 조금 아프다." in reply
+    assert reply == (
+        "수상한 물약을 마셨다. ……어라? 배가 조금 아프다.\n"
+        "\n"
+        "◊ 효과는 자정 혹은 스토리 진행 전까지 지속됩니다. 기존에 진행 중이던 대화에는 반영되지 않습니다."
+    )
     assert inventory.get_count("동료", "수상한 물약") == 0
     assert log_info is not None
     assert log_info.result == "배가 조금 아프다."
@@ -1059,8 +1063,11 @@ def test_use_mysterious_potion_heal_effect_updates_hp(monkeypatch):
     reply, log_info = handle_use_item(acct, "수상한 물약", None, 1, state)
 
     max_hp = state.name_dict["동료"].max_hp
-    assert "체력이 100 회복된다." in reply
-    assert reply.endswith(f" ({max_hp}/{max_hp})")
+    assert reply == (
+        f"수상한 물약을 마셨다. ……어라? 체력이 100 회복된다. ({max_hp}/{max_hp})\n"
+        "\n"
+        "◊ 효과는 자정 혹은 스토리 진행 전까지 지속됩니다. 기존에 진행 중이던 대화에는 반영되지 않습니다."
+    )
     assert recorded_hp == {"동료": max_hp}
 
 

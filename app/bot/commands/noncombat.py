@@ -216,16 +216,16 @@ def handle_use_item(
     item_name = resolve_matching_key(item_name, item_dict.keys())
     item = item_dict.get(item_name)
     if item is None:
-        msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        msg = "◊ 등록되지 않은 아이템입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
     if item.item_type not in (ItemType.CONSUMABLE, ItemType.NONCOMBAT_CONSUMABLE):
-        msg = f"◊ '{item_name}'은(는) 비전투 상황에서 사용할 수 없습니다."
+        msg = "◊ 사용할 수 없는 아이템입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     if item.item_type == ItemType.NONCOMBAT_CONSUMABLE:
         resolved_target = resolve_matching_key(target_char_name, state.name_dict.keys())
         if resolved_target != user_name:
-            msg = f"◊ '{item_name}'은(는) 자신에게만 사용할 수 있습니다."
+            msg = "◊ 자신에게만 사용할 수 있는 아이템입니다."
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     owned = inventory.get_count(user_name, item_name)
@@ -322,7 +322,8 @@ def _handle_mysterious_potion(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     effect_text = random.choice(effects)
-    reply = f"◊ '수상한 물약'을 사용했다: {effect_text}"
+    first_line = f"수상한 물약을 마셨다. ……어라? {effect_text}"
+    lines = [first_line]
 
     heal_match = _RE_MYSTERIOUS_POTION_HEAL_EFFECT.match(effect_text)
     target_data = state.name_dict.get(user_name)
@@ -334,10 +335,15 @@ def _handle_mysterious_potion(
             update_character_curr_hp(
                 state.spreadsheet, user_name, new_hp, cache=state.sheet_cache
             )
-            reply += f" ({new_hp}/{target_data.max_hp})"
+            lines[0] += f" ({new_hp}/{target_data.max_hp})"
         except Exception as e:
-            reply += f"\n◊ 체력 반영 중 오류가 발생했습니다: {e}"
+            lines.append(f"◊ 체력 반영 중 오류가 발생했습니다: {e}")
 
+    lines += [
+        "",
+        "◊ 효과는 자정 혹은 스토리 진행 전까지 지속됩니다. 기존에 진행 중이던 대화에는 반영되지 않습니다.",
+    ]
+    reply = "\n".join(lines)
     return reply, NoncombatLogInfo(command_text=command_text, result=effect_text)
 
 
@@ -376,7 +382,7 @@ def handle_transfer_item(
 
     item_name = resolve_matching_key(item_name, item_dict.keys())
     if item_name not in item_dict:
-        msg = f"◊ 아이템 '{item_name}'을(를) 찾을 수 없습니다."
+        msg = "◊ 등록되지 않은 아이템입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     owned = inventory.get_count(user_name, item_name)
@@ -674,7 +680,7 @@ def handle_investigation_venue_choice(
 
     if location is None or not quests:
         nc.investigation_acct_to_quest_id.pop(acct, None)
-        msg = f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
+        msg = "◊ 등록되지 않은 장소입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     venue_lookup = {q.location: q for q in quests}
@@ -690,7 +696,7 @@ def handle_investigation_venue_choice(
                 f"정보를 수집할 수 있다. @{ADMIN_MASTODON_ID}"
             )
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-        msg = f"◊ '{venue_name}'은(는) 이번 조사의 장소가 아닙니다."
+        msg = "◊ 등록되지 않은 장소입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     nc.investigation_acct_to_quest_id[acct] = quest.id

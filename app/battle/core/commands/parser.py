@@ -142,7 +142,7 @@ def parse_character_command(
                             )
                         else:
                             raise CommandValidationError(
-                                error_skill_or_item_not_registered(name)
+                                error_skill_or_item_not_registered()
                             )
 
                 else:
