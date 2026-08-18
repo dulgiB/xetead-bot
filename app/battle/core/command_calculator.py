@@ -393,6 +393,21 @@ class CommandPartCalculator:
                     BuffCountDeductCondition.ON_HIT,  # noqa: F821
                     damage_calc.base.attacker_id,
                 )
+            # 방금 적용한 ON_HIT 버프(반사 등)가 이 damage_calc를 무효화하며
+            # damage_data_list에서 완전히 제거했을 수 있다(BuffReflect 등 —
+            # to_nullify 항목을 remove하고 공격자를 대상으로 한 새 항목으로
+            # 대체한다). 그 경우 대상은 실제로 대미지를 전혀 받지 않았으므로,
+            # "대미지를 받았을 때" 반응하는 버프(코모이디아 등 ALLY_DAMAGED/
+            # ALLY_IN_RANGE_DAMAGED 계열)가 이 무효화된 항목을 근거로 발동하면
+            # 안 된다 — live_damage_calcs는 루프 시작 시점의 스냅샷이라 target_id
+            # 등 필드 값 자체는 여전히 남아 있지만, 실제 리스트에서 사라졌는지는
+            # 매번 다시 확인해야 한다.
+            still_live = any(
+                dc is damage_calc
+                for dc in self.data_by_effect[effect_seq_number].damage_data_list
+            )
+            if not still_live:
+                continue
             self.context.buff_container.on_character_damaged(
                 damage_calc.base.target_id, self, effect_seq_number
             )

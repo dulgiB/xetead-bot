@@ -106,6 +106,25 @@ def _buff_dict() -> dict[str, BuffData]:
                 "max_stack": "",
             }
         ),
+        "반사_테스트": BuffData.from_dict(
+            {
+                "id": "반사_테스트",
+                "buff_name": "BuffReflect",
+                "duration_turn_value": 2,
+                "duration_count_value": 1,
+                "duration_count_deduct_condition": "피격 시",
+                "value": "",
+                "value_type": "",
+                "condition": "",
+                "condition_value": "",
+                "description": (
+                    "테스트 전용. 받는 대미지를 무효화하고, 무효화한 대미지의 "
+                    "40%를 공격자에게 되돌려 보낸다."
+                ),
+                "is_debuff": False,
+                "max_stack": "",
+            }
+        ),
         "도발_테스트": BuffData.from_dict(
             {
                 "id": "도발_테스트",
@@ -409,6 +428,32 @@ class TestPassiveSkill:
         enemy_hp_after = ctx.characters[enemy].status.curr_hp
 
         assert enemy_hp_before == enemy_hp_after
+
+    def test_no_counter_when_ally_damage_is_fully_reflected(self):
+        """[반사](BuffReflect)가 아군2의 피해를 완전히 무효화하고 공격자에게
+        되돌리는 형태로 대체하면, 그 무효화된 원래 피격 이벤트를 근거로
+        코모이디아류(ALLY_IN_RANGE_DAMAGED) 버프가 추가로 발동하면 안 된다 —
+        아군2는 실제로는 전혀 대미지를 받지 않았기 때문이다."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        self._add_holder_and_ally(ctx)
+        enemy = CharacterId("적군")
+        ctx.buff_container.add(
+            _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
+        )
+        ctx.buff_container.add(
+            _buff_add(given_by="아군2", applied_to="아군2", buff_id="반사_테스트")
+        )
+
+        enemy_hp_before = ctx.characters[enemy].status.curr_hp
+        manager.process_command(parse_character_command(enemy, "[공격/아군2]", ctx))
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+        enemy_hp_after = ctx.characters[enemy].status.curr_hp
+
+        # 아군2의 피해가 [반사_테스트]로 전액 무효화되고 공격 굴림 10 ×
+        # 40%[반사 계수] = 4만큼만 공격자에게 되돌아간다. 코모이디아
+        # (PassiveSkill)의 추가 반격(공격 굴림 50 × 50% = 25)이 더해지면 안 된다.
+        assert enemy_hp_before - enemy_hp_after == 4
 
     def test_no_counter_when_ally_out_of_holders_range(self):
         ctx = _make_context()
