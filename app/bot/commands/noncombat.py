@@ -5,7 +5,7 @@ import re
 import time
 import traceback
 from datetime import date
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from battle.objects.define import ItemType, ValueSourceType
 from battle.objects.skill.effects import SkillEffectHeal
@@ -222,6 +222,17 @@ def _compute_heal_amount(
     return None
 
 
+def _format_noncombat_result_line(
+    target_name: str, delta: int, current_value: int, max_value: int
+) -> str:
+    """전투 중 결과 표시(battle_reply_text.py의 merge_damage_heal_lines가 만드는
+    "▹ 대상 | ±값 → 현재/최대")와 동일한 형식으로 한 줄을 만든다. 회복/피해 등
+    효과 종류별로 문구를 새로 짓지 않고 이 한 형식만 재사용한다.
+    """
+    sign = "+" if delta >= 0 else ""
+    return f"▹ {target_name} | {sign}{delta} → {current_value}/{max_value}"
+
+
 def handle_use_item(
     acct: str,
     item_name: str,
@@ -234,7 +245,7 @@ def handle_use_item(
 
     "소모품"(item_type)은 전투용 스테이터스를 그대로 재사용해 회복(Heal) 효과만
     지원한다. "비전투 소모품"은 effect가 없고 자신만을 대상으로 아이템별
-    전용 로직(_dispatch_noncombat_only_item)으로 처리된다.
+    전용 로직(_NONCOMBAT_ITEM_HANDLERS)으로 처리된다.
     """
     command_text = (
         f"[{item_name}"
@@ -271,6 +282,13 @@ def handle_use_item(
         if resolved_target != user_name:
             msg = "◊ 자신에게만 사용할 수 있는 아이템입니다."
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+        # 아직 전용 로직이 구현되지 않은 비전투 소모품은, 플레이어 입장에서는
+        # 등록되지 않은 아이템과 다를 바 없다 — "구현 예정" 같은 내부 사정을
+        # 노출하지 않고 동일한 메시지로 거절한다. 소비 전에 확인해야
+        # 존재하지 않는 효과를 위해 아이템이 조용히 사라지는 일이 없다.
+        if item_name not in _NONCOMBAT_ITEM_HANDLERS:
+            msg = "◊ 등록되지 않은 아이템입니다."
+            return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     owned = inventory.get_count(user_name, item_name)
     if owned < count:
@@ -287,8 +305,8 @@ def handle_use_item(
                 result=msg,
                 error_trace=traceback.format_exc(),
             )
-        return _dispatch_noncombat_only_item(
-            item_name, user_name, count, state, command_text
+        return _NONCOMBAT_ITEM_HANDLERS[item_name](
+            user_name, count, state, command_text
         )
 
     if not isinstance(item.effect, SkillEffectHeal):
@@ -323,28 +341,15 @@ def handle_use_item(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    result_text = f"{target_char_name}의 체력을 {heal_amount} 회복했습니다. ({prev_hp} → {new_hp})"
-    reply = f"◊ '{item_name}' 사용: {result_text}"
+    result_line = _format_noncombat_result_line(
+        target_char_name, heal_amount, new_hp, target_data.max_hp
+    )
+    reply = f"◊ {item_name} {count}개를 사용했습니다.\n\n{result_line}"
     return reply, NoncombatLogInfo(
         command_text=command_text,
         dice_roll=f"{item.effect.value_source.value}×{count}",
-        result=result_text,
+        result=result_line,
     )
-
-
-def _dispatch_noncombat_only_item(
-    item_name: str, user_name: str, count: int, state: "BotState", command_text: str
-) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """item_type="비전투 소모품"인 아이템의 전용 로직으로 분기한다.
-
-    현재는 "수상한 물약"만 구현돼 있다 — 아직 전용 로직이 없는 다른 비전투
-    소모품은 안내 메시지만 반환한다(인벤토리 소비는 이미 호출측에서 끝난 뒤라
-    되돌리지 않는다).
-    """
-    if item_name == MYSTERIOUS_POTION_ITEM_NAME:
-        return _handle_mysterious_potion(user_name, count, state, command_text)
-    msg = f"◊ '{item_name}'의 사용 효과가 아직 구현되지 않았습니다."
-    return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
 
 _MYSTERIOUS_POTION_EFFECT_JOINER = " 그리고…… "
@@ -401,6 +406,17 @@ def _handle_mysterious_potion(
     ]
     reply = "\n".join(lines)
     return reply, NoncombatLogInfo(command_text=command_text, result=combined_effects)
+
+
+# item_type="비전투 소모품"인 아이템명 → 전용 처리 함수. handle_use_item이
+# 아이템명이 이 dict에 없으면 소비 전에 "등록되지 않은 아이템입니다."로
+# 거절한다 — 플레이어 입장에서는 미구현도 미등록과 다를 바 없어야 하고,
+# 어차피 처리할 방법이 없는 아이템을 소비해 버리면 안 되기 때문이다.
+_NONCOMBAT_ITEM_HANDLERS: dict[
+    str, Callable[[str, int, "BotState", str], tuple[str, Optional[NoncombatLogInfo]]]
+] = {
+    MYSTERIOUS_POTION_ITEM_NAME: _handle_mysterious_potion,
+}
 
 
 def handle_transfer_item(

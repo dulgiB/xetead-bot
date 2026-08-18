@@ -894,7 +894,7 @@ def test_use_item_heals_self_and_consumes_inventory(monkeypatch, potion_item):
 
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
-    assert "회복" in reply
+    assert reply == "◊ 포션 1개를 사용했습니다.\n\n▹ 동료 | +20 → 70/100"
     assert recorded_hp == {"동료": 70}
     assert inventory.get_count("동료", "포션") == 0
     assert log_info is not None
@@ -1020,9 +1020,12 @@ def test_use_item_rejects_target_other_than_self_for_noncombat_only_item(monkeyp
     assert reply == "◊ 자신에게만 사용할 수 있는 아이템입니다."
 
 
-def test_use_item_reports_unimplemented_noncombat_only_item(monkeypatch):
-    """"수상한 물약" 외의 비전투 소모품은 전용 로직이 아직 없으므로 안내
-    메시지를 낸다(인벤토리는 이미 소비된다)."""
+def test_use_item_rejects_unimplemented_noncombat_only_item_without_consuming(
+    monkeypatch,
+):
+    """"수상한 물약" 외의 비전투 소모품은 전용 로직이 아직 없다 — 플레이어
+    입장에서는 등록되지 않은 아이템과 다를 바 없어야 하므로 같은 메시지로
+    거절하고, 처리할 방법이 없는 아이템을 소비해 버리지 않는다."""
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
     charm = ItemData(
@@ -1045,8 +1048,8 @@ def test_use_item_reports_unimplemented_noncombat_only_item(monkeypatch):
 
     reply, log_info = handle_use_item(acct, "정체불명의 씨앗", None, 1, state)
 
-    assert "아직 구현되지 않았습니다" in reply
-    assert inventory.get_count("동료", "정체불명의 씨앗") == 0
+    assert reply == "◊ 등록되지 않은 아이템입니다."
+    assert inventory.get_count("동료", "정체불명의 씨앗") == 1
 
 
 def test_use_mysterious_potion_reports_random_effect(monkeypatch):
@@ -1152,7 +1155,7 @@ def test_use_item_defaults_to_one_when_count_omitted(monkeypatch, potion_item):
 
     reply, log_info = handle_use_item(acct, "포션", None, 1, state)
 
-    assert "체력을 20 회복했습니다" in reply  # potion_item: 고정값 20
+    assert "▹ 동료 | +20 → 70/100" in reply  # potion_item: 고정값 20
     assert inventory.get_count("동료", "포션") == 1
 
 
@@ -1179,7 +1182,7 @@ def test_use_item_scales_heal_by_count(monkeypatch, potion_item):
 
     reply, log_info = handle_use_item(acct, "포션", None, 2, state)
 
-    assert "체력을 40 회복했습니다. (50 → 90)" in reply  # 20 × 2개
+    assert reply == "◊ 포션 2개를 사용했습니다.\n\n▹ 동료 | +40 → 90/100"  # 20 × 2개
     assert inventory.get_count("동료", "포션") == 1
     assert recorded_hp == {"동료": 90}
 
