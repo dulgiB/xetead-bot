@@ -169,7 +169,6 @@ def test_admin_keyword_regexes_ignore_internal_whitespace():
 
 def test_noncombat_keyword_regexes_ignore_internal_whitespace():
     assert noncombat_module._RE_ROLL.search("[판 정/육체]")
-    assert noncombat_module._RE_USE_ITEM.search("[사 용/포션]")
     assert noncombat_module._RE_TRANSFER_ITEM.search("[양 도/포션/동료]")
 
 

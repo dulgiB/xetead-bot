@@ -2,6 +2,7 @@ import logging
 import os
 import random
 import re
+import time
 import traceback
 from datetime import date
 from typing import TYPE_CHECKING, Optional
@@ -10,7 +11,11 @@ from battle.objects.define import ItemType, ValueSourceType
 from battle.objects.skill.effects import SkillEffectHeal
 from spreadsheets.models.noncombat import NON_COMBAT_STATS, NoncombatStatType
 from spreadsheets.models.quest import DailyQuestSuccessType
-from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
+from utils.name_matching import (
+    find_matching_key,
+    resolve_matching_key,
+    whitespace_tolerant_literal,
+)
 
 from bot.load_data import (
     load_daily_quest_pools,
@@ -33,10 +38,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _RE_ROLL = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*/\s*([^]]+)]")
-_RE_USE_ITEM = re.compile(rf"\[{whitespace_tolerant_literal('사용')}\s*/\s*([^\]]+)]")
+_RE_BARE_BRACKET = re.compile(r"\[([^\]]+)]")
 _RE_TRANSFER_ITEM = re.compile(
     rf"\[{whitespace_tolerant_literal('양도')}\s*/\s*([^\]]+)]"
 )
+
+# 아이템 목록은 전투 중 [아이템명/...] 형식과 통일하기 위해 비전투 상황에서도
+# "사용/" 접두어 없이 인식한다 — 브래킷이 있는 모든 멘션(사담 등 포함)마다
+# 아이템 시트를 읽으면 낭비이므로, 등록이 자주 바뀌지 않는 아이템 목록은
+# 멘션 단위 SheetCache와 별개로 TTL 캐싱한다(BotState.item_name_cache*).
+_ITEM_NAME_CACHE_TTL_SEC = 300
 
 # "수상한 물약"이 뽑은 효과 텍스트 중 체력 회복을 뜻하는 것만 캐릭터
 # 스프레드시트에 반영한다 (예: "체력이 1 회복된다.", "체력이 100 회복된다.").
@@ -86,12 +97,44 @@ def parse_stat_name(text: str) -> Optional[str]:
     return m.group(1).strip() if m else None
 
 
-def parse_use_item_args(text: str) -> Optional[tuple[str, Optional[str], int]]:
-    """텍스트에서 [사용/아이템(/대상)(/개수)] 패턴을 찾아 (아이템명, 대상 또는 None, 개수)를 반환한다."""
-    m = _RE_USE_ITEM.search(text)
+def get_cached_item_names(state: "BotState") -> frozenset[str]:
+    """등록된 아이템 id 목록을 TTL 캐싱해 반환한다.
+
+    브래킷이 있는 멘션마다 아이템 시트를 새로 읽지 않도록, 멘션마다 갱신되는
+    SheetCache와 별개로 state에 직접 캐싱해 둔다(만료 전까지는 여러 멘션에
+    걸쳐 재사용됨).
+    """
+    now = time.monotonic()
+    if (
+        state.item_name_cache is None
+        or now - state.item_name_cache_loaded_at > _ITEM_NAME_CACHE_TTL_SEC
+    ):
+        item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
+        state.item_name_cache = frozenset(item_dict.keys())
+        state.item_name_cache_loaded_at = now
+    return state.item_name_cache
+
+
+def parse_bare_item_command(
+    text: str, state: "BotState"
+) -> Optional[tuple[str, Optional[str], int]]:
+    """텍스트에서 [아이템명(/대상)(/개수)] 패턴을 찾아 (등록된 표기의 아이템명,
+    대상 또는 None, 개수)를 반환한다. 전투 중과 동일하게 "사용/" 같은 접두어
+    없이 아이템명으로 바로 시작한다 — 첫 토큰이 실제 등록된 아이템명과
+    일치할 때만 아이템 사용으로 인식하고, 그 외 대괄호 텍스트(다른 커맨드,
+    사담 등)는 조용히 무시한다(아이템명이 다른 커맨드 키워드와 겹치지
+    않는다는 전제).
+    """
+    m = _RE_BARE_BRACKET.search(text)
     if not m:
         return None
-    return _parse_item_args(m.group(1))
+    item_name, target, count = _parse_item_args(m.group(1))
+    if not item_name:
+        return None
+    resolved_name = find_matching_key(item_name, get_cached_item_names(state))
+    if resolved_name is None:
+        return None
+    return resolved_name, target, count
 
 
 def parse_transfer_item_args(text: str) -> Optional[tuple[str, Optional[str], int]]:
@@ -186,14 +229,15 @@ def handle_use_item(
     count: int,
     state: "BotState",
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[사용/아이템(/대상)(/개수)] → 비전투 상황에서 즉시 아이템 효과를 적용한다.
+    """[아이템명(/대상)(/개수)] → 비전투 상황에서 즉시 아이템 효과를 적용한다.
+    전투 중과 동일하게 "사용/" 같은 접두어 없이 아이템명으로 바로 시작한다.
 
     "소모품"(item_type)은 전투용 스테이터스를 그대로 재사용해 회복(Heal) 효과만
     지원한다. "비전투 소모품"은 effect가 없고 자신만을 대상으로 아이템별
     전용 로직(_dispatch_noncombat_only_item)으로 처리된다.
     """
     command_text = (
-        f"[사용/{item_name}"
+        f"[{item_name}"
         + (f"/{target_name}" if target_name else "")
         + f"/{count}개]"
     )

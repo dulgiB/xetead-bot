@@ -3,6 +3,7 @@ import os
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 
 import random  # noqa: E402
+import time  # noqa: E402
 from datetime import date  # noqa: E402
 
 import pytest  # noqa: E402
@@ -13,6 +14,7 @@ from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
     finalize_daily_quest_mid,
+    get_cached_item_names,
     handle_1d100,
     handle_bag,
     handle_daily_quest_roll,
@@ -24,8 +26,8 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_roll,
     handle_transfer_item,
     handle_use_item,
+    parse_bare_item_command,
     parse_transfer_item_args,
-    parse_use_item_args,
 )
 from bot.main import BotState  # noqa: E402
 from bot.main import _restore_daily_quest_mid_state  # noqa: E402
@@ -745,13 +747,73 @@ def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_parse_use_item_args_defaults_to_self_and_one():
-    assert parse_use_item_args("[사용/포션]") == ("포션", None, 1)
+def _state_with_item_name_cache(names: set[str]) -> BotState:
+    state = _make_state("user1")
+    state.item_name_cache = frozenset(names)
+    state.item_name_cache_loaded_at = time.monotonic()
+    return state
 
 
-def test_parse_use_item_args_with_target_and_count_any_order():
-    assert parse_use_item_args("[사용/포션/동료/2개]") == ("포션", "동료", 2)
-    assert parse_use_item_args("[사용/포션/2개/동료]") == ("포션", "동료", 2)
+def test_parse_bare_item_command_defaults_to_self_and_one():
+    state = _state_with_item_name_cache({"포션"})
+    assert parse_bare_item_command("[포션]", state) == ("포션", None, 1)
+
+
+def test_parse_bare_item_command_with_target_and_count_any_order():
+    state = _state_with_item_name_cache({"포션"})
+    assert parse_bare_item_command("[포션/동료/2개]", state) == ("포션", "동료", 2)
+    assert parse_bare_item_command("[포션/2개/동료]", state) == ("포션", "동료", 2)
+
+
+def test_parse_bare_item_command_ignores_unregistered_name():
+    """등록된 아이템명과 일치하지 않는 대괄호 텍스트는 아이템 사용으로
+    인식하지 않고 조용히 무시해야 한다(다른 커맨드나 사담과의 충돌 방지)."""
+    state = _state_with_item_name_cache({"포션"})
+    assert parse_bare_item_command("[등록되지 않은 이름]", state) is None
+
+
+def test_parse_bare_item_command_matches_whitespace_variant():
+    """등록된 아이템명과 공백만 다르게 입력해도 인식해야 한다(등록된 표기로
+    치환된 이름을 반환)."""
+    state = _state_with_item_name_cache({"소형 회복 물약"})
+    assert parse_bare_item_command("[소형회복물약/동료]", state) == (
+        "소형 회복 물약",
+        "동료",
+        1,
+    )
+
+
+def test_get_cached_item_names_reuses_cache_within_ttl(monkeypatch):
+    state = _make_state("user1")
+    calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: calls.append(1) or {"포션": object()},
+    )
+
+    first = get_cached_item_names(state)
+    second = get_cached_item_names(state)
+
+    assert first == frozenset({"포션"})
+    assert second == first
+    assert len(calls) == 1
+
+
+def test_get_cached_item_names_refetches_after_ttl_expires(monkeypatch):
+    state = _make_state("user1")
+    calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: calls.append(1) or {"포션": object()},
+    )
+
+    get_cached_item_names(state)
+    state.item_name_cache_loaded_at -= noncombat_module._ITEM_NAME_CACHE_TTL_SEC + 1
+    get_cached_item_names(state)
+
+    assert len(calls) == 2
 
 
 def test_parse_transfer_item_args_requires_target():
