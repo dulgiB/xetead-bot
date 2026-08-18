@@ -69,6 +69,100 @@ def test_move_command_shows_destination_column():
     assert calc == ""
 
 
+def test_split_move_reply_shows_only_final_destination_once():
+    """한 커맨드 안에서 이동을 여러 번 나눠 선언해도(이동/2열-이동/3열-이동/4열)
+    경유지 하나하나가 아니라 최종 목적지 한 줄로만 보여야 한다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", max_cost=3),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+
+    reply, calc = _run(ctx, manager, caster_id, "[이동/2열-이동/3열-이동/4열]")
+
+    assert reply == "▹ 아군 1 | 4열로 이동"
+    assert calc == ""
+
+
+def test_non_consecutive_moves_each_shown_with_own_destination():
+    """이동 사이에 다른 행동이 끼면(이동/2열-공격/적군 1-이동/3열) 연속이
+    아니므로 병합되지 않고 각각 남아야 하며, 첫 이동은 모든 행동이 끝난
+    뒤의 최종 위치가 아니라 그 시점에 실제로 이동한 목적지를 보여줘야
+    한다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", attack_range=3, max_cost=4),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+
+    reply, _calc = _run(ctx, manager, caster_id, "[이동/2열-공격/적군 1-이동/3열]")
+
+    lines = reply.splitlines()
+    assert lines[0] == "▹ 아군 1 | 2열로 이동"
+    assert lines[-1] == "▹ 아군 1 | 3열로 이동"
+
+
+def test_taunted_attacker_header_shows_original_and_redirected_target():
+    """도발(BuffTaunt) 상태인 공격자가 다른 대상을 공격하면 실제로는
+    도발자에게 리다이렉트된다 — 헤더에 "원래 대상 ▸ 실제 대상"을 함께
+    보여줘야 답글만 보고도 왜 이 대상이 맞았는지 알 수 있다."""
+    taunt = BuffData(
+        id="도발",
+        buff_class_name="BuffTaunt",
+        duration_turn_value=1,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=None,
+        value=0,
+        condition_=None,
+        condition_value=None,
+        is_debuff=True,
+        description="",
+    )
+    ctx = BattlefieldContext(buff_dict={"도발": taunt}, skill_dict={})
+    taunter_id = CharacterId("아군 1")
+    original_target_id = CharacterId("아군 2")
+    attacker_id = CharacterId("적군 1")
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적군 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=taunter_id, applied_to=attacker_id, buff_id="도발")
+    )
+
+    manager = RoundManager(ctx)  # 기본 페이즈: ENEMY_PRE_ACTION
+    cmd = parse_character_command(attacker_id, f"[공격/{original_target_id.name}]", ctx)
+    manager.process_command(cmd)  # PRE 선언 — 대미지는 아직 정산되지 않는다
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    # POST 정산 결과만 확인한다 — 도발 리다이렉트는 실제 대미지가 적용되는
+    # 시점(POST)에 계산되므로, PRE 선언 답글은 (아직 리다이렉트를 몰라)
+    # 원래 대상만 보여주는 것이 맞다.
+    before = len(ctx.results)
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+    new_results = ctx.results[before:]
+
+    reply, calc = format_battle_reply(ctx, attacker_id, new_results)
+
+    assert calc.startswith(f"【공격 ▸ {original_target_id.name} ▸ {taunter_id.name}】")
+    assert f"▹ {taunter_id.name} |" in reply
+    assert original_target_id.name not in reply
+
+
 def test_attack_command_separates_damage_and_calculation():
     """대미지 줄(본문)과 계산식은 별도의 텍스트로 반환되어야 한다 — 계산식은
     호출측이 접힌(CW) 게시물로 따로 보내기 위함이다."""
@@ -97,6 +191,38 @@ def test_attack_command_separates_damage_and_calculation():
     assert calc_lines[0] == "【공격 ▸ 적군 1】"
     assert calc_lines[1].startswith("▹ 적군 1 | ")
     assert f"→ -{100 - target.status.curr_hp}" in calc_lines[1]
+
+
+def test_repeated_attacks_on_same_target_merge_into_one_summary_line():
+    """공격을 여러 차례 해도(예: [공격/적군 1 - 공격/적군 1 - 공격/적군 1])
+    요약(본문)에는 같은 대상의 체력 변화가 합산된 한 줄로만 보여야 한다
+    — 계산식에는 각 타격의 굴림이 그대로 3번 남는다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", atk=5, max_cost=3),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군 1", max_hp=500),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
+    )
+
+    reply, calc = _run(
+        ctx, manager, caster_id, "[공격/적군 1 - 공격/적군 1 - 공격/적군 1]"
+    )
+
+    target = ctx.characters[CharacterId("적군 1")]
+    total_damage = 500 - target.status.curr_hp
+    assert reply.splitlines() == [
+        f"▹ 적군 1 | -{total_damage} → {target.status.curr_hp}/500"
+    ]
+
+    calc_headers = [line for line in calc.splitlines() if line == "【공격 ▸ 적군 1】"]
+    assert len(calc_headers) == 3
 
 
 def test_fixed_damage_skill_omits_calculation_line():
@@ -740,7 +866,7 @@ def test_enemy_skill_preview_shows_description_when_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "　↳ 대상에게 고정 피해를 준다."
+    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ 대상에게 고정 피해를 준다."
 
 
 def test_enemy_skill_preview_blinds_description_when_not_revealed():
@@ -770,7 +896,7 @@ def test_enemy_skill_preview_blinds_description_when_not_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "　↳ [효과 미확인]"
+    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ [효과 미확인]"
 
 
 def test_skill_preview_omitted_when_show_skill_preview_is_false():

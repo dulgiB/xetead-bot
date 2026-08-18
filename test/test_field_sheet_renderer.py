@@ -1,5 +1,7 @@
 from battle.core.battlefield_context import BattlefieldContext
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.buffs import BuffGivenDamage
+from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     BattlefieldColumnIndex,
     FactionType,
@@ -96,6 +98,79 @@ def test_format_buff_cell_dedupes_passive_with_both_buff_mod_and_effects():
 
     assert display_text.count("이중 역할 패시브") == 1
     assert note_text.count("이중 역할 패시브 설명") == 1
+
+
+def _make_passive_with_referenced_buff_line(
+    ally_id: CharacterId,
+) -> PassiveSkillWrapperBuff:
+    passive_data = PassiveSkillData(
+        id="테스트 패시브",
+        trigger=PassiveSkillTrigger.ON_ACTION,
+        target_type=PassiveSkillTargetType.SELF,
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None)
+        ],
+        description=("설명 본문.\n▸ [보조 버프]: 보조 버프의 개별 설명입니다."),
+    )
+    return PassiveSkillWrapperBuff.create(ally_id, passive_data)[0]
+
+
+def test_referenced_buff_line_kept_when_not_yet_granted():
+    """패시브 description의 "▸ [버프id]: ..." 줄은, 그 버프가 아직 부여되지
+    않은 상태에서는 무엇을 부여하는지 보여주는 미리보기이므로 그대로 남아야
+    한다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.buff_container.add_passive_wrapper(
+        _make_passive_with_referenced_buff_line(ally_id)
+    )
+
+    _display_text, note_text = _format_buff_cell(ctx, ally_id)
+
+    assert "▸ [보조 버프]: 보조 버프의 개별 설명입니다." in note_text
+
+
+def test_referenced_buff_line_stripped_once_buff_is_granted():
+    """ "▸ [버프id]: ..." 줄이 가리키는 버프가 실제로 부여되고 나면, 그
+    버프가 자기 자신의 note 줄을 따로 갖게 되어 같은 설명이 두 번
+    보인다 — 부여된 뒤에는 패시브 쪽 미리보기 줄을 생략해야 한다."""
+    ctx = BattlefieldContext(
+        buff_dict={
+            "보조 버프": BuffData(
+                id="보조 버프",
+                buff_class_name="BuffGivenDamage",
+                duration_turn_value=2,
+                duration_count_value=None,
+                duration_count_deduct_condition=None,
+                value_type=ValueType.PERCENT,
+                value=10,
+                condition_=None,
+                condition_value=None,
+                is_debuff=False,
+                description="보조 버프의 개별 설명입니다.",
+            )
+        },
+        skill_dict={},
+    )
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.buff_container.add_passive_wrapper(
+        _make_passive_with_referenced_buff_line(ally_id)
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=ally_id, applied_to=ally_id, buff_id="보조 버프")
+    )
+
+    _display_text, note_text = _format_buff_cell(ctx, ally_id)
+
+    assert "▸ [보조 버프]: 보조 버프의 개별 설명입니다." not in note_text
+    # "보조 버프" 자신의 note 줄에는 여전히 전체 설명이 정확히 한 번 나와야 한다.
+    assert note_text.count("보조 버프의 개별 설명입니다.") == 1
 
 
 def test_build_faction_block_pushes_remaining_slots_forward_after_removal():

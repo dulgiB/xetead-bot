@@ -25,6 +25,7 @@
 좌상단 셀 하나에만 값을 쓰면 정상 반영된다.
 """
 
+import re
 from typing import TYPE_CHECKING, Optional
 
 import gspread
@@ -246,6 +247,32 @@ def _m_res_icon(char: "CombatCharacter") -> str:
     return "⚬"
 
 
+# 패시브 스킬 등의 description은 "▸ [버프id]: 설명" 형태로 자신이 부여하는
+# 다른 버프를 미리 문서화해 둔 줄을 포함할 수 있다(예: "...부여한다.\n▸
+# [우월감]: 버프. 적에게 주는 대미지가 10% 증가한다."). 그 버프가 아직
+# 부여되지 않은 상태에서는 유용한 미리보기지만, 실제로 부여되고 나면 그
+# 버프가 필드 시트에 자기 자신의 note 줄을 따로 갖게 되어 같은 설명이
+# 두 번 보인다.
+_REFERENCED_BUFF_LINE = re.compile(r"^▸\s*\[([^\]]+)]")
+
+
+def _strip_lines_for_already_present_buffs(
+    description: str, active_buff_ids: set[str]
+) -> str:
+    """description에서 "▸ [버프id]: ..." 형태의 줄 중, 그 버프id가 이미
+    같은 캐릭터에게 부여되어 있는 것은 제거한다 — 그 버프가 자기 자신의
+    note 줄로 이미 표시되므로 중복이다."""
+    kept_lines = [
+        line
+        for line in description.splitlines()
+        if not (
+            (match := _REFERENCED_BUFF_LINE.match(line.strip()))
+            and match.group(1) in active_buff_ids
+        )
+    ]
+    return "\n".join(kept_lines)
+
+
 def _format_buff_cell(
     context: "BattlefieldContext", char_id: CharacterId
 ) -> tuple[str, str]:
@@ -253,6 +280,7 @@ def _format_buff_cell(
     if not buffs:
         return "", ""
 
+    active_buff_ids = {buff.id for buff in buffs}
     display_lines = []
     note_lines = []
     seen_passive_labels: set[str] = set()
@@ -272,7 +300,9 @@ def _format_buff_cell(
         icon = "▾" if buff.is_debuff else "▴"
         stack_count = buff.stack_count if buff.max_stack is not None else None
         display_lines.append(f"{icon} {label}{buff.duration.display_text(stack_count)}")
-        description = buff.get_description(context)
+        description = _strip_lines_for_already_present_buffs(
+            buff.get_description(context), active_buff_ids
+        )
         note_lines.append(f"[{label}] {description}")
 
     return "\n".join(display_lines), "\n".join(note_lines)

@@ -183,6 +183,11 @@ class BattleLogEntry:
 class CommandPartProcessResult:
     expanded_part: CommandPartData
     log_entries: list[BattleLogEntry] = field(default_factory=list)
+    # 도발 등으로 대미지 대상이 치환된 (원래 대상 → 실제 대상) 매핑
+    # (CommandPartCalculator._prepare_redirects()가 계산). 답글 포매터
+    # (app/bot/battle_reply_text.py)가 헤더에 "원래 대상 ▸ 실제 대상"을
+    # 보여주는 데 쓴다.
+    redirect_map: dict[CharacterId, CharacterId] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

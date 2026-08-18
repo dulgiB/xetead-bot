@@ -133,6 +133,13 @@ class CommandPartCalculator:
         empty.data_by_effect.append(CalculatorMutableData([], [], [], []))
         return empty
 
+    @property
+    def redirect_map(self) -> dict[CharacterId, CharacterId]:
+        """도발/희생 방어로 대미지 대상이 치환된 (원래 대상 → 실제 대상)
+        매핑. process()가 끝난 뒤 CommandPartProcessResult에 실어 답글
+        포매터가 헤더에 표시하는 데 쓴다."""
+        return self._redirect_map
+
     def process(
         self,
         phase: Optional[RoundPhaseType],

@@ -26,11 +26,13 @@ from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.battle_reply_text import (
+    drop_intermediate_consecutive_moves,
     format_battle_end_log_entries,
     format_battle_reply,
     format_eliminated_characters,
     format_final_hp_roster,
     format_round_end_log_entries,
+    merge_damage_heal_lines,
 )
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
@@ -1024,16 +1026,31 @@ def _prefix_named_block(
     block: str,
     part_result: CommandPartProcessResult,
     name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
+    *,
+    include_name_prefix: bool = True,
 ) -> str:
     """프록시(관리자 대행) 답글은 실제로 행동한 캐릭터가 누구인지 답글 자체만
     보고는 알 수 없으므로(직접 답글과 달리 caster에게 보내는 답글이 아님),
     헤더 앞에 이름을 붙인다. 공격/스킬로 대미지를 입은 대상이 있으면 그
-    계정을 헤더 줄에 멘션해 당사자에게 알린다."""
+    계정을 헤더 줄에 멘션해 당사자에게 알린다.
+
+    `include_name_prefix=False`면 이름 접두어를 붙이지 않는다 — 라운드
+    정산처럼 여러 캐릭터의 결과를 한 게시물에 모아 보여줄 때는, 계산식
+    (CW 후속 게시물)을 펼치면 어차피 캐릭터 이름이 나오므로 본문에까지
+    중복해서 붙일 필요가 없다는 판단이다. 멘션은 이름 표시 여부와 무관하게
+    항상 붙인다."""
     mentions = _damaged_target_mentions(part_result, name_dict)
     header_line, sep, rest = block.partition("\n")
     if mentions:
         header_line = f"{header_line} {mentions}"
     block = header_line + sep + rest
+    if not include_name_prefix:
+        return block
+    if header_line.startswith(f"▹ {char_id.name} |"):
+        # 이동처럼 첫 줄이 이미 "▹ {이름} | ..." 형태로 시전자 자신의
+        # 이름을 보여주고 있으면, 앞에 또 이름을 붙이는 순간
+        # "이름 ▹ 이름 | ..."처럼 중복된다 — 이때는 접두어를 생략한다.
+        return block
     return f"{char_id.name} {block}"
 
 
@@ -1044,20 +1061,44 @@ def _format_named_reply(
     name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
     *,
     show_skill_preview: bool = False,
+    include_name_prefix: bool = True,
 ) -> tuple[str, str]:
     """part_results를 커맨드(파트) 하나당 "{이름} 【헤더】" 블록으로 조립한
     (본문, 계산식) 튜플을 반환한다. 여러 파트가 있으면 각각 별도 블록으로
     빈 줄(\\n\\n)로 구분한다. 계산식 블록도 같은 방식으로 캐릭터 이름을
-    붙여 어느 행동에 대한 계산식인지 구분할 수 있게 한다."""
+    붙여 어느 행동에 대한 계산식인지 구분할 수 있게 한다(이름 표시 여부와
+    무관하게 계산식에는 항상 붙인다 — 펼쳐 봤을 때는 누구 것인지 알아야
+    하므로).
+
+    같은 대상의 대미지/회복이 여러 파트에 걸쳐 나와도 본문에는 합산된
+    한 줄로만 보이게 하려고, 파트 전체 기준으로 미리 계산한 합산 결과
+    (`merged_lines`)와 "이미 본문에 낸 (종류, 대상)" 기록(`emitted`)을
+    `format_battle_reply()` 호출마다 공유한다 — 이 함수는 파트를 하나씩
+    잘라 개별 블록으로 조립하므로, 공유하지 않으면 각 호출이 자기
+    파트만 보고 따로 계산해 합산이 되지 않는다."""
+    parts = drop_intermediate_consecutive_moves(part_results)
+    merged_lines = merge_damage_heal_lines(parts)
+    emitted: set[tuple[BattleLogEntryKind, str]] = set()
     body_blocks = []
     calc_blocks = []
-    for part_result in part_results:
+    for part_result in parts:
         body, calc = format_battle_reply(
-            context, char_id, [part_result], show_skill_preview=show_skill_preview
+            context,
+            char_id,
+            [part_result],
+            show_skill_preview=show_skill_preview,
+            _merged_lines=merged_lines,
+            _emitted=emitted,
         )
         if body:
             body_blocks.append(
-                _prefix_named_block(char_id, body, part_result, name_dict)
+                _prefix_named_block(
+                    char_id,
+                    body,
+                    part_result,
+                    name_dict,
+                    include_name_prefix=include_name_prefix,
+                )
             )
         if calc:
             calc_blocks.append(f"{char_id.name} {calc}")
@@ -1069,10 +1110,14 @@ def _format_enemy_post_action_results(
     post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
     name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
 ) -> tuple[str, str]:
-    """ENEMY_POST_ACTION 정산 결과를 "{적 이름} 【헤더】" 블록으로 조립한
-    (본문, 계산식) 튜플을 반환한다. 커맨드(파트) 하나당 블록 하나이며,
-    같은 적의 커맨드가 여러 개여도 각각 별도 블록으로 빈 줄(\\n\\n)로
-    구분한다.
+    """ENEMY_POST_ACTION 정산 결과를 "【헤더】" 블록으로 조립한 (본문, 계산식)
+    튜플을 반환한다. 커맨드(파트) 하나당 블록 하나이며, 같은 적의 커맨드가
+    여러 개여도 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+
+    본문에는 어느 적이 한 행동인지 이름을 붙이지 않는다 — 여러 적의 결과를
+    한 게시물에 모아 보여주는 정산 게시물이라, 필요하면 계산식(CW 후속
+    게시물)을 펼쳐서 확인할 수 있으면 충분하다(계산식 쪽은 여전히 이름이
+    붙는다).
 
     이동은 PRE 선언 시점에 이미 답글로 안내되었으므로 여기서는 제외한다
     (POST 재전개 시 move_list가 빈 채로 남아 헤더만 중복 출력되는 것을 막는다)."""
@@ -1085,13 +1130,54 @@ def _format_enemy_post_action_results(
             if r.expanded_part.original_part is None
             or r.expanded_part.original_part.type_ != ActionType.MOVE
         ]
-        body, calc = _format_named_reply(context, user_id, non_move_results, name_dict)
+        body, calc = _format_named_reply(
+            context, user_id, non_move_results, name_dict, include_name_prefix=False
+        )
         if body:
             body_blocks.append(body)
         if calc:
             calc_blocks.append(calc)
     body_text = "\n\n".join(body_blocks) if body_blocks else "변동 없음"
+    buff_info = _format_granted_buffs_info(context, post_action_results)
+    if buff_info:
+        body_text = f"{body_text}\n\n{buff_info}"
     return body_text, "\n\n".join(calc_blocks)
+
+
+def _format_granted_buffs_info(
+    context: "BattlefieldContext",
+    post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
+) -> str:
+    """이번 정산에서 새로 부여된 버프들의 설명을 "【버프 정보】\n▹ [{버프
+    이름}]: {설명}" 블록으로 모은다. 본문에는 어느 적이 부여했는지, 누구에게
+    적용됐는지 나오지 않으므로("적을 어느 이름을 표시하지 않는다"는 이
+    함수의 기존 방침과 같은 이유), 처음 보는 버프가 뭘 하는 버프인지
+    설명해 준다. 같은 버프(buff_id)가 여러 명에게 적용돼도 설명은 한 번만
+    보여준다.
+
+    설명은 버프 인스턴스의 get_description()으로 얻는다 —
+    context.get_buff_data_by_id()로 "버프" 시트를 직접 조회하면 패시브
+    스킬이 부여한 버프(스킬_패시브 시트 출신)에서 KeyError가 난다."""
+    descriptions: dict[str, str] = {}
+    for part_results in post_action_results.values():
+        for part_result in part_results:
+            for entry in part_result.log_entries:
+                if entry.kind != BattleLogEntryKind.BUFF_ADD or entry.buff_id is None:
+                    continue
+                if entry.buff_id in descriptions:
+                    continue
+                buff = context.get_buff_instance(
+                    CharacterId(entry.target_name), entry.buff_id
+                )
+                if buff is None:
+                    continue
+                descriptions[entry.buff_id] = buff.get_description(context)
+    if not descriptions:
+        return ""
+    lines = "\n".join(
+        f"▹ [{buff_id}]: {description}" for buff_id, description in descriptions.items()
+    )
+    return f"【버프 정보】\n{lines}"
 
 
 # ---------------------------------------------------------------------------
