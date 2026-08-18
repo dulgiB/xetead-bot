@@ -1133,6 +1133,152 @@ def test_use_mysterious_potion_heal_effect_updates_hp(monkeypatch):
     assert recorded_hp == {"동료": max_hp}
 
 
+def test_use_item_defaults_to_one_when_count_omitted(monkeypatch, potion_item):
+    """개수를 생략하면 1개 사용을 기본으로 한다."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    inventory = Inventory({("동료", "포션"): 2})
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"포션": potion_item},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+    monkeypatch.setattr(
+        noncombat_module, "update_character_curr_hp", lambda *a, **k: None
+    )
+
+    reply, log_info = handle_use_item(acct, "포션", None, 1, state)
+
+    assert "체력을 20 회복했습니다" in reply  # potion_item: 고정값 20
+    assert inventory.get_count("동료", "포션") == 1
+
+
+def test_use_item_scales_heal_by_count(monkeypatch, potion_item):
+    """[소형 회복 물약/2]처럼 개수를 지정하면 회복량과 소비량이 그만큼
+    늘어나야 한다."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    inventory = Inventory({("동료", "포션"): 3})
+    recorded_hp: dict = {}
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"포션": potion_item},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_character_curr_hp",
+        lambda spreadsheet, name, hp, cache=None: recorded_hp.__setitem__(name, hp),
+    )
+
+    reply, log_info = handle_use_item(acct, "포션", None, 2, state)
+
+    assert "체력을 40 회복했습니다. (50 → 90)" in reply  # 20 × 2개
+    assert inventory.get_count("동료", "포션") == 1
+    assert recorded_hp == {"동료": 90}
+
+
+def test_use_mysterious_potion_multiple_count_joins_effects(monkeypatch):
+    """[수상한 물약/2]처럼 개수를 지정하면 그만큼 효과를 뽑아 " 그리고…… "로
+    이어붙여 출력한다."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    potion = ItemData(
+        id="수상한 물약",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    inventory = Inventory({("동료", "수상한 물약"): 2})
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"수상한 물약": potion},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_mysterious_potion_effects",
+        lambda spreadsheet, cache=None: ["배가 조금 아프다.", "기분이 좋아진다."],
+    )
+    monkeypatch.setattr(
+        random,
+        "choices",
+        lambda population, k=1: ["배가 조금 아프다.", "기분이 좋아진다."][:k],
+    )
+
+    reply, log_info = handle_use_item(acct, "수상한 물약", None, 2, state)
+
+    assert reply == (
+        "수상한 물약을 마셨다. ……어라? 배가 조금 아프다. 그리고…… 기분이 좋아진다.\n"
+        "\n"
+        "◊ 효과는 자정 혹은 스토리 진행 전까지 지속됩니다. 기존에 진행 중이던 대화에는 반영되지 않습니다."
+    )
+    assert inventory.get_count("동료", "수상한 물약") == 0
+    assert log_info is not None
+    assert log_info.result == "배가 조금 아프다. 그리고…… 기분이 좋아진다."
+
+
+def test_use_mysterious_potion_multiple_count_sums_heal_effects(monkeypatch):
+    """여러 개를 사용해 체력 회복 효과가 여러 번 뽑히면 회복량을 합산해
+    한 번만 반영해야 한다."""
+    acct = "user1"
+    state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
+    potion = ItemData(
+        id="수상한 물약",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    inventory = Inventory({("동료", "수상한 물약"): 2})
+    recorded_hp: dict = {}
+    update_calls: list = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {"수상한 물약": potion},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_mysterious_potion_effects",
+        lambda spreadsheet, cache=None: ["체력이 10 회복된다.", "체력이 20 회복된다."],
+    )
+    monkeypatch.setattr(
+        random,
+        "choices",
+        lambda population, k=1: ["체력이 10 회복된다.", "체력이 20 회복된다."][:k],
+    )
+
+    def fake_update(spreadsheet, name, hp, cache=None):
+        update_calls.append((name, hp))
+        recorded_hp[name] = hp
+
+    monkeypatch.setattr(noncombat_module, "update_character_curr_hp", fake_update)
+
+    reply, log_info = handle_use_item(acct, "수상한 물약", None, 2, state)
+
+    assert (
+        "체력이 10 회복된다. 그리고…… 체력이 20 회복된다. (80/100)" in reply
+    )  # 50 + (10 + 20), max_hp=100
+    assert len(update_calls) == 1
+    assert recorded_hp == {"동료": 80}
+
+
 def test_transfer_item_moves_between_characters(monkeypatch, potion_item):
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)

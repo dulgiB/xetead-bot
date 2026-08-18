@@ -287,7 +287,9 @@ def handle_use_item(
                 result=msg,
                 error_trace=traceback.format_exc(),
             )
-        return _dispatch_noncombat_only_item(item_name, user_name, state, command_text)
+        return _dispatch_noncombat_only_item(
+            item_name, user_name, count, state, command_text
+        )
 
     if not isinstance(item.effect, SkillEffectHeal):
         msg = f"◊ '{item_name}'은(는) 비전투 상황에서 지원하지 않는 효과입니다. (회복 아이템만 사용 가능)"
@@ -331,7 +333,7 @@ def handle_use_item(
 
 
 def _dispatch_noncombat_only_item(
-    item_name: str, user_name: str, state: "BotState", command_text: str
+    item_name: str, user_name: str, count: int, state: "BotState", command_text: str
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """item_type="비전투 소모품"인 아이템의 전용 로직으로 분기한다.
 
@@ -340,17 +342,21 @@ def _dispatch_noncombat_only_item(
     되돌리지 않는다).
     """
     if item_name == MYSTERIOUS_POTION_ITEM_NAME:
-        return _handle_mysterious_potion(user_name, state, command_text)
+        return _handle_mysterious_potion(user_name, count, state, command_text)
     msg = f"◊ '{item_name}'의 사용 효과가 아직 구현되지 않았습니다."
     return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
 
+_MYSTERIOUS_POTION_EFFECT_JOINER = " 그리고…… "
+
+
 def _handle_mysterious_potion(
-    user_name: str, state: "BotState", command_text: str
+    user_name: str, count: int, state: "BotState", command_text: str
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """"수상한 물약" 사용 → "수상한 효과" 시트에서 무작위 효과 텍스트를 뽑아
-    답글로 낸다. 체력 회복을 뜻하는 텍스트("체력이 N 회복된다.")면 캐릭터
-    스프레드시트에도 반영하고 답글 뒤에 회복 후 체력을 덧붙인다.
+    """"수상한 물약" 사용 → "수상한 효과" 시트에서 무작위 효과 텍스트를
+    count개 뽑아(중복 허용) " 그리고…… "로 이어붙여 답글로 낸다. 체력
+    회복을 뜻하는 텍스트("체력이 N 회복된다.")가 여러 개 뽑히면 회복량을
+    합산해 캐릭터 스프레드시트에 한 번만 반영한다.
     """
     try:
         effects = load_mysterious_potion_effects(
@@ -365,16 +371,22 @@ def _handle_mysterious_potion(
         msg = "◊ '수상한 물약'의 효과 목록이 비어 있습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    effect_text = random.choice(effects)
-    first_line = f"수상한 물약을 마셨다. ……어라? {effect_text}"
+    effect_texts = random.choices(effects, k=count)
+    combined_effects = _MYSTERIOUS_POTION_EFFECT_JOINER.join(effect_texts)
+    first_line = f"수상한 물약을 마셨다. ……어라? {combined_effects}"
     lines = [first_line]
 
-    heal_match = _RE_MYSTERIOUS_POTION_HEAL_EFFECT.match(effect_text)
+    total_heal = sum(
+        int(heal_match.group(1))
+        for heal_match in (
+            _RE_MYSTERIOUS_POTION_HEAL_EFFECT.match(text) for text in effect_texts
+        )
+        if heal_match is not None
+    )
     target_data = state.name_dict.get(user_name)
-    if heal_match and target_data is not None:
-        heal_amount = int(heal_match.group(1))
+    if total_heal > 0 and target_data is not None:
         prev_hp = target_data.curr_hp or 0
-        new_hp = min(target_data.max_hp, prev_hp + heal_amount)
+        new_hp = min(target_data.max_hp, prev_hp + total_heal)
         try:
             update_character_curr_hp(
                 state.spreadsheet, user_name, new_hp, cache=state.sheet_cache
@@ -388,7 +400,7 @@ def _handle_mysterious_potion(
         "◊ 효과는 자정 혹은 스토리 진행 전까지 지속됩니다. 기존에 진행 중이던 대화에는 반영되지 않습니다.",
     ]
     reply = "\n".join(lines)
-    return reply, NoncombatLogInfo(command_text=command_text, result=effect_text)
+    return reply, NoncombatLogInfo(command_text=command_text, result=combined_effects)
 
 
 def handle_transfer_item(
