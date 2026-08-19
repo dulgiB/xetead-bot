@@ -21,6 +21,7 @@ def _make_state(name_dict: dict) -> BotState:
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
 
 

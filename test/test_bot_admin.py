@@ -43,6 +43,7 @@ def _make_state(**pending) -> BotState:
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.session = BattleSession(buff_dict={}, skill_dict={})
     state.pending_placements = pending.get("pending_placements", [])
@@ -1340,6 +1341,7 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.practice = ps
 
@@ -1420,6 +1422,7 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.practice = ps
 
@@ -1494,6 +1497,7 @@ def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_cal
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.practice = ps
 
@@ -1619,6 +1623,7 @@ def test_practice_retire_command_removes_character_and_continues_when_teammate_r
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.practice = ps
 
@@ -1649,6 +1654,7 @@ def test_practice_retire_command_ends_battle_when_side_wiped():
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.practice = ps
 
@@ -1701,6 +1707,7 @@ def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_erro
         noncombat_char_dict={},
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.practice = ps
 

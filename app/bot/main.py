@@ -308,7 +308,7 @@ def _persist_battle_log(
 
     try:
         log_sheets.append_battle_log(
-            state.spreadsheet,
+            state.log_spreadsheet,
             battle_log.field_id,
             battle_log.round_n,
             battle_log.phase,
@@ -317,7 +317,7 @@ def _persist_battle_log(
             reply_ref=reply_ref,
             error_trace=battle_log.error_trace,
             mastodon_id=battle_log.mastodon_id,
-            cache=state.sheet_cache,
+            cache=state.log_sheet_cache,
         )
 
         if (
@@ -392,13 +392,13 @@ def _persist_noncombat_log(
         return
     try:
         log_sheets.append_noncombat_log(
-            state.spreadsheet,
+            state.log_spreadsheet,
             log_info.command_text,
             dice_roll=log_info.dice_roll,
             result=log_info.result,
             error_trace=log_info.error_trace,
             reply_ref=reply_ref,
-            cache=state.sheet_cache,
+            cache=state.log_sheet_cache,
         )
     except Exception:
         logger.exception("비전투 로그 기록 실패")
@@ -413,6 +413,7 @@ class BotState:
     ]  # mastodon_id → data
     spreadsheet: gspread.Spreadsheet
     field_spreadsheet: gspread.Spreadsheet
+    log_spreadsheet: gspread.Spreadsheet
     session: Optional[BattleSession] = None
     preparation_status_id: Optional[int] = None  # [전투 준비] 안내 게시물 ID
     active_phase_post_id: Optional[int] = None  # 현재 페이즈 공지 게시물 ID
@@ -426,14 +427,16 @@ class BotState:
         default_factory=dict
     )  # key = 현재 스레드 tip 게시물 id
     # 멘션 하나(on_notification 한 번) 처리 범위에서만 유효한 읽기 캐시.
-    # sheet_cache는 state.spreadsheet(캐릭터/에너미/필드/로그 시트), field_sheet_cache는
-    # state.field_spreadsheet(공개용 "필드" 시트, 별도 스프레드시트) 대상이다 — 둘 다
-    # render/upsert/캡처가 매번 spreadsheet.worksheet(name)을 직접 부르면 그때마다
-    # 전체 시트 메타데이터를 새로 읽어오므로(gspread에 이름별 캐싱이 없다) 분리해서
-    # 캐싱한다. on_notification 시작마다 둘 다 새로 만들어 교체하므로, 이전 멘션에서
-    # 읽은 값이 다음 멘션까지 새어나가지 않는다.
+    # sheet_cache는 state.spreadsheet(캐릭터/에너미/필드 시트), field_sheet_cache는
+    # state.field_spreadsheet(공개용 "필드" 시트, 별도 스프레드시트), log_sheet_cache는
+    # state.log_spreadsheet("로그_전투"/"로그_비전투", 별도 스프레드시트) 대상이다 —
+    # 셋 다 render/upsert/캡처가 매번 spreadsheet.worksheet(name)을 직접 부르면
+    # 그때마다 전체 시트 메타데이터를 새로 읽어오므로(gspread에 이름별 캐싱이 없다)
+    # 분리해서 캐싱한다. on_notification 시작마다 셋 다 새로 만들어 교체하므로,
+    # 이전 멘션에서 읽은 값이 다음 멘션까지 새어나가지 않는다.
     sheet_cache: Optional[SheetCache] = None
     field_sheet_cache: Optional[SheetCache] = None
+    log_sheet_cache: Optional[SheetCache] = None
     # 비전투 [아이템명/...] 인식용 아이템 id 캐시 — sheet_cache와 달리 멘션마다
     # 교체되지 않고 TTL(noncombat.get_cached_item_names)이 만료될 때까지 여러
     # 멘션에 걸쳐 재사용된다(브래킷이 있는 멘션마다 아이템 시트를 새로 읽지
@@ -554,6 +557,7 @@ class MastodonBotListener(StreamListener):
             # 고쳐도 다음 멘션부터는 다시 최신 값을 읽는다.
             self._state.sheet_cache = SheetCache(self._state.spreadsheet)
             self._state.field_sheet_cache = SheetCache(self._state.field_spreadsheet)
+            self._state.log_sheet_cache = SheetCache(self._state.log_spreadsheet)
 
             reload_char_data(self._state)
 
@@ -1609,6 +1613,7 @@ def main() -> None:
         noncombat_char_dict,
         spreadsheet,
         field_spreadsheet,
+        log_spreadsheet,
     ) = load_all_data()
     state = BotState(
         char_dict=char_dict,
@@ -1616,6 +1621,7 @@ def main() -> None:
         noncombat_char_dict=noncombat_char_dict,
         spreadsheet=spreadsheet,
         field_spreadsheet=field_spreadsheet,
+        log_spreadsheet=log_spreadsheet,
     )
     restored_daily_quest_count = _restore_daily_quest_mid_state(state)
 

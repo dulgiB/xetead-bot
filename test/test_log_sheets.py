@@ -500,3 +500,34 @@ def test_field_sheet_name_configurable_via_env(monkeypatch):
         monkeypatch.delenv("FIELD_LOG_SHEET_NAME", raising=False)
         importlib.reload(log_sheets)
     assert log_sheets._FIELD_SHEET == "필드"
+
+
+def test_battle_log_sheet_names_use_test_prefix_for_test_instance(monkeypatch):
+    """운영과 테스트가 LOG_SPREADSHEET_KEY(같은 스프레드시트)를 공유하므로,
+    MASTODON_API_BASE_URL 호스트가 test.xetead.quest일 때는 "테스트_" 접두사
+    워크시트로, 그 외(운영)에는 접두사 없는 워크시트로 분리되어야 한다."""
+    import importlib
+
+    monkeypatch.setenv("MASTODON_API_BASE_URL", "https://test.xetead.quest")
+    importlib.reload(log_sheets)
+    try:
+        assert log_sheets._BATTLE_LOG_SHEET == "테스트_로그_전투"
+        assert log_sheets._NONCOMBAT_LOG_SHEET == "테스트_로그_비전투"
+    finally:
+        monkeypatch.delenv("MASTODON_API_BASE_URL", raising=False)
+        importlib.reload(log_sheets)
+    assert log_sheets._BATTLE_LOG_SHEET == "로그_전투"
+    assert log_sheets._NONCOMBAT_LOG_SHEET == "로그_비전투"
+
+
+def test_battle_log_sheet_names_default_for_prod_instance(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("MASTODON_API_BASE_URL", "https://xetead.quest")
+    importlib.reload(log_sheets)
+    try:
+        assert log_sheets._BATTLE_LOG_SHEET == "로그_전투"
+        assert log_sheets._NONCOMBAT_LOG_SHEET == "로그_비전투"
+    finally:
+        monkeypatch.delenv("MASTODON_API_BASE_URL", raising=False)
+        importlib.reload(log_sheets)
