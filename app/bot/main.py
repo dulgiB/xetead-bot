@@ -44,9 +44,9 @@ from bot.commands.noncombat import (
     handle_roll,
     handle_transfer_item,
     handle_use_item,
+    parse_bare_item_command,
     parse_stat_name,
     parse_transfer_item_args,
-    parse_use_item_args,
 )
 from bot import field_restore, log_sheets
 from bot.dm_battle_state import DmBattleState
@@ -434,6 +434,12 @@ class BotState:
     # 읽은 값이 다음 멘션까지 새어나가지 않는다.
     sheet_cache: Optional[SheetCache] = None
     field_sheet_cache: Optional[SheetCache] = None
+    # 비전투 [아이템명/...] 인식용 아이템 id 캐시 — sheet_cache와 달리 멘션마다
+    # 교체되지 않고 TTL(noncombat.get_cached_item_names)이 만료될 때까지 여러
+    # 멘션에 걸쳐 재사용된다(브래킷이 있는 멘션마다 아이템 시트를 새로 읽지
+    # 않기 위함).
+    item_name_cache: Optional[frozenset[str]] = None
+    item_name_cache_loaded_at: float = 0.0
 
 
 def reload_char_data(state: BotState) -> None:
@@ -880,10 +886,14 @@ class MastodonBotListener(StreamListener):
             finalize_investigation_menu_post(acct, post["id"], state)
             return
 
-        # 12. [사용/아이템(/대상)(/개수)] — 비전투 아이템 사용
-        use_item_args = parse_use_item_args(text)
-        if use_item_args:
-            item_name, target_name, count = use_item_args
+        # 12. [아이템명(/대상)(/개수)] — 비전투 아이템 사용. 전투 중과 동일하게
+        # "사용/" 같은 접두어 없이 아이템명으로 바로 시작하며, 등록된
+        # 아이템명과 일치할 때만 인식한다(위의 다른 커맨드 키워드와 아이템명이
+        # 겹치지 않는다는 전제) — 그래서 다른 키워드 커맨드를 모두 확인한
+        # 뒤, 최후순위로 검사한다.
+        bare_item_args = parse_bare_item_command(text, state)
+        if bare_item_args:
+            item_name, target_name, count = bare_item_args
             response, log_info = handle_use_item(
                 acct, item_name, target_name, count, state
             )

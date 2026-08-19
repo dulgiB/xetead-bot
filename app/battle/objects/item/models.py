@@ -2,14 +2,19 @@ import importlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Type
 
+from battle.objects.define import ItemType
 from battle.objects.models import CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
 from battle.objects.skill.target_functions import SkillTargetRule
-from utils.spreadsheet_bool import parse_spreadsheet_bool
 from utils.spreadsheet_row import SpreadsheetRow
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+
+
+def _int_or_zero(value: object) -> int:
+    text = str(value or "").strip()
+    return int(text) if text.lstrip("-").isdigit() else 0
 
 
 @dataclass(frozen=True)
@@ -30,27 +35,42 @@ class ItemData:
     target_rule: str
     cost: int
     attack_range: int
-    # 스토리 진행용 키 아이템은 전투/비전투 효과 없이 소지 자체가 목적이라
+    # 소지 자체가 목적인 아이템(item_type="기타")은 전투/비전투 효과가 없어
     # effect_0이 비어 있을 수 있다 — None이면 사용(전투 내 [아이템] 커맨드,
-    # 비전투 [사용])이 모두 명시적으로 거부된다.
+    # 비전투 [사용])이 모두 명시적으로 거부된다. "비전투 소모품"도 effect가
+    # 항상 None이지만, 그쪽은 item_type 자체로 비전투 전용 로직을 탄다.
     effect: Optional[SkillEffectBase]
     description: str = ""
-    usable_outside_battle: bool = False
+    item_type: ItemType = ItemType.BATTLE_CONSUMABLE
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "ItemData":
         effect = parse_skill_effect(data, 0)
+        item_type = ItemType(str(data["item_type"]))
+
+        # "기타"(사용 불가)/"부적"(미구현 패시브 슬롯)/"비전투 소모품"(자신
+        # 전용, 아이템별 전용 로직으로 처리)은 전투 슬롯(대상 규칙·코스트·
+        # 사거리)이 의미가 없으므로 비워 둘 수 있다 — 그 외 item_type은
+        # 기존과 동일하게 필수로 요구한다. 시트에는 빈 셀 대신 "해당 없음"
+        # 표시로 "-"가 들어있는 경우도 있어(빈 문자열이 아니라 int() 파싱이
+        # 실패하는 값), 숫자가 아니면 0으로 취급한다.
+        if item_type in (ItemType.ETC, ItemType.CHARM, ItemType.NONCOMBAT_CONSUMABLE):
+            target_rule = str(data.get("target_rule", "") or "")
+            cost = _int_or_zero(data.get("cost"))
+            attack_range = _int_or_zero(data.get("range"))
+        else:
+            target_rule = str(data["target_rule"])
+            cost = int(data["cost"])
+            attack_range = int(data["range"])
 
         return ItemData(
             id=str(data["id"]),
-            target_rule=str(data["target_rule"]),
-            cost=int(data["cost"]),
-            attack_range=int(data["range"]),
+            target_rule=target_rule,
+            cost=cost,
+            attack_range=attack_range,
             effect=effect,
             description=str(data.get("description", "") or ""),
-            usable_outside_battle=parse_spreadsheet_bool(
-                data.get("usable_outside_battle", False)
-            ),
+            item_type=item_type,
         )
 
     def to_item_instance(

@@ -111,6 +111,22 @@ class ActionType(str, Enum):
     USE_ITEM = "아이템"
 
 
+class ItemType(str, Enum):
+    # 전투용 스테이터스/효과를 가지되 전투 밖에서도 사용 가능. 비전투 사용 시
+    # 코스트/사거리는 무시된다.
+    CONSUMABLE = "소모품"
+    # 독립적인 코스트/사거리를 가진 전투 전용 소비형 스킬 슬롯.
+    BATTLE_CONSUMABLE = "전투 소모품"
+    # 전투 밖에서만 사용 가능. effect는 없으며(항상 None), 자신만을 대상으로
+    # 아이템별 전용 로직(app/bot/commands/noncombat.py)으로 처리된다.
+    NONCOMBAT_CONSUMABLE = "비전투 소모품"
+    # 전투 시 특수 효과를 내는 추가 패시브 스킬. 현재 미구현.
+    CHARM = "부적"
+    # 소지 자체가 목적인 아이템(스토리 진행용 등) — 전투/비전투 어느 쪽으로도
+    # 사용할 수 없다.
+    ETC = "기타"
+
+
 class BuffApplyTiming(str, Enum):
     ON_BATTLE_START = "전투 시작 시"
     ON_ROUND_START = "라운드 시작 시"

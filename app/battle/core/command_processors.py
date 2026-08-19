@@ -19,6 +19,7 @@ from battle.exceptions import (
     error_item_does_not_exist,
     error_item_has_no_effect,
     error_item_not_usable_here,
+    error_item_not_usable_in_battle,
     error_no_item_in_inventory,
     error_no_remaining_cost,
     error_skill_not_registered,
@@ -27,7 +28,12 @@ from battle.exceptions import (
     error_too_many_characters,
     error_too_many_targets,
 )
-from battle.objects.define import ActionType, BattlefieldColumnIndex, CombatStatType
+from battle.objects.define import (
+    ActionType,
+    BattlefieldColumnIndex,
+    CombatStatType,
+    ItemType,
+)
 from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, ValueWithModifiers
 
@@ -250,10 +256,13 @@ def try_expansion_if_valid(
                 raise CommandValidationError(error_item_not_usable_here())
             if not context.has_item(part.item_id):
                 raise CommandValidationError(error_item_does_not_exist(part.item_id))
+            item_type = context.get_item_data_by_id(part.item_id).item_type
+            if item_type not in (ItemType.CONSUMABLE, ItemType.BATTLE_CONSUMABLE):
+                raise CommandValidationError(error_item_not_usable_in_battle())
             if context.inventory.get_count(command.user_id.name, part.item_id) <= 0:
                 raise CommandValidationError(error_no_item_in_inventory(part.item_id))
             if context.get_item_data_by_id(part.item_id).effect is None:
-                raise CommandValidationError(error_item_has_no_effect(part.item_id))
+                raise CommandValidationError(error_item_has_no_effect())
 
     # 커맨드 전체의 코스트를 한꺼번에 산출한다 — 되는 데까지 처리해주지 않고
     # 전체 코스트가 부족하면 아예 미처리한다.

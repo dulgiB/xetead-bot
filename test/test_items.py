@@ -9,6 +9,7 @@ from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
     FactionType,
+    ItemType,
     ValueSourceType,
     ValueType,
 )
@@ -171,12 +172,52 @@ def test_item_from_dict_allows_missing_effect_as_key_item():
         "range": 0,
         "effect_0": "",
         "description": "용도 불명의 양탄자.",
-        "usable_outside_battle": "FALSE",
+        "item_type": "기타",
     }
 
     item = ItemData.from_dict(row)
 
     assert item.effect is None
+
+
+def test_item_from_dict_allows_missing_target_rule_cost_range_for_etc_and_charm():
+    """item_type이 "기타"/"부적"/"비전투 소모품"인 아이템은 대상 규칙·코스트·
+    사거리 슬롯이 의미가 없으므로 시트에서 비워 둘 수 있다(그 외 item_type은
+    여전히 필수)."""
+    for item_type in ("기타", "부적", "비전투 소모품"):
+        row = {
+            "id": f"{item_type} 아이템",
+            "target_rule": "",
+            "cost": "",
+            "range": "",
+            "effect_0": "",
+            "item_type": item_type,
+        }
+
+        item = ItemData.from_dict(row)
+
+        assert item.target_rule == ""
+        assert item.cost == 0
+        assert item.attack_range == 0
+
+
+def test_item_from_dict_treats_placeholder_dash_as_zero_cost_and_range():
+    """실제 시트에는 "해당 없음" 표시로 빈 문자열 대신 "-"가 들어있는 행이
+    있다 — 빈 문자열만 허용하면 int("-")에서 ValueError가 나 봇 시작 자체가
+    죽는다(item_dict 로딩이 부팅 경로에 있으므로)."""
+    row = {
+        "id": "수상한 물약",
+        "target_rule": "",
+        "cost": "-",
+        "range": "-",
+        "effect_0": "",
+        "item_type": "비전투 소모품",
+    }
+
+    item = ItemData.from_dict(row)
+
+    assert item.cost == 0
+    assert item.attack_range == 0
 
 
 def test_key_item_without_effect_cannot_be_used_in_battle():
@@ -189,6 +230,7 @@ def test_key_item_without_effect_cannot_be_used_in_battle():
         cost=0,
         attack_range=0,
         effect=None,
+        item_type=ItemType.ETC,
     )
     ctx = _make_context({"수상한 양탄자": key_item}, {("아군 1", "수상한 양탄자"): 1})
     manager = _ally_action_manager(ctx)
@@ -213,6 +255,30 @@ def test_unregistered_item_raises(item_bomb):
         cmd = parse_character_command(
             CharacterId("아군 1"), "[존재하지 않는 아이템]", ctx
         )
+        manager.process_command(cmd)
+
+
+def test_noncombat_only_item_type_rejected_in_battle():
+    """item_type이 "비전투 소모품"인 아이템은 전투 중 [아이템] 커맨드로
+    사용하려 하면 거부돼야 한다."""
+    noncombat_item = ItemData(
+        id="수상한 물약",
+        target_rule="SkillTargetRuleSelf",
+        cost=0,
+        attack_range=0,
+        effect=None,
+        item_type=ItemType.NONCOMBAT_CONSUMABLE,
+    )
+    ctx = _make_context({"수상한 물약": noncombat_item}, {("아군 1", "수상한 물약"): 1})
+    manager = _ally_action_manager(ctx)
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+
+    cmd = parse_character_command(CharacterId("아군 1"), "[수상한 물약]", ctx)
+    with pytest.raises(
+        CommandValidationError, match="전투 중에는 사용할 수 없는 아이템입니다"
+    ):
         manager.process_command(cmd)
 
 
@@ -260,7 +326,8 @@ def test_practice_battle_blocks_item():
 def test_practice_battle_blocks_item_with_specific_message(item_potion):
     """PracticeBattlefieldContext에 item_dict를 넘기지 않으면(예: 위 테스트처럼
     빈 dict) 파서가 "포션"을 스킬도 아이템도 아닌 것으로 오인해 부정확한
-    에러("등록된 스킬도 아이템도 아닙니다")를 낸다. item_dict를 제대로
+    에러("등록된 스킬도 아이템도 아닙니다")를 낸다(메시지 자체는 이제
+    입력값을 인용하지 않는다). item_dict를 제대로
     넘기면 이름은 정상 인식되고, 실제 사용 차단은 allow_item_usage 검증에서
     "이 전투에서는 아이템을 사용할 수 없습니다."라는 정확한 메시지로
     일어나야 한다."""

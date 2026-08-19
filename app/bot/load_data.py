@@ -445,6 +445,22 @@ def load_general_quest_sheet(
     return active_location, quests
 
 
+def load_mysterious_potion_effects(
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
+) -> list[str]:
+    """'수상한 효과' 시트를 읽어 "수상한 물약"이 뽑을 수 있는 효과 텍스트
+    목록을 반환한다."""
+    try:
+        records = _worksheet(spreadsheet, "수상한 효과", cache).get_all_records(
+            value_render_option=_UNFORMATTED
+        )
+    except gspread.exceptions.WorksheetNotFound:
+        logger.warning("'수상한 효과' 시트를 찾을 수 없습니다.")
+        return []
+
+    return [str(r["effect"]) for r in records if r.get("effect")]
+
+
 def update_character_quest_date(
     spreadsheet: gspread.Spreadsheet,
     char_name: str,
