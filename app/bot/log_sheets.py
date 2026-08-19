@@ -659,11 +659,41 @@ def append_ledger_row(
     `daily_quest_date`에 쓰는 값과 동일한 date.today().isoformat())을 그대로
     받는다 — 같은 트랜잭션 안에서 날짜를 두 번 다른 시점에 계산해 자정
     경계에서 어긋나는 것을 방지한다.
+
+    쓸 행 위치는 "날짜" 열(A열)이 비어 있는 첫 행으로 직접 계산한다 —
+    `append_row`(Sheets API `values.append`)는 시트 전체에서 어떤 열이든
+    값이 있는 마지막 행 뒤에 붙인다. "가계부" 시트의 E~G열("누적 +"/
+    "누적 -"/"최종")은 B열(캐릭터) 참조 하나로 전체 열을 훑는 배열 수식
+    (`MAP(B2:B, ...)`)이라 그 수식이 훑는 범위가 늘어나면(예: 서식/구획용
+    으로 아래에 빈 행을 미리 만들어 시트 행 수를 늘리면) A~D열은 비어 있어도
+    E~G열은 그 빈 행까지 빈 문자열로 계속 채워진다 — `append_row`는 이걸
+    "값이 있는 행"으로 보고 그 뒤(진짜 데이터 바로 아래가 아니라 시트
+    맨 아래)에 이어붙인다. A열만 기준으로 첫 빈 행을 찾으면 이 수식 스필
+    영향을 받지 않는다. 그런 빈 행이 없으면(시트가 꽉 찬 상태) `append_row`로
+    새 행을 삽입한다.
     """
     ws = _get_or_create_worksheet(
         spreadsheet, _LEDGER_SHEET, _LEDGER_HEADERS, cache=cache
     )
-    ws.append_row(
-        [date_str, char_name, reason, amount],
-        value_input_option=ValueInputOption.user_entered,
-    )
+    if cache is not None:
+        all_values = cache.get_all_values(_LEDGER_SHEET)
+    else:
+        all_values = ws.get_all_values()
+    target_row = None
+    for i, row in enumerate(all_values[1:], start=2):
+        if not (row and row[0]):
+            target_row = i
+            break
+    if target_row is None:
+        target_row = len(all_values) + 1
+    row_values = [date_str, char_name, reason, amount]
+    if target_row <= ws.row_count:
+        ws.update(
+            [row_values],
+            range_name=f"A{target_row}:D{target_row}",
+            value_input_option=ValueInputOption.user_entered,
+        )
+    else:
+        ws.append_row(row_values, value_input_option=ValueInputOption.user_entered)
+    if cache is not None:
+        cache.invalidate(_LEDGER_SHEET)

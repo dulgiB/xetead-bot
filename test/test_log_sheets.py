@@ -520,6 +520,99 @@ def test_battle_log_sheet_names_use_test_prefix_for_test_instance(monkeypatch):
     assert log_sheets._NONCOMBAT_LOG_SHEET == "로그_비전투"
 
 
+class _FakeLedgerWorksheet:
+    def __init__(self, rows: list[list], row_count: int | None = None):
+        self.rows = rows  # 헤더 포함
+        self.row_count = row_count if row_count is not None else len(rows)
+        self.appended: list[list] = []
+
+    def get_all_values(self):
+        return self.rows
+
+    def get_values(self, value_render_option=None, pad_values=True):
+        return self.rows
+
+    def update(self, values, range_name=None, value_input_option=None):
+        row_idx = int(range_name[1:].split(":")[0])
+        while len(self.rows) < row_idx:
+            self.rows.append([])
+        self.rows[row_idx - 1] = values[0]
+
+    def append_row(self, values, value_input_option=None):
+        self.rows.append(values)
+        self.appended.append(values)
+
+
+class _FakeLedgerSpreadsheet:
+    def __init__(self, ws):
+        self._ws = ws
+
+    def worksheet(self, name):
+        return self._ws
+
+
+def test_append_ledger_row_fills_first_blank_row_instead_of_appending_past_it():
+    """서식/구획용으로 미리 만들어 둔 빈 행이 데이터 아래에 있으면, 기본
+    append_row(Sheets API values.append)는 그 빈 행을 건너뛰고 시트 맨
+    아래까지 내려가 버린다 — 데이터 바로 다음(첫 빈 행)에 써야 한다."""
+    ws = _FakeLedgerWorksheet(
+        rows=[
+            ["날짜", "캐릭터", "변동 사유", "금액"],
+            ["2026-08-01", "아군1", "일일 의뢰", 1],
+        ],
+        row_count=10,  # 아래에 버퍼용 빈 행이 더 있음
+    )
+    spreadsheet = _FakeLedgerSpreadsheet(ws)
+
+    log_sheets.append_ledger_row(spreadsheet, "2026-08-20", "아군2", "일일 의뢰", 1)
+
+    assert ws.appended == []
+    assert ws.rows[2] == ["2026-08-20", "아군2", "일일 의뢰", 1]
+    assert len(ws.rows) == 3
+
+
+def test_append_ledger_row_ignores_array_formula_spillover_columns():
+    """실제 "가계부" 시트의 E~G열("누적 +"/"누적 -"/"최종")은 B열을 통째로
+    훑는 배열 수식(MAP(B2:B, ...))이라, 그 수식이 훑는 행 수가 늘어나면
+    A~D열이 비어 있는 행도 E~G열엔 빈 문자열이 스필돼 채워진다 — 이런 행을
+    "값이 있는 행"으로 오인해 건너뛰면 안 되고, A열(날짜) 기준으로 첫 빈
+    행을 찾아야 한다."""
+    ws = _FakeLedgerWorksheet(
+        rows=[
+            ["날짜", "캐릭터", "변동 사유", "금액", "누적 +", "누적 -", "최종"],
+            ["2026-08-01", "아군1", "일일 의뢰", 1, 1, "", 1],
+            # 서식/구획용 빈 행 — A~D는 비어 있지만 배열 수식 스필로 E~G에
+            # 빈 문자열이 들어가 있다.
+            ["", "", "", "", "", "", ""],
+        ],
+        row_count=5,
+    )
+    spreadsheet = _FakeLedgerSpreadsheet(ws)
+
+    log_sheets.append_ledger_row(spreadsheet, "2026-08-20", "아군2", "일일 의뢰", 1)
+
+    assert ws.appended == []
+    assert ws.rows[2] == ["2026-08-20", "아군2", "일일 의뢰", 1]
+    assert len(ws.rows) == 3
+
+
+def test_append_ledger_row_inserts_new_row_when_sheet_is_full():
+    """미리 만들어 둔 빈 행이 없어 시트가 꽉 차 있으면 새 행을 삽입해야
+    한다."""
+    ws = _FakeLedgerWorksheet(
+        rows=[
+            ["날짜", "캐릭터", "변동 사유", "금액"],
+            ["2026-08-01", "아군1", "일일 의뢰", 1],
+        ],
+        row_count=2,  # 여유 행 없음
+    )
+    spreadsheet = _FakeLedgerSpreadsheet(ws)
+
+    log_sheets.append_ledger_row(spreadsheet, "2026-08-20", "아군2", "일일 의뢰", 1)
+
+    assert ws.appended == [["2026-08-20", "아군2", "일일 의뢰", 1]]
+
+
 def test_battle_log_sheet_names_default_for_prod_instance(monkeypatch):
     import importlib
 
