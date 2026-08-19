@@ -10,11 +10,12 @@ from battle.objects.define import ActionType  # noqa: E402
 from battle.objects.models import CharacterId  # noqa: E402
 from battle.objects.skill.models import SkillData  # noqa: E402
 from bot.load_data import (  # noqa: E402
+    get_character_gold,
     mark_enemy_skill_revealed,
     reveal_declared_enemy_skills,
     update_character_curr_hp,
     update_character_daily_quest_status_id,
-    update_character_gold_and_quest_date,
+    update_character_quest_date,
 )
 from bot.sheet_cache import SheetCache  # noqa: E402
 
@@ -125,7 +126,7 @@ def test_update_character_curr_hp_with_cache_shares_metadata_and_invalidates():
     assert ws.get_values_call_count == before + 1
 
 
-def test_update_character_gold_and_quest_date_writes_matching_row():
+def test_update_character_quest_date_writes_matching_row():
     rows = [
         ["name", "gold", "daily_quest_date"],
         ["아군1", "5", "2026-01-01"],
@@ -133,14 +134,28 @@ def test_update_character_gold_and_quest_date_writes_matching_row():
     ]
     spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
 
-    update_character_gold_and_quest_date(spreadsheet, "아군2", 1, "2026-08-03")
+    update_character_quest_date(spreadsheet, "아군2", "2026-08-03")
 
     ws = spreadsheet.worksheet("캐릭터")
-    assert (3, 2, 1) in ws.written
     assert (3, 3, "2026-08-03") in ws.written
 
 
-def test_update_character_gold_and_quest_date_stores_date_as_raw_string():
+def test_update_character_quest_date_does_not_write_gold():
+    """ "캐릭터" 시트의 gold는 봇이 직접 갱신하지 않는다 — 소지금 변동은
+    "가계부" 시트 기록만으로 관리한다."""
+    rows = [
+        ["name", "gold", "daily_quest_date"],
+        ["아군1", "5", "2026-01-01"],
+    ]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_quest_date(spreadsheet, "아군1", "2026-08-03")
+
+    ws = spreadsheet.worksheet("캐릭터")
+    assert all(col != 2 for _row, col, _value in ws.written)
+
+
+def test_update_character_quest_date_stores_date_as_raw_string():
     """daily_quest_date는 handle_daily_quest_start()에서 문자열 그대로
     재비교된다 — update_cell()의 고정 USER_ENTERED로 쓰면 "YYYY-MM-DD" 형식의
     문자열이 Sheets에 의해 날짜 타입(내부 시리얼 넘버)으로 자동 변환되고,
@@ -153,7 +168,7 @@ def test_update_character_gold_and_quest_date_stores_date_as_raw_string():
     ]
     spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
 
-    update_character_gold_and_quest_date(spreadsheet, "아군1", 1, "2026-08-03")
+    update_character_quest_date(spreadsheet, "아군1", "2026-08-03")
 
     ws = spreadsheet.worksheet("캐릭터")
     date_call = next(c for c in ws.update_calls if c["col"] == 3)
@@ -161,19 +176,19 @@ def test_update_character_gold_and_quest_date_stores_date_as_raw_string():
     assert date_call["raw"] is True
 
 
-def test_update_character_gold_and_quest_date_raises_when_not_found():
+def test_update_character_quest_date_raises_when_not_found():
     spreadsheet = _FakeSpreadsheet(
         {"캐릭터": [["name", "gold", "daily_quest_date"], ["아군1", "0", ""]]}
     )
 
     try:
-        update_character_gold_and_quest_date(spreadsheet, "없는캐릭터", 1, "2026-08-03")
+        update_character_quest_date(spreadsheet, "없는캐릭터", "2026-08-03")
         assert False, "예외가 발생해야 한다"
     except RuntimeError:
         pass
 
 
-def test_update_character_gold_and_quest_date_also_clears_status_id_when_present():
+def test_update_character_quest_date_also_clears_status_id_when_present():
     """의뢰 완수 시 daily_quest_status_id도 함께 비워야 재기동 복원 대상에서
     빠진다."""
     rows = [
@@ -182,26 +197,62 @@ def test_update_character_gold_and_quest_date_also_clears_status_id_when_present
     ]
     spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
 
-    update_character_gold_and_quest_date(spreadsheet, "아군1", 1, "2026-08-03")
+    update_character_quest_date(spreadsheet, "아군1", "2026-08-03")
 
     ws = spreadsheet.worksheet("캐릭터")
-    assert (2, 2, 1) in ws.written
     assert (2, 3, "2026-08-03") in ws.written
     assert (2, 4, "") in ws.written
 
 
-def test_update_character_gold_and_quest_date_skips_status_id_when_column_missing():
-    """기존(daily_quest_status_id 컬럼이 없는) 캐릭터 시트에서도 gold/
+def test_update_character_quest_date_skips_status_id_when_column_missing():
+    """기존(daily_quest_status_id 컬럼이 없는) 캐릭터 시트에서도
     daily_quest_date 갱신 자체는 그대로 동작해야 한다."""
     rows = [["name", "gold", "daily_quest_date"], ["아군1", "0", ""]]
     spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
 
-    update_character_gold_and_quest_date(spreadsheet, "아군1", 1, "2026-08-03")
+    update_character_quest_date(spreadsheet, "아군1", "2026-08-03")
 
     ws = spreadsheet.worksheet("캐릭터")
-    assert (2, 2, 1) in ws.written
     assert (2, 3, "2026-08-03") in ws.written
-    assert len(ws.written) == 2
+    assert len(ws.written) == 1
+
+
+def test_get_character_gold_reads_matching_row():
+    rows = [
+        ["name", "gold", "daily_quest_date"],
+        ["아군1", "5", ""],
+        ["아군2", "42", ""],
+    ]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    assert get_character_gold(spreadsheet, "아군2") == 42
+
+
+def test_get_character_gold_raises_when_not_found():
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name", "gold"], ["아군1", "5"]]})
+
+    try:
+        get_character_gold(spreadsheet, "없는캐릭터")
+        assert False, "예외가 발생해야 한다"
+    except RuntimeError:
+        pass
+
+
+def test_get_character_gold_reads_via_cache():
+    """캐시를 넘기면 캐시가 반환하는 값(가계부 기록 후 invalidate로 새로
+    읽힌 값 포함)을 그대로 사용해야 한다."""
+    rows = [["name", "gold"], ["아군1", "7"]]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+    cache = _make_cache(spreadsheet)
+
+    assert get_character_gold(spreadsheet, "아군1", cache=cache) == 7
+
+    # gold 수식이 재계산된 것을 흉내낸다: 시트 원본이 바뀐 뒤 캐시를
+    # 무효화하면 다음 조회가 새 값을 읽어야 한다.
+    spreadsheet.worksheet("캐릭터").rows[1][1] = "8"
+    cache.invalidate("캐릭터")
+
+    assert get_character_gold(spreadsheet, "아군1", cache=cache) == 8
 
 
 def test_update_character_daily_quest_status_id_writes_matching_row():

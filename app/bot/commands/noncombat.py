@@ -13,6 +13,7 @@ from spreadsheets.models.quest import DailyQuestSuccessType
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
 from bot.load_data import (
+    get_character_gold,
     load_daily_quest_pools,
     load_daily_quest_result_messages,
     load_general_quest_sheet,
@@ -20,7 +21,7 @@ from bot.load_data import (
     load_item_data,
     update_character_curr_hp,
     update_character_daily_quest_status_id,
-    update_character_gold_and_quest_date,
+    update_character_quest_date,
     update_quest_taken_by,
 )
 from bot.log_sheets import NoncombatLogInfo, append_ledger_row
@@ -439,6 +440,11 @@ def handle_daily_quest_roll(
         f"{success_type.value}! {message}" if message else f"{success_type.value}!"
     )
 
+    # 캐릭터 시트의 gold는 더 이상 봇이 직접 갱신하지 않는다 — 소지금 변동은
+    # "가계부" 시트 기록만으로 관리하고, gold는 그 내역을 근거로 한 스프레드
+    # 시트 수식이 계산한다. new_gold는 가계부 기록/재조회가 실패했을 때만
+    # 쓰이는 예상치(로컬 계산)로, 정상 경로에서는 아래에서 실제 값으로
+    # 덮어써진다.
     new_gold = char_data.gold + 1
     today = date.today().isoformat()
 
@@ -446,8 +452,8 @@ def handle_daily_quest_roll(
     save_succeeded = True
     save_error_trace: Optional[str] = None
     try:
-        update_character_gold_and_quest_date(
-            state.spreadsheet, char_data.name, new_gold, today, cache=state.sheet_cache
+        update_character_quest_date(
+            state.spreadsheet, char_data.name, today, cache=state.sheet_cache
         )
     except Exception as e:
         save_succeeded = False
@@ -457,6 +463,7 @@ def handle_daily_quest_roll(
     # 저장에 실패하면 mid 상태를 남겨 두어 같은 게시물에 재시도할 수 있게 한다.
     if save_succeeded:
         del state.noncombat.daily_quest_mid[acct]
+        ledger_appended = False
         try:
             append_ledger_row(
                 state.spreadsheet,
@@ -464,11 +471,24 @@ def handle_daily_quest_roll(
                 char_data.name,
                 "일일 의뢰",
                 1,
-                new_gold,
                 cache=state.sheet_cache,
             )
+            ledger_appended = True
         except Exception:
             logger.exception("가계부 기록 실패")
+
+        if ledger_appended:
+            # gold 수식이 방금 추가한 가계부 행을 반영한 값을 다시 읽는다 —
+            # char_data.gold + 1로 로컬 계산하면 가계부에 이미 있던 다른
+            # 변동(수동 지급 등)을 놓친다.
+            try:
+                if state.sheet_cache is not None:
+                    state.sheet_cache.invalidate("캐릭터")
+                new_gold = get_character_gold(
+                    state.spreadsheet, char_data.name, cache=state.sheet_cache
+                )
+            except Exception:
+                logger.exception("소지금 재조회 실패")
 
     result = (
         f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」\n{judgment}\n"

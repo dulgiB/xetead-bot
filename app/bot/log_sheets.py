@@ -111,7 +111,7 @@ _NONCOMBAT_LOG_HEADERS = [
 ]
 
 _LEDGER_SHEET = "가계부"
-_LEDGER_HEADERS = ["날짜", "캐릭터", "변동 사유", "금액", "최종 소지금"]
+_LEDGER_HEADERS = ["날짜", "캐릭터", "변동 사유", "금액"]
 
 
 def _now() -> str:
@@ -623,10 +623,13 @@ def append_ledger_row(
     char_name: str,
     reason: str,
     amount: int,
-    new_balance: int,
     cache: Optional[SheetCache] = None,
 ) -> None:
     """ "가계부" 시트에 소지금 변동 내역 한 행을 추가한다.
+
+    최종 소지금은 더 이상 기록하지 않는다 — "캐릭터" 시트의 gold를 봇이 직접
+    갱신하지 않게 되면서, 잔액 집계는 이 시트 밖에서(가계부 내역을 근거로)
+    관리되기 때문이다.
 
     `date_str`은 호출측이 이미 계산해 둔 "오늘"(예: 일일 의뢰 완수 시
     `daily_quest_date`에 쓰는 값과 동일한 date.today().isoformat())을 그대로
@@ -637,6 +640,6 @@ def append_ledger_row(
         spreadsheet, _LEDGER_SHEET, _LEDGER_HEADERS, cache=cache
     )
     ws.append_row(
-        [date_str, char_name, reason, amount, new_balance],
+        [date_str, char_name, reason, amount],
         value_input_option=ValueInputOption.user_entered,
     )
