@@ -12,6 +12,11 @@ if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
 
 
+def _int_or_zero(value: object) -> int:
+    text = str(value or "").strip()
+    return int(text) if text.lstrip("-").isdigit() else 0
+
+
 @dataclass(frozen=True)
 class Item:
     target_rule: SkillTargetRule
@@ -46,11 +51,13 @@ class ItemData:
         # "기타"(사용 불가)/"부적"(미구현 패시브 슬롯)/"비전투 소모품"(자신
         # 전용, 아이템별 전용 로직으로 처리)은 전투 슬롯(대상 규칙·코스트·
         # 사거리)이 의미가 없으므로 비워 둘 수 있다 — 그 외 item_type은
-        # 기존과 동일하게 필수로 요구한다.
+        # 기존과 동일하게 필수로 요구한다. 시트에는 빈 셀 대신 "해당 없음"
+        # 표시로 "-"가 들어있는 경우도 있어(빈 문자열이 아니라 int() 파싱이
+        # 실패하는 값), 숫자가 아니면 0으로 취급한다.
         if item_type in (ItemType.ETC, ItemType.CHARM, ItemType.NONCOMBAT_CONSUMABLE):
             target_rule = str(data.get("target_rule", "") or "")
-            cost = int(data.get("cost") or 0)
-            attack_range = int(data.get("range") or 0)
+            cost = _int_or_zero(data.get("cost"))
+            attack_range = _int_or_zero(data.get("range"))
         else:
             target_rule = str(data["target_rule"])
             cost = int(data["cost"])

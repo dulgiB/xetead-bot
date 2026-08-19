@@ -461,14 +461,16 @@ def load_mysterious_potion_effects(
     return [str(r["effect"]) for r in records if r.get("effect")]
 
 
-def update_character_gold_and_quest_date(
+def update_character_quest_date(
     spreadsheet: gspread.Spreadsheet,
     char_name: str,
-    new_gold: int,
     today: str,
     cache: Optional[SheetCache] = None,
 ) -> None:
-    """캐릭터 시트에서 해당 캐릭터 행을 찾아 gold, daily_quest_date를 갱신한다.
+    """캐릭터 시트에서 해당 캐릭터 행을 찾아 daily_quest_date를 갱신한다.
+
+    gold는 여기서 갱신하지 않는다 — 소지금 변동은 "가계부" 시트 기록만으로
+    관리하고, "캐릭터" 시트의 gold를 봇이 직접 덮어쓰지 않는다.
 
     "daily_quest_status_id" 컬럼이 있으면 함께 비운다 — 의뢰가 완료돼
     더 이상 판정 답글을 기다리지 않는다는 뜻이라, 봇 재기동 복원 대상에서
@@ -486,7 +488,6 @@ def update_character_gold_and_quest_date(
     header, rows = values[0], values[1:]
 
     try:
-        gold_col = header.index("gold") + 1
         date_col = header.index("daily_quest_date") + 1
     except ValueError as e:
         raise RuntimeError(f"캐릭터 시트에 필수 컬럼이 없습니다: {e}") from e
@@ -506,13 +507,48 @@ def update_character_gold_and_quest_date(
             # 문자열 그대로 재비교하므로, 그 값이 날짜로 변환되면 "오늘 이미
             # 했음" 판정이 다시는 참이 되지 않아 1일 1회 제한이 무력화된다.
             # update()의 기본값 raw=True(ValueInputOption.raw)로 그대로 저장한다.
-            ws.update([[new_gold]], gspread.utils.rowcol_to_a1(idx, gold_col))
             ws.update([[today]], gspread.utils.rowcol_to_a1(idx, date_col))
             if status_col is not None:
                 ws.update([[""]], gspread.utils.rowcol_to_a1(idx, status_col))
             if cache is not None:
                 cache.invalidate("캐릭터")
             return
+
+    raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
+
+
+def get_character_gold(
+    spreadsheet: gspread.Spreadsheet,
+    char_name: str,
+    cache: Optional[SheetCache] = None,
+) -> int:
+    """캐릭터 시트에서 해당 캐릭터의 gold를 읽어 반환한다.
+
+    gold는 "가계부" 시트 내역을 근거로 하는 스프레드시트 수식이므로, 가계부에
+    새 행을 추가한 직후의 최신 값을 얻으려면 호출측이 먼저 캐시를
+    무효화해야 한다(캐시를 넘겨도 이 함수 자체는 무효화하지 않는다 — 무효화
+    시점은 "가계부에 쓴 직후"로 호출측이 결정한다).
+    """
+    ws = _worksheet(spreadsheet, "캐릭터", cache)
+    values = (
+        cache.get_all_values("캐릭터", value_render_option=_UNFORMATTED)
+        if cache is not None
+        else ws.get_values(value_render_option=_UNFORMATTED, pad_values=True)
+    )
+    if not values:
+        raise RuntimeError("캐릭터 시트에 필수 컬럼이 없습니다: 헤더가 비어 있습니다")
+    header, rows = values[0], values[1:]
+
+    try:
+        gold_col = header.index("gold")
+    except ValueError as e:
+        raise RuntimeError(f"캐릭터 시트에 필수 컬럼이 없습니다: {e}") from e
+    name_col = header.index("name") if "name" in header else None
+
+    for row in rows:
+        name = row[name_col] if name_col is not None and name_col < len(row) else None
+        if name == char_name:
+            return int(row[gold_col] or 0) if gold_col < len(row) else 0
 
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
 
