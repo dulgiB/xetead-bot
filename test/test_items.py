@@ -201,6 +201,25 @@ def test_item_from_dict_allows_missing_target_rule_cost_range_for_etc_and_charm(
         assert item.attack_range == 0
 
 
+def test_item_from_dict_treats_placeholder_dash_as_zero_cost_and_range():
+    """실제 시트에는 "해당 없음" 표시로 빈 문자열 대신 "-"가 들어있는 행이
+    있다 — 빈 문자열만 허용하면 int("-")에서 ValueError가 나 봇 시작 자체가
+    죽는다(item_dict 로딩이 부팅 경로에 있으므로)."""
+    row = {
+        "id": "수상한 물약",
+        "target_rule": "",
+        "cost": "-",
+        "range": "-",
+        "effect_0": "",
+        "item_type": "비전투 소모품",
+    }
+
+    item = ItemData.from_dict(row)
+
+    assert item.cost == 0
+    assert item.attack_range == 0
+
+
 def test_key_item_without_effect_cannot_be_used_in_battle():
     """effect가 없는 키 아이템은 전투 중 [아이템] 커맨드로 사용하려 하면
     명시적인 오류로 거부돼야 한다(효과가 없다는 이유로 조용히 무시되거나
@@ -250,9 +269,7 @@ def test_noncombat_only_item_type_rejected_in_battle():
         effect=None,
         item_type=ItemType.NONCOMBAT_CONSUMABLE,
     )
-    ctx = _make_context(
-        {"수상한 물약": noncombat_item}, {("아군 1", "수상한 물약"): 1}
-    )
+    ctx = _make_context({"수상한 물약": noncombat_item}, {("아군 1", "수상한 물약"): 1})
     manager = _ally_action_manager(ctx)
     ctx.add_character(
         get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)

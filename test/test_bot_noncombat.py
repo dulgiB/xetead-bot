@@ -1084,7 +1084,7 @@ def test_use_item_rejects_target_other_than_self_for_noncombat_only_item(monkeyp
 def test_use_item_rejects_unimplemented_noncombat_only_item_without_consuming(
     monkeypatch,
 ):
-    """"수상한 물약" 외의 비전투 소모품은 전용 로직이 아직 없다 — 플레이어
+    """ "수상한 물약" 외의 비전투 소모품은 전용 로직이 아직 없다 — 플레이어
     입장에서는 등록되지 않은 아이템과 다를 바 없어야 하므로 같은 메시지로
     거절하고, 처리할 방법이 없는 아이템을 소비해 버리지 않는다."""
     acct = "user1"
@@ -1114,7 +1114,7 @@ def test_use_item_rejects_unimplemented_noncombat_only_item_without_consuming(
 
 
 def test_use_mysterious_potion_reports_random_effect(monkeypatch):
-    """"수상한 물약" 사용 시 "수상한 효과" 시트의 텍스트 중 하나를 그대로 출력한다."""
+    """ "수상한 물약" 사용 시 "수상한 효과" 시트의 텍스트 중 하나를 그대로 출력한다."""
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
     potion = ItemData(
@@ -1153,7 +1153,7 @@ def test_use_mysterious_potion_reports_random_effect(monkeypatch):
 
 
 def test_use_mysterious_potion_heal_effect_updates_hp(monkeypatch):
-    """"체력이 N 회복된다." 효과가 뽑히면 캐릭터 스프레드시트에 반영하고
+    """ "체력이 N 회복된다." 효과가 뽑히면 캐릭터 스프레드시트에 반영하고
     답글 뒤에 "(회복 후 체력/최대 체력)"을 덧붙인다."""
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
@@ -1417,7 +1417,7 @@ def test_bag_lists_gold_and_items_with_cost_range_and_usable_suffix(
 
 
 def test_bag_omits_cost_range_for_types_without_battle_slot(monkeypatch):
-    """"기타"/"비전투 소모품"/"부적"은 코스트·사거리가 항상 0이므로
+    """ "기타"/"비전투 소모품"/"부적"은 코스트·사거리가 항상 0이므로
     [가방]에서 코스트/사거리 표기를 생략한다."""
     acct = "user1"
     state = _make_state(acct)
@@ -1479,7 +1479,7 @@ def test_bag_omits_cost_range_for_types_without_battle_slot(monkeypatch):
 
 
 def test_bag_shows_target_label_for_consumable_item(monkeypatch):
-    """"소모품"은 target_rule에 따라 "(대상라벨 · 코스트 N · 사거리 M)"
+    """ "소모품"은 target_rule에 따라 "(대상라벨 · 코스트 N · 사거리 M)"
     형태로 코스트/사거리와 한 덩어리로 붙인다."""
     acct = "user1"
     state = _make_state(acct)

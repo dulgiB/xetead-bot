@@ -249,9 +249,7 @@ def handle_use_item(
     전용 로직(_NONCOMBAT_ITEM_HANDLERS)으로 처리된다.
     """
     command_text = (
-        f"[{item_name}"
-        + (f"/{target_name}" if target_name else "")
-        + f"/{count}개]"
+        f"[{item_name}" + (f"/{target_name}" if target_name else "") + f"/{count}개]"
     )
 
     char_data = state.noncombat_char_dict.get(acct)
@@ -359,7 +357,7 @@ _MYSTERIOUS_POTION_EFFECT_JOINER = " 그리고…… "
 def _handle_mysterious_potion(
     user_name: str, count: int, state: "BotState", command_text: str
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """"수상한 물약" 사용 → "수상한 효과" 시트에서 무작위 효과 텍스트를
+    """ "수상한 물약" 사용 → "수상한 효과" 시트에서 무작위 효과 텍스트를
     count개 뽑아(중복 허용) " 그리고…… "로 이어붙여 답글로 낸다. 체력
     회복을 뜻하는 텍스트("체력이 N 회복된다.")가 여러 개 뽑히면 회복량을
     합산해 캐릭터 스프레드시트에 한 번만 반영한다.
