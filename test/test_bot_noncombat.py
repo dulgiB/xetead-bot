@@ -55,6 +55,7 @@ def _make_state(acct: str) -> BotState:
         },
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
     state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(bot_reply_post_id=123)
     return state
@@ -578,6 +579,7 @@ def test_restore_daily_quest_mid_state_reads_status_id_column():
         },
         spreadsheet=None,
         field_spreadsheet=None,
+        log_spreadsheet=None,
     )
 
     restored = _restore_daily_quest_mid_state(state)

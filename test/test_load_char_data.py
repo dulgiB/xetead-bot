@@ -132,6 +132,7 @@ def test_reload_char_data_replaces_state_dicts(monkeypatch):
         noncombat_char_dict={},
         spreadsheet=object(),
         field_spreadsheet=object(),
+        log_spreadsheet=object(),
     )
     fresh = ({"acct": "new"}, {"새캐릭터": "new"}, {"acct": "new_noncombat"})
     monkeypatch.setattr(

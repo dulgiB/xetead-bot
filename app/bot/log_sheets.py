@@ -5,6 +5,12 @@
 대체한다). ended_at이 비어 있는 행은 봇 재기동 시 `bot/field_restore.py`가
 읽어 해당 전투를 메모리에 재구성한다. "로그_전투"/"로그_비전투"는 커맨드
 정산·비전투 행위 발생 시마다 행을 추가하는 append-only 로그다.
+
+"로그_전투"/"로그_비전투"는 `DB_SPREADSHEET_KEY`가 아니라 별도의
+`LOG_SPREADSHEET_KEY` 스프레드시트에 기록되며, 운영/테스트 배포가 이
+스프레드시트를 공유한다 — 워크시트 이름 자체를 `_is_test_instance()`로
+분기해("테스트_로그_전투"/"테스트_로그_비전투" vs "로그_전투"/"로그_비전투")
+서로의 로그가 섞이지 않게 한다.
 """
 
 import json
@@ -14,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
+from urllib.parse import urlparse
 
 import gspread
 from gspread.utils import ValueInputOption
@@ -86,7 +93,24 @@ _FIELD_HEADERS = [
     "meta_json",
 ]
 
-_BATTLE_LOG_SHEET = "로그_전투"
+_TEST_MASTODON_HOST = "test.xetead.quest"
+
+
+def _is_test_instance() -> bool:
+    """MASTODON_API_BASE_URL 호스트로 이 프로세스가 테스트 배포인지 판단한다.
+
+    "로그_전투"/"로그_비전투"는 이제 운영과 테스트가 같은 스프레드시트
+    (`LOG_SPREADSHEET_KEY`)를 공유하므로, 워크시트 이름 자체를 분리해야
+    테스트 트래픽이 실제 운영 로그에 섞이지 않는다.
+    """
+    return urlparse(os.environ.get("MASTODON_API_BASE_URL", "")).hostname == (
+        _TEST_MASTODON_HOST
+    )
+
+
+_LOG_SHEET_PREFIX = "테스트_" if _is_test_instance() else ""
+
+_BATTLE_LOG_SHEET = f"{_LOG_SHEET_PREFIX}로그_전투"
 _BATTLE_LOG_HEADERS = [
     "field_id",
     "round",
@@ -100,7 +124,7 @@ _BATTLE_LOG_HEADERS = [
     "reply_ref",
 ]
 
-_NONCOMBAT_LOG_SHEET = "로그_비전투"
+_NONCOMBAT_LOG_SHEET = f"{_LOG_SHEET_PREFIX}로그_비전투"
 _NONCOMBAT_LOG_HEADERS = [
     "timestamp",
     "command_text",
