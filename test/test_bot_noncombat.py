@@ -379,7 +379,7 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
     saved_calls = []
     monkeypatch.setattr(
         noncombat_module,
-        "update_character_gold_and_quest_date",
+        "update_character_quest_date",
         lambda *a, **k: saved_calls.append(a),
     )
 
@@ -387,9 +387,8 @@ def test_daily_quest_roll_reports_success_and_clears_mid_when_save_succeeds(
 
     assert "사례로 1G를 획득했다. (소지금: 11G)" in result
     assert acct not in state.noncombat.daily_quest_mid
-    # 캐릭터 데이터는 매 커맨드마다 새로 읽으므로, 로컬 캐시가 아니라
-    # 스프레드시트에 실제로 반영된 값(gold=11)을 검증한다.
-    assert saved_calls == [(None, "동료", 11, saved_calls[0][3])]
+    # gold는 더 이상 캐릭터 시트에 쓰지 않는다 — daily_quest_date만 갱신한다.
+    assert saved_calls == [(None, "동료", saved_calls[0][2])]
     assert log_info is not None
     assert log_info.error_trace is None
 
@@ -398,7 +397,7 @@ def test_daily_quest_roll_appends_ledger_row_on_success(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
-        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
     )
     ledger_calls = []
     monkeypatch.setattr(
@@ -417,9 +416,71 @@ def test_daily_quest_roll_appends_ledger_row_on_success(monkeypatch):
         "동료",
         "일일 의뢰",
         1,
-        11,
     )
     assert kwargs == {"cache": state.sheet_cache}
+
+
+def test_daily_quest_roll_reports_gold_refetched_after_ledger_append(monkeypatch):
+    """gold는 "가계부" 내역을 근거로 한 스프레드시트 수식이므로, 가계부에
+    행을 추가한 직후에는 char_data.gold + 1이 아니라 그 수식이 계산한
+    실제 값을 다시 읽어 표시해야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
+    )
+    monkeypatch.setattr(noncombat_module, "append_ledger_row", lambda *a, **k: None)
+    monkeypatch.setattr(noncombat_module, "get_character_gold", lambda *a, **k: 42)
+
+    result, _log_info = handle_daily_quest_roll(acct, "육체", state)
+
+    assert "사례로 1G를 획득했다. (소지금: 42G)" in result
+
+
+def test_daily_quest_roll_falls_back_to_local_gold_when_refetch_fails(monkeypatch):
+    """가계부 기록 자체는 성공했지만 gold 재조회가 실패하면, 답글이 아예
+    깨지는 대신 char_data.gold + 1 예상치로 대체 표시해야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
+    )
+    monkeypatch.setattr(noncombat_module, "append_ledger_row", lambda *a, **k: None)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("시트 접근 실패")
+
+    monkeypatch.setattr(noncombat_module, "get_character_gold", _boom)
+
+    result, _log_info = handle_daily_quest_roll(acct, "육체", state)
+
+    assert "사례로 1G를 획득했다. (소지금: 11G)" in result
+    assert acct not in state.noncombat.daily_quest_mid
+
+
+def test_daily_quest_roll_skips_gold_refetch_when_ledger_append_fails(monkeypatch):
+    """가계부 기록 자체가 실패하면 방금 실패한 기록을 전제로 gold를 다시
+    읽어봐야 의미가 없으므로 재조회를 시도하지 않아야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
+    )
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("시트 접근 실패")
+
+    monkeypatch.setattr(noncombat_module, "append_ledger_row", _boom)
+    refetch_calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "get_character_gold",
+        lambda *a, **k: refetch_calls.append((a, k)) or 999,
+    )
+
+    handle_daily_quest_roll(acct, "육체", state)
+
+    assert refetch_calls == []
 
 
 def test_daily_quest_roll_skips_ledger_row_when_save_fails(monkeypatch):
@@ -429,7 +490,7 @@ def test_daily_quest_roll_skips_ledger_row_when_save_fails(monkeypatch):
     def _boom(*args, **kwargs):
         raise RuntimeError("시트 접근 실패")
 
-    monkeypatch.setattr(noncombat_module, "update_character_gold_and_quest_date", _boom)
+    monkeypatch.setattr(noncombat_module, "update_character_quest_date", _boom)
     ledger_calls = []
     monkeypatch.setattr(
         noncombat_module,
@@ -447,7 +508,7 @@ def test_daily_quest_roll_tolerates_ledger_append_failure(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
-        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
     )
 
     def _boom(*args, **kwargs):
@@ -533,7 +594,7 @@ def test_daily_quest_roll_reports_failure_and_keeps_mid_when_save_fails(monkeypa
     def _boom(*args, **kwargs):
         raise RuntimeError("시트 접근 실패")
 
-    monkeypatch.setattr(noncombat_module, "update_character_gold_and_quest_date", _boom)
+    monkeypatch.setattr(noncombat_module, "update_character_quest_date", _boom)
 
     result, log_info = handle_daily_quest_roll(acct, "육체", state)
 
@@ -550,7 +611,7 @@ def test_daily_quest_roll_judgment_always_prefixed_with_success_type(monkeypatch
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
-        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
     )
     monkeypatch.setattr(
         noncombat_module,
@@ -574,7 +635,7 @@ def test_daily_quest_roll_judgment_prefix_alone_when_no_message_row(monkeypatch)
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
-        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
     )
     monkeypatch.setattr(
         noncombat_module,
@@ -594,7 +655,7 @@ def test_daily_quest_roll_reply_labels_dice_part_with_1d6(monkeypatch):
     acct = "user1"
     state = _make_state(acct)  # stat_physical=2
     monkeypatch.setattr(
-        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
     )
     monkeypatch.setattr(
         noncombat_module,
@@ -612,7 +673,7 @@ def test_daily_quest_roll_adds_blank_line_before_completion_message(monkeypatch)
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
-        noncombat_module, "update_character_gold_and_quest_date", lambda *a, **k: None
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
     )
 
     result, log_info = handle_daily_quest_roll(acct, "육체", state)
