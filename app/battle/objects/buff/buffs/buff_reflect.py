@@ -1,11 +1,11 @@
 import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming, ValueSourceType
+from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
 from battle.objects.models import (
     BaseValueIndicator,
     CharacterId,
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
 class ReflectEvent(BuffEvent):
     # 무효화 로그(예: "[반사] 소모, 대미지 없음")에 표시할 버프 라벨.
     buff_label: str
-
-    _REFLECT_PERCENT: ClassVar[int] = 40
+    # "버프"/"버프_패시브" 시트의 value(value_type=퍼센트)에서 온다.
+    reflect_percent: int
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -55,7 +55,7 @@ class ReflectEvent(BuffEvent):
             base_value = value_with_modifiers.get_value(
                 calculator, attacker_id, holder, effect_seq_number
             )
-            reflect_value = math.floor(base_value * self._REFLECT_PERCENT / 100)
+            reflect_value = math.floor(base_value * self.reflect_percent / 100)
             # 원래 대미지 계산식(공격 굴림 + 주는 대미지 버프)에 "× 반사 계수"를
             # 덧붙여 답글에 어떻게 반사량이 나왔는지 그대로 보여준다. 계산할 게
             # 전혀 없어(고정 대미지 등) format_calculation()이 None을 반환하면
@@ -75,7 +75,7 @@ class ReflectEvent(BuffEvent):
                     ),
                     roll_display=(
                         f"{given_calc_display} × "
-                        f"{self._REFLECT_PERCENT / 100:g}[반사 계수]"
+                        f"{self.reflect_percent / 100:g}[반사 계수]"
                     ),
                 )
             )
@@ -90,13 +90,18 @@ class ReflectEvent(BuffEvent):
 
 
 class BuffReflect(BuffBase):
-    """반사"""
+    """반사. 반사 배율은 "버프"/"버프_패시브" 시트의 value 컬럼(반드시
+    value_type=퍼센트)으로 관리한다."""
 
     @property
     def timing(self) -> BuffApplyTiming:
         return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> ReflectEvent:
+        if self.value_type != ValueType.PERCENT:
+            raise ValueError(self.value_type)
         return ReflectEvent(
-            condition=self.condition, buff_label=self.display_id_label()
+            condition=self.condition,
+            buff_label=self.display_id_label(),
+            reflect_percent=self.value,
         )

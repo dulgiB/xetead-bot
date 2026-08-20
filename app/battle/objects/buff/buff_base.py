@@ -133,6 +133,7 @@ class BuffBase(abc.ABC):
         # 값은 버프 생성 시점에 정해져서 이후 변동되지 않는다.
         self.value = value_override if value_override is not None else data.value
         self.value_type = data.value_type
+        self.value_2 = data.value_2
 
         self.uid = self.build_uid(
             given_by, applied_to, data.buff_class_name, self.value
@@ -179,6 +180,7 @@ class BuffBase(abc.ABC):
         applied_to: CharacterId,
         value: int = 0,
         value_type: Optional[ValueType] = None,
+        value_2: int = 0,
         condition: Optional[Condition] = None,
         reference_buff_id: Optional[str] = None,
     ) -> Self:
@@ -192,6 +194,7 @@ class BuffBase(abc.ABC):
         obj.given_by = given_by
         obj.applied_to = applied_to
         obj.value = value
+        obj.value_2 = value_2
         obj.value_type = value_type
         obj.duration = BuffDurationCounter(None, None, None)
         obj.condition = condition

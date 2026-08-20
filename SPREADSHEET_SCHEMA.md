@@ -24,8 +24,10 @@
 | `duration_turn_value`              | 지속 턴 수. 비우면 `None`(턴 지속 없음)                                                     |
 | `duration_count_value`             | 지속 횟수. 비우면 `None`(횟수 지속 없음)                                                     |
 | `duration_count_deduct_condition`  | 횟수 차감 시점: `공격 시` / `피격 시` (`BuffCountDeductCondition`)                          |
-| `value_type`                       | `정수` / `퍼센트`. **비우면 `value`는 무시되고 항상 0으로 처리된다** — 값이 필요 없는 순수 마커 버프는 비워둔다.       |
-| `value`                            | 수치 (버프 클래스마다 의미가 다름 — 각 클래스 docstring 참고)                                       |
+| `value_type_0`                     | `정수` / `퍼센트`. **비우면 `value_0`은 무시되고 항상 0으로 처리된다** — 값이 필요 없는 순수 마커 버프는 비워둔다. 데이터클래스 필드명은 `value_type`(스킬 효과의 `value_type_N`과 이름을 맞추기 위한 시트 전용 0-index 접미사이며, `buff_name`/`buff_class_name`과 동일하게 시트 컬럼명과 필드명이 다르다). |
+| `value_0`                          | 수치 (버프 클래스마다 의미가 다름 — 각 클래스 docstring 참고). 데이터클래스 필드명은 `value`                  |
+| `value_1`                          | 두 번째 수치가 필요한 버프 전용(트레이드오프의 반대쪽 비율, 반격 비율과 다른 분담 비율, 임계값 등). 해석(퍼센트/정수)은 `value_type_0`이 아니라 각 버프 클래스가 고정으로 정한다. 대부분의 버프는 비워둔다(비우면 0). 데이터클래스 필드명은 `value_2` |
+| `value_type_1`                     | `value_1`이 무엇을 의미하는지 사람이 읽기 위한 참고용 표기(`정수`/`퍼센트`) — 코드가 실제로 검증/분기하지는 않는다(`value_1`의 해석은 버프 클래스가 고정)                |
 | `condition`                        | 적용 조건 클래스 이름 ([Condition 클래스 참고](#condition-클래스-참고)). 비우면 조건 없이 항상 적용            |
 | `condition_value`                  | `condition`이 참조하는 정수값 (예: 퍼센트 임계값, 명수 등 — 조건 클래스마다 의미가 다름)                       |
 | `is_debuff`                        | 디버프 여부 (boolean). `TargetHasDebuffCondition` 등에서 조회                             |
@@ -46,8 +48,10 @@
 |--------------------|-------------------------------------------------------|
 | `id`                | 버프 모디파이어 id (고유)                                       |
 | `buff_name`         | 버프 클래스 이름 (위 "버프" 시트와 동일한 `BuffBase` 구현체를 그대로 재사용)      |
-| `value_type`        | `정수` / `퍼센트`                                          |
-| `value`             | 수치                                                    |
+| `value_type_0`      | `정수` / `퍼센트`. 데이터클래스 필드명은 `value_type`                    |
+| `value_0`           | 수치. 데이터클래스 필드명은 `value`                                 |
+| `value_1`           | 두 번째 수치가 필요한 버프 전용. "버프" 시트의 `value_1`과 동일한 목적/규칙. 데이터클래스 필드명은 `value_2` |
+| `value_type_1`      | `value_1`의 참고용 표기(`정수`/`퍼센트`). "버프" 시트의 `value_type_1`과 동일 |
 | `condition`         | 적용 조건 클래스 이름 (선택)                                      |
 | `condition_value`   | `condition`이 참조하는 정수값                                  |
 | `description`       | 표시용 설명                                                 |

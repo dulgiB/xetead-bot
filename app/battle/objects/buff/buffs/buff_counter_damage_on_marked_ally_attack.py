@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.buff.reactive_damage import apply_pure_damage_modifiers_to
-from battle.objects.define import BuffApplyTiming, ValueSourceType
+from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
     """holder의 사거리 내 아군이 누군가를 공격할 때 발동한다. 그 공격자가
     reference_buff_id(예: 대미지_트레이드오프_버프)를 보유하고 있다면, holder도 그
-    공격의 대상에게 홀더의 공격 굴림 _PERCENT%만큼 추가 대미지를 입힌다.
+    공격의 대상에게 홀더의 공격 굴림 percent%만큼 추가 대미지를 입힌다.
 
     BuffContainer.on_ally_in_range_attacked()는 이 effect의 공격 대상
     (target_id)을 attacker_or_target으로 넘긴다. 실제 공격자가
@@ -28,7 +28,8 @@ class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
     받는 "받는 대미지" 버프가 정상 반영되어야 한다.
     apply_pure_damage_modifiers_to()로 이를 반영한다(reactive_damage.py 참고)."""
 
-    _PERCENT: ClassVar[int] = 60
+    # "버프" 시트의 value(value_type=퍼센트)에서 온다.
+    percent: int
     reference_buff_id: str
     # 표시용 라벨. 여러 캐릭터가 이 클래스를 재사용할 수 있으므로 특정
     # 캐릭터의 스킬명을 하드코딩하지 않고, 이 버프를 등록한 스프레드시트
@@ -68,7 +69,7 @@ class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
             target_id=target_id,
             value_source=ValueSourceType.STAT_ATK_ROLL,
             source_name=label,
-            coefficient_value=self._PERCENT,
+            coefficient_value=self.percent,
             source_label=label,
         )
         apply_pure_damage_modifiers_to(
@@ -78,7 +79,8 @@ class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
 
 class BuffCounterDamageOnMarkedAllyAttack(BuffBase):
     """사거리 내에서 reference_buff_id로 지정된 아군이 누군가를 공격할
-    때마다, 자신도 그 대상에게 추가 대미지를 입히는 버프."""
+    때마다, 자신도 그 대상에게 추가 대미지를 입히는 버프. 추가 대미지
+    비율은 "버프" 시트의 value 컬럼(반드시 value_type=퍼센트)으로 관리한다."""
 
     @property
     def timing(self) -> BuffApplyTiming:
@@ -86,8 +88,11 @@ class BuffCounterDamageOnMarkedAllyAttack(BuffBase):
 
     def create_event(self) -> CounterDamageOnMarkedAllyAttackEvent:
         assert self.reference_buff_id is not None
+        if self.value_type != ValueType.PERCENT:
+            raise ValueError(self.value_type)
         return CounterDamageOnMarkedAllyAttackEvent(
             condition=self.condition,
+            percent=self.value,
             reference_buff_id=self.reference_buff_id,
             label=self.id,
         )

@@ -60,8 +60,9 @@ def _buff_dict() -> dict[str, BuffData]:
                 "duration_turn_value": "",
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
-                "value": "",
-                "value_type": "",
+                "value_0": 50,
+                "value_type_0": "퍼센트",
+                "value_1": 80,
                 "condition": "",
                 "condition_value": "",
                 "description": (
@@ -79,8 +80,8 @@ def _buff_dict() -> dict[str, BuffData]:
                 "duration_turn_value": 2,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
-                "value": -20,
-                "value_type": "퍼센트",
+                "value_0": -20,
+                "value_type_0": "퍼센트",
                 "condition": "",
                 "condition_value": "",
                 "description": "받는 대미지가 20% 감소한다.",
@@ -95,8 +96,8 @@ def _buff_dict() -> dict[str, BuffData]:
                 "duration_turn_value": 1,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
-                "value": "",
-                "value_type": "",
+                "value_0": "",
+                "value_type_0": "",
                 "condition": "",
                 "condition_value": "",
                 "description": "적의 공격과 부가 효과를 자신에게 유도",
@@ -601,6 +602,9 @@ class TestCompanionGuardianSplitAndCounter:
             uid=BuffUid(OWNER, OWNER, "BuffCompanionGuardian"),
             given_by=OWNER,
             applied_to=OWNER,
+            value=50,
+            value_type=ValueType.PERCENT,
+            value_2=80,
         )
         event = buff.create_event()
         assert event.label == "다른이름버프"
