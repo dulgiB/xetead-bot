@@ -36,8 +36,8 @@ def _buff_dict() -> dict[str, BuffData]:
                 "duration_turn_value": "",
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
-                "value": "",
-                "value_type": "",
+                "value_0": "",
+                "value_type_0": "",
                 "condition": "",
                 "condition_value": "",
                 "description": "",
@@ -54,8 +54,8 @@ def _passive_skill_dict() -> dict[str, PassiveSkillData]:
             {
                 "id": "PassiveBuff",
                 "buff_name": "BuffReceivedDamage",
-                "value": -5,
-                "value_type": "퍼센트",
+                "value_0": -5,
+                "value_type_0": "퍼센트",
             }
         ),
     }

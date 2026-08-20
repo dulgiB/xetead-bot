@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING
 
 from battle.core.commands.models import HealCalculateData
 from battle.objects.buff.buff_base import BuffAddData, BuffBase
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class HealAndBuffStackOnDealingDamageEvent(BuffEvent):
     """holder가 대미지를 줄 때마다 그 대미지의 heal_percent%만큼 자신을
-    회복시키고, 회복량이 _STACK_HEAL_THRESHOLD 이상이거나 대상이 holder와
+    회복시키고, 회복량이 stack_heal_threshold 이상이거나 대상이 holder와
     같은 진영(아군)이면 reference_buff_id 버프를 1스택 부여한다.
     ActionType.USE_ITEM(대미지를 주는 아이템 사용)은 직접 공격/스킬이
     아니므로 발동시키지 않는다.
@@ -32,12 +32,13 @@ class HealAndBuffStackOnDealingDamageEvent(BuffEvent):
     holder의 한 번의 공격이 단일 대상만 노린다고 가정한다 — 여러 대상을
     동시에 타격하는 효과라면 GIVEN_DAMAGE가 이 effect의 전체 대미지를
     합산하므로 대상별 회복량을 구분해서 판정할 수 없다.
-    """
 
-    _STACK_HEAL_THRESHOLD: ClassVar[int] = 5
+    heal_percent는 "버프_패시브" 시트의 value(value_type=퍼센트)에서,
+    stack_heal_threshold는 value_2(항상 정수 회복량으로 해석)에서 온다."""
 
     source_name: str
     heal_percent: int
+    stack_heal_threshold: int
     reference_buff_id: str
 
     @property
@@ -106,16 +107,16 @@ class HealAndBuffStackOnDealingDamageEvent(BuffEvent):
                 applied_to=holder,
                 buff_id=self.reference_buff_id,
                 gate_value_source=ValueSourceType.GIVEN_HEAL,
-                gate_value=0 if is_ally else self._STACK_HEAL_THRESHOLD,
+                gate_value=0 if is_ally else self.stack_heal_threshold,
             )
         )
 
 
 class BuffHealAndBuffStackOnDealingDamage(BuffBase):
     """대미지를 줄 때마다 그 대미지의 value%만큼 자신을 회복시키고, 그
-    회복량이 일정 수준 이상이거나(내부 임계값 고정) 대상이 자신과 같은
-    진영이면 reference_buff_id 버프를 1스택 부여하는 패시브 모디파이어.
-    "버프_패시브" 시트의 buff_mod_event 경로 전용이다."""
+    회복량이 value_2 이상이거나 대상이 자신과 같은 진영이면
+    reference_buff_id 버프를 1스택 부여하는 패시브 모디파이어. "버프_패시브"
+    시트의 buff_mod_event 경로 전용이다."""
 
     @property
     def timing(self) -> BuffApplyTiming:
@@ -129,5 +130,6 @@ class BuffHealAndBuffStackOnDealingDamage(BuffBase):
             condition=self.condition,
             source_name=self.id,
             heal_percent=self.value,
+            stack_heal_threshold=self.value_2,
             reference_buff_id=self.reference_buff_id,
         )

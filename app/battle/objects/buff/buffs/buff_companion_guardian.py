@@ -1,12 +1,12 @@
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, ClassVar, Optional
+from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.companion import is_companion_alive
-from battle.objects.define import BuffApplyTiming, ValueSourceType
+from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
 from battle.objects.models import CharacterId, FloatValueModifier
 
 if TYPE_CHECKING:
@@ -17,13 +17,18 @@ if TYPE_CHECKING:
 class CompanionGuardianEvent(BuffEvent):
     """holder(소환자)가 대미지를 받을 때 발동한다. 동료가 살아 있을 때만
     (is_companion_alive) 두 가지 부수 효과를 낸다:
-    1) 받는 대미지를 holder/동료가 절반씩(_SPLIT_PERCENT) 나눠 받는다.
-    2) 공격자에게 holder의 공격 굴림 _COUNTER_PERCENT%만큼 반격 대미지를 입힌다.
+    1) 받는 대미지를 holder/동료가 split_percent%씩 나눠 받는다.
+    2) 공격자에게 holder의 공격 굴림 counter_percent%만큼 반격 대미지를 입힌다.
     동료가 없으면 아무 일도 하지 않는다(패시브 설명의 "동료가 필드에 남아
-    있는 한"을 그대로 구현)."""
+    있는 한"을 그대로 구현).
 
-    _SPLIT_PERCENT: ClassVar[int] = 50
-    _COUNTER_PERCENT: ClassVar[int] = 80
+    두 비율은 "버프" 시트의 value(분담 비율)/value_2(반격 비율) 컬럼(둘 다
+    퍼센트로 해석)에서 온다."""
+
+    # "버프" 시트의 value(value_type=퍼센트)에서 온다.
+    split_percent: int
+    # "버프" 시트의 value_2(항상 퍼센트로 해석)에서 온다.
+    counter_percent: int
 
     # 계산식 modifier의 source_name으로 쓸 표시 라벨. "버프" 시트에 등록된
     # 실제 버프 이름을 그대로 보여줘야 하므로, BuffCompanionGuardian.create_event()가
@@ -62,7 +67,7 @@ class CompanionGuardianEvent(BuffEvent):
         )
         split_modifier = FloatValueModifier(
             source_name=self.label,
-            value=-self._SPLIT_PERCENT,
+            value=-self.split_percent,
             applies_to_fixed=True,
         )
         shared_calcs: list[DamageCalculateData] = []
@@ -114,23 +119,29 @@ class CompanionGuardianEvent(BuffEvent):
                     target_id=attacker_or_target,
                     value_source=ValueSourceType.STAT_ATK_ROLL,
                     source_name=counter_label,
-                    coefficient_value=self._COUNTER_PERCENT,
+                    coefficient_value=self.counter_percent,
                     source_label=counter_label,
                 )
             )
 
 
 class BuffCompanionGuardian(BuffBase):
-    """CompanionBuff1: 동료가 필드에 살아 있는 한, 받는 대미지를 동료와 절반씩 나누고
-    자신을 공격한 대상에게 반격 대미지를 입힌다. 전투 시작 시 1회 부여되는
-    영구(패시브) 버프 — 지속시간이 없으므로 duration_turn_value/
-    duration_count_value를 비워 등록한다."""
+    """CompanionBuff1: 동료가 필드에 살아 있는 한, 받는 대미지를 value%씩
+    나누고 자신을 공격한 대상에게 공격 굴림 value_2%만큼 반격 대미지를
+    입힌다(둘 다 퍼센트로 해석). 전투 시작 시 1회 부여되는 영구(패시브)
+    버프 — 지속시간이 없으므로 duration_turn_value/duration_count_value를
+    비워 등록한다."""
 
     @property
     def timing(self) -> BuffApplyTiming:
         return BuffApplyTiming.ON_ACTION
 
     def create_event(self) -> BuffEvent:
+        if self.value_type != ValueType.PERCENT:
+            raise ValueError(self.value_type)
         return CompanionGuardianEvent(
-            condition=self.condition, label=self.display_id_label()
+            condition=self.condition,
+            label=self.display_id_label(),
+            split_percent=self.value,
+            counter_percent=self.value_2,
         )

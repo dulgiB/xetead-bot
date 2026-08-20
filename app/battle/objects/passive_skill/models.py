@@ -68,6 +68,7 @@ class PassiveSkillData:
                 applied_to=_TEMPLATE_CHARACTER_ID,
                 value=passive_buff_data.value,
                 value_type=passive_buff_data.value_type,
+                value_2=passive_buff_data.value_2,
                 condition=passive_buff_data.condition,
                 reference_buff_id=passive_buff_data.reference_buff_id,
             )

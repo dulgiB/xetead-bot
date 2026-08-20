@@ -598,6 +598,342 @@ class TestBuffNoDamage:
         assert ctx.characters[CharacterId("적군")].status.curr_hp == initial_hp
 
 
+class TestBuffGuardReflect:
+    """BuffGuardReflect: 물리 대미지 80% 경감 + 마법 대미지 무효화 +
+    경감 전 원래 대미지 50% 반사(물리/마법 공통). 도트 등 FIXED 값 파생
+    대미지에도 경감이 적용되고, 같은 스킬이 함께 부여하는 부가 효과(버프)는
+    대미지 경감과 무관하게 그대로 적용되어야 한다."""
+
+    @pytest.fixture
+    def ctx(self):
+        guard_buff = make_buff_data(
+            "수호",
+            "BuffGuardReflect",
+            duration_turn_value=None,
+            value_type=ValueType.PERCENT,
+            value=50,
+        )
+        guard_skill = make_buff_skill("수호 스킬", "수호")
+        fixed_damage_skill = SkillData(
+            id="고정 대미지 스킬",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(
+                    value_source=ValueSourceType.FIXED,
+                    value=100,
+                    value_type=ValueType.INTEGER,
+                    buff_id=None,
+                    buff_add_timing=None,
+                )
+            ],
+            description="",
+        )
+        marker_buff = make_buff_data(
+            "표식", "BuffReceivedDamage", value_type=ValueType.PERCENT, value=0
+        )
+        dot_buff = make_buff_data("독", "BuffDamageOverTime", value=50)
+        combined_skill = SkillData(
+            id="복합 스킬",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(
+                    value_source=ValueSourceType.FIXED,
+                    value=100,
+                    value_type=ValueType.INTEGER,
+                    buff_id=None,
+                    buff_add_timing=None,
+                ),
+                SkillEffectAddBuff(
+                    value_source=None,
+                    value=None,
+                    value_type=None,
+                    buff_id="표식",
+                    buff_add_timing=None,
+                ),
+            ],
+            description="",
+        )
+        return make_context(
+            guard_buff,
+            marker_buff,
+            dot_buff,
+            skill_dict={
+                "수호 스킬": guard_skill,
+                "고정 대미지 스킬": fixed_damage_skill,
+                "복합 스킬": combined_skill,
+            },
+        )
+
+    def test_physical_damage_reduced_by_80_percent_and_reflects_half_of_original(
+        self, ctx
+    ):
+        """물리 공격자는 100의 20%(부동소수점 오차로 19)만 대미지를 입히지만,
+        반사량은 경감 전 원래 대미지(100) 기준 50%인 50이다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="수호 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수", skill_1_id="고정 대미지 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[수호 스킬/적군]", ctx)
+        )
+        attacker_hp_before = ctx.characters[CharacterId("공격수")].status.curr_hp
+
+        manager.process_command(
+            parse_character_command(
+                CharacterId("공격수"), "[고정 대미지 스킬/적군]", ctx
+            )
+        )
+
+        assert ctx.characters[CharacterId("적군")].status.curr_hp == 100 - 19
+        assert (
+            attacker_hp_before - ctx.characters[CharacterId("공격수")].status.curr_hp
+            == 50
+        )
+
+    def test_magic_damage_fully_nullified_but_still_reflects_half_of_original(
+        self, ctx
+    ):
+        """마법 공격은 완전히 무효화되어 대상 HP가 그대로지만, 반사량은
+        경감(무효화) 전 원래 대미지(100) 기준 50%인 50이라 공격자는 그만큼
+        피해를 입는다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="수호 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset(
+                "마법공격수", is_magic_attacker=True, skill_1_id="고정 대미지 스킬"
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[수호 스킬/적군]", ctx)
+        )
+        attacker_hp_before = ctx.characters[CharacterId("마법공격수")].status.curr_hp
+
+        manager.process_command(
+            parse_character_command(
+                CharacterId("마법공격수"), "[고정 대미지 스킬/적군]", ctx
+            )
+        )
+
+        assert ctx.characters[CharacterId("적군")].status.curr_hp == 100
+        assert (
+            attacker_hp_before
+            - ctx.characters[CharacterId("마법공격수")].status.curr_hp
+            == 50
+        )
+
+    def test_dot_damage_is_also_reduced(self, ctx):
+        """도트(고정값) 대미지도 물리 공격과 동일하게 80% 경감된다."""
+        ctx.add_character(
+            get_test_preset("독사"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("대상"),
+                applied_to=CharacterId("대상"),
+                buff_id="수호",
+            )
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("독사"),
+                applied_to=CharacterId("대상"),
+                buff_id="독",
+            )
+        )
+        initial_hp = ctx.characters[CharacterId("대상")].status.curr_hp
+
+        ctx.on_finish_round()
+
+        # 독 50 고정 대미지 × (1 - 80%) = 부동소수점 오차로 9.
+        assert initial_hp - ctx.characters[CharacterId("대상")].status.curr_hp == 9
+
+    def test_attached_debuff_still_applies_despite_physical_reduction(self, ctx):
+        """같은 스킬이 함께 부여하는 부가 효과(디버프)는 대미지 경감과
+        무관하게 정상적으로 적용된다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="수호 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수", skill_1_id="복합 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[수호 스킬/적군]", ctx)
+        )
+        manager.process_command(
+            parse_character_command(CharacterId("공격수"), "[복합 스킬/적군]", ctx)
+        )
+
+        assert ctx.characters[CharacterId("적군")].status.curr_hp == 100 - 19
+        assert any(
+            b.id == "표식"
+            for b in ctx.buff_container.get_buffs_by(CharacterId("적군"), None)
+        )
+
+    def test_attached_debuff_still_applies_despite_magic_nullification(self, ctx):
+        """마법 공격으로 대미지가 완전히 무효화되어도 함께 부여되는 부가
+        효과(디버프)는 그대로 적용된다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="수호 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset(
+                "마법공격수", is_magic_attacker=True, skill_1_id="복합 스킬"
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[수호 스킬/적군]", ctx)
+        )
+        manager.process_command(
+            parse_character_command(CharacterId("마법공격수"), "[복합 스킬/적군]", ctx)
+        )
+
+        assert ctx.characters[CharacterId("적군")].status.curr_hp == 100
+        assert any(
+            b.id == "표식"
+            for b in ctx.buff_container.get_buffs_by(CharacterId("적군"), None)
+        )
+
+    def test_reflect_percent_is_configurable_via_value(self):
+        """반사 배율은 하드코딩이 아니라 버프의 value(퍼센트)를 그대로 쓴다 —
+        50% 대신 30%로 등록하면 반사량도 그에 맞게 원래 대미지의 30%가
+        된다."""
+        buff = make_buff_data(
+            "수호_30",
+            "BuffGuardReflect",
+            duration_turn_value=None,
+            value_type=ValueType.PERCENT,
+            value=30,
+        )
+        skill = make_buff_skill("수호_30 스킬", "수호_30")
+        fixed_damage_skill = SkillData(
+            id="고정 대미지 스킬_30",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=0,
+            effects=[
+                SkillEffectDamage(
+                    value_source=ValueSourceType.FIXED,
+                    value=100,
+                    value_type=ValueType.INTEGER,
+                    buff_id=None,
+                    buff_add_timing=None,
+                )
+            ],
+            description="",
+        )
+        ctx = make_context(
+            buff,
+            skill_dict={
+                "수호_30 스킬": skill,
+                "고정 대미지 스킬_30": fixed_damage_skill,
+            },
+        )
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset("버퍼", skill_1_id="수호_30 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수", skill_1_id="고정 대미지 스킬_30"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("버퍼"), "[수호_30 스킬/적군]", ctx)
+        )
+        attacker_hp_before = ctx.characters[CharacterId("공격수")].status.curr_hp
+        manager.process_command(
+            parse_character_command(
+                CharacterId("공격수"), "[고정 대미지 스킬_30/적군]", ctx
+            )
+        )
+
+        # 경감 전 원래 대미지(100)의 30% = 30이 반사된다(50%였다면 50).
+        assert (
+            attacker_hp_before - ctx.characters[CharacterId("공격수")].status.curr_hp
+            == 30
+        )
+
+    def test_non_percent_value_type_is_rejected(self):
+        """value_type이 퍼센트가 아니면 잘못된 배율로 조용히 계산하는 대신
+        명시적으로 에러를 발생시켜야 한다."""
+        buff = make_buff_data(
+            "수호_정수",
+            "BuffGuardReflect",
+            duration_turn_value=None,
+            value_type=ValueType.INTEGER,
+            value=50,
+        )
+        ctx = make_context(buff)
+        ctx.add_character(
+            get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("대상"),
+                applied_to=CharacterId("대상"),
+                buff_id="수호_정수",
+            )
+        )
+
+        buff_instance = ctx.buff_container.get_buffs_by(
+            CharacterId("대상"), BuffApplyTiming.ON_ACTION
+        )[0]
+        with pytest.raises(ValueError):
+            buff_instance.create_event()
+
+
 class TestBuffNoHeal:
     """BuffNoHeal: 회복 시 회복량을 0으로 만든다."""
 

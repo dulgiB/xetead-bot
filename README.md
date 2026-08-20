@@ -431,6 +431,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `BuffNoHeal`                              | 회복 1회 무효                                    |
 | `BuffTaunt`                               | 도발 — 홀더의 모든 공격이 도발자를 향함                      |
 | `BuffReflect`                             | 반사 — 받은 대미지를 공격자에게 되돌림                        |
+| `BuffGuardReflect`                        | 물리 대미지 80% 경감 + 마법 대미지 무효화 + 경감 전 원래 대미지 50% 공격자에게 반사 (물리/마법 공통, 도트 등 FIXED 값 파생 대미지 포함) |
 | `BuffSacrifice`                           | 희생 방어 — 보호 대상이 받을 공격을 대신 맞음                   |
 | `BuffFormation`                           | 진형 밀집 시 받는 대미지 감소                            |
 | `BuffFracture`                            | [균열] 적층형 순수 마커 디버프 (다른 효과가 스택을 조회해 활용)        |

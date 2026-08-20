@@ -34,8 +34,8 @@ def _buff_dict() -> dict[str, BuffData]:
                 "duration_turn_value": "",
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
-                "value": "",
-                "value_type": "",
+                "value_0": "",
+                "value_type_0": "",
                 "condition": "",
                 "condition_value": "",
                 "description": "패시브로 축적되는 저주. 해제할 수 없다. "
@@ -51,8 +51,8 @@ def _buff_dict() -> dict[str, BuffData]:
                 "duration_turn_value": 1,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
-                "value": "",
-                "value_type": "",
+                "value_0": "",
+                "value_type_0": "",
                 "condition": "",
                 "condition_value": "",
                 "description": "적의 공격과 부가 효과를 자신에게 유도 (도발 공격)",
@@ -69,8 +69,8 @@ def _passive_buff_dict() -> dict[str, PassiveBuffData]:
             {
                 "id": "PassiveBuff",
                 "buff_name": "BuffReceivedDamage",
-                "value": -5,
-                "value_type": "퍼센트",
+                "value_0": -5,
+                "value_type_0": "퍼센트",
             }
         ),
     }

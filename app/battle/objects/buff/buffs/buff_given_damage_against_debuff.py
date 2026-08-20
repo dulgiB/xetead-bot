@@ -52,13 +52,12 @@ class GivenDamageAgainstDebuffModEvent(BuffEvent):
 
 class BuffGivenDamageAgainstDebuff(BuffBase):
     """디버프가 걸린 적을 공격하면 주는 대미지가 value% 증가한다. 대상에게
-    [균열] 디버프까지 있으면 추가로 FRACTURE_BONUS_PERCENT%만큼 더 증가한다.
+    [균열] 디버프까지 있으면 추가로 value_2%만큼 더 증가한다(항상 퍼센트로
+    해석).
 
     반드시 condition=TargetHasDebuffCondition과 함께 등록해야 한다 — 대상에게
     디버프가 전혀 없으면 이 버프 자체가 애초에 발동하지 않아야 하기 때문이다.
     """
-
-    FRACTURE_BONUS_PERCENT: ClassVar[int] = 5
 
     @property
     def timing(self) -> BuffApplyTiming:
@@ -70,7 +69,5 @@ class BuffGivenDamageAgainstDebuff(BuffBase):
         return GivenDamageAgainstDebuffModEvent(
             condition=self.condition,
             value=FloatValueModifier(source_name=self.id, value=self.value),
-            bonus_value=FloatValueModifier(
-                source_name=self.id, value=self.FRACTURE_BONUS_PERCENT
-            ),
+            bonus_value=FloatValueModifier(source_name=self.id, value=self.value_2),
         )
