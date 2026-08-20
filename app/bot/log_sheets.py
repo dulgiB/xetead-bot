@@ -686,7 +686,7 @@ def append_ledger_row(
             break
     if target_row is None:
         target_row = len(all_values) + 1
-    row_values = [date_str, char_name, reason, amount]
+    row_values: list[str | int] = [date_str, char_name, reason, amount]
     if target_row <= ws.row_count:
         ws.update(
             [row_values],
