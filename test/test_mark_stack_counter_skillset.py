@@ -429,7 +429,7 @@ class TestPassiveSkill:
         reply, calc = format_battle_reply(ctx, caster, ctx.results[before:])
 
         assert reply == ("▹ 적군 | -100 → 900/1000\n▹ 적군 | [Mark]×1 부여 → 최종 1")
-        assert calc == "【공격 ▸ 적군】\n▹ 적군 | (100 + 0[0d6]) → -100"
+        assert calc == "**【공격 ▸ 적군】**\n▹ 적군 | (100 + 0[0d6]) → -100"
 
 
 class TestCost2Skill:
@@ -736,7 +736,7 @@ class TestMarkCounterBuff:
             "▹ 적군 | 2열로 이동\n▹ 적군 | -140 → 860/1000 [MarkCounter: MarkStacker]"
         )
         assert calc == (
-            "【이동 ▸ 2열】\n"
+            "**【이동 ▸ 2열】**\n"
             "▹ 적군 | (100 + 0[0d6]) × (0.7[MarkCounter 계수] × 2[Mark]) → -140"
         )
 

@@ -1186,7 +1186,7 @@ def _format_granted_buffs_info(
     lines = "\n".join(
         f"▹ [{buff_id}]: {description}" for buff_id, description in descriptions.items()
     )
-    return f"【버프 정보】\n{lines}"
+    return f"**【버프 정보】**\n{lines}"
 
 
 # ---------------------------------------------------------------------------

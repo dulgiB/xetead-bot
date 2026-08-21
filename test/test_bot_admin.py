@@ -279,7 +279,7 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
 
 def test_enemy_post_action_summary_lists_unique_granted_buff_info(monkeypatch):
     """적 공격 정산 게시물 하단에는 이번 정산에서 새로 부여된 버프의 설명을
-    "【버프 정보】\n▹ [버프id]: 설명" 형식으로 모아 보여줘야 한다. 같은
+    "**【버프 정보】**\n▹ [버프id]: 설명" 형식으로 모아 보여줘야 한다. 같은
     버프(열 광역기로 두 명에게 동시에 부여)가 여러 명에게 적용돼도 설명은
     buff_id 기준으로 한 번만 나와야 한다."""
     monkeypatch.setattr(
@@ -335,7 +335,7 @@ def test_enemy_post_action_summary_lists_unique_granted_buff_info(monkeypatch):
     _cmd_advance_phase(state)  # → 아군 행동
     to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
 
-    assert to_post_action.game_post_text.count("【버프 정보】") == 1
+    assert to_post_action.game_post_text.count("**【버프 정보】**") == 1
     assert (
         to_post_action.game_post_text.count(
             "▹ [테스트디버프]: 받는 대미지가 15% 증가한다."
@@ -437,7 +437,7 @@ def test_proxy_pre_action_reply_prefixes_each_part_with_caster_name():
     )
 
     assert reply_text == (
-        "▹ 적 캐릭터 | 3열로 이동\n\n적 캐릭터 【공격 ▸ 유효 캐릭터】"
+        "▹ 적 캐릭터 | 3열로 이동\n\n적 캐릭터 **【공격 ▸ 유효 캐릭터】**"
     )
 
 
@@ -895,7 +895,7 @@ def test_character_command_reply_merges_calc_into_single_cw_post(monkeypatch):
     assert "@ally_acct" not in call["spoiler_text"]
 
     assert call["status"].startswith("@ally_acct ")
-    assert "【공격 ▸ 적 캐릭터】" in call["status"]
+    assert "**【공격 ▸ 적 캐릭터】**" in call["status"]
     assert f"→ -{dealt}" in call["status"]
 
 
@@ -1509,7 +1509,7 @@ def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_cal
     assert "종료" in game_post
     assert ctx.characters[CharacterId("A")].status.curr_hp == 35
     assert "승자: 2팀 (B)" in game_post
-    assert "【전투 종료 처리】" in game_post
+    assert "**【전투 종료 처리】**" in game_post
     assert "→" in game_post
     assert state.practice is None
 

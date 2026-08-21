@@ -158,7 +158,7 @@ def test_taunted_attacker_header_shows_original_and_redirected_target():
 
     reply, calc = format_battle_reply(ctx, attacker_id, new_results)
 
-    assert calc.startswith(f"【공격 ▸ {original_target_id.name} ▸ {taunter_id.name}】")
+    assert calc.startswith(f"**【공격 ▸ {original_target_id.name} ▸ {taunter_id.name}】**")
     assert f"▹ {taunter_id.name} |" in reply
     assert original_target_id.name not in reply
 
@@ -188,7 +188,7 @@ def test_attack_command_separates_damage_and_calculation():
     assert "↳" not in reply
 
     calc_lines = calc.splitlines()
-    assert calc_lines[0] == "【공격 ▸ 적군 1】"
+    assert calc_lines[0] == "**【공격 ▸ 적군 1】**"
     assert calc_lines[1].startswith("▹ 적군 1 | ")
     assert f"→ -{100 - target.status.curr_hp}" in calc_lines[1]
 
@@ -221,7 +221,7 @@ def test_repeated_attacks_on_same_target_merge_into_one_summary_line():
         f"▹ 적군 1 | -{total_damage} → {target.status.curr_hp}/500"
     ]
 
-    calc_headers = [line for line in calc.splitlines() if line == "【공격 ▸ 적군 1】"]
+    calc_headers = [line for line in calc.splitlines() if line == "**【공격 ▸ 적군 1】**"]
     assert len(calc_headers) == 3
 
 
@@ -425,7 +425,7 @@ def test_column_targeted_skill_calc_header_shows_input_column():
     reply, calc = _run(ctx, manager, caster_id, "[광역기/1열]")
 
     assert reply == "▹ 적군 1 | -9 → 91/100"
-    assert calc == "【광역기 ▸ 1열】\n▹ 적군 1 | 6 × 1.5[계수] → -9"
+    assert calc == "**【광역기 ▸ 1열】**\n▹ 적군 1 | 6 × 1.5[계수] → -9"
 
 
 def test_move_effect_inside_skill_shows_target_and_position():
@@ -515,7 +515,7 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
     reply, calc = _run(ctx, manager, caster_id, "[저주 방출/적군 1]")
 
     assert reply == ("▹ 아군 1 | [저주]×2 소모 → 최종 1\n▹ 적군 1 | -2 → 98/100")
-    assert calc == "【저주 방출 ▸ 적군 1】\n▹ 적군 1 | 2[저주] × 1 → -2"
+    assert calc == "**【저주 방출 ▸ 적군 1】**\n▹ 적군 1 | 2[저주] × 1 → -2"
 
 
 def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
@@ -580,7 +580,7 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
     # STAT_ATK(다이스 없음) 6 × 1.5[계수] = 9, 스택 소모 5 × 3[계수] = 15 → 합계 24
     assert reply == ("▹ 아군 1 | [저주]×5 소모 → 최종 0\n▹ 적군 1 | -24 → 76/100")
     assert (
-        calc == "【이중 타격 ▸ 적군 1】\n▹ 적군 1 | 6 × 1.5[계수] + 5[저주] × 3 → -24"
+        calc == "**【이중 타격 ▸ 적군 1】**\n▹ 적군 1 | 6 × 1.5[계수] + 5[저주] × 3 → -24"
     )
 
 
@@ -614,7 +614,7 @@ def test_multiple_damage_effects_on_same_target_are_merged_into_one_hit():
     reply, calc = _run(ctx, manager, caster_id, "[연타/적군 1]")
 
     assert reply == "▹ 적군 1 | -15 → 85/100"
-    assert calc == "【연타 ▸ 적군 1】\n▹ 적군 1 | 10 + 5 → -15"
+    assert calc == "**【연타 ▸ 적군 1】**\n▹ 적군 1 | 10 + 5 → -15"
 
 
 # ── 라운드 종료 처리(DoT/HoT) 답글 포맷팅 ────────────────────────────────────────
@@ -657,7 +657,7 @@ def _hot_buff_data(*, buff_id: str = "HoT", value: int = 10) -> BuffData:
 
 
 def test_round_end_dot_produces_round_end_processing_block():
-    """라운드 종료 시 발동한 DoT는 "【라운드 종료 처리 ▸ 대상】" 블록으로
+    """라운드 종료 시 발동한 DoT는 "**【라운드 종료 처리 ▸ 대상】**" 블록으로
     나와야 한다."""
     ctx = BattlefieldContext(buff_dict={"DoT": _dot_buff_data(value=10)}, skill_dict={})
     manager = RoundManager(ctx)
@@ -676,7 +676,7 @@ def test_round_end_dot_produces_round_end_processing_block():
         ctx, manager.get_last_round_end_log_entries()
     )
 
-    assert body == "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | -10 → 90/100"
+    assert body == "**【라운드 종료 처리 ▸ 적군 1】**\n▹ 적군 1 | -10 → 90/100"
     assert calc == ""
 
 
@@ -699,7 +699,7 @@ def test_round_end_hot_uses_plus_sign():
         ctx, manager.get_last_round_end_log_entries()
     )
 
-    assert body == "【라운드 종료 처리 ▸ 아군 1】\n▹ 아군 1 | +7 → 57/100"
+    assert body == "**【라운드 종료 처리 ▸ 아군 1】**\n▹ 아군 1 | +7 → 57/100"
     assert calc == ""
 
 
@@ -736,9 +736,9 @@ def test_round_end_groups_multiple_targets_into_separate_blocks():
     )
 
     assert body == (
-        "【라운드 종료 처리 ▸ 적군 1】\n"
+        "**【라운드 종료 처리 ▸ 적군 1】**\n"
         "▹ 적군 1 | -10 → 90/100\n\n"
-        "【라운드 종료 처리 ▸ 아군 1】\n"
+        "**【라운드 종료 처리 ▸ 아군 1】**\n"
         "▹ 아군 1 | +7 → 57/100"
     )
     assert calc == ""
@@ -821,8 +821,8 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
         ctx, manager.get_last_round_end_log_entries()
     )
 
-    assert body == "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | -15 → 85/100"
-    assert calc == "【라운드 종료 처리 ▸ 적군 1】\n▹ 적군 1 | 3[Mark] × 5 → -15"
+    assert body == "**【라운드 종료 처리 ▸ 적군 1】**\n▹ 적군 1 | -15 → 85/100"
+    assert calc == "**【라운드 종료 처리 ▸ 적군 1】**\n▹ 적군 1 | 3[Mark] × 5 → -15"
 
 
 # ── 적 스킬 선언 예고(블라인드/공개) ────────────────────────────────────────
@@ -866,7 +866,7 @@ def test_enemy_skill_preview_shows_description_when_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ 대상에게 고정 피해를 준다."
+    assert reply == "**【스킬_1 ▸ 아군 1】**\n　↳ 대상에게 고정 피해를 준다."
 
 
 def test_enemy_skill_preview_blinds_description_when_not_revealed():
@@ -896,7 +896,7 @@ def test_enemy_skill_preview_blinds_description_when_not_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "【스킬_1 ▸ 아군 1】\n　↳ [효과 미확인]"
+    assert reply == "**【스킬_1 ▸ 아군 1】**\n　↳ [효과 미확인]"
 
 
 def test_skill_preview_omitted_when_show_skill_preview_is_false():
@@ -927,7 +927,7 @@ def test_skill_preview_omitted_when_show_skill_preview_is_false():
 
     # 대미지는 POST에서 정산되므로 PRE 선언 시점엔 보여줄 결과 줄이 없다 —
     # 이 경우엔 예외적으로 헤더가 커맨드 접수 확인 역할을 한다.
-    assert reply == "【스킬_1 ▸ 아군 1】"
+    assert reply == "**【스킬_1 ▸ 아군 1】**"
 
 
 def test_mark_skill_revealed_updates_skill_dict_in_place():
@@ -974,7 +974,7 @@ def test_format_eliminated_characters_lists_names_without_trailing_label():
     헤더에서 이미 드러난 정보를 항목마다 반복하면 안 된다."""
     text = format_eliminated_characters([CharacterId("적군 1"), CharacterId("적군 2")])
 
-    assert text == "【탈락】\n▹ 적군 1\n▹ 적군 2"
+    assert text == "**【탈락】**\n▹ 적군 1\n▹ 적군 2"
 
 
 def test_format_eliminated_characters_empty_when_no_one_eliminated():

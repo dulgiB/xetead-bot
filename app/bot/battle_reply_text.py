@@ -160,7 +160,7 @@ def format_eliminated_characters(eliminated: list[CharacterId]) -> str:
     if not eliminated:
         return ""
     lines = "\n".join(f"▹ {char_id.name}" for char_id in eliminated)
-    return f"【탈락】\n{lines}"
+    return f"**【탈락】**\n{lines}"
 
 
 def format_round_end_log_entries(
@@ -177,7 +177,7 @@ def format_round_end_log_entries(
     body_blocks = []
     calc_blocks = []
     for target_name, target_entries in grouped.items():
-        header = f"【라운드 종료 처리 ▸ {target_name}】"
+        header = f"**【라운드 종료 처리 ▸ {target_name}】**"
         lines = []
         calc_lines = []
         for entry in target_entries:
@@ -208,7 +208,7 @@ def format_battle_end_log_entries(
         lines.append(line)
         if calc:
             lines.append(f"　↳ {calc} → {final_value}")
-    header = "【전투 종료 처리】"
+    header = "**【전투 종료 처리】**"
     body = f"{header}\n" + "\n".join(lines)
     calc = ""
     return body, calc
@@ -314,18 +314,18 @@ def _format_header(
 ) -> str:
     if part.type_ == ActionType.MOVE:
         column = part.targets[0]
-        return f"【이동 ▸ {column}열】"
+        return f"**【이동 ▸ {column}열】**"
     if part.type_ == ActionType.ATTACK:
-        return f"【공격 ▸ {_target_label(part.targets, redirect_map)}】"
+        return f"**【공격 ▸ {_target_label(part.targets, redirect_map)}】**"
     if part.type_ == ActionType.SKILL:
         return (
-            f"【{part.skill_id} ▸ "
-            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】"
+            f"**【{part.skill_id} ▸ "
+            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】**"
         )
     if part.type_ == ActionType.USE_ITEM:
         return (
-            f"【{part.item_id} ▸ "
-            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】"
+            f"**【{part.item_id} ▸ "
+            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】**"
         )
     raise ValueError(part.type_)
 
