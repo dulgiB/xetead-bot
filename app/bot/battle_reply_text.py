@@ -421,7 +421,9 @@ def _format_damage_or_heal(
     # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
     final_value = f"{sign}{entry.value}"
     target_name = escape_markdown(entry.target_name)
-    label_suffix = "".join(f" [{escape_markdown(label)}]" for label in entry.source_labels)
+    label_suffix = "".join(
+        f" [{escape_markdown(label)}]" for label in entry.source_labels
+    )
     if entry.hp_after is None:
         # 대미지로 사망해 전장에서 제거된 경우 등 — 잔여 체력을 보여줄 수 없다.
         line = f"▹ {target_name} | {final_value}{label_suffix}"

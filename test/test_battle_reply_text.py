@@ -158,7 +158,9 @@ def test_taunted_attacker_header_shows_original_and_redirected_target():
 
     reply, calc = format_battle_reply(ctx, attacker_id, new_results)
 
-    assert calc.startswith(f"**【공격 ▸ {original_target_id.name} ▸ {taunter_id.name}】**")
+    assert calc.startswith(
+        f"**【공격 ▸ {original_target_id.name} ▸ {taunter_id.name}】**"
+    )
     assert f"▹ {taunter_id.name} |" in reply
     assert original_target_id.name not in reply
 
@@ -221,7 +223,9 @@ def test_repeated_attacks_on_same_target_merge_into_one_summary_line():
         f"▹ 적군 1 | -{total_damage} → {target.status.curr_hp}/500"
     ]
 
-    calc_headers = [line for line in calc.splitlines() if line == "**【공격 ▸ 적군 1】**"]
+    calc_headers = [
+        line for line in calc.splitlines() if line == "**【공격 ▸ 적군 1】**"
+    ]
     assert len(calc_headers) == 3
 
 
@@ -580,7 +584,8 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
     # STAT_ATK(다이스 없음) 6 × 1.5[계수] = 9, 스택 소모 5 × 3[계수] = 15 → 합계 24
     assert reply == ("▹ 아군 1 | [저주]×5 소모 → 최종 0\n▹ 적군 1 | -24 → 76/100")
     assert (
-        calc == "**【이중 타격 ▸ 적군 1】**\n▹ 적군 1 | 6 × 1.5[계수] + 5[저주] × 3 → -24"
+        calc
+        == "**【이중 타격 ▸ 적군 1】**\n▹ 적군 1 | 6 × 1.5[계수] + 5[저주] × 3 → -24"
     )
 
 
