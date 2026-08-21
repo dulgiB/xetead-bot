@@ -1134,8 +1134,11 @@ class TestBuffTaunt:
         skill = make_buff_skill("도발 스킬", "도발")
         return make_context(buff, skill_dict={"도발 스킬": skill})
 
-    def test_taunt_redirects_attack(self, ctx):
+    def test_taunt_redirects_attack(self, ctx, monkeypatch):
         """도발 버프를 받은 캐릭터를 공격하면, 실제 대미지는 도발자에게 들어간다."""
+        # 선언된 공격 인스턴스가 1개뿐이라 추첨은 사실상 확정적이지만,
+        # random.choice의 내부 동작에 우연히 의존하지 않도록 고정한다.
+        monkeypatch.setattr("random.choice", lambda seq: seq[0])
         manager = setup_enemy_pre_phase(ctx)
 
         ctx.add_character(
@@ -1172,9 +1175,10 @@ class TestBuffTaunt:
         assert ctx.characters[CharacterId("공격수")].status.curr_hp == hp_dealer_before
         assert ctx.characters[CharacterId("도발자")].status.curr_hp < hp_taunter_before
 
-    def test_taunt_redirects_skill_damage_and_attached_debuff(self):
+    def test_taunt_redirects_skill_damage_and_attached_debuff(self, monkeypatch):
         """도발받은 적이 대미지+디버프 스킬을 쓰면, 대미지뿐 아니라 딸린 디버프도
         도발자에게 함께 적용되어야 한다."""
+        monkeypatch.setattr("random.choice", lambda seq: seq[0])
         taunt_buff = make_buff_data("도발", "BuffTaunt")
         debuff = make_buff_data("디버프", "BuffNoDamage")
         taunt_skill = make_buff_skill("도발 스킬", "도발")
@@ -1248,10 +1252,11 @@ class TestBuffTaunt:
         assert not any(b.id == "디버프" for b in dealer_buffs)
         assert any(b.id == "디버프" for b in taunter_buffs)
 
-    def test_taunt_does_not_redirect_column_aoe_damage(self):
+    def test_taunt_does_not_redirect_column_aoe_damage(self, monkeypatch):
         """열 광역 스킬(SkillTargetRuleColumn)은 시전자가 도발 상태여도
         대미지가 도발자에게 몰리지 않고, 열에 있는 각 대상이 그대로 맞아야
         한다 — 대상별로 이동/피격을 개별 판단해야 하는 설계이기 때문."""
+        monkeypatch.setattr("random.choice", lambda seq: seq[0])
         taunt_buff = make_buff_data("도발", "BuffTaunt")
         taunt_skill = make_buff_skill("도발 스킬", "도발")
         aoe_skill = SkillData(
@@ -1310,6 +1315,318 @@ class TestBuffTaunt:
         assert ctx.characters[CharacterId("도발자")].status.curr_hp == hp_taunter_before
         assert ctx.characters[CharacterId("공격수1")].status.curr_hp == 100 - 10
         assert ctx.characters[CharacterId("공격수2")].status.curr_hp == 100 - 10
+
+    def test_taunt_redirects_only_one_of_two_declared_same_target_attacks(
+        self, ctx, monkeypatch
+    ):
+        """같은 대상을 노리는 공격을 두 번 선언해도([공격/B - 공격/B]),
+        도발로 리다이렉트되는 건 그중 하나뿐이다 — 나머지 하나는 원래 대상에게
+        그대로 들어간다. 두 공격 모두 같은 눈의 주사위를 굴리도록 고정해,
+        피해량으로 '몇 번 맞았는지'를 결정론적으로 셀 수 있게 한다."""
+        monkeypatch.setattr("random.randint", lambda a, b: 4)
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("도발자", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("기준공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(1)
+        )
+        ctx.add_character(
+            get_test_preset("적군_기준"), FactionType.ENEMY, BattlefieldColumnIndex(1)
+        )
+
+        manager.process_command(
+            parse_character_command(
+                CharacterId("적군"), "[공격/공격수 - 공격/공격수]", ctx
+            )
+        )
+        # 도발과 무관한 단독 공격 1회 — 공격 한 번당 피해량(single_hit_damage)의
+        # 기준값을 얻기 위한 대조군.
+        manager.process_command(
+            parse_character_command(CharacterId("적군_기준"), "[공격/기준공격수]", ctx)
+        )
+
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자"), "[도발 스킬/적군]", ctx)
+        )
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        single_hit_damage = (
+            100 - ctx.characters[CharacterId("기준공격수")].status.curr_hp
+        )
+        assert single_hit_damage > 0
+        assert (
+            100 - ctx.characters[CharacterId("공격수")].status.curr_hp
+            == single_hit_damage
+        )
+        assert (
+            100 - ctx.characters[CharacterId("도발자")].status.curr_hp
+            == single_hit_damage
+        )
+
+    def test_taunt_leaves_taunter_targeting_instance_and_redirects_the_rest(self):
+        """이미 도발자를 대상에 포함한 다중 타겟 스킬([스킬/도발자/공격수])을
+        선언하면, 도발자를 향한 인스턴스는 그대로 두고 나머지(공격수)만
+        도발자에게 redirect된다."""
+        taunt_buff = make_buff_data("도발", "BuffTaunt")
+        taunt_skill = make_buff_skill("도발 스킬", "도발")
+        double_hit_skill = SkillData(
+            id="양손 가르기",
+            target_rule="SkillTargetRuleNamed",
+            target_count=2,
+            cost=2,
+            effects=[
+                SkillEffectDamage(
+                    value_source=ValueSourceType.FIXED,
+                    value=10,
+                    value_type=ValueType.INTEGER,
+                    buff_id=None,
+                    buff_add_timing=None,
+                )
+            ],
+            description="",
+        )
+        ctx = make_context(
+            taunt_buff,
+            skill_dict={"도발 스킬": taunt_skill, "양손 가르기": double_hit_skill},
+        )
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("도발자", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군", skill_1_id="양손 가르기"),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(1),
+        )
+
+        manager.process_command(
+            parse_character_command(
+                CharacterId("적군"), "[양손 가르기/도발자/공격수]", ctx
+            )
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자"), "[도발 스킬/적군]", ctx)
+        )
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # 도발자를 이미 노린 인스턴스는 그대로, 공격수를 노린 인스턴스도 함께
+        # 도발자에게 redirect되어 도발자는 두 번(20), 공격수는 0 피해.
+        assert ctx.characters[CharacterId("도발자")].status.curr_hp == 100 - 20
+        assert ctx.characters[CharacterId("공격수")].status.curr_hp == 100
+
+    def test_taunt_redirects_one_of_two_different_targets_in_multi_target_skill(
+        self, monkeypatch
+    ):
+        """도발자가 아닌 서로 다른 두 대상을 지정한 다중 타겟 스킬
+        ([스킬/공격수1/공격수2])은 둘 중 하나만 무작위로 도발자에게
+        redirect되고, 나머지 하나는 원래 대상 그대로 맞는다."""
+        monkeypatch.setattr("random.choice", lambda seq: seq[0])
+        taunt_buff = make_buff_data("도발", "BuffTaunt")
+        taunt_skill = make_buff_skill("도발 스킬", "도발")
+        double_hit_skill = SkillData(
+            id="양손 가르기",
+            target_rule="SkillTargetRuleNamed",
+            target_count=2,
+            cost=2,
+            effects=[
+                SkillEffectDamage(
+                    value_source=ValueSourceType.FIXED,
+                    value=10,
+                    value_type=ValueType.INTEGER,
+                    buff_id=None,
+                    buff_add_timing=None,
+                )
+            ],
+            description="",
+        )
+        ctx = make_context(
+            taunt_buff,
+            skill_dict={"도발 스킬": taunt_skill, "양손 가르기": double_hit_skill},
+        )
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("도발자", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("공격수2"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군", skill_1_id="양손 가르기"),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(1),
+        )
+
+        manager.process_command(
+            parse_character_command(
+                CharacterId("적군"), "[양손 가르기/공격수1/공격수2]", ctx
+            )
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자"), "[도발 스킬/적군]", ctx)
+        )
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # random.choice를 seq[0](선언 순서상 첫 대상인 공격수1의 인스턴스)로
+        # 고정했으므로 공격수1만 도발자에게 redirect되고 공격수2는 그대로 맞는다.
+        assert ctx.characters[CharacterId("공격수1")].status.curr_hp == 100
+        assert ctx.characters[CharacterId("공격수2")].status.curr_hp == 100 - 10
+        assert ctx.characters[CharacterId("도발자")].status.curr_hp == 100 - 10
+
+    def test_two_simultaneous_taunters_each_claim_one_declared_attack(self, ctx):
+        """도발자 두 명에게 동시에 도발당한 적이 서로 다른 대상 둘에게 공격을
+        하나씩 선언하면([공격/공격수1 - 공격/공격수2]), 원래 대상은 전혀
+        맞지 않고 두 도발자가 각각 하나씩 맞는다. 풀 크기와 도발자 수가
+        같아(2:2) 어느 쪽이 어느 인스턴스를 뽑든 결과가 대칭이므로, 이
+        검증은 random.choice를 고정하지 않아도 결정론적이다."""
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("도발자1", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("도발자2", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("공격수2"), FactionType.ALLY, BattlefieldColumnIndex(1)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+        )
+
+        manager.process_command(
+            parse_character_command(
+                CharacterId("적군"), "[공격/공격수1 - 공격/공격수2]", ctx
+            )
+        )
+
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자1"), "[도발 스킬/적군]", ctx)
+        )
+        manager.process_command(
+            parse_character_command(CharacterId("도발자2"), "[도발 스킬/적군]", ctx)
+        )
+
+        hp1_before = ctx.characters[CharacterId("공격수1")].status.curr_hp
+        hp2_before = ctx.characters[CharacterId("공격수2")].status.curr_hp
+        taunter1_hp_before = ctx.characters[CharacterId("도발자1")].status.curr_hp
+        taunter2_hp_before = ctx.characters[CharacterId("도발자2")].status.curr_hp
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        assert ctx.characters[CharacterId("공격수1")].status.curr_hp == hp1_before
+        assert ctx.characters[CharacterId("공격수2")].status.curr_hp == hp2_before
+        assert (
+            ctx.characters[CharacterId("도발자1")].status.curr_hp < taunter1_hp_before
+        )
+        assert (
+            ctx.characters[CharacterId("도발자2")].status.curr_hp < taunter2_hp_before
+        )
+
+    def test_taunt_locks_instances_already_targeting_a_taunter(self, ctx, monkeypatch):
+        """이미 어떤 도발자를 직접 겨냥한 인스턴스는 다른 도발자에게
+        가로채이지 않고 그대로 유지된다 — 겹치지 않는 나머지 인스턴스만
+        재추첨 대상이 된다. 도발자1이 이름순으로 먼저 처리되므로, 유일하게
+        남은 풀(공격수 인스턴스)은 도발자1에게 돌아간다."""
+        monkeypatch.setattr("random.randint", lambda a, b: 4)
+        manager = setup_enemy_pre_phase(ctx)
+
+        ctx.add_character(
+            get_test_preset("도발자1", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("도발자2", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("기준공격수"), FactionType.ALLY, BattlefieldColumnIndex(1)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+        )
+        ctx.add_character(
+            get_test_preset("적군_기준"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+        )
+
+        manager.process_command(
+            parse_character_command(
+                CharacterId("적군"),
+                "[공격/도발자1 - 공격/도발자2 - 공격/공격수]",
+                ctx,
+            )
+        )
+        manager.process_command(
+            parse_character_command(CharacterId("적군_기준"), "[공격/기준공격수]", ctx)
+        )
+
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자1"), "[도발 스킬/적군]", ctx)
+        )
+        manager.process_command(
+            parse_character_command(CharacterId("도발자2"), "[도발 스킬/적군]", ctx)
+        )
+
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        single_hit_damage = (
+            100 - ctx.characters[CharacterId("기준공격수")].status.curr_hp
+        )
+        assert single_hit_damage > 0
+
+        # 공격수를 향한 인스턴스는 도발자1에게 재배정되어 공격수는 전혀 안 맞는다.
+        assert ctx.characters[CharacterId("공격수")].status.curr_hp == 100
+        # 도발자1: 원래 자신을 향한 공격 + 재배정된 공격수 몫 = 2회분.
+        assert (
+            100 - ctx.characters[CharacterId("도발자1")].status.curr_hp
+            == single_hit_damage * 2
+        )
+        # 도발자2: 원래 자신을 향한 공격만 — 가로채이지 않는다.
+        assert (
+            100 - ctx.characters[CharacterId("도발자2")].status.curr_hp
+            == single_hit_damage
+        )
 
 
 class TestBuffDuration:
