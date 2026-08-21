@@ -97,6 +97,14 @@ class CommandPartCalculator:
             for data_per_effect in data.data_per_effect
             if data_per_effect is not None
         ]
+        # command_processors.py의 assign_taunt_redirects()가 이 계산기를
+        # process() 호출 전에 사전 배치했다면 여기 채워진다. None이면 사전
+        # 배치 대상이 아니라는 뜻(예: create_empty_for_buff의 반응형 계산기)이며,
+        # 이 경우 _resolve_redirect()는 기존처럼 _get_target_override()를
+        # 즉석 조회하는 폴백 경로를 쓴다.
+        self.precomputed_taunt_redirects: Optional[dict[CharacterId, CharacterId]] = (
+            None
+        )
 
         # 대미지 리다이렉트(도발/희생 방어) 결과. {원래 대상: 치환 대상}
         # 같은 커맨드(스킬)의 buff_add 등 부가 효과도 이 매핑을 따라 함께 이동한다.
@@ -294,7 +302,10 @@ class CommandPartCalculator:
         # 도발: 공격자가 도발 상태면 도발자를 노린다. 단, 열 광역기 등
         # ignores_taunt 항목은 대상별 개별 판단이 설계 의도이므로 건너뛴다.
         if not ignores_taunt:
-            taunt_target = self._get_target_override(attacker_id)
+            if self.precomputed_taunt_redirects is not None:
+                taunt_target = self.precomputed_taunt_redirects.get(original_target)
+            else:
+                taunt_target = self._get_target_override(attacker_id)
             if taunt_target is not None and taunt_target in self.context.characters:
                 final = taunt_target
         # 희생 방어: 현재 대상이 보호 중이면 보호자가 대신 맞는다.

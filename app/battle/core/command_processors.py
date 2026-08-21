@@ -13,6 +13,7 @@ from battle.core.commands.models import (
     CommandPartProcessResult,
     CommandProcessResult,
 )
+from battle.core.taunt_redirect import assign_taunt_redirects
 from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
@@ -88,14 +89,21 @@ def process_ally_command(
     if not maybe_expanded_parts:
         return CommandProcessResult(original_command=command, part_results=[])
 
-    results_per_part: list[CommandPartProcessResult] = []
-
     for part_data in maybe_expanded_parts:
         assert (
             isinstance(part_data, CommandPartData)
             and part_data.original_part is not None
         )
-        calculator = CommandPartCalculator(part_data, context)
+
+    calculators = [
+        CommandPartCalculator(part_data, context) for part_data in maybe_expanded_parts
+    ]
+    assign_taunt_redirects(
+        context, command.user_id, calculators, RoundPhaseType.ALLY_ACTION
+    )
+
+    results_per_part: list[CommandPartProcessResult] = []
+    for part_data, calculator in zip(maybe_expanded_parts, calculators):
         calculator.process(RoundPhaseType.ALLY_ACTION)
         results_per_part.append(
             CommandPartProcessResult(
@@ -128,13 +136,21 @@ def process_enemy_command_on_pre_action(
     if not maybe_expanded_parts:
         return CommandProcessResult(original_command=command, part_results=[])
 
-    results_per_part: list[CommandPartProcessResult] = []
     for part_data in maybe_expanded_parts:
         assert (
             isinstance(part_data, CommandPartData)
             and part_data.original_part is not None
         )
-        calculator = CommandPartCalculator(part_data, context)
+
+    calculators = [
+        CommandPartCalculator(part_data, context) for part_data in maybe_expanded_parts
+    ]
+    assign_taunt_redirects(
+        context, command.user_id, calculators, RoundPhaseType.ENEMY_PRE_ACTION
+    )
+
+    results_per_part: list[CommandPartProcessResult] = []
+    for part_data, calculator in zip(maybe_expanded_parts, calculators):
         calculator.process(RoundPhaseType.ENEMY_PRE_ACTION)
         results_per_part.append(
             CommandPartProcessResult(
@@ -172,20 +188,29 @@ def try_process_enemy_command_on_post_action(
     if context.characters[user_id].status.curr_hp <= 0:
         return []
 
-    results: list[CommandPartProcessResult] = []
+    post_parts: list[CommandPartData] = []
     for command in remaining_commands:
         expanded_parts = expand_character_command(command, context)
         for part_data in expanded_parts:
-            post_part = part_data.create_new_except_move()
-            calculator = CommandPartCalculator(post_part, context)
-            calculator.process(RoundPhaseType.ENEMY_POST_ACTION)
-            results.append(
-                CommandPartProcessResult(
-                    expanded_part=post_part,
-                    log_entries=build_log_entries(calculator),
-                    redirect_map=calculator.redirect_map,
-                )
+            post_parts.append(part_data.create_new_except_move())
+
+    calculators = [
+        CommandPartCalculator(post_part, context) for post_part in post_parts
+    ]
+    assign_taunt_redirects(
+        context, user_id, calculators, RoundPhaseType.ENEMY_POST_ACTION
+    )
+
+    results: list[CommandPartProcessResult] = []
+    for post_part, calculator in zip(post_parts, calculators):
+        calculator.process(RoundPhaseType.ENEMY_POST_ACTION)
+        results.append(
+            CommandPartProcessResult(
+                expanded_part=post_part,
+                log_entries=build_log_entries(calculator),
+                redirect_map=calculator.redirect_map,
             )
+        )
     return results
 
 
