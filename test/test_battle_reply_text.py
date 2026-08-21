@@ -866,7 +866,7 @@ def test_enemy_skill_preview_shows_description_when_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "**【스킬_1 ▸ 아군 1】**\n　↳ 대상에게 고정 피해를 준다."
+    assert reply == "**【스킬\\_1 ▸ 아군 1】**\n　↳ 대상에게 고정 피해를 준다."
 
 
 def test_enemy_skill_preview_blinds_description_when_not_revealed():
@@ -896,7 +896,7 @@ def test_enemy_skill_preview_blinds_description_when_not_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "**【스킬_1 ▸ 아군 1】**\n　↳ [효과 미확인]"
+    assert reply == "**【스킬\\_1 ▸ 아군 1】**\n　↳ [효과 미확인]"
 
 
 def test_skill_preview_omitted_when_show_skill_preview_is_false():
@@ -927,7 +927,7 @@ def test_skill_preview_omitted_when_show_skill_preview_is_false():
 
     # 대미지는 POST에서 정산되므로 PRE 선언 시점엔 보여줄 결과 줄이 없다 —
     # 이 경우엔 예외적으로 헤더가 커맨드 접수 확인 역할을 한다.
-    assert reply == "**【스킬_1 ▸ 아군 1】**"
+    assert reply == "**【스킬\\_1 ▸ 아군 1】**"
 
 
 def test_mark_skill_revealed_updates_skill_dict_in_place():
