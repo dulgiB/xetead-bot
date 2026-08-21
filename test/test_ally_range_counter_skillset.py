@@ -392,7 +392,7 @@ class TestPassiveSkill:
         # 50 × 50%[PassiveSkill] × (1 + 0.2)[버프_1] = 30.
         assert enemy_hp_before - enemy_hp_after == 30
         assert "0.5[PassiveSkill: Sentinel]" in calc
-        assert "0.2[버프_1]" in calc
+        assert "0.2[버프\\_1]" in calc
 
     def test_counter_damage_respects_attackers_own_received_damage_buff(self):
         """반격 대미지도 공격자(반격 대상)가 평소 자신이 공격당할 때 받는
@@ -691,7 +691,7 @@ class TestCounterOnMarkedAllyAttackBuff:
         manager.process_command(parse_character_command(marked, "[공격/적군]", ctx))
         reply, calc = format_battle_reply(ctx, marked, ctx.results[before:])
 
-        assert "0.6[버프_3: Sentinel]" in calc
+        assert "0.6[버프\\_3: Sentinel]" in calc
 
     def test_bonus_damage_respects_holders_own_given_damage_buff(self):
         """버프_3의 추가 대미지도 홀더가 실제로 가하는 대미지이므로, 홀더가

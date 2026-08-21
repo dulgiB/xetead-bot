@@ -16,6 +16,7 @@
 "→ 값" 형태로 덧붙여, 계산식만 펼쳐 봐도 결과를 바로 알 수 있게 한다.
 """
 
+import re
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.models import (
@@ -30,6 +31,20 @@ from battle.objects.models import CharacterId
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.character.combat_character import CombatCharacter
+
+
+_MARKDOWN_SPECIAL_CHARS = re.compile(r"([\\`*_~^])")
+
+
+def escape_markdown(text: str) -> str:
+    """스프레드시트에서 온 캐릭터 이름/스킬 id 등에 `_`/`*` 등이 섞여 있으면
+    답글을 마크다운 모드로 보낼 때(`_MarkdownMastodon`) 의도치 않게 굵게/
+    기울임/밑줄로 렌더링될 수 있다 — 특히 한글 사이의 `_`는 Redcarpet의
+    `no_intra_emphasis`가 서구권 단어 경계 기준이라 걸러지지 않고 그대로
+    강조로 파싱된다("이름A_테스트"와 "이름B_테스트"처럼 밑줄이 두 번
+    나오면 그 사이 전체가 밑줄로 묶여버림). 그래서 화면에 그대로 보여줄
+    이름/id는 반드시 이 함수로 이스케이프한 뒤 문자열에 끼워 넣는다."""
+    return _MARKDOWN_SPECIAL_CHARS.sub(r"\\\1", text)
 
 
 def format_battle_reply(
@@ -112,10 +127,13 @@ def merge_damage_heal_lines(
 
     lines: dict[tuple[BattleLogEntryKind, str], str] = {}
     for key, total in totals.items():
-        _kind, target_name = key
+        _kind, raw_target_name = key
+        target_name = escape_markdown(raw_target_name)
         sign = "-" if key[0] == BattleLogEntryKind.DAMAGE else "+"
         hp_after = last_hp_after[key]
-        label_suffix = "".join(f" [{label}]" for label in labels.get(key, []))
+        label_suffix = "".join(
+            f" [{escape_markdown(label)}]" for label in labels.get(key, [])
+        )
         if hp_after is None:
             lines[key] = f"▹ {target_name} | {sign}{total}{label_suffix}"
         else:
@@ -159,8 +177,8 @@ def format_eliminated_characters(eliminated: list[CharacterId]) -> str:
     "【탈락】\n▹ {이름}" 블록으로 조립한다. 없으면 빈 문자열."""
     if not eliminated:
         return ""
-    lines = "\n".join(f"▹ {char_id.name}" for char_id in eliminated)
-    return f"【탈락】\n{lines}"
+    lines = "\n".join(f"▹ {escape_markdown(char_id.name)}" for char_id in eliminated)
+    return f"**【탈락】**\n{lines}"
 
 
 def format_round_end_log_entries(
@@ -177,14 +195,16 @@ def format_round_end_log_entries(
     body_blocks = []
     calc_blocks = []
     for target_name, target_entries in grouped.items():
-        header = f"【라운드 종료 처리 ▸ {target_name}】"
+        header = f"**【라운드 종료 처리 ▸ {escape_markdown(target_name)}】**"
         lines = []
         calc_lines = []
         for entry in target_entries:
             line, calc, final_value = _format_entry(context, entry)
             lines.append(line)
             if calc:
-                calc_lines.append(f"▹ {entry.target_name} | {calc} → {final_value}")
+                calc_lines.append(
+                    f"▹ {escape_markdown(entry.target_name)} | {calc} → {final_value}"
+                )
         body_blocks.append(f"{header}\n" + "\n".join(lines))
         if calc_lines:
             calc_blocks.append(f"{header}\n" + "\n".join(calc_lines))
@@ -208,7 +228,7 @@ def format_battle_end_log_entries(
         lines.append(line)
         if calc:
             lines.append(f"　↳ {calc} → {final_value}")
-    header = "【전투 종료 처리】"
+    header = "**【전투 종료 처리】**"
     body = f"{header}\n" + "\n".join(lines)
     calc = ""
     return body, calc
@@ -235,7 +255,7 @@ def format_final_hp_roster(context: "BattlefieldContext") -> str:
 def _format_roster_line(character: "CombatCharacter", bullet: str) -> str:
     curr_hp = character.status.curr_hp
     max_hp = character.status[CombatStatType.MAX_HP]
-    return f"{bullet} {character.id.name} | {curr_hp}/{max_hp}"
+    return f"{bullet} {escape_markdown(character.id.name)} | {curr_hp}/{max_hp}"
 
 
 def _header_and_log_entries(
@@ -279,7 +299,9 @@ def _format_part(
         else:
             body_lines.append(line)
         if calc:
-            calc_lines.append(f"▹ {entry.target_name} | {calc} → {final_value}")
+            calc_lines.append(
+                f"▹ {escape_markdown(entry.target_name)} | {calc} → {final_value}"
+            )
 
     # 적 후행 정산으로 미뤄지는 공격 등, 이 시점엔 아직 아무 결과도 없는
     # 파트(예: PRE 선언)는 보여줄 결과 줄이 없다 — 그래도 커맨드가
@@ -304,7 +326,7 @@ def _format_skill_preview(context: "BattlefieldContext", part: CommandPart) -> s
     assert part.skill_id is not None
     skill_data = context.get_skill_data_by_id(part.skill_id)
     text = skill_data.description if skill_data.revealed else _BLIND_SKILL_TEXT
-    return f"　↳ {text}"
+    return f"　↳ {escape_markdown(text)}"
 
 
 def _format_header(
@@ -314,18 +336,20 @@ def _format_header(
 ) -> str:
     if part.type_ == ActionType.MOVE:
         column = part.targets[0]
-        return f"【이동 ▸ {column}열】"
+        return f"**【이동 ▸ {column}열】**"
     if part.type_ == ActionType.ATTACK:
-        return f"【공격 ▸ {_target_label(part.targets, redirect_map)}】"
+        return f"**【공격 ▸ {_target_label(part.targets, redirect_map)}】**"
     if part.type_ == ActionType.SKILL:
+        assert part.skill_id is not None
         return (
-            f"【{part.skill_id} ▸ "
-            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】"
+            f"**【{escape_markdown(part.skill_id)} ▸ "
+            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】**"
         )
     if part.type_ == ActionType.USE_ITEM:
+        assert part.item_id is not None
         return (
-            f"【{part.item_id} ▸ "
-            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】"
+            f"**【{escape_markdown(part.item_id)} ▸ "
+            f"{_skill_target_label(caster_id, part.targets, redirect_map)}】**"
         )
     raise ValueError(part.type_)
 
@@ -338,7 +362,7 @@ def _skill_target_label(
     # 자가 대상 스킬(SkillTargetRuleSelf)은 사용자가 대상을 입력하지 않아
     # targets가 비어 있다 — 이 경우 시전자 자신의 이름을 보여준다.
     if not targets:
-        return caster_id.name
+        return escape_markdown(caster_id.name)
     return _target_label(targets, redirect_map)
 
 
@@ -353,8 +377,8 @@ def _target_name(target: object, redirect_map: dict[CharacterId, CharacterId]) -
     # 대상을 함께 보여준다 — 답글만 봐도 왜 이 대상이 맞았는지 알 수 있게.
     redirected_to = redirect_map.get(target)
     if redirected_to is not None and redirected_to != target:
-        return f"{target.name} ▸ {redirected_to.name}"
-    return target.name
+        return f"{escape_markdown(target.name)} ▸ {escape_markdown(redirected_to.name)}"
+    return escape_markdown(target.name)
 
 
 def _format_entry(
@@ -375,10 +399,18 @@ def _format_entry(
         # 모든 이동이 이미 끝난 뒤(최종 위치 기준)에 포매팅이 일어나므로
         # 각 파트가 실제로 어디로 이동했는지와 무관하게 전부 최종 위치로
         # 보이는 문제가 있었다.
-        return f"▹ {entry.target_name} | {entry.result}", None, None
+        return (
+            f"▹ {escape_markdown(entry.target_name)} | {escape_markdown(entry.result)}",
+            None,
+            None,
+        )
     # BUFF_ADD/BUFF_REMOVE/DEBUFF_CLEAR는 이미 build_log_entries()가 만들어 둔
     # result 문자열을 그대로 쓴다.
-    return f"▹ {entry.target_name} | {entry.result}", None, None
+    return (
+        f"▹ {escape_markdown(entry.target_name)} | {escape_markdown(entry.result)}",
+        None,
+        None,
+    )
 
 
 def _format_damage_or_heal(
@@ -388,13 +420,19 @@ def _format_damage_or_heal(
     # 같은 커맨드에서 같은 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상),
     # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
     final_value = f"{sign}{entry.value}"
-    label_suffix = "".join(f" [{label}]" for label in entry.source_labels)
+    target_name = escape_markdown(entry.target_name)
+    label_suffix = "".join(
+        f" [{escape_markdown(label)}]" for label in entry.source_labels
+    )
     if entry.hp_after is None:
         # 대미지로 사망해 전장에서 제거된 경우 등 — 잔여 체력을 보여줄 수 없다.
-        line = f"▹ {entry.target_name} | {final_value}{label_suffix}"
+        line = f"▹ {target_name} | {final_value}{label_suffix}"
     else:
         line = (
-            f"▹ {entry.target_name} | {final_value} → "
+            f"▹ {target_name} | {final_value} → "
             f"{entry.hp_after}/{entry.max_hp}{label_suffix}"
         )
-    return line, entry.roll_display, final_value
+    roll_display = (
+        escape_markdown(entry.roll_display) if entry.roll_display is not None else None
+    )
+    return line, roll_display, final_value

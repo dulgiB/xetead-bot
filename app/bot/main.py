@@ -1596,6 +1596,16 @@ def _restore_daily_quest_mid_state(state: "BotState") -> int:
     return restored
 
 
+class _MarkdownMastodon(Mastodon):
+    """봇 답글이 항상 마크다운으로 렌더링되도록 status_post()의 content_type
+    기본값을 text/markdown으로 강제한다. Pleroma/Akkoma 계열이 아닌 인스턴스는
+    이 파라미터를 무시하므로 안전하다."""
+
+    def status_post(self, *args, **kwargs):
+        kwargs.setdefault("content_type", "text/markdown")
+        return super().status_post(*args, **kwargs)
+
+
 def main() -> None:
     # 버프/스킬/패시브/아이템/인벤토리는 평상시엔 여기서 로드해도 바로
     # stale해지므로 쓰지 않고, 전투 세션(본 전투/DM 전투/대련/상시전투) 시작
@@ -1625,7 +1635,7 @@ def main() -> None:
     )
     restored_daily_quest_count = _restore_daily_quest_mid_state(state)
 
-    mastodon = Mastodon(
+    mastodon = _MarkdownMastodon(
         access_token=os.environ["MASTODON_ACCESS_TOKEN"],
         api_base_url=os.environ["MASTODON_API_BASE_URL"],
     )

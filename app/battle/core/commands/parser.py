@@ -28,7 +28,11 @@ kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{Ha
 # "!"가 들어간 스킬명(예: "스킬_1!")과 "^"/"~"가 들어간 스킬명
 # (예: "스킬_1^^", "스킬~1")도 있어 함께 포함한다. "^"는 문자 클래스([...])
 # 맨 앞에 오면 부정(negation)으로 해석되므로 반드시 클래스 끝에 둔다.
-name_charset = rf"{kr_charset}0-9A-Za-z_!^~"
+# "()"도 포함한다 — 답글을 마크다운 모드로 보내면서(_MarkdownMastodon)
+# 언더스코어가 포함된 이름(예: "이름_테스트")이 렌더러에 의해 의도치 않게
+# 강조/밑줄로 잘못 파싱되는 문제가 있어, 구분자를 언더스코어 대신 괄호로
+# 쓰는 표기("이름(테스트)")로 옮겨가기 위함이다.
+name_charset = rf"{kr_charset}0-9A-Za-z_!^~()"
 
 _이동 = whitespace_tolerant_literal("이동")
 _공격 = whitespace_tolerant_literal("공격")

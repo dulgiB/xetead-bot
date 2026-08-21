@@ -27,6 +27,7 @@ from utils.name_matching import resolve_matching_key, whitespace_tolerant_litera
 
 from bot.battle_reply_text import (
     drop_intermediate_consecutive_moves,
+    escape_markdown,
     format_battle_end_log_entries,
     format_battle_reply,
     format_eliminated_characters,
@@ -1055,12 +1056,13 @@ def _prefix_named_block(
     block = header_line + sep + rest
     if not include_name_prefix:
         return block
-    if header_line.startswith(f"▹ {char_id.name} |"):
+    escaped_name = escape_markdown(char_id.name)
+    if header_line.startswith(f"▹ {escaped_name} |"):
         # 이동처럼 첫 줄이 이미 "▹ {이름} | ..." 형태로 시전자 자신의
         # 이름을 보여주고 있으면, 앞에 또 이름을 붙이는 순간
         # "이름 ▹ 이름 | ..."처럼 중복된다 — 이때는 접두어를 생략한다.
         return block
-    return f"{char_id.name} {block}"
+    return f"{escaped_name} {block}"
 
 
 def _format_named_reply(
@@ -1110,7 +1112,7 @@ def _format_named_reply(
                 )
             )
         if calc:
-            calc_blocks.append(f"{char_id.name} {calc}")
+            calc_blocks.append(f"{escape_markdown(char_id.name)} {calc}")
     return "\n\n".join(body_blocks), "\n\n".join(calc_blocks)
 
 
@@ -1184,9 +1186,10 @@ def _format_granted_buffs_info(
     if not descriptions:
         return ""
     lines = "\n".join(
-        f"▹ [{buff_id}]: {description}" for buff_id, description in descriptions.items()
+        f"▹ [{escape_markdown(buff_id)}]: {escape_markdown(description)}"
+        for buff_id, description in descriptions.items()
     )
-    return f"【버프 정보】\n{lines}"
+    return f"**【버프 정보】**\n{lines}"
 
 
 # ---------------------------------------------------------------------------
