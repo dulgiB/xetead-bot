@@ -28,6 +28,7 @@ class IgniteExpireEvent(BuffEvent):
     column: int
     is_expiring_this_round: bool
     source_name: str
+    buff_label: str
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -59,6 +60,8 @@ class IgniteExpireEvent(BuffEvent):
                 value_source=ValueSourceType.STAT_ATK_ROLL,
                 source_name=self.source_name,
                 coefficient_value=_EXPIRE_DAMAGE_COEFFICIENT,
+                triggers_received_damage_passives=False,
+                source_label=f"{self.buff_label}: {attacker_or_target.name}",
             )
         )
 
@@ -85,6 +88,7 @@ class BuffIgnite(BuffBase):
             column=self.value,
             is_expiring_this_round=self.duration.remaining_turns == 1,
             source_name=self.id,
+            buff_label=self.display_id_label(),
         )
 
     def display_id_label(self) -> str:

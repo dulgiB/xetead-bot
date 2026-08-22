@@ -17,4 +17,8 @@ class BuffConditionalDamage(BuffBase):
     def create_event(self) -> DamageOverTimeEvent:
         if self.value_type is not None and self.value_type != ValueType.INTEGER:
             raise ValueError(self.value_type)
-        return DamageOverTimeEvent(condition=self.condition, value=self.value)
+        return DamageOverTimeEvent(
+            condition=self.condition,
+            value=self.value,
+            buff_label=self.display_id_label(),
+        )

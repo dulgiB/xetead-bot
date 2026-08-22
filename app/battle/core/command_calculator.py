@@ -419,6 +419,8 @@ class CommandPartCalculator:
             )
             if not still_live:
                 continue
+            if not damage_calc.base.triggers_received_damage_passives:
+                continue
             self.context.buff_container.on_character_damaged(
                 damage_calc.base.target_id, self, effect_seq_number
             )
