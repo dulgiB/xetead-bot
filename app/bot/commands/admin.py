@@ -34,6 +34,7 @@ from bot.battle_reply_text import (
     format_final_hp_roster,
     format_round_end_log_entries,
     merge_damage_heal_lines,
+    merge_stackable_buff_add_lines,
 )
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
@@ -1180,7 +1181,10 @@ def _format_named_reply(
     잘라 개별 블록으로 조립하므로, 공유하지 않으면 각 호출이 자기
     파트만 보고 따로 계산해 합산이 되지 않는다."""
     parts = drop_intermediate_consecutive_moves(part_results)
-    merged_lines = merge_damage_heal_lines(parts)
+    merged_lines = {
+        **merge_damage_heal_lines(parts),
+        **merge_stackable_buff_add_lines(parts),
+    }
     emitted: set[tuple[BattleLogEntryKind, str]] = set()
     body_blocks = []
     calc_blocks = []

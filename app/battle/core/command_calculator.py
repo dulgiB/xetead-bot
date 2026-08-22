@@ -675,7 +675,8 @@ def build_buff_add_log_entry(
         buff_add.applied_to, buff_add.buff_id, given_by=buff_add.given_by
     )
     label = buff.display_id_label() if buff is not None else buff_add.buff_id
-    if buff is not None and buff.max_stack:
+    is_stackable = buff is not None and buff.max_stack
+    if is_stackable:
         result = f"[{label}]×{buff_add.stack_value} 부여 → 최종 {buff.stack_count}"
     else:
         duration_text = buff.duration.display_text() if buff is not None else ""
@@ -686,6 +687,8 @@ def build_buff_add_log_entry(
         result=result,
         buff_id=buff_add.buff_id,
         stack_delta=buff_add.stack_value,
+        buff_label=label if is_stackable else None,
+        final_stack=buff.stack_count if is_stackable else None,
     )
 
 

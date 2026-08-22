@@ -79,7 +79,9 @@ def format_battle_reply(
     없다(내부에서 자체적으로 계산한다)."""
     parts = drop_intermediate_consecutive_moves(part_results)
     merged_lines = (
-        _merged_lines if _merged_lines is not None else merge_damage_heal_lines(parts)
+        _merged_lines
+        if _merged_lines is not None
+        else {**merge_damage_heal_lines(parts), **merge_stackable_buff_add_lines(parts)}
     )
     emitted = _emitted if _emitted is not None else set()
 
@@ -141,6 +143,53 @@ def merge_damage_heal_lines(
                 f"▹ {target_name} | {sign}{total} → "
                 f"{hp_after}/{last_max_hp[key]}{label_suffix}"
             )
+    return lines
+
+
+def _buff_add_merge_key(entry: BattleLogEntry) -> tuple[BattleLogEntryKind, str]:
+    """DAMAGE/HEAL은 (종류, 대상)만으로 키가 충분하지만, buff_add는 같은
+    대상에게 서로 다른 버프가 함께 부여될 수 있어 buff_id까지 키에 넣어야
+    서로 다른 버프끼리 합쳐지지 않는다."""
+    return (entry.kind, f"{entry.target_name}|{entry.buff_id}")
+
+
+def merge_stackable_buff_add_lines(
+    part_results: list[CommandPartProcessResult],
+) -> dict[tuple[BattleLogEntryKind, str], str]:
+    """part_results 전체에 걸쳐 같은 (대상, buff_id) 조합의 적층형 버프 부여를
+    "▹ 대상 | [라벨]×합계 부여 → 최종 M" 한 줄로 합산해 미리 조립해 둔다.
+    한 커맨드가 같은 대상에게 같은 적층형 버프를 여러 파트(예: 공격을 여러
+    번 나눠 선언)에 걸쳐 부여하면, 예전에는 "×1 부여 → 최종 1/2/3"처럼 부여
+    횟수만큼 줄이 늘어났다 — 대미지/회복과 같은 방식으로 합쳐서 한 줄로
+    보여준다. 적층형이 아닌 버프(buff_label이 없음)는 대상으로 하지 않는다
+    (지속시간 갱신은 매번 같은 문구라 합칠 대상 자체가 없다)."""
+    total_stack_delta: dict[tuple[BattleLogEntryKind, str], int] = {}
+    last_final_stack: dict[tuple[BattleLogEntryKind, str], int] = {}
+    labels: dict[tuple[BattleLogEntryKind, str], str] = {}
+    target_names: dict[tuple[BattleLogEntryKind, str], str] = {}
+    for part_result in part_results:
+        for entry in part_result.log_entries:
+            if (
+                entry.kind != BattleLogEntryKind.BUFF_ADD
+                or entry.buff_label is None
+                or entry.stack_delta is None
+                or entry.final_stack is None
+            ):
+                continue
+            key = _buff_add_merge_key(entry)
+            total_stack_delta[key] = total_stack_delta.get(key, 0) + entry.stack_delta
+            last_final_stack[key] = entry.final_stack
+            labels[key] = entry.buff_label
+            target_names[key] = entry.target_name
+
+    lines: dict[tuple[BattleLogEntryKind, str], str] = {}
+    for key, stack_total in total_stack_delta.items():
+        target_name = escape_markdown(target_names[key])
+        label = escape_markdown(labels[key])
+        lines[key] = (
+            f"▹ {target_name} | [{label}]×{stack_total} 부여 → "
+            f"최종 {last_final_stack[key]}"
+        )
     return lines
 
 
@@ -288,11 +337,19 @@ def _format_part(
     calc_lines = []
     for entry in log_entries:
         line, calc, final_value = _format_entry(context, entry)
-        if entry.kind in _MERGEABLE_KINDS:
-            # 같은 대상의 대미지/회복이 다른 파트(예: 공격을 여러 번 나눠
-            # 선언)에 이미 합산 줄로 나갔으면 본문에는 또 넣지 않는다 —
-            # 계산식(calc_lines)은 이 파트 고유의 굴림이므로 그대로 남긴다.
-            key = (entry.kind, entry.target_name)
+        is_mergeable_buff_add = (
+            entry.kind == BattleLogEntryKind.BUFF_ADD and entry.buff_label is not None
+        )
+        if entry.kind in _MERGEABLE_KINDS or is_mergeable_buff_add:
+            # 같은 대상의 대미지/회복(또는 같은 적층형 버프 부여)이 다른
+            # 파트(예: 공격을 여러 번 나눠 선언)에 이미 합산 줄로 나갔으면
+            # 본문에는 또 넣지 않는다 — 계산식(calc_lines)은 이 파트 고유의
+            # 굴림이므로 그대로 남긴다.
+            key = (
+                _buff_add_merge_key(entry)
+                if is_mergeable_buff_add
+                else (entry.kind, entry.target_name)
+            )
             if key not in emitted:
                 emitted.add(key)
                 body_lines.append(merged_lines.get(key, line))
