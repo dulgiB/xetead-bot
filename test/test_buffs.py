@@ -31,6 +31,7 @@ from battle.objects.skill.effects import (
     SkillEffectHeal,
 )
 from battle.objects.skill.models import SkillData
+from bot.battle_reply_text import format_battle_reply
 from helpers import get_test_preset
 
 
@@ -1627,6 +1628,56 @@ class TestBuffTaunt:
             100 - ctx.characters[CharacterId("도발자2")].status.curr_hp
             == single_hit_damage
         )
+
+    def test_taunt_from_different_casters_are_separate_instances_with_correct_labels(
+        self, ctx
+    ):
+        """서로 다른 캐릭터가 같은 대상에게 [도발]을 걸면 부여자가 다르므로
+        하나로 합쳐지지 않고 별개 인스턴스로 공존해야 한다. 그리고 각자의
+        "부여" 로그도 자신의 이름으로 정확히 표시되어야 한다 — given_by로
+        걸러 조회하지 않으면(과거 버그) 두 인스턴스 중 아무거나 하나를
+        가리켜, 두 번째 캐릭터가 도발을 걸었는데도 로그에는 첫 번째
+        캐릭터의 이름이 찍힐 수 있었다."""
+        manager = setup_ally_phase(ctx)
+        ctx.add_character(
+            get_test_preset("도발자1", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("도발자2", skill_1_id="도발 스킬"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(1)
+        )
+
+        before1 = len(ctx.results)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자1"), "[도발 스킬/적군]", ctx)
+        )
+        reply1, _ = format_battle_reply(
+            ctx, CharacterId("도발자1"), ctx.results[before1:]
+        )
+
+        before2 = len(ctx.results)
+        manager.process_command(
+            parse_character_command(CharacterId("도발자2"), "[도발 스킬/적군]", ctx)
+        )
+        reply2, _ = format_battle_reply(
+            ctx, CharacterId("도발자2"), ctx.results[before2:]
+        )
+
+        assert "[도발: 도발자1] 부여" in reply1
+        assert "[도발: 도발자2] 부여" in reply2
+
+        taunts = [
+            b
+            for b in ctx.buff_container.get_buffs_by(CharacterId("적군"), None)
+            if b.id == "도발"
+        ]
+        assert {b.given_by.name for b in taunts} == {"도발자1", "도발자2"}
 
 
 class TestBuffDuration:

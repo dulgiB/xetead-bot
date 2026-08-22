@@ -556,8 +556,13 @@ class BattlefieldContext:
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]
 
-    def get_buff_instance(self, char_id: CharacterId, buff_id: str):
-        return self.buff_container.get_buff(char_id, buff_id)
+    def get_buff_instance(
+        self,
+        char_id: CharacterId,
+        buff_id: str,
+        given_by: Optional[CharacterId] = None,
+    ):
+        return self.buff_container.get_buff(char_id, buff_id, given_by=given_by)
 
     def get_buff_stack(self, char_id: CharacterId, buff_id: str) -> int:
         buff = self.buff_container.get_buff(char_id, buff_id)

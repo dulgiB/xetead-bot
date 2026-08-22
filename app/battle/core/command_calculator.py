@@ -317,13 +317,22 @@ class CommandPartCalculator:
     def _get_target_override(
         self: "CommandPartCalculator", attacker_id: CharacterId
     ) -> Optional[CharacterId]:
+        """precomputed_taunt_redirects가 없는 반응형 경로(create_empty_for_buff
+        등)에서만 쓰이는 폴백. attacker_id에게 걸린 도발 등 대상 치환 버프 중
+        동시에 여러 인스턴스(예: 서로 다른 캐릭터가 각각 건 [도발])가 있으면
+        가장 최근에 걸리거나 갱신된 것(applied_at 최댓값)이 우선한다 —
+        get_buffs_by()의 순회 순서(set 내부 순서, 사실상 무작위)에 의존하면
+        어느 도발이 실제로 적용될지 실행마다 달라진다."""
+        best_override: Optional[CharacterId] = None
+        best_seq = -1
         for buff in self.context.buff_container.get_buffs_by(
             attacker_id, BuffApplyTiming.ON_ACTION
         ):
             override = buff.get_target_override()
-            if override is not None:
-                return override
-        return None
+            if override is not None and buff.applied_at > best_seq:
+                best_seq = buff.applied_at
+                best_override = override
+        return best_override
 
     def _redirect_applied_to(
         self: "CommandPartCalculator", data: BuffAddData
@@ -662,7 +671,9 @@ def build_buff_add_log_entry(
     양쪽에서 재사용한다 — 후자는 트리거된 시점의 페이즈(PRE/POST)에 따라
     _process_buff_add()가 항상 호출되지 않을 수 있어, 일반 경로로는 로그를
     보장할 수 없기 때문이다."""
-    buff = context.get_buff_instance(buff_add.applied_to, buff_add.buff_id)
+    buff = context.get_buff_instance(
+        buff_add.applied_to, buff_add.buff_id, given_by=buff_add.given_by
+    )
     label = buff.display_id_label() if buff is not None else buff_add.buff_id
     if buff is not None and buff.max_stack:
         result = f"[{label}]×{buff_add.stack_value} 부여 → 최종 {buff.stack_count}"

@@ -22,6 +22,16 @@ class BuffContainer:
     def __init__(self, field: "BattlefieldContext"):
         self._context: "BattlefieldContext" = field
         self._buffs: set[BuffBase] = set()
+        # 도발처럼 같은 대상이 서로 다른 부여자로부터 동시에 여러 인스턴스를
+        # 받을 수 있는 버프에서 "가장 최근에 걸린 것"을 가려내기 위한
+        # 단조 증가 일련번호. add()가 새로 추가하거나 기존 인스턴스를
+        # 재부여(갱신)할 때마다 부여한다 — 재부여도 "다시 최근이 됨"으로
+        # 취급한다.
+        self._apply_seq = 0
+
+    def _next_apply_seq(self) -> int:
+        self._apply_seq += 1
+        return self._apply_seq
 
     def add(self, add_event: "BuffAddData"):
         buff_data = self._context.get_buff_data_by_id(add_event.buff_id)
@@ -55,16 +65,17 @@ class BuffContainer:
                 )
             if add_event.value_override is not None:
                 existing.value = add_event.value_override
+            existing.applied_at = self._next_apply_seq()
             return
 
-        self._buffs.add(
-            buff_data.to_buff_instance(
-                add_event.given_by,
-                add_event.applied_to,
-                add_event.stack_value,
-                value_override=add_event.value_override,
-            )
+        new_buff = buff_data.to_buff_instance(
+            add_event.given_by,
+            add_event.applied_to,
+            add_event.stack_value,
+            value_override=add_event.value_override,
         )
+        new_buff.applied_at = self._next_apply_seq()
+        self._buffs.add(new_buff)
 
     def add_passive_wrapper(self, buff: "BuffBase") -> None:
         """PassiveSkillWrapperBuff 등록 전용. BuffData 없이 직접 생성된 인스턴스를 추가한다."""
@@ -89,12 +100,24 @@ class BuffContainer:
                 if buff.applied_to == char_id and timing == buff.timing
             ]
 
-    def get_buff(self, char_id: CharacterId, buff_id: str) -> Optional["BuffBase"]:
+    def get_buff(
+        self,
+        char_id: CharacterId,
+        buff_id: str,
+        given_by: Optional[CharacterId] = None,
+    ) -> Optional["BuffBase"]:
+        """(applied_to, id) 조합은 여러 부여자가 각자 별개 인스턴스로 동시에
+        보유할 수 있다(도발 등 — 기본 build_uid()가 given_by를 포함하므로).
+        given_by를 생략하면(None) 그중 아무 인스턴스나(내부 set 순서 의존,
+        비결정적) 반환하므로, 특정 부여자의 인스턴스가 필요한 호출측은
+        반드시 given_by를 넘겨야 한다."""
         return next(
             (
                 buff
                 for buff in self._buffs
-                if buff.applied_to == char_id and buff.id == buff_id
+                if buff.applied_to == char_id
+                and buff.id == buff_id
+                and (given_by is None or buff.given_by == given_by)
             ),
             None,
         )
