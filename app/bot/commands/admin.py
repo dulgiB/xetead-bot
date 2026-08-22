@@ -250,11 +250,17 @@ def handle_admin_command(
         return _cmd_investigation_battle(text, mentions or [], state, visibility)
 
     if manual_place_matches := list(_RE_MANUAL_PLACE.finditer(text)):
-        replies = [
+        outcomes = [
             _cmd_manual_place(m.group(1).strip(), m.group(2).strip(), state)
             for m in manual_place_matches
         ]
-        return AdminCommandResult("\n".join(replies))
+        placed = [o.label for o in outcomes if o.ok]
+        errors = [o.label for o in outcomes if not o.ok]
+        reply_parts = []
+        if placed:
+            reply_parts.append("◊ 수동 배치: " + ", ".join(placed))
+        reply_parts.extend(errors)
+        return AdminCommandResult("\n".join(reply_parts))
 
     if _RE_BATTLE_START.search(text):
         name_match = _RE_BATTLE_NAME.search(text)
@@ -312,18 +318,48 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
     return AdminCommandResult(reply, set_preparation_post=True, post_as_new_status=True)
 
 
-def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str:
+@dataclass
+class _ManualPlaceOutcome:
+    ok: bool
+    # ok=True: "이름(진영 N열)" 형태의 짧은 라벨 — 호출측이 여러 건을 한 줄로
+    # 모아 "◊ 수동 배치: A(...), B(...)"로 조립한다.
+    # ok=False: 그대로 답글에 실을 완결된 "◊ ..." 오류 메시지.
+    label: str
+
+
+def _cmd_manual_place(
+    name: str, faction_col_str: str, state: "BotState"
+) -> _ManualPlaceOutcome:
     if state.session is None:
-        return "◊ 진행 중인 전투가 없습니다. 먼저 [전투 준비]를 입력하세요."
-    if state.session.started:
-        return "◊ 전투가 이미 시작되어 캐릭터를 배치할 수 없습니다."
+        return _ManualPlaceOutcome(
+            False, "◊ 진행 중인 전투가 없습니다. 먼저 [전투 준비]를 입력하세요."
+        )
+    # 전투 중에는 라운드 종료(다음 라운드 대기) 페이즈에서만, [전투 속행] 입력
+    # 전에 증원 배치를 허용한다 — 그 외 페이즈에서는 여전히 막는다.
+    mid_battle_allowed = (
+        state.session.started
+        and state.session.current_phase
+        == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+    )
+    if state.session.started and not mid_battle_allowed:
+        return _ManualPlaceOutcome(
+            False,
+            "◊ 전투 중에는 라운드 종료(다음 라운드 대기) 단계에서만"
+            " [전투 속행] 입력 전에 캐릭터를 배치할 수 있습니다.",
+        )
     name = resolve_matching_key(name, state.name_dict.keys())
     if name not in state.name_dict:
-        return f"◊ 지정된 캐릭터({name})를 찾을 수 없습니다."
+        return _ManualPlaceOutcome(
+            False, f"◊ 지정된 캐릭터({name})를 찾을 수 없습니다."
+        )
 
     parts = faction_col_str.split()
     if len(parts) < 2:
-        return "◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다. (예시: [배치/늑대/적군 3열])"
+        return _ManualPlaceOutcome(
+            False,
+            "◊ 캐릭터 배치는 [배치/(캐릭터 이름)/(진영) 0열] 형식을 따라야 합니다."
+            " (예시: [배치/늑대/적군 3열])",
+        )
 
     faction_str = parts[0]
     col_str = parts[1]
@@ -331,15 +367,62 @@ def _cmd_manual_place(name: str, faction_col_str: str, state: "BotState") -> str
     try:
         faction = FactionType(faction_str)
     except ValueError:
-        return f"◊ 입력된 진영({faction_str})을 인식할 수 없습니다. 진영은 '아군' 또는 '적군'이어야 합니다."
+        return _ManualPlaceOutcome(
+            False,
+            f"◊ 입력된 진영({faction_str})을 인식할 수 없습니다."
+            " 진영은 '아군' 또는 '적군'이어야 합니다.",
+        )
 
     try:
         column = BattlefieldColumnIndex.from_str(col_str)
     except ValueError:
-        return f"◊ 입력된 열({col_str})을 인식할 수 없습니다. '1' 등 숫자만 입력하거나, '2열' 등 '○열' 형식을 사용해 주세요."
+        return _ManualPlaceOutcome(
+            False,
+            f"◊ 입력된 열({col_str})을 인식할 수 없습니다."
+            " '1' 등 숫자만 입력하거나, '2열' 등 '○열' 형식을 사용해 주세요.",
+        )
+
+    label = f"{name}({faction.value} {column}열)"
+
+    if mid_battle_allowed:
+        try:
+            state.session.add_character(state.name_dict[name], faction, column)
+        except CommandValidationError as e:
+            return _ManualPlaceOutcome(False, f"◊ {e}")
+
+        try:
+            upsert_field_row(
+                state.spreadsheet,
+                str(state.preparation_status_id),
+                battle_type=FieldBattleType.MAIN,
+                round_n=state.session.round_n,
+                phase=state.session.current_phase.value,
+                characters=build_field_characters(
+                    state.session.context, include_hp=False
+                ),
+                meta={"name": state.session.name},
+                cache=state.sheet_cache,
+            )
+        except Exception:
+            _log_system_error("필드 시트 저장")
+
+        try:
+            render_public_field_sheet(
+                state.field_spreadsheet,
+                state.session.context,
+                round_n=state.session.round_n,
+                phase=state.session.current_phase.value,
+                enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                battle_name=state.session.name,
+                cache=state.field_sheet_cache,
+            )
+        except Exception:
+            _log_system_error("공개 필드 시트 실시간 갱신")
+
+        return _ManualPlaceOutcome(True, label)
 
     state.pending_placements.append((name, faction, column))
-    return f"◊ {name}({faction.value} {column}열)을 수동 배치 목록에 추가했습니다."
+    return _ManualPlaceOutcome(True, label)
 
 
 def _check_enemy_skill_timing_config(state: "BotState") -> Optional[str]:
@@ -466,6 +549,7 @@ def _cmd_battle_start(
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
+            ensure_merged=True,
         )
     except Exception:
         _log_system_error("공개 필드 시트 렌더링")
@@ -1121,18 +1205,20 @@ def _format_enemy_post_action_results(
     post_action_results: dict[CharacterId, list[CommandPartProcessResult]],
     name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
 ) -> tuple[str, str]:
-    """ENEMY_POST_ACTION 정산 결과를 "【헤더】" 블록으로 조립한 (본문, 계산식)
-    튜플을 반환한다. 커맨드(파트) 하나당 블록 하나이며, 같은 적의 커맨드가
-    여러 개여도 각각 별도 블록으로 빈 줄(\\n\\n)로 구분한다.
+    """ENEMY_POST_ACTION 정산 결과의 (본문, 계산식) 튜플을 반환한다.
 
-    본문에는 어느 적이 한 행동인지 이름을 붙이지 않는다 — 여러 적의 결과를
-    한 게시물에 모아 보여주는 정산 게시물이라, 필요하면 계산식(CW 후속
-    게시물)을 펼쳐서 확인할 수 있으면 충분하다(계산식 쪽은 여전히 이름이
-    붙는다).
+    본문은 개별 적 커맨드별로 나누지 않고 전체를 캐릭터(대상)별로 합산한
+    한 줄씩으로 조립한다 — 서로 다른 적 여러 기가 같은 아군을 각각 공격해도
+    "▹ 대상 | -합계 → hp/max" 한 줄로 합쳐서 보여준다(개별 커맨드 답글의
+    spoiler_text 요약과 동일한 방식). 대상 이름/버프 부여 등은 처음 등장한
+    순서를 유지한다.
+
+    계산식은 여전히 적 하나당 블록으로 나눠 어느 적의 어느 굴림인지 알 수
+    있게 한다(본문과 달리 합산하지 않는다).
 
     이동은 PRE 선언 시점에 이미 답글로 안내되었으므로 여기서는 제외한다
     (POST 재전개 시 move_list가 빈 채로 남아 헤더만 중복 출력되는 것을 막는다)."""
-    body_blocks = []
+    all_non_move_results: list[CommandPartProcessResult] = []
     calc_blocks = []
     for user_id, part_results in post_action_results.items():
         non_move_results = [
@@ -1141,14 +1227,20 @@ def _format_enemy_post_action_results(
             if r.expanded_part.original_part is None
             or r.expanded_part.original_part.type_ != ActionType.MOVE
         ]
-        body, calc = _format_named_reply(
+        all_non_move_results.extend(non_move_results)
+        _, calc = _format_named_reply(
             context, user_id, non_move_results, name_dict, include_name_prefix=False
         )
-        if body:
-            body_blocks.append(body)
         if calc:
             calc_blocks.append(calc)
-    body_text = "\n\n".join(body_blocks) if body_blocks else "변동 없음"
+
+    # caster_id는 헤더 조립에만 쓰이는데, 헤더는 이 병합 경로(본문)에서
+    # 쓰이지 않으므로(각 파트가 SKILL 예고 없이 실제 결과를 이미 갖고
+    # 있어 log_entries가 항상 채워져 있다) 어떤 값이어도 결과에 영향이
+    # 없다 — 여기서는 실제 값을 구할 필요가 없어 빈 id를 그대로 쓴다.
+    body_text, _ = format_battle_reply(context, CharacterId(""), all_non_move_results)
+    if not body_text:
+        body_text = "변동 없음"
     buff_info = _format_granted_buffs_info(context, post_action_results)
     if buff_info:
         body_text = f"{body_text}\n\n{buff_info}"

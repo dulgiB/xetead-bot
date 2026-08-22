@@ -1003,7 +1003,15 @@ class MastodonBotListener(StreamListener):
                     and state.session is not None
                 ):
                     post_text = f"{post_text}\n\n{state.session.context}"
-                post_kwargs: dict = {"media_ids": game_media_ids or None}
+                base_kwargs: dict = {}
+                if result.game_post_visibility is not None:
+                    base_kwargs["visibility"] = result.game_post_visibility
+                # 적군 행동 정산처럼 캐릭터 수가 많아지면 post_text 자체가
+                # 500자를 넘을 수 있다 — truncate로 뒷부분을 잘라내지 않고,
+                # 계산식(_post_calc_followups)과 동일하게 줄 단위로 나눈
+                # 여러 게시물을 스레드로 이어 보낸다.
+                chunks = _split_for_post(post_text, 0)
+                first_kwargs = dict(base_kwargs, media_ids=game_media_ids or None)
                 if result.game_post_reply_to_confirmation:
                     # 이전 페이즈 공지(admin의 [진행] 요청이 답글로 달렸던
                     # 그 게시물)에 다시 답글로 달면, 방금 위에서 보낸
@@ -1011,12 +1019,12 @@ class MastodonBotListener(StreamListener):
                     # 형제가 되어 스레드가 갈라진다 — 확인 답글 뒤에
                     # 이어야 [이전 공지] ← [admin 요청] ← [확인 답글] ←
                     # [이 공지] 순으로 선형으로 이어진다.
-                    post_kwargs["in_reply_to_id"] = reply_status["id"]
-                if result.game_post_visibility is not None:
-                    post_kwargs["visibility"] = result.game_post_visibility
-                new_post = self._mastodon.status_post(
-                    _truncate(post_text), **post_kwargs
-                )
+                    first_kwargs["in_reply_to_id"] = reply_status["id"]
+                new_post = self._mastodon.status_post(chunks[0], **first_kwargs)
+                for chunk in chunks[1:]:
+                    new_post = self._mastodon.status_post(
+                        chunk, in_reply_to_id=new_post["id"], **base_kwargs
+                    )
                 _apply_game_post_side_effects(state, result, new_post["id"])
                 self._post_calc_followups(
                     new_post["id"],

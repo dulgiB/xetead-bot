@@ -184,5 +184,6 @@ def test_manual_place_resolves_name_with_whitespace_mismatch(monkeypatch):
         pending_placements: list = []
 
     result = admin_module._cmd_manual_place("변칙늑대", "아군 3열", _FakeState())
-    assert "찾을 수 없습니다" not in result
+    assert result.ok
+    assert "찾을 수 없습니다" not in result.label
     assert _FakeState.pending_placements[0][0] == "변칙 늑대"

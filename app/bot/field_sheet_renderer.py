@@ -13,11 +13,19 @@
 - 8행: "적군" 타이틀(B8:H8) / "적군 선언 내용" 헤더(J8:K8) — 고정 텍스트, 건드리지 않음
 - 9~17행: 적군 캐릭터 3슬롯 블록. 헤더(18행)에 바로 인접한 15~17행이 슬롯0(메인),
   그 위 12~14행이 슬롯1, 9~11행이 슬롯2 — 슬롯이 늘어날수록 헤더에서 멀어지며 위로 쌓인다.
-  같은 9~17행의 J/K열에는 적 선언 내용 목록을 위에서부터 채운다.
+  J9:K17은 병합된 셀 하나다 — 적 선언 내용을 "이름 [커맨드]" 줄 단위로 `\n`을
+  이어붙여 그 한 셀(J9)에 통째로 쓴다. 적 수가 많아도(예: 20기 이상) 행 수
+  제약 없이 한 셀 안에서 줄바꿈으로만 늘어나므로 그리드 구조가 깨지지 않는다.
 - 18행: 전장 1~7열 번호 헤더(B18:H18) / "아군 선언 내용" 헤더(J18:K18) — 고정 텍스트.
 - 19~27행: 아군 캐릭터 3슬롯 블록. 19~21행이 슬롯0(메인), 22~24행이 슬롯1,
-  25~27행이 슬롯2 — 헤더에서 멀어지며 아래로 쌓인다.
+  25~27행이 슬롯2 — 헤더에서 멀어지며 아래로 쌓인다. J19:K27도 마찬가지로
+  병합된 셀 하나(J19)에 아군 선언 내용을 `\n`으로 이어붙인다.
 - 28행: "아군" 타이틀(B28:H28) — 고정 텍스트, 건드리지 않음.
+
+J9:K17/J19:K27 병합은 `ensure_merged=True`로 호출했을 때만 수행한다(구조적
+변경이라 값 쓰기와 별개의 API 호출이 필요해 매 렌더링마다 부르면 낭비다) —
+전투 시작 시 한 번만 병합해 두면 이후에는 이미 병합된 상태가 시트에
+그대로 남아 있으므로, 매 라운드/커맨드마다 다시 병합할 필요가 없다.
 
 "전투 이름"(3행, 병합 B3:H3)은 `battle_name`이 주어졌을 때만 갱신한다. 주어지지
 않으면(예: 이름 없이 [전투개시]) 기존 텍스트를 그대로 둔다. 위 고정 라벨/헤더
@@ -75,8 +83,7 @@ _ENEMY_BLOCK_BOTTOM = _HEADER_ROW - 1  # 17
 _ALLY_MAIN_ROW_START = _HEADER_ROW + 1  # 19 (슬롯0, 헤더에 바로 인접)
 _ALLY_BLOCK_BOTTOM = _HEADER_ROW + _FACTION_BLOCK_HEIGHT  # 27
 
-_DECLARE_NAME_COL = 10  # J
-_DECLARE_CONTENT_COL = 11  # K
+_DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J9:K17 / J19:K27)
 
 
 def render_public_field_sheet(
@@ -87,6 +94,7 @@ def render_public_field_sheet(
     enemy_declared: dict[CharacterId, list[CharacterCommand]],
     battle_name: Optional[str] = None,
     cache: Optional[SheetCache] = None,
+    ensure_merged: bool = False,
 ) -> None:
     ws = (
         cache.worksheet(_FIELD_SHEET)
@@ -94,14 +102,18 @@ def render_public_field_sheet(
         else spreadsheet.worksheet(_FIELD_SHEET)
     )
 
-    enemy_grid, enemy_declare_grid, notes = _build_faction_block(
+    if ensure_merged:
+        ws.merge_cells(f"J{_ENEMY_BLOCK_TOP}:K{_ENEMY_BLOCK_BOTTOM}")
+        ws.merge_cells(f"J{_ALLY_MAIN_ROW_START}:K{_ALLY_BLOCK_BOTTOM}")
+
+    enemy_grid, enemy_declare_text, notes = _build_faction_block(
         context,
         FactionType.ENEMY,
         main_row_start=_ENEMY_MAIN_ROW_START,
         direction=-1,
         declared=enemy_declared,
     )
-    ally_grid, ally_declare_grid, ally_notes = _build_faction_block(
+    ally_grid, ally_declare_text, ally_notes = _build_faction_block(
         context,
         FactionType.ALLY,
         main_row_start=_ALLY_MAIN_ROW_START,
@@ -123,16 +135,16 @@ def render_public_field_sheet(
                 "values": enemy_grid,
             },
             {
-                "range": f"J{_ENEMY_BLOCK_TOP}:K{_ENEMY_BLOCK_BOTTOM}",
-                "values": enemy_declare_grid,
+                "range": rowcol_to_a1(_ENEMY_BLOCK_TOP, _DECLARE_NAME_COL),
+                "values": [[enemy_declare_text]],
             },
             {
                 "range": f"B{_ALLY_MAIN_ROW_START}:H{_ALLY_BLOCK_BOTTOM}",
                 "values": ally_grid,
             },
             {
-                "range": f"J{_ALLY_MAIN_ROW_START}:K{_ALLY_BLOCK_BOTTOM}",
-                "values": ally_declare_grid,
+                "range": rowcol_to_a1(_ALLY_MAIN_ROW_START, _DECLARE_NAME_COL),
+                "values": [[ally_declare_text]],
             },
         ]
     )
@@ -147,19 +159,20 @@ def _build_faction_block(
     main_row_start: int,
     direction: int,
     declared: dict[CharacterId, list[CharacterCommand]],
-) -> tuple[list[list[str]], list[list[str]], dict[str, str]]:
-    """진영 블록 하나(9행 x 7열 캐릭터 그리드 + 9행 x 2열 선언 패널)를 조립한다.
+) -> tuple[list[list[str]], str, dict[str, str]]:
+    """진영 블록 하나(9행 x 7열 캐릭터 그리드 + 선언 내용 병합 셀 텍스트)를 조립한다.
 
     `direction`은 슬롯이 늘어날수록 메인 행(슬롯0)에서 어느 쪽으로 멀어지는지를
-    나타낸다 (적군은 -1: 위로, 아군은 +1: 아래로). 반환하는 두 그리드는 모두
-    블록의 최상단 행부터 시작하는 상대 좌표라 `batch_update`에 그대로 넘길 수 있다.
+    나타낸다 (적군은 -1: 위로, 아군은 +1: 아래로). 캐릭터 그리드는 블록의
+    최상단 행부터 시작하는 상대 좌표라 `batch_update`에 그대로 넘길 수 있다.
+    선언 내용은 J열 병합 셀 하나에 통째로 들어가므로 행 수 제약이 없다 —
+    "이름 [커맨드]" 줄을 `\n`으로 이어붙인 문자열 하나로 반환한다.
     """
     block_top = min(
         main_row_start, main_row_start + direction * (CHARACTER_PER_COLUMN - 1) * 3
     )
 
     grid = [["" for _ in range(_COLUMN_COUNT)] for _ in range(_FACTION_BLOCK_HEIGHT)]
-    declare_grid = [["", ""] for _ in range(_FACTION_BLOCK_HEIGHT)]
     notes: dict[str, str] = {}
 
     for col_idx, column in enumerate(_BATTLEFIELD_COLUMNS):
@@ -192,17 +205,13 @@ def _build_faction_block(
             grid[buff_row - block_top][col_idx] = buff_text
             notes[buff_cell] = note_text
 
-    row = block_top
-    for char_id, commands in declared.items():
-        if row > block_top + _FACTION_BLOCK_HEIGHT - 1:
-            break
-        declare_grid[row - block_top][0] = char_id.name
-        declare_grid[row - block_top][1] = " ".join(
-            _format_declared_command(command) for command in commands
-        )
-        row += 1
+    declare_lines = [
+        f"{char_id.name} "
+        + " ".join(_format_declared_command(command) for command in commands)
+        for char_id, commands in declared.items()
+    ]
 
-    return grid, declare_grid, notes
+    return grid, "\n".join(declare_lines), notes
 
 
 def _format_declared_command(command: CharacterCommand) -> str:
