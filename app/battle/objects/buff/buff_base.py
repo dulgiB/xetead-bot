@@ -129,6 +129,11 @@ class BuffBase(abc.ABC):
         self.id = data.id
         self.given_by = given_by
         self.applied_to = applied_to
+        # BuffContainer.add()가 실제로 등록/갱신할 때 일련번호로 덮어쓴다 —
+        # "가장 최근에 걸린 [도발]이 우선한다" 같은 동시 다중 인스턴스 우선순위
+        # 판정에 쓰인다(get_target_override() 참고). 기본값 0은 add()를
+        # 거치지 않는 경로(패시브 래퍼 등)의 안전한 최하위 우선순위다.
+        self.applied_at: int = 0
 
         # 값은 버프 생성 시점에 정해져서 이후 변동되지 않는다.
         self.value = value_override if value_override is not None else data.value
@@ -193,6 +198,7 @@ class BuffBase(abc.ABC):
         obj.uid = uid
         obj.given_by = given_by
         obj.applied_to = applied_to
+        obj.applied_at = 0
         obj.value = value
         obj.value_2 = value_2
         obj.value_type = value_type
