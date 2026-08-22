@@ -368,6 +368,13 @@ class DamageData:
     # BuffApplyDebuffOnDealingDamage)를 발동시키지 않는다. 버프 반격 등
     # 파생 대미지가 원래 패시브를 재귀적으로 유발하지 않도록 하는 용도.
     triggers_given_damage_passives: bool = True
+    # False면 "이 대미지를 맞았을 때" 발동하는 반응형 버프(코모이디아 등
+    # ALLY_DAMAGED/ALLY_IN_RANGE_DAMAGED/ALLY_IN_RANGE_ATTACKED 계열)를
+    # 발동시키지 않는다. DoT(그을음/거화 등)나 반격/반사류가 만들어내는
+    # 파생 대미지에 쓴다 — 그러지 않으면 DoT 틱이나 반격 자체가 다른(또는
+    # 같은) 반응형 버프를 연쇄로 재유발해, 원래 커맨드 한 번이 아니라
+    # 반응이 반응을 낳는 게임 밸런스상 의도하지 않은 연쇄가 생긴다.
+    triggers_received_damage_passives: bool = True
     # True면 도발(BuffTaunt 등 get_target_override) 리다이렉트를 적용하지
     # 않는다. 열 광역기는 "이동에 코스트를 써서 열을 벗어날지, 대미지를
     # 맞고 버틸지"가 각 대상별 판단이어야 하는데, 도발을 적용하면 열 전체

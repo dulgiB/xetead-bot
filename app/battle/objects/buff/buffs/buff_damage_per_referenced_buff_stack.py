@@ -29,6 +29,7 @@ class DamagePerReferencedBuffStackEvent(BuffEvent):
 
     coefficient: int
     reference_buff_id: str
+    buff_label: str
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -53,6 +54,8 @@ class DamagePerReferencedBuffStackEvent(BuffEvent):
                 coefficient_value=self.coefficient * 100,
                 consumed_buff_id=self.reference_buff_id,
                 triggers_given_damage_passives=False,
+                triggers_received_damage_passives=False,
+                source_label=f"{self.buff_label}: {attacker_or_target.name}",
             )
         )
 
@@ -74,4 +77,5 @@ class BuffDamageOverTimePerReferencedBuffStack(BuffBase):
             condition=self.condition,
             coefficient=self.value,
             reference_buff_id=self.reference_buff_id,
+            buff_label=self.display_id_label(),
         )

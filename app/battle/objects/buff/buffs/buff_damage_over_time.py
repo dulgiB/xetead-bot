@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class DamageOverTimeEvent(BuffEvent):
     value: int
+    buff_label: str
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -32,6 +33,8 @@ class DamageOverTimeEvent(BuffEvent):
                     attacker_id=attacker_or_target,
                     target_id=holder,
                     value=BaseValueIndicator(ValueSourceType.FIXED, self.value),
+                    triggers_received_damage_passives=False,
+                    source_label=f"{self.buff_label}: {attacker_or_target.name}",
                 ),
             )
         )
@@ -47,4 +50,8 @@ class BuffDamageOverTime(BuffBase):
     def create_event(self) -> DamageOverTimeEvent:
         if self.value_type is not None and self.value_type != ValueType.INTEGER:
             raise ValueError(self.value_type)
-        return DamageOverTimeEvent(condition=self.condition, value=self.value)
+        return DamageOverTimeEvent(
+            condition=self.condition,
+            value=self.value,
+            buff_label=self.display_id_label(),
+        )

@@ -21,6 +21,7 @@ def make_coefficient_damage_calc(
     display_factors: Optional[tuple[tuple[str, float], ...]] = None,
     is_magic_attack: Optional[bool] = None,
     triggers_given_damage_passives: bool = True,
+    triggers_received_damage_passives: bool = True,
     source_label: Optional[str] = None,
 ) -> DamageCalculateData:
     """value_source × coefficient_value% 형태의 대미지 항목 하나를 만든다.
@@ -35,7 +36,12 @@ def make_coefficient_damage_calc(
 
     source_label을 넘기면 답글 요약에도 "[source_label]"로 발생 원인이
     표시된다(계산식 전용인 source_name과 별개) — attacker_id가 원래 커맨드의
-    행위자가 아니라 반응형 버프 보유자인 경우(반격류)에만 넘긴다."""
+    행위자가 아니라 반응형 버프 보유자인 경우(반격류)에만 넘긴다.
+
+    triggers_received_damage_passives=False로 넘기면 이 대미지가 코모이디아
+    등 "대미지를 맞았을 때" 반응하는 버프를 재유발하지 않는다 — DoT/반격류
+    자신이 만들어내는 파생 대미지처럼, 이미 어떤 반응의 결과물인 대미지에
+    쓴다(연쇄 반응 방지)."""
     return DamageCalculateData(
         base=DamageData(
             attacker_id=attacker_id,
@@ -51,6 +57,7 @@ def make_coefficient_damage_calc(
             ),
             is_magic_attack=is_magic_attack,
             triggers_given_damage_passives=triggers_given_damage_passives,
+            triggers_received_damage_passives=triggers_received_damage_passives,
             source_label=source_label,
         )
     )

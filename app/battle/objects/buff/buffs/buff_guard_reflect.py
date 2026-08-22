@@ -120,6 +120,7 @@ class GuardReflectEvent(BuffEvent):
                         value=BaseValueIndicator(
                             value_source=ValueSourceType.FIXED, value=reflect_value
                         ),
+                        triggers_received_damage_passives=False,
                         source_label=f"{self.buff_label}: {holder.name}",
                     ),
                     roll_display=(

@@ -120,6 +120,7 @@ class CompanionGuardianEvent(BuffEvent):
                     value_source=ValueSourceType.STAT_ATK_ROLL,
                     source_name=counter_label,
                     coefficient_value=self.counter_percent,
+                    triggers_received_damage_passives=False,
                     source_label=counter_label,
                 )
             )

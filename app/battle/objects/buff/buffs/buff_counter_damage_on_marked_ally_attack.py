@@ -70,6 +70,7 @@ class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
             value_source=ValueSourceType.STAT_ATK_ROLL,
             source_name=label,
             coefficient_value=self.percent,
+            triggers_received_damage_passives=False,
             source_label=label,
         )
         apply_pure_damage_modifiers_to(

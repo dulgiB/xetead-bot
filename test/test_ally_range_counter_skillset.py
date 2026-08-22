@@ -496,6 +496,80 @@ class TestPassiveSkill:
 
         assert enemy_hp_before == enemy_hp_after
 
+    def test_no_counter_from_round_end_dot_tick(self):
+        """그을음/거화류 라운드 종료 DoT(BuffDamageOverTimePerReferencedBuffStack)는
+        코모이디아류(ALLY_IN_RANGE_DAMAGED) 반격 패시브를 재유발하면 안
+        된다 — DoT를 건 캐릭터가 반격까지 이중으로 맞으면 안 된다."""
+        buffs = _buff_dict()
+        buffs["스택_테스트"] = BuffData.from_dict(
+            {
+                "id": "스택_테스트",
+                "buff_name": "BuffStackingMark",
+                "duration_turn_value": 2,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value_0": "",
+                "value_type_0": "",
+                "condition": "",
+                "condition_value": "",
+                "description": "테스트 전용.",
+                "is_debuff": True,
+                "max_stack": 5,
+            }
+        )
+        buffs["DoT_테스트"] = BuffData.from_dict(
+            {
+                "id": "DoT_테스트",
+                "buff_name": "BuffDamageOverTimePerReferencedBuffStack",
+                "duration_turn_value": 2,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value_0": 5,
+                "value_type_0": "정수",
+                "condition": "",
+                "condition_value": "",
+                "description": "테스트 전용.",
+                "is_debuff": True,
+                "max_stack": "",
+                "reference_buff_id": "스택_테스트",
+            }
+        )
+        ctx = BattlefieldContext(
+            buff_dict=buffs,
+            skill_dict=_skill_dict(),
+            passive_skill_dict=_passive_skill_dict(),
+            milestone_n=0,
+        )
+        manager = _setup_enemy_pre_phase(ctx)
+        self._add_holder_and_ally(ctx)
+        enemy = CharacterId("적군")
+        ally2 = CharacterId("아군2")
+        ctx.buff_container.add(
+            _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=enemy, applied_to=ally2, buff_id="스택_테스트", stack_value=3
+            )
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=enemy, applied_to=ally2, buff_id="DoT_테스트")
+        )
+
+        ally2_hp_before = ctx.characters[ally2].status.curr_hp
+        enemy_hp_before = ctx.characters[enemy].status.curr_hp
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+        manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+        ally2_hp_after = ctx.characters[ally2].status.curr_hp
+        enemy_hp_after = ctx.characters[enemy].status.curr_hp
+
+        # DoT 자체(3스택 × 5)는 정상적으로 들어가야 한다.
+        assert ally2_hp_before - ally2_hp_after == 15
+        # 하지만 그 DoT가 코모이디아(PassiveSkill)의 반격까지 재유발해
+        # DoT를 건 적군이 추가로 대미지를 받으면 안 된다.
+        assert enemy_hp_before == enemy_hp_after
+
 
 class TestCost2Skill:
     """코스트 2 스킬: 공격 굴림 230% 대미지 + 자신에게 2턴간 [버프_1] 부여."""
