@@ -501,10 +501,18 @@ def _cmd_battle_start(
             errors.append(str(e))
 
     # 2. 아군 랜덤 배치 (pending_participants)
+    # 참전 신청(pending_participants)과 수동 배치(pending_placements)는 서로
+    # 독립적인 목록이라, 같은 캐릭터가 참전 신청도 하고 admin이 수동으로도
+    # 배치했다면 위 1번에서 이미 배치된 캐릭터를 여기서 또 add_character()해
+    # 같은 캐릭터가 두 칸을 동시에 차지하게 된다(add_character()는 기존
+    # char_id 존재 여부를 확인하지 않고 새 슬롯에 추가한다) — 위 1번에서
+    # 이미 배치를 마친 캐릭터는 제외한다.
+    already_placed = set(state.session.context.characters.keys())
     ally_data_list = [
         state.char_dict[acct]
         for acct in state.pending_participants
         if acct in state.char_dict
+        and CharacterId(state.char_dict[acct].name) not in already_placed
     ]
     errors.extend(
         _assign_random_positions(state.session, ally_data_list, FactionType.ALLY)
