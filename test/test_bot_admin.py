@@ -277,6 +277,68 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     assert "적 캐릭터" in to_post_action.game_post_calc_text
 
 
+def test_enemy_post_action_summary_merges_damage_to_same_target_across_attackers(
+    monkeypatch,
+):
+    """서로 다른 적 여러 기가 같은 아군을 각각 공격하면, 본문(game_post_text)에는
+    공격자마다 별도 줄이 아니라 그 아군에 대한 대미지 합계 한 줄로 합쳐져야
+    한다 — 개별 커맨드 답글의 spoiler_text 요약과 동일한 방식으로, 적이
+    많아져도 본문이 늘어지지 않게 하기 위함이다."""
+    monkeypatch.setattr(
+        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
+    )
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적1"] = get_test_preset("적1")
+    state.name_dict["적2"] = get_test_preset("적2")
+    state.pending_placements.append(
+        ("적1", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.pending_placements.append(
+        ("적2", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    _cmd_battle_start(state)
+
+    admin_module._cmd_proxy("적1", "[공격/유효 캐릭터]", state)
+    admin_module._cmd_proxy("적2", "[공격/유효 캐릭터]", state)
+
+    _cmd_advance_phase(state)  # → 아군 행동
+    to_post_action = _cmd_advance_phase(state)  # → 적 공격 정산
+
+    body = to_post_action.game_post_text
+    assert body.count("유효 캐릭터 |") == 1
+
+
+def test_long_game_post_text_splits_into_thread_instead_of_truncating():
+    """game_post_text(적군 행동 정산 완료 등)가 500자를 넘으면 truncate로
+    뒷부분을 잘라내지 않고, 계산식(_post_calc_followups)과 동일하게 줄
+    단위로 나눈 여러 게시물을 서로 답글로 이어붙인 스레드로 보내야 한다."""
+    state = _make_state()
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    lines = [f"▹ 캐릭터{i} | -10 → 90/100" for i in range(30)]
+    long_text = "\n".join(lines)
+    assert len(long_text) > 500  # 실제로 분할이 필요한 길이인지 확인
+
+    result = admin_module.AdminCommandResult(
+        reply_text="◊ [라운드 1] 적군 행동 정산 완료", game_post_text=long_text
+    )
+    listener._post_admin_result(result, 1, "test-admin", "public", state)
+
+    game_post_calls = mastodon.status_post_calls[1:]  # [0]은 reply_text 확인 답글
+    assert len(game_post_calls) > 1
+    for call in game_post_calls:
+        assert len(call["status"]) <= 500
+    for i in range(1, len(game_post_calls)):
+        assert "in_reply_to_id" in game_post_calls[i]
+    reconstructed = "\n".join(call["status"] for call in game_post_calls)
+    assert reconstructed == long_text
+
+
 def test_enemy_post_action_summary_lists_unique_granted_buff_info(monkeypatch):
     """적 공격 정산 게시물 하단에는 이번 정산에서 새로 부여된 버프의 설명을
     "**【버프 정보】**\n▹ [버프id]: 설명" 형식으로 모아 보여줘야 한다. 같은
@@ -472,7 +534,9 @@ def test_handle_admin_command_processes_multiple_proxy_commands_in_one_message()
 
 def test_manual_place_accepts_multiple_placements_in_one_message():
     """[배치/...]도 프록시 커맨드와 마찬가지로 한 메시지에 여러 개를 줄바꿈으로
-    함께 보내면 전부 pending_placements에 등록되어야 한다."""
+    함께 보내면 전부 pending_placements에 등록되고, 답글은 "◊ 수동 배치: " 뒤에
+    성공한 배치를 쉼표로 이어붙인 한 줄로 합쳐져야 한다(적이 많아져도 답글이
+    줄 단위로 늘어나 500자 제한에 걸리지 않도록)."""
     state = _make_state()
     state.name_dict["적1"] = get_test_preset("적1")
     state.name_dict["적2"] = get_test_preset("적2")
@@ -481,12 +545,27 @@ def test_manual_place_accepts_multiple_placements_in_one_message():
         "[배치/적1/적군 1열]\n[배치/적2/적군 2열]", state
     )
 
-    assert "적1" in result.reply_text
-    assert "적2" in result.reply_text
+    assert result.reply_text == "◊ 수동 배치: 적1(적군 1열), 적2(적군 2열)"
     assert state.pending_placements == [
         ("적1", FactionType.ENEMY, BattlefieldColumnIndex.from_str("1")),
         ("적2", FactionType.ENEMY, BattlefieldColumnIndex.from_str("2")),
     ]
+
+
+def test_manual_place_reports_errors_separately_from_successes():
+    """일부 배치는 성공하고 일부는 실패하면, 성공은 "◊ 수동 배치: ..." 한 줄로
+    모으고 실패는 각자의 오류 메시지를 별도 줄로 유지해야 한다."""
+    state = _make_state()
+    state.name_dict["적1"] = get_test_preset("적1")
+
+    result = admin_module.handle_admin_command(
+        "[배치/적1/적군 1열]\n[배치/존재하지 않는 캐릭터/적군 2열]", state
+    )
+
+    lines = result.reply_text.split("\n")
+    assert lines[0] == "◊ 수동 배치: 적1(적군 1열)"
+    assert "존재하지 않는 캐릭터" in lines[1]
+    assert "찾을 수 없습니다" in lines[1]
 
 
 def test_continue_battle_marks_round_start_for_field_image():
@@ -504,6 +583,48 @@ def test_continue_battle_marks_round_start_for_field_image():
     result = _cmd_continue_battle(state)
 
     assert result.attach_field_image is True
+
+
+def test_manual_place_blocked_during_ally_action_phase():
+    """전투가 이미 시작되어 라운드 종료(다음 라운드 대기) 단계가 아니면
+    [배치/...]는 여전히 막혀야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    _cmd_battle_start(state)
+    _cmd_advance_phase(state)  # ENEMY_PRE_ACTION → ALLY_ACTION
+    assert state.session.current_phase == RoundPhaseType.ALLY_ACTION
+
+    state.name_dict["증원"] = get_test_preset("증원")
+    result = admin_module.handle_admin_command("[배치/증원/적군 1열]", state)
+
+    assert "증원" not in state.session.context.characters
+    assert "라운드 종료" in result.reply_text
+
+
+def test_manual_place_allowed_during_next_round_standby_before_continue():
+    """라운드 종료(다음 라운드 대기) 단계에서는 [전투 속행] 입력 전에
+    [배치/...]로 증원을 즉시 전장에 배치할 수 있어야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    _cmd_battle_start(state)
+    for _ in range(3):  # ALLY_ACTION → ENEMY_POST_ACTION → STANDBY
+        _cmd_advance_phase(state)
+    assert (
+        state.session.current_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+    )
+
+    state.name_dict["증원"] = get_test_preset("증원")
+    result = admin_module.handle_admin_command("[배치/증원/적군 1열]", state)
+
+    assert result.reply_text == "◊ 수동 배치: 증원(적군 1열)"
+    added = state.session.context.characters[CharacterId("증원")]
+    assert added.faction == FactionType.ENEMY
 
 
 def test_investigation_battle_inline_placement_respects_faction_token(monkeypatch):

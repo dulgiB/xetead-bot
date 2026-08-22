@@ -1,8 +1,10 @@
 from battle.core.battlefield_context import BattlefieldContext
+from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.buffs import BuffGivenDamage
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
+    ActionType,
     BattlefieldColumnIndex,
     FactionType,
     ValueSourceType,
@@ -184,7 +186,7 @@ def test_build_faction_block_pushes_remaining_slots_forward_after_removal():
         ctx.add_character(get_test_preset(name), FactionType.ALLY, column)
     ctx.remove_character(CharacterId("A"))  # 슬롯0을 비움 → {1: B, 2: C}
 
-    grid, _declare_grid, _notes = _build_faction_block(
+    grid, _declare_text, _notes = _build_faction_block(
         ctx,
         FactionType.ALLY,
         main_row_start=_ALLY_MAIN_ROW_START,
@@ -195,3 +197,44 @@ def test_build_faction_block_pushes_remaining_slots_forward_after_removal():
     assert "B" in grid[0][0]
     assert "C" in grid[3][0]
     assert grid[6][0] == ""
+
+
+def test_build_faction_block_joins_declared_commands_into_single_text():
+    """선언 내용은 더 이상 행별 그리드가 아니라, 적이 아무리 많아도 병합된
+    셀 하나에 "이름 [커맨드]" 줄을 `\\n`으로 이어붙인 문자열 하나로
+    반환되어야 한다(그리드였다면 슬롯 수를 넘는 적이 있을 때 구조가
+    깨졌다)."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    enemy_ids = []
+    for i in range(5):
+        name = f"적{i}"
+        column = BattlefieldColumnIndex(i // 3)  # 열당 최대 3명 제한 회피
+        ctx.add_character(get_test_preset(name), FactionType.ENEMY, column)
+        enemy_ids.append(CharacterId(name))
+
+    declared = {
+        enemy_id: [
+            CharacterCommand(
+                user_id=enemy_id,
+                parts=[
+                    CommandPart(
+                        type_=ActionType.ATTACK, targets=[CharacterId("아군 1")]
+                    )
+                ],
+            )
+        ]
+        for enemy_id in enemy_ids
+    }
+
+    _grid, declare_text, _notes = _build_faction_block(
+        ctx,
+        FactionType.ENEMY,
+        main_row_start=_ALLY_MAIN_ROW_START,
+        direction=1,
+        declared=declared,
+    )
+
+    lines = declare_text.split("\n")
+    assert len(lines) == 5
+    assert lines[0] == "적0 [공격/아군 1]"
+    assert lines[4] == "적4 [공격/아군 1]"
