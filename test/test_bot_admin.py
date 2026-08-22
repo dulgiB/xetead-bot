@@ -196,6 +196,31 @@ def test_battle_start_reports_error_for_defeated_participant():
     assert "탈락캐릭터" in result.reply_text
 
 
+def test_battle_start_does_not_double_place_participant_who_was_also_manually_placed():
+    """참전 신청(pending_participants)과 admin의 수동 배치(pending_placements)는
+    서로 독립된 목록이라, 같은 캐릭터가 참전 신청도 하고 admin이 [배치/...]로도
+    지정하면 예전에는 add_character()가 두 번 호출되어(기존 char_id 존재
+    여부를 확인하지 않음) 같은 캐릭터가 두 칸을 동시에 차지했다 — 수동
+    배치가 우선하고, 무작위 자동 배치에서는 제외되어야 한다."""
+    state = _make_state(
+        pending_placements=[("참가자", FactionType.ALLY, BattlefieldColumnIndex(2))],
+        pending_participants=["참가자_acct"],
+    )
+    state.char_dict = {"참가자_acct": get_test_preset("참가자")}
+    state.name_dict = {"참가자": get_test_preset("참가자")}
+
+    _cmd_battle_start(state)
+
+    char_id = CharacterId("참가자")
+    assert char_id in state.session.context.characters
+    occupied_columns = [
+        col
+        for col, slots in state.session.context.position_map[FactionType.ALLY].items()
+        if char_id in slots.values()
+    ]
+    assert occupied_columns == [BattlefieldColumnIndex(2)]
+
+
 def test_advance_phase_system_error_is_generic_and_logged(monkeypatch, caplog):
     """스프레드시트 저장/렌더링 실패는 원본 예외 메시지 대신 통일된
     "◊ 시스템 오류입니다."로만 노출되고, 전체 트레이스는 서버 로그에
