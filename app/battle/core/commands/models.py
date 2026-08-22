@@ -171,6 +171,11 @@ class BattleLogEntry:
     stack_delta: Optional[int] = (
         None  # buff_add: 이번에 추가된 스택 / buff_remove: 이번에 소모된 스택
     )
+    # buff_add(적층형 버프 한정): 답글 포매터가 같은 (대상, buff_id) 조합의
+    # 여러 부여를 "[라벨]×합계 부여 → 최종 M" 한 줄로 합칠 때 쓴다.
+    # entry.result를 다시 파싱하지 않도록 라벨/최종 스택을 구조화 필드로 둔다.
+    buff_label: Optional[str] = None
+    final_stack: Optional[int] = None
     # damage/heal 적용 직후의 대상 HP/최대 HP 스냅샷. 같은 커맨드에서 같은
     # 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상), 답글 포매터가
     # 나중에 context를 다시 조회하면 최종 HP만 보이게 되므로 이 시점 값을
