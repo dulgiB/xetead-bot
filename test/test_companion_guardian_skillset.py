@@ -25,6 +25,7 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.exceptions import CommandValidationError
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.buffs.buff_companion_guardian import BuffCompanionGuardian
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
@@ -590,6 +591,52 @@ class TestCompanionGuardianSplitAndCounter:
         assert companion_damage == 30
         # 반격: 공격 굴림 80% (milestone_n=0이므로 atk=100 그대로 굴림 → 80).
         assert enemy_damage == 80
+
+    def test_split_reflects_other_received_damage_buffs_equally(self):
+        """holder에게 [CompanionBuff1](분담)과 별개로 "받는 대미지" 경감
+        버프([CompanionBuff2], -20%)가 함께 걸려 있으면, 그 경감이 반영된
+        최종 대미지를 기준으로 동료와 나눠야 한다 — holder 몫에만 경감이
+        적용되고 동료 몫은 경감 없이 원래 수치의 절반을 그대로 받는 비대칭이
+        생기면 안 된다. FIXED 대미지는 버프성 퍼센트 경감을 아예 받지 않는
+        설계라(applies_to_fixed=False가 기본) 이 버그를 재현하려면 공격
+        굴림(STAT_ATK_ROLL) 기반 공격을 써야 한다. milestone_n=0(기본값)이면
+        주사위 없이 ATK 그대로 굴림 결과가 되어 완전히 결정적이다."""
+        ctx = _make_context()
+        _add_owner(ctx, max_hp=200, atk=100)
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000, atk=100),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.on_battle_start()
+        companion_id = _companion_id(ctx)
+        manager = _setup_ally_phase(ctx)
+        enemy = CharacterId("적군")
+
+        ctx.buff_container.add(
+            BuffAddData(given_by=OWNER, applied_to=OWNER, buff_id="CompanionBuff2")
+        )
+
+        owner_hp_before = ctx.characters[OWNER].status.curr_hp
+        companion_hp_before = ctx.characters[companion_id].status.curr_hp
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+        manager.process_command(
+            parse_character_command(enemy, "[공격/CompanionGuardian]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        owner_damage = owner_hp_before - ctx.characters[OWNER].status.curr_hp
+        companion_damage = (
+            companion_hp_before - ctx.characters[companion_id].status.curr_hp
+        )
+
+        # 공격 굴림 100(atk=100, milestone_n=0 → 주사위 없음) × -20%[CompanionBuff2]
+        # = 80을 절반씩(50/50) 40/40으로 나눈다. -20% 경감이 holder 몫에만
+        # 반영되고 동료 몫엔 반영되지 않는 비대칭 버그였다면 동료는 100의
+        # 절반인 50을 그대로 받아 owner_damage != companion_damage였다.
+        assert owner_damage == companion_damage == 40
 
     def test_split_and_counter_modifier_labels_follow_buff_id_not_hardcoded(self):
         """분담/반격 modifier의 source_name(계산식에 노출되는 이름)은 "버프"

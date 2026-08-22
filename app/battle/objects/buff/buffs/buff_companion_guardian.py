@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Optional
 
@@ -7,7 +8,11 @@ from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriorit
 from battle.objects.buff.damage_factory import make_coefficient_damage_calc
 from battle.objects.companion import is_companion_alive
 from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
-from battle.objects.models import CharacterId, FloatValueModifier
+from battle.objects.models import (
+    BaseValueIndicator,
+    CharacterId,
+    ValueWithModifiers,
+)
 
 if TYPE_CHECKING:
     from battle.core.command_calculator import CommandPartCalculator
@@ -38,7 +43,12 @@ class CompanionGuardianEvent(BuffEvent):
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
-        return BuffEventCalculatePriority.NORMAL
+        # POST여야 한다 — holder에게 걸린 다른 ON_ACTION 버프(예: "받는
+        # 대미지" 경감류)가 먼저 received_modifiers에 반영된 뒤에, 그 모든
+        # 증감이 반영된 최종 대미지를 기준으로 동료와 나눠야 한다. NORMAL로
+        # 두면 이 버프가 먼저 실행되어 다른 경감 버프가 holder 몫에만 적용되고
+        # 동료 몫에는 누락되는 비대칭이 생긴다.
+        return BuffEventCalculatePriority.POST
 
     def apply(
         self,
@@ -65,38 +75,52 @@ class CompanionGuardianEvent(BuffEvent):
         companion_already_targeted = any(
             dc.base.target_id == companion_id for dc in effect_data.damage_data_list
         )
-        split_modifier = FloatValueModifier(
-            source_name=self.label,
-            value=-self.split_percent,
-            applies_to_fixed=True,
-        )
         shared_calcs: list[DamageCalculateData] = []
         if not companion_already_targeted:
             for damage_calc in effect_data.damage_data_list:
                 if damage_calc.base.target_id != holder:
                     continue
-                # holder와 동료가 "같은 대미지"를 절반씩 나눠 받아야 한다.
-                # damage_calc.base.value가 STAT_ATK_ROLL처럼 매 get_value() 호출마다
-                # 다시 굴리는 소스이면, 아래에서 holder/동료 몫을 각자 별도
-                # DamageCalculateData로 처리할 때 서로 다른 주사위 값이 나와
-                # 분담이 아니라 우연에 따라 손해/이득을 볼 수 있다. 분담 전에
-                # 값을 한 번만 확정해 양쪽이 그 값을 공유하게 만든다.
-                resolved_value = replace(
+                # holder와 동료가 "같은 대미지"를 나눠 받아야 한다. POST
+                # 우선순위 덕분에 이 시점엔 holder에게 걸린 다른 받는 대미지
+                # 증감 버프가 이미 received_modifiers에 반영돼 있다 — 그
+                # 모든 증감을 포함한 최종 수치를 한 번만 확정한 뒤,
+                # 그 수치를 split_percent 비율로 나눠 holder/동료 각자
+                # FIXED 대미지로 만든다(각자 다시 modifier를 적용하면 위
+                # 증감이 어느 한쪽에만 반영되는 비대칭이 재발한다).
+                final_calc = ValueWithModifiers(
                     damage_calc.base.value,
-                    value=damage_calc.base.value.get_value(
-                        damage_calc.base.attacker_id,
-                        holder,
-                        calculator,
-                        effect_seq_number,
+                    damage_calc.given_modifiers,
+                    damage_calc.received_modifiers,
+                )
+                total_value = final_calc.get_value(
+                    calculator, damage_calc.base.attacker_id, holder, effect_seq_number
+                )
+                calc_display = final_calc.format_calculation() or str(total_value)
+                companion_share = math.floor(total_value * self.split_percent / 100)
+                holder_share = total_value - companion_share
+
+                damage_calc.base = replace(
+                    damage_calc.base,
+                    value=BaseValueIndicator(
+                        value_source=ValueSourceType.FIXED, value=holder_share
                     ),
                 )
-                damage_calc.base = replace(damage_calc.base, value=resolved_value)
-                damage_calc.received_modifiers.append(split_modifier)
+                damage_calc.given_modifiers = []
+                damage_calc.received_modifiers = []
+                damage_calc.roll_display = f"{calc_display} × {(100 - self.split_percent) / 100:g}[{self.label}]"
                 shared_calcs.append(
                     DamageCalculateData(
-                        base=replace(damage_calc.base, target_id=companion_id),
-                        given_modifiers=list(damage_calc.given_modifiers),
-                        received_modifiers=[split_modifier],
+                        base=replace(
+                            damage_calc.base,
+                            target_id=companion_id,
+                            value=BaseValueIndicator(
+                                value_source=ValueSourceType.FIXED,
+                                value=companion_share,
+                            ),
+                        ),
+                        roll_display=(
+                            f"{calc_display} × {self.split_percent / 100:g}[{self.label}]"
+                        ),
                     )
                 )
             effect_data.damage_data_list.extend(shared_calcs)
