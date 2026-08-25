@@ -207,14 +207,38 @@ def _upsert_practice_field_row(
         logger.exception("필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.field_id)
 
 
-def _update_practice_field_active_post(state: "BotState") -> None:
+def _register_practice(
+    state: "BotState", ps: PracticeBattleState, new_post_id: int, *, prep: bool
+) -> None:
+    """PracticeBattleState의 진행 게시물(tip) 키를 new_post_id로 옮긴다.
+
+    state.practices는 진행 게시물 id(prep 단계엔 prep_post_id, 시작 후엔
+    active_post_id)를 키로 쓰므로, _register_dm_battle과 동일한 이유로 옛
+    키를 먼저 지우지 않으면 이전 게시물 id로도 계속 라우팅되는 좀비 항목이
+    남는다.
+    """
+    old_key = (
+        ps.active_post_id
+        if ps.active_post_id is not None
+        else (ps.prep_post_id or None)
+    )
+    if old_key is not None:
+        state.practices.pop(old_key, None)
+    if prep:
+        ps.prep_post_id = new_post_id
+    else:
+        ps.prep_post_id = 0
+        ps.active_post_id = new_post_id
+    state.practices[new_post_id] = ps
+
+
+def _update_practice_field_active_post(
+    state: "BotState", ps: PracticeBattleState
+) -> None:
     """대련/상시전투 진행 게시물(active_post_id)이 바뀔 때마다 "필드" 시트
     메타에 반영한다 — upsert_field_row 호출 시점엔 아직 새 게시물 id가
     정해지지 않은 경우가 많아(게시 완료 후에야 알 수 있음), 게시가 끝난
     직후 별도로 패치한다."""
-    ps = state.practice
-    if ps is None:
-        return
     try:
         log_sheets.update_field_meta(
             state.spreadsheet,
@@ -235,10 +259,11 @@ def _apply_game_post_side_effects(
     다르지만, 게시가 끝난 뒤 post_id를 어디에 반영할지는 두 경로에서 항상
     동일하므로 공용 헬퍼로 뽑았다.
     """
-    if result.set_practice_prep_from_game_post and state.practice is not None:
-        state.practice.prep_post_id = new_post_id
-    if result.set_practice_active_post and state.practice is not None:
-        state.practice.active_post_id = new_post_id
+    if (
+        result.set_practice_prep_from_game_post
+        and result.practice_to_register is not None
+    ):
+        _register_practice(state, result.practice_to_register, new_post_id, prep=True)
     if result.dm_battle_to_register is not None:
         _register_dm_battle(state, result.dm_battle_to_register, new_post_id)
     if state.session is not None and state.session.started:
@@ -339,28 +364,25 @@ def _persist_battle_log(
                 },
                 cache=state.sheet_cache,
             )
-        elif (
-            battle_log.battle_type
-            in (
-                log_sheets.FieldBattleType.PRACTICE,
-                log_sheets.FieldBattleType.INVESTIGATION,
-            )
-            and state.practice is not None
-            and battle_log.field_id == state.practice.field_id
+        elif battle_log.battle_type in (
+            log_sheets.FieldBattleType.PRACTICE,
+            log_sheets.FieldBattleType.INVESTIGATION,
         ):
-            phase = state.practice.phase
-            log_sheets.upsert_field_row(
-                state.spreadsheet,
-                battle_log.field_id,
-                battle_type=battle_log.battle_type,
-                round_n=state.practice.round_n,
-                phase=phase.value if phase is not None else "",
-                characters=log_sheets.build_field_characters(
-                    state.practice.context, include_hp=True
-                ),
-                meta=_practice_field_meta(state.practice),
-                cache=state.sheet_cache,
-            )
+            ps = admin_commands.find_practice_by_field_id(state, battle_log.field_id)
+            if ps is not None:
+                phase = ps.phase
+                log_sheets.upsert_field_row(
+                    state.spreadsheet,
+                    battle_log.field_id,
+                    battle_type=battle_log.battle_type,
+                    round_n=ps.round_n,
+                    phase=phase.value if phase is not None else "",
+                    characters=log_sheets.build_field_characters(
+                        ps.context, include_hp=True
+                    ),
+                    meta=_practice_field_meta(ps),
+                    cache=state.sheet_cache,
+                )
         elif battle_log.battle_type == log_sheets.FieldBattleType.DM:
             dm = admin_commands.find_dm_battle_by_field_id(state, battle_log.field_id)
             if dm is not None:
@@ -421,7 +443,10 @@ class BotState:
     pending_placements: list[tuple] = field(
         default_factory=list
     )  # (name, faction, column)
-    practice: Optional[PracticeBattleState] = None
+    # key = 현재 진행 게시물 id (prep 단계엔 prep_post_id, 시작 후엔
+    # active_post_id) — dm_battles와 동일한 패턴으로, 여러 대련/상시전투가
+    # 동시에 진행될 수 있다.
+    practices: dict[int, PracticeBattleState] = field(default_factory=dict)
     noncombat: NonCombatState = field(default_factory=NonCombatState)
     dm_battles: dict[int, DmBattleState] = field(
         default_factory=dict
@@ -625,12 +650,11 @@ class MastodonBotListener(StreamListener):
             return
 
         # 2. 대련/상시전투 준비 게시물 답글 (포지션 선언)
-        if (
-            state.practice is not None
-            and state.practice.prep_post_id != 0
-            and in_reply_to_id == state.practice.prep_post_id
-        ):
-            ps = state.practice
+        practice = (
+            state.practices.get(in_reply_to_id) if in_reply_to_id is not None else None
+        )
+        if practice is not None and practice.prep_post_id != 0:
+            ps = practice
             if ps.is_investigation:
                 # 상시전투: [아군/N열] 포지션 선언
                 m = _RE_INVESTIGATION_DECLARATION.search(text)
@@ -651,18 +675,15 @@ class MastodonBotListener(StreamListener):
                     ps.declared[acct] = (SideType.SIDE_1, column)
                     logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
                     if ps.all_declared():
-                        game_post_text = _start_investigation_battle(state)
+                        game_post_text = _start_investigation_battle(state, ps)
                         mention_prefix = _practice_mention_prefix(ps.expected_accts)
-                        prev_post_id = ps.prep_post_id
-                        ps.prep_post_id = 0
                         new_post = self._mastodon.status_post(
                             _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
-                            in_reply_to_id=prev_post_id,
+                            in_reply_to_id=ps.prep_post_id,
                         )
-                        if state.practice is not None:
-                            state.practice.active_post_id = new_post["id"]
-                            _update_practice_field_active_post(state)
+                        _register_practice(state, ps, new_post["id"], prep=False)
+                        _update_practice_field_active_post(state, ps)
             else:
                 # 대련: [N팀/N열] 포지션 선언
                 m = _RE_DECLARATION.search(text)
@@ -698,33 +719,27 @@ class MastodonBotListener(StreamListener):
                         "대련 포지션 선언: %s → %s %s", acct, side.value, column
                     )
                     if ps.all_declared() and ps.teams_valid():
-                        game_post_text = _start_practice_battle(state)
+                        game_post_text = _start_practice_battle(state, ps)
                         mention_prefix = _practice_mention_prefix(ps.expected_accts)
-                        prev_post_id = ps.prep_post_id
-                        ps.prep_post_id = 0
                         new_post = self._mastodon.status_post(
                             _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
-                            in_reply_to_id=prev_post_id,
+                            in_reply_to_id=ps.prep_post_id,
                         )
-                        if state.practice is not None:
-                            state.practice.active_post_id = new_post["id"]
-                            _update_practice_field_active_post(state)
+                        _register_practice(state, ps, new_post["id"], prep=False)
+                        _update_practice_field_active_post(state, ps)
             return
 
         # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)
-        if (
-            state.practice is not None
-            and state.practice.active_post_id is not None
-            and in_reply_to_id == state.practice.active_post_id
-        ):
-            practice_visibility = state.practice.visibility
+        if practice is not None and practice.active_post_id is not None:
+            ps = practice
+            practice_visibility = ps.visibility
             # 정산 게시물(game_post)에 참여자 전원을 멘션하려면 호출 전에
-            # 미리 담아둬야 한다 — 전투가 이번 커맨드로 종료되면
-            # _handle_practice_command 내부에서 state.practice가 None이 된다.
-            practice_participants = list(state.practice.expected_accts)
-            reply, calc_text, game_post, battle_log = _handle_practice_command(
-                acct, text, state
+            # 미리 담아둬야 한다 — 전투가 이번 커맨드로 종료되면 ended=True로
+            # 알려준다.
+            practice_participants = list(ps.expected_accts)
+            reply, calc_text, game_post, battle_log, ended = _handle_practice_command(
+                acct, text, state, ps
             )
             if reply is None:
                 # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
@@ -750,9 +765,9 @@ class MastodonBotListener(StreamListener):
                     visibility=practice_visibility,
                     in_reply_to_id=reply_status["id"],
                 )
-                if state.practice is not None:
-                    state.practice.active_post_id = new_post["id"]
-                    _update_practice_field_active_post(state)
+                if not ended:
+                    _register_practice(state, ps, new_post["id"], prep=False)
+                    _update_practice_field_active_post(state, ps)
             return
 
         # 4. 전투 준비 참전 신청 (bot 준비 게시물에 대한 답글)
@@ -1276,12 +1291,8 @@ def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
     return body
 
 
-def _start_investigation_battle(state: "BotState") -> str:
+def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
-    assert (
-        state.practice is not None
-    )  # 호출측이 이미 확인함(state.practice is not None)
-    ps = state.practice
     errors: list[str] = []
 
     for acct, (side, column) in ps.declared.items():
@@ -1315,12 +1326,8 @@ def _start_investigation_battle(state: "BotState") -> str:
     return game_post
 
 
-def _start_practice_battle(state: "BotState") -> str:
+def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
     """대련 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을 반환한다."""
-    assert (
-        state.practice is not None
-    )  # 호출측이 이미 확인함(state.practice is not None)
-    ps = state.practice
     errors: list[str] = []
 
     for acct, (side, column) in ps.declared.items():
@@ -1355,28 +1362,32 @@ def _start_practice_battle(state: "BotState") -> str:
 
 
 def _handle_practice_command(
-    acct: str, text: str, state: "BotState"
-) -> tuple[Optional[str], str, Optional[str], Optional[log_sheets.BattleCommandLog]]:
+    acct: str, text: str, state: "BotState", ps: PracticeBattleState
+) -> tuple[
+    Optional[str], str, Optional[str], Optional[log_sheets.BattleCommandLog], bool
+]:
     """
     대련/상시전투 중 캐릭터 커맨드를 처리한다.
-    반환값: (reply_text_or_None, calc_text, game_post_text_or_None, battle_log_or_None)
+    반환값: (reply_text_or_None, calc_text, game_post_text_or_None,
+    battle_log_or_None, ended)
 
     reply_text가 None이면 대괄호 커맨드 자체가 없는 답글(사담 등)이었다는
     뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. calc_text가
     비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어 보낸다.
+    ended가 True면 이 커맨드로 대련/상시전투가 종료되어 ps가 state.practices에서
+    이미 제거되었다는 뜻이다 — 호출측은 game_post를 새 active_post_id로 다시
+    등록하면 안 된다.
     """
-    ps = state.practice
-    if ps is None:
-        return "◊ 진행 중인 대련/상시전투가 없습니다.", "", None, None
+    assert ps.active_post_id is not None  # 호출측이 이미 확인함
 
     if acct not in state.char_dict:
-        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", "", None, None
+        return "◊ 등록된 캐릭터를 찾을 수 없습니다.", "", None, None, False
 
     char_data = state.char_dict[acct]
     char_id = CharacterId(char_data.name)
 
     if char_id not in ps.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None, None
+        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None, None, False
 
     if _RE_PRACTICE_RETIRE.search(text):
         # 탈락은 턴 순서와 무관한 자진 기권 커맨드라, 선공/후공 페이즈
@@ -1395,7 +1406,7 @@ def _handle_practice_command(
 
         if ps.total_hp_by_side(side) > 0:
             # 같은 편에 남은 캐릭터가 있으면 전투는 계속된다.
-            return reply_text, "", None, battle_log
+            return reply_text, "", None, battle_log, False
 
         battle_mode = "상시전투" if ps.is_investigation else "대련"
         battle_end_body = _apply_practice_battle_end_effects(ps)
@@ -1413,12 +1424,12 @@ def _handle_practice_command(
             phase_value=ps.phase.value if ps.phase is not None else "",
             ended=True,
         )
-        state.practice = None
-        return reply_text, "", game_post, battle_log
+        state.practices.pop(ps.active_post_id, None)
+        return reply_text, "", game_post, battle_log, True
 
     current_phase = ps.phase
     if current_phase is None:
-        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", "", None, None
+        return "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.", "", None, None, False
 
     field_id = ps.field_id
     round_n = ps.round_n
@@ -1431,13 +1442,14 @@ def _handle_practice_command(
             "",
             None,
             None,
+            False,
         )
 
     try:
         command = parse_character_command(char_id, text, ps.context)
         if command is None:
             # 대괄호 커맨드가 아예 없는 답글(사담 등) — 에러 없이 무시한다.
-            return None, "", None, None
+            return None, "", None, None, False
         result = ps.manager.process_command(command)
         entries = [
             entry
@@ -1466,7 +1478,7 @@ def _handle_practice_command(
             mastodon_id=acct,
             error_trace=traceback.format_exc(),
         )
-        return f"◊ {e}", "", None, battle_log
+        return f"◊ {e}", "", None, battle_log, False
 
     battle_mode = "상시전투" if ps.is_investigation else "대련"
 
@@ -1489,8 +1501,8 @@ def _handle_practice_command(
             _upsert_practice_field_row(
                 state, ps, phase_value=current_phase.value, ended=True
             )
-            state.practice = None
-            return reply_text, calc_text, game_post, battle_log
+            state.practices.pop(ps.active_post_id, None)
+            return reply_text, calc_text, game_post, battle_log, True
 
         ps.advance_to_second_mover()
         second_label = ps.side_label(ps.second_mover)
@@ -1499,7 +1511,7 @@ def _handle_practice_command(
             f"후공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
             f"{_field_text(ps)}"
         )
-        return reply_text, calc_text, game_post, battle_log
+        return reply_text, calc_text, game_post, battle_log, False
 
     # SECOND_MOVER_ACTION
     ps.end_round()
@@ -1522,8 +1534,8 @@ def _handle_practice_command(
         _upsert_practice_field_row(
             state, ps, phase_value=current_phase.value, ended=True
         )
-        state.practice = None
-        return reply_text, calc_text, game_post, battle_log
+        state.practices.pop(ps.active_post_id, None)
+        return reply_text, calc_text, game_post, battle_log, True
 
     ps.start_round()
     mover_label = ps.side_label(ps.first_mover)
@@ -1532,7 +1544,7 @@ def _handle_practice_command(
         f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
         f"{_field_text(ps)}"
     )
-    return reply_text, calc_text, game_post, battle_log
+    return reply_text, calc_text, game_post, battle_log, False
 
 
 def _handle_dm_battle_command(

@@ -233,9 +233,10 @@ def _restore_practice_battle(
     passive_skill_dict: dict,
     item_dict: dict,
 ) -> Optional[str]:
-    if state.practice is not None:
+    active_post_id = row.meta.get("active_post_id")
+    if active_post_id is None:
         logger.warning(
-            "대련/상시전투 복원 건너뜀: 이미 다른 대련/상시전투를 복원했습니다 (field_id=%s)",
+            "대련/상시전투 복원 실패: active_post_id 메타가 없습니다 (field_id=%s)",
             row.field_id,
         )
         return None
@@ -332,14 +333,14 @@ def _restore_practice_battle(
         # 그대로 물려받지 않으면, 재기동 이후의 모든 기록이 field_id="0"으로
         # 뒤섞여 원래 게시물 스레드와의 연결이 끊긴다.
         field_id=row.field_id,
-        active_post_id=meta.get("active_post_id"),
+        active_post_id=active_post_id,
         visibility=meta.get("visibility", "public"),
         first_mover=first_mover,
         second_mover=second_mover,
         expected_accts=expected_accts,
         is_investigation=(row.battle_type == FieldBattleType.INVESTIGATION),
     )
-    state.practice = ps
+    state.practices[active_post_id] = ps
 
     battle_label = "상시전투" if ps.is_investigation else "대련"
     return (

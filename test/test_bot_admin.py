@@ -51,6 +51,13 @@ def _make_state(**pending) -> BotState:
     return state
 
 
+def _only_practice(state: BotState) -> PracticeBattleState:
+    """대부분의 테스트는 대련/상시전투 세션을 하나만 다루므로, 그 하나를
+    state.practices(dict)에서 꺼내는 공용 헬퍼."""
+    assert len(state.practices) == 1
+    return next(iter(state.practices.values()))
+
+
 def test_battle_does_not_start_when_all_placements_fail():
     """모든 배치가 실패(존재하지 않는 캐릭터 등)하면 전투가 시작되면 안 된다."""
     state = _make_state(
@@ -678,8 +685,10 @@ def test_investigation_battle_inline_placement_respects_faction_token(monkeypatc
 
     assert not result.reply_text or "오류" not in (result.game_post_text or "")
     char_id = CharacterId("동료")
-    assert char_id in state.practice.context.characters
-    assert state.practice.context.get_side(char_id) == SideType.SIDE_1
+    ps = result.practice_to_register
+    assert ps is not None
+    assert char_id in ps.context.characters
+    assert ps.context.get_side(char_id) == SideType.SIDE_1
 
 
 def test_investigation_battle_with_inline_enemy_placement_is_not_routed_to_manual_place(
@@ -732,13 +741,14 @@ def test_investigation_battle_with_inline_enemy_placement_is_not_routed_to_manua
         )
     )
 
-    assert state.practice is not None
+    assert state.practices
     assert state.session is None  # 본 전투 세션으로 잘못 새지 않았어야 한다
     reply = mastodon.status_post_calls[-1]
     assert "진행 중인 전투가 없습니다" not in reply["status"]
     char_id = CharacterId("몬스터")
-    assert char_id in state.practice.context.characters
-    assert state.practice.context.get_side(char_id) == SideType.SIDE_2
+    ps = _only_practice(state)
+    assert char_id in ps.context.characters
+    assert ps.context.get_side(char_id) == SideType.SIDE_2
 
 
 class _FakeMastodon:
@@ -800,27 +810,28 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
 
     context = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
     manager = PracticeRoundManager(context)
-    state.practice = PracticeBattleState(
+    ps = PracticeBattleState(
         context=context,
         manager=manager,
         is_investigation=True,
         expected_accts=["user1"],
         prep_post_id=1000,
     )
+    state.practices[1000] = ps
 
     listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
 
     listener.on_notification(_make_notification("user1", 1, 1000, "[아군/1열]"))
 
-    assert state.practice.prep_post_id == 0
-    assert len(state.practice.context.characters) == 1
-    round_n_after_start = state.practice.round_n
+    assert ps.prep_post_id == 0
+    assert len(ps.context.characters) == 1
+    round_n_after_start = ps.round_n
 
     # 같은 참가자가 이미 소모된 원본 준비 게시물(1000)에 다시 답글
     listener.on_notification(_make_notification("user1", 2, 1000, "[아군/2열]"))
 
-    assert len(state.practice.context.characters) == 1
-    assert state.practice.round_n == round_n_after_start
+    assert len(ps.context.characters) == 1
+    assert ps.round_n == round_n_after_start
 
 
 def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
@@ -1239,7 +1250,7 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     prep_call = mastodon.status_post_calls[-1]
     assert prep_call["visibility"] == "unlisted"
     assert prep_call["in_reply_to_id"] == 1
-    prep_post_id = state.practice.prep_post_id
+    prep_post_id = _only_practice(state).prep_post_id
 
     listener.on_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/3열]")
@@ -1251,10 +1262,10 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     assert start_call["visibility"] == "unlisted"
     assert start_call["in_reply_to_id"] == prep_post_id
 
-    active_post_id = state.practice.active_post_id
+    active_post_id = _only_practice(state).active_post_id
     first_acct, second_name = (
         ("swordsman_acct", "궁수")
-        if state.practice.first_mover.value == "1팀"
+        if _only_practice(state).first_mover.value == "1팀"
         else ("archer_acct", "검사")
     )
     calls_before_action = len(mastodon.status_post_calls)
@@ -1309,7 +1320,7 @@ def test_practice_settlement_post_mentions_all_participants(monkeypatch):
             "swordsman_acct", 1, 0, "[대련]", extra_mentions=["archer_acct"]
         )
     )
-    prep_post_id = state.practice.prep_post_id
+    prep_post_id = _only_practice(state).prep_post_id
 
     listener.on_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/3열]")
@@ -1318,10 +1329,10 @@ def test_practice_settlement_post_mentions_all_participants(monkeypatch):
         _make_notification("archer_acct", 3, prep_post_id, "[2팀/5열]")
     )
 
-    active_post_id = state.practice.active_post_id
+    active_post_id = _only_practice(state).active_post_id
     first_acct, second_name = (
         ("swordsman_acct", "궁수")
-        if state.practice.first_mover.value == "1팀"
+        if _only_practice(state).first_mover.value == "1팀"
         else ("archer_acct", "검사")
     )
     listener.on_notification(
@@ -1372,11 +1383,109 @@ def test_practice_can_be_started_directly_by_character_account(monkeypatch):
         )
     )
 
-    assert state.practice is not None
-    assert set(state.practice.expected_accts) == {"swordsman_acct", "archer_acct"}
+    assert state.practices
+    assert set(_only_practice(state).expected_accts) == {
+        "swordsman_acct",
+        "archer_acct",
+    }
     prep_call = mastodon.status_post_calls[-1]
     assert "@swordsman_acct" in prep_call["status"]
     assert "@archer_acct" in prep_call["status"]
+
+
+def test_two_practice_sessions_run_concurrently_without_blocking_or_state_bleed(
+    monkeypatch,
+):
+    """대련이 이미 하나 진행 중이어도, 다른 참가자들끼리 시작하는 새 대련이
+    막히면 안 된다 — 본 전투(state.session)는 동시에 하나만 가능하지만
+    대련/상시전투는 DM 전투처럼 여러 세션이 동시에 진행될 수 있어야 한다.
+    두 세션이 서로의 진행(field_id/active_post_id/캐릭터 배치)에 영향을
+    주지 않는지도 함께 확인한다."""
+    state = _make_state()
+    char_dict = {
+        "swordsman_acct": get_test_preset("검사"),
+        "archer_acct": get_test_preset("궁수"),
+        "mage_acct": get_test_preset("마법사"),
+        "healer_acct": get_test_preset("힐러"),
+    }
+    name_dict = {
+        "검사": get_test_preset("검사"),
+        "궁수": get_test_preset("궁수"),
+        "마법사": get_test_preset("마법사"),
+        "힐러": get_test_preset("힐러"),
+    }
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    # 검사/궁수의 대련을 시작한다.
+    listener.on_notification(
+        _make_notification(
+            "swordsman_acct", 1, 0, "[대련]", extra_mentions=["archer_acct"]
+        )
+    )
+    assert len(state.practices) == 1
+
+    # 아직 검사/궁수 대련이 포지션 선언 대기 중인데도, 마법사/힐러가 별도
+    # 대련을 시작할 수 있어야 한다 — 예전에는 "이미 진행 중인 대련/상시전투가
+    # 있습니다" 오류로 막혔다.
+    listener.on_notification(
+        _make_notification("mage_acct", 2, 0, "[대련]", extra_mentions=["healer_acct"])
+    )
+    assert len(state.practices) == 2
+    second_prep_reply = mastodon.status_post_calls[-1]
+    assert "이미 진행 중인" not in second_prep_reply["status"]
+
+    prep_ids = sorted(state.practices)
+    prep_id_1, prep_id_2 = prep_ids
+
+    # 각 세션의 포지션 선언을 완료해 둘 다 활성 페이즈로 전환한다.
+    listener.on_notification(
+        _make_notification("swordsman_acct", 3, prep_id_1, "[1팀/3열]")
+    )
+    listener.on_notification(
+        _make_notification("archer_acct", 4, prep_id_1, "[2팀/5열]")
+    )
+    listener.on_notification(_make_notification("mage_acct", 5, prep_id_2, "[1팀/3열]"))
+    listener.on_notification(
+        _make_notification("healer_acct", 6, prep_id_2, "[2팀/5열]")
+    )
+
+    assert len(state.practices) == 2
+    sessions = list(state.practices.values())
+    field_ids = {ps.field_id for ps in sessions}
+    active_post_ids = {ps.active_post_id for ps in sessions}
+    assert len(field_ids) == 2  # 서로 다른 field_id로 독립 기록된다
+    assert len(active_post_ids) == 2  # 서로 다른 게시물 스레드로 진행된다
+
+    swordsman_ps = next(
+        ps for ps in sessions if CharacterId("검사") in ps.context.characters
+    )
+    mage_ps = next(
+        ps for ps in sessions if CharacterId("마법사") in ps.context.characters
+    )
+    assert swordsman_ps is not mage_ps
+    # 서로의 캐릭터가 상대 세션 필드에 새지 않았어야 한다.
+    assert CharacterId("마법사") not in swordsman_ps.context.characters
+    assert CharacterId("검사") not in mage_ps.context.characters
 
 
 def test_admin_can_no_longer_start_practice_directly(monkeypatch):
@@ -1405,7 +1514,7 @@ def test_admin_can_no_longer_start_practice_directly(monkeypatch):
         )
     )
 
-    assert state.practice is None
+    assert not state.practices
     reply = mastodon.status_post_calls[-1]
     assert "알 수 없는 관리자 커맨드" in reply["status"]
 
@@ -1441,7 +1550,7 @@ def test_investigation_battle_remains_admin_only(monkeypatch):
 
     listener.on_notification(_make_notification("swordsman_acct", 1, 0, "[상시전투]"))
 
-    assert state.practice is None
+    assert not state.practices
     assert mastodon.status_post_calls == []
 
 
@@ -1489,18 +1598,19 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
         field_spreadsheet=None,
         log_spreadsheet=None,
     )
-    state.practice = ps
+    ps.active_post_id = 5000
+    state.practices[5000] = ps
 
     first_acct = side_to_acct[ps.first_mover]
-    _, _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
+    _, _, game_post, _, _ = _handle_practice_command(first_acct, "[이동/2]", state, ps)
     assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
 
     second_acct = side_to_acct[ps.second_mover]
-    _, _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+    _, _, game_post, _, _ = _handle_practice_command(second_acct, "[이동/2]", state, ps)
 
     assert "종료" in game_post
     assert "승자: 1팀" in game_post
-    assert state.practice is None
+    assert not state.practices
 
 
 def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
@@ -1570,14 +1680,15 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
         field_spreadsheet=None,
         log_spreadsheet=None,
     )
-    state.practice = ps
+    ps.active_post_id = 5000
+    state.practices[5000] = ps
 
     first_acct = side_to_acct[ps.first_mover]
-    _, _, game_post, _ = _handle_practice_command(first_acct, "[이동/2]", state)
+    _, _, game_post, _, _ = _handle_practice_command(first_acct, "[이동/2]", state, ps)
     assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
 
     second_acct = side_to_acct[ps.second_mover]
-    _, _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+    _, _, game_post, _, _ = _handle_practice_command(second_acct, "[이동/2]", state, ps)
 
     assert "종료" in game_post
     assert "승자: 1팀 (A, C)" in game_post
@@ -1586,7 +1697,7 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
     # 버프/디버프 요약(대괄호 라벨 + 설명줄)은 나오면 안 된다.
     assert "[공격력 증가]" not in game_post
     assert "↳" not in game_post
-    assert state.practice is None
+    assert not state.practices
 
 
 def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_calc():
@@ -1645,19 +1756,20 @@ def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_cal
         field_spreadsheet=None,
         log_spreadsheet=None,
     )
-    state.practice = ps
+    ps.active_post_id = 5000
+    state.practices[5000] = ps
 
     first_acct = side_to_acct[ps.first_mover]
-    _handle_practice_command(first_acct, "[이동/2]", state)
+    _handle_practice_command(first_acct, "[이동/2]", state, ps)
     second_acct = side_to_acct[ps.second_mover]
-    _, _, game_post, _ = _handle_practice_command(second_acct, "[이동/2]", state)
+    _, _, game_post, _, _ = _handle_practice_command(second_acct, "[이동/2]", state, ps)
 
     assert "종료" in game_post
     assert ctx.characters[CharacterId("A")].status.curr_hp == 35
     assert "승자: 2팀 (B)" in game_post
     assert "**【전투 종료 처리】**" in game_post
     assert "→" in game_post
-    assert state.practice is None
+    assert not state.practices
 
 
 def test_practice_field_text_uses_team_labels_not_faction_labels():
@@ -1771,14 +1883,17 @@ def test_practice_retire_command_removes_character_and_continues_when_teammate_r
         field_spreadsheet=None,
         log_spreadsheet=None,
     )
-    state.practice = ps
+    ps.active_post_id = 5000
+    state.practices[5000] = ps
 
-    reply, _calc, game_post, _log = _handle_practice_command("acct_a", "[탈락]", state)
+    reply, _calc, game_post, _log, _ended = _handle_practice_command(
+        "acct_a", "[탈락]", state, ps
+    )
 
     assert "탈락" in reply
     assert CharacterId("A") not in ctx.characters
     assert game_post is None  # 종료 게시물 없음 — 같은 편에 A2가 남아 있다
-    assert state.practice is not None
+    assert state.practices
 
 
 def test_practice_retire_command_ends_battle_when_side_wiped():
@@ -1802,15 +1917,18 @@ def test_practice_retire_command_ends_battle_when_side_wiped():
         field_spreadsheet=None,
         log_spreadsheet=None,
     )
-    state.practice = ps
+    ps.active_post_id = 5000
+    state.practices[5000] = ps
 
-    reply, _calc, game_post, _log = _handle_practice_command("acct_a", "[탈락]", state)
+    reply, _calc, game_post, _log, _ended = _handle_practice_command(
+        "acct_a", "[탈락]", state, ps
+    )
 
     assert "탈락" in reply
     assert game_post is not None
     assert "종료" in game_post
     assert "승자: 2팀" in game_post
-    assert state.practice is None
+    assert not state.practices
 
 
 def test_practice_winner_uses_hp_ratio_not_absolute_total():
@@ -1855,10 +1973,11 @@ def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_erro
         field_spreadsheet=None,
         log_spreadsheet=None,
     )
-    state.practice = ps
+    ps.active_post_id = 5000
+    state.practices[5000] = ps
 
-    reply, _calc_text, game_post, battle_log = _handle_practice_command(
-        "acct_a", "[이동/2] [이동/3]", state
+    reply, _calc_text, game_post, battle_log, _ended = _handle_practice_command(
+        "acct_a", "[이동/2] [이동/3]", state, ps
     )
 
     assert "대괄호 커맨드를 하나만" in reply
@@ -1910,7 +2029,7 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
             extra_mentions=["archer_acct"],
         )
     )
-    prep_post_id = state.practice.prep_post_id
+    prep_post_id = _only_practice(state).prep_post_id
 
     listener.on_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/9열]")
@@ -1918,13 +2037,13 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
 
     error_reply = mastodon.status_post_calls[-1]
     assert "인식할 수 없습니다" in error_reply["status"]
-    assert "swordsman_acct" not in state.practice.declared
+    assert "swordsman_acct" not in _only_practice(state).declared
 
     # 형식을 고쳐 재시도하면 정상적으로 선언이 성립해야 한다.
     listener.on_notification(
         _make_notification("swordsman_acct", 3, prep_post_id, "[1팀/3열]")
     )
-    assert "swordsman_acct" in state.practice.declared
+    assert "swordsman_acct" in _only_practice(state).declared
 
 
 def test_practice_idle_chat_reply_is_silently_ignored(monkeypatch):
@@ -1970,14 +2089,14 @@ def test_practice_idle_chat_reply_is_silently_ignored(monkeypatch):
             extra_mentions=["archer_acct"],
         )
     )
-    prep_post_id = state.practice.prep_post_id
+    prep_post_id = _only_practice(state).prep_post_id
     listener.on_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/1열]")
     )
     listener.on_notification(
         _make_notification("archer_acct", 3, prep_post_id, "[2팀/1열]")
     )
-    active_post_id = state.practice.active_post_id
+    active_post_id = _only_practice(state).active_post_id
     calls_before = len(mastodon.status_post_calls)
 
     listener.on_notification(
@@ -1985,7 +2104,9 @@ def test_practice_idle_chat_reply_is_silently_ignored(monkeypatch):
     )
 
     assert len(mastodon.status_post_calls) == calls_before  # 새 게시물이 없어야 한다
-    assert state.practice.active_post_id == active_post_id  # 타래가 그대로 유지된다
+    assert (
+        _only_practice(state).active_post_id == active_post_id
+    )  # 타래가 그대로 유지된다
 
     # 이어서 정상 커맨드를 보내면 여전히 같은 게시물에 답글로 이어져야 한다.
     listener.on_notification(

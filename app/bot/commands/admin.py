@@ -123,8 +123,6 @@ class AdminCommandResult:
     set_preparation_post: bool = False
     # True이면 game_post_text의 post_id를 practice.prep_post_id로 저장한다
     set_practice_prep_from_game_post: bool = False
-    # True이면 game_post_text의 post_id를 practice.active_post_id로 저장한다
-    set_practice_active_post: bool = False
     # 프록시 커맨드(_cmd_proxy)로 캐릭터 커맨드가 정산된 경우 로그_전투 기록용 자료
     battle_log: Optional[BattleCommandLog] = None
     # 한 메시지에 줄바꿈으로 여러 프록시 커맨드가 실려 각각 별도의
@@ -141,6 +139,12 @@ class AdminCommandResult:
     # game_post_text가 게시된 후 그 post_id를 이 DmBattleState의 active_post_id로
     # 쓰고 state.dm_battles에 등록한다 (DM 전투 전용)
     dm_battle_to_register: Optional["DmBattleState"] = None
+    # set_practice_prep_from_game_post와 함께 쓰인다 — game_post_text 게시 후
+    # 그 post_id를 이 PracticeBattleState의 prep_post_id로 쓰고
+    # state.practices에 등록한다. 새로 만든 세션을 곧바로 state에 꽂지 않고
+    # 이 필드로 넘기는 이유는, 등록 키(게시물 id)가 게시 완료 시점에야
+    # 정해지기 때문이다.
+    practice_to_register: Optional["PracticeBattleState"] = None
     # True이면 game_post_text를 admin에게 보낸 확인 답글(reply_text가 게시된
     # 바로 그 게시물) 뒤에 이어 붙인다 — 스레드가 [이전 라운드 공지] ←
     # [admin의 진행 요청] ← [확인 답글] ← [다음 라운드 공지]처럼 선형으로
@@ -819,9 +823,6 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
 def _cmd_practice_prep(
     expected_accts: list[str], state: "BotState", visibility: str = "public"
 ) -> AdminCommandResult:
-    if state.practice is not None:
-        return AdminCommandResult("◊ 이미 진행 중인 대련/상시전투가 있습니다.")
-
     (
         buff_dict,
         skill_dict,
@@ -836,7 +837,7 @@ def _cmd_practice_prep(
         buff_dict, skill_dict, passive_skill_dict, item_dict
     )
     manager = PracticeRoundManager(context)
-    state.practice = PracticeBattleState(
+    ps = PracticeBattleState(
         context=context,
         manager=manager,
         expected_accts=list(expected_accts),
@@ -851,7 +852,9 @@ def _cmd_practice_prep(
         "이 게시물에 답글로 포지션을 선언해 주세요.\n"
         "예: [1팀/3열] 또는 [2팀/5열]"
     )
-    return AdminCommandResult("", game_post, set_practice_prep_from_game_post=True)
+    return AdminCommandResult(
+        "", game_post, set_practice_prep_from_game_post=True, practice_to_register=ps
+    )
 
 
 def _cmd_proxy(
@@ -860,11 +863,21 @@ def _cmd_proxy(
     """반환값: (reply_text, calc_text, battle_log_or_None). calc_text가
     비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어
     보낸다."""
-    # 상시전투 중 프록시 (적군 커맨드 대행)
-    ps = state.practice
-    if ps is not None and ps.active_post_id is not None:
-        char_id = ps.context.resolve_character_id(CharacterId(char_name))
-        if char_id not in ps.context.characters:
+    # 상시전투 중 프록시 (적군 커맨드 대행) — 동시에 여러 대련/상시전투가
+    # 진행될 수 있으므로, char_name이 배치된 세션을 선형 탐색으로 찾는다
+    # (find_dm_battle_by_field_id와 동일한 이유로 동시 세션 수가 적어 문제없음).
+    active_practices = [
+        p for p in state.practices.values() if p.active_post_id is not None
+    ]
+    if active_practices:
+        ps = None
+        char_id = None
+        for candidate in active_practices:
+            resolved = candidate.context.resolve_character_id(CharacterId(char_name))
+            if resolved in candidate.context.characters:
+                ps, char_id = candidate, resolved
+                break
+        if ps is None or char_id is None:
             return (
                 f"◊ 지정한 캐릭터({char_name})는 대련/상시전투에 참여하고 있지 않습니다.",
                 "",
@@ -1305,9 +1318,6 @@ def _cmd_investigation_battle(
     text: str, mentions: list[str], state: "BotState", visibility: str = "public"
 ) -> AdminCommandResult:
     """[상시전투] 커맨드: 적군을 즉시 배치하고 아군 포지션 선언 대기 안내를 게시한다."""
-    if state.practice is not None:
-        return AdminCommandResult("◊ 이미 진행 중인 대련/상시전투가 있습니다.")
-
     (
         buff_dict,
         skill_dict,
@@ -1322,7 +1332,7 @@ def _cmd_investigation_battle(
         buff_dict, skill_dict, passive_skill_dict, item_dict
     )
     manager = PracticeRoundManager(context)
-    state.practice = PracticeBattleState(
+    ps = PracticeBattleState(
         context=context,
         manager=manager,
         is_investigation=True,
@@ -1365,7 +1375,9 @@ def _cmd_investigation_battle(
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
 
-    return AdminCommandResult("", game_post, set_practice_prep_from_game_post=True)
+    return AdminCommandResult(
+        "", game_post, set_practice_prep_from_game_post=True, practice_to_register=ps
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1730,4 +1742,16 @@ def find_dm_battle_by_field_id(
     전투 수가 적어(수 개 이내) 성능에 문제되지 않는다."""
     return next(
         (dm for dm in state.dm_battles.values() if dm.field_id == field_id), None
+    )
+
+
+def find_practice_by_field_id(
+    state: "BotState", field_id: str
+) -> Optional[PracticeBattleState]:
+    """field_id(전투 개시 게시물 id 고정 값)로 진행 중인 PracticeBattleState를
+    찾는다. state.practices는 진행 게시물(tip) id(페이즈 전환마다 바뀜)를
+    키로 쓰므로, find_dm_battle_by_field_id와 동일한 이유로 값들을 선형
+    탐색해야 한다."""
+    return next(
+        (ps for ps in state.practices.values() if ps.field_id == field_id), None
     )
