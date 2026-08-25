@@ -297,12 +297,12 @@ def write_back_changed_hp(
 
 
 # 동시에 최대 1개 슬롯만 진행되는 배틀타입 — field_id로 기존 행을 못 찾으면
-# 같은 battle_type의 가장 최근 미종료 행을 대신 찾아 갱신한다. DM 전투는
-# 여러 개가 동시에 진행될 수 있어 이 fallback을 적용하면 안 된다(field_id
-# 정확히 일치할 때만 갱신).
-_SINGLE_SLOT_BATTLE_TYPES = frozenset(
-    {FieldBattleType.MAIN, FieldBattleType.PRACTICE, FieldBattleType.INVESTIGATION}
-)
+# 같은 battle_type의 가장 최근 미종료 행을 대신 찾아 갱신한다. DM
+# 전투/대련/상시전투는 여러 개가 동시에 진행될 수 있어 이 fallback을
+# 적용하면 안 된다(field_id 정확히 일치할 때만 갱신) — 적용하면 동시
+# 진행 중인 다른 세션의 행을 엉뚱하게 덮어써 그 세션이 "필드" 시트에서
+# 통째로 사라진다(재기동 복원 대상에서도 빠짐).
+_SINGLE_SLOT_BATTLE_TYPES = frozenset({FieldBattleType.MAIN})
 
 
 def upsert_field_row(

@@ -312,7 +312,7 @@ def test_upsert_field_row_invalidates_cache_after_write():
 def test_upsert_field_row_single_slot_fallback_ignores_dm():
     """DM 전투는 동시에 여러 개 진행될 수 있으므로, field_id가 다르면
     (같은 battle_type이어도) 기존 행을 재사용하지 않고 새 행을 삽입해야
-    한다 — MAIN/PRACTICE/INVESTIGATION만 "동시 1개 슬롯" fallback 대상이다."""
+    한다 — MAIN만 "동시 1개 슬롯" fallback 대상이다."""
     ws = _FakeFieldWorksheet()
     spreadsheet = _FakeFieldSpreadsheet(ws)
 
@@ -337,9 +337,37 @@ def test_upsert_field_row_single_slot_fallback_ignores_dm():
     assert {row[0] for row in ws.rows[1:]} == {"dm-1", "dm-2"}
 
 
+def test_upsert_field_row_single_slot_fallback_ignores_practice():
+    """대련/상시전투도 DM 전투처럼 동시에 여러 개 진행될 수 있으므로,
+    field_id가 다르면 기존 행을 재사용하지 않고 새 행을 삽입해야 한다 —
+    재사용하면 동시 진행 중인 다른 대련/상시전투의 행을 엉뚱하게 덮어써
+    그 세션이 "필드" 시트에서 통째로 사라진다."""
+    ws = _FakeFieldWorksheet()
+    spreadsheet = _FakeFieldSpreadsheet(ws)
+
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "prep-1",
+        battle_type=log_sheets.FieldBattleType.PRACTICE,
+        round_n=1,
+        phase="FIRST_MOVER_ACTION",
+        characters=[],
+    )
+    log_sheets.upsert_field_row(
+        spreadsheet,
+        "prep-2",
+        battle_type=log_sheets.FieldBattleType.PRACTICE,
+        round_n=1,
+        phase="FIRST_MOVER_ACTION",
+        characters=[],
+    )
+
+    assert len(ws.rows) == 3  # 헤더 + 대련 2건
+    assert {row[0] for row in ws.rows[1:]} == {"prep-1", "prep-2"}
+
+
 def test_upsert_field_row_single_slot_fallback_reuses_row_for_main():
-    """MAIN은 동시에 1개만 진행된다는 전제 하에, field_id가 바뀌어도(예:
-    대련 종료 후 prep_post_id가 0으로 바뀌는 것과 유사한 상황) 같은
+    """MAIN은 동시에 1개만 진행된다는 전제 하에, field_id가 바뀌어도 같은
     battle_type의 가장 최근 행을 재사용해야 한다."""
     ws = _FakeFieldWorksheet()
     spreadsheet = _FakeFieldSpreadsheet(ws)
