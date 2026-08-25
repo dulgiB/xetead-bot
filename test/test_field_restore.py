@@ -200,8 +200,8 @@ def test_restore_practice_battle_restores_hp_and_movers():
     summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert summary is not None
-    assert state.practice is not None
-    ps = state.practice
+    assert 456 in state.practices
+    ps = state.practices[456]
     assert ps.round_n == 2
     assert ps.round_limit == 5
     # 라운드 시작 후에는 항상 0이어야 한다 — 포지션 선언 접수 단계로 잘못
@@ -235,6 +235,7 @@ def test_restore_practice_battle_marks_investigation_type():
             }
         ],
         meta={
+            "active_post_id": 789,
             "first_mover": SideType.SIDE_1.value,
             "second_mover": SideType.SIDE_2.value,
         },
@@ -242,17 +243,15 @@ def test_restore_practice_battle_marks_investigation_type():
 
     field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
-    assert state.practice.is_investigation is True
+    assert state.practices[789].is_investigation is True
 
 
-def test_restore_practice_battle_skips_second_open_slot():
-    """대련/상시전투는 동시에 1개만 허용되므로, 이미 하나를 복원한 뒤 또
-    다른 열린 대련/상시전투 행이 있어도 건너뛰어야 한다."""
+def test_restore_practice_battle_fails_when_active_post_id_missing():
+    """active_post_id 메타가 없으면 state.practices에 등록할 키가 없으므로
+    복원을 포기해야 한다(DM 전투와 동일한 가드)."""
     state = _make_state({"아군1": get_test_preset("아군1")})
-    state.practice = object()  # 이미 복원된 것으로 취급
-
     row = FieldRow(
-        field_id="prep-2",
+        field_id="prep-1",
         battle_type=FieldBattleType.PRACTICE,
         round_n=1,
         phase=PracticeRoundPhase.FIRST_MOVER_ACTION.value,
@@ -266,7 +265,52 @@ def test_restore_practice_battle_skips_second_open_slot():
     summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert summary is None
-    assert state.practice is not None  # 그대로 유지(덮어쓰지 않음)
+    assert not state.practices
+
+
+def test_restore_practice_battle_restores_multiple_concurrent_sessions():
+    """대련/상시전투는 동시에 여러 개가 진행될 수 있으므로, 이미 하나를
+    복원한 뒤에도 다른 열린 대련/상시전투 행이 있으면 함께 복원돼야 한다."""
+    state = _make_state(
+        {"아군1": get_test_preset("아군1"), "아군2": get_test_preset("아군2")}
+    )
+    row1 = FieldRow(
+        field_id="prep-1",
+        battle_type=FieldBattleType.PRACTICE,
+        round_n=1,
+        phase=PracticeRoundPhase.FIRST_MOVER_ACTION.value,
+        characters=[
+            {"name": "아군1", "faction": "아군", "position": 1, "remaining_cost": 1}
+        ],
+        meta={
+            "active_post_id": 111,
+            "first_mover": SideType.SIDE_1.value,
+            "second_mover": SideType.SIDE_2.value,
+        },
+    )
+    row2 = FieldRow(
+        field_id="prep-2",
+        battle_type=FieldBattleType.PRACTICE,
+        round_n=1,
+        phase=PracticeRoundPhase.FIRST_MOVER_ACTION.value,
+        characters=[
+            {"name": "아군2", "faction": "아군", "position": 1, "remaining_cost": 1}
+        ],
+        meta={
+            "active_post_id": 222,
+            "first_mover": SideType.SIDE_1.value,
+            "second_mover": SideType.SIDE_2.value,
+        },
+    )
+
+    summary1 = field_restore._restore_practice_battle(state, row1, {}, {}, {}, {})
+    summary2 = field_restore._restore_practice_battle(state, row2, {}, {}, {}, {})
+
+    assert summary1 is not None
+    assert summary2 is not None
+    assert set(state.practices) == {111, 222}
+    assert state.practices[111].field_id == "prep-1"
+    assert state.practices[222].field_id == "prep-2"
 
 
 def test_restore_all_skips_unrestorable_rows(monkeypatch):
