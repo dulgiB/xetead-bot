@@ -86,20 +86,21 @@ class PracticeBattleState:
 
     def winner(self) -> Optional[SideType]:
         """체력 비율(현재 체력 합 / 최대 체력 합) 기준으로 승자 SideType을
-        반환한다. 동점이면 None.
-
-        절대 체력 합으로 비교하면 인원 수가 많거나 최대 체력이 큰 팀이
-        단지 그 이유만으로 유리해진다 — 팀 구성이 항상 대칭이라는 보장이
-        없으므로(대련/상시전투 모두 자유롭게 인원을 선언한다) 비율이 더
-        공정한 기준이다. 전멸(체력 0) 판정은 비율로 계산해도 절대 비교와
-        결과가 같으므로 별도 분기가 필요 없다."""
+        반환한다. 비율이 같으면 절대 체력 합으로 재비교하고, 그마저 같으면
+        None(무승부)을 반환한다."""
         max1 = self.total_max_hp_by_side(SideType.SIDE_1)
         max2 = self.total_max_hp_by_side(SideType.SIDE_2)
-        ratio1 = self.total_hp_by_side(SideType.SIDE_1) / max1 if max1 else 0
-        ratio2 = self.total_hp_by_side(SideType.SIDE_2) / max2 if max2 else 0
+        hp1 = self.total_hp_by_side(SideType.SIDE_1)
+        hp2 = self.total_hp_by_side(SideType.SIDE_2)
+        ratio1 = hp1 / max1 if max1 else 0
+        ratio2 = hp2 / max2 if max2 else 0
         if ratio1 > ratio2:
             return SideType.SIDE_1
         if ratio2 > ratio1:
+            return SideType.SIDE_2
+        if hp1 > hp2:
+            return SideType.SIDE_1
+        if hp2 > hp1:
             return SideType.SIDE_2
         return None
 
