@@ -1954,6 +1954,48 @@ def test_practice_winner_uses_hp_ratio_not_absolute_total():
     assert ps.winner() == SideType.SIDE_1
 
 
+def test_practice_winner_breaks_ratio_tie_with_absolute_hp():
+    """체력 비율이 동률이면 절대 체력 합이 더 높은 쪽이 승자다 — 예를 들어
+    1팀(25/50=50%)과 2팀(50/100=50%)처럼 비율이 같더라도, 절대 체력이 더
+    많은 2팀이 이겨야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("A", max_hp=100), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("B", max_hp=200), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
+    ps = PracticeBattleState(context=ctx, manager=PracticeRoundManager(ctx))
+
+    char_a = ctx.characters[CharacterId("A")]
+    char_b = ctx.characters[CharacterId("B")]
+    # add_character가 대련이라 max_hp를 절반으로 만드므로(100→50, 200→100).
+    # 두 팀 다 비율 50%지만 절대 체력은 2팀(50)이 1팀(25)보다 높다.
+    char_a.status.curr_hp = 25
+    char_b.status.curr_hp = 50
+
+    assert ps.winner() == SideType.SIDE_2
+
+
+def test_practice_winner_is_draw_when_ratio_and_absolute_hp_both_tie():
+    """체력 비율뿐 아니라 절대 체력 합까지 같으면 무승부(None)여야 한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("A", max_hp=100), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("B", max_hp=100), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
+    ps = PracticeBattleState(context=ctx, manager=PracticeRoundManager(ctx))
+
+    char_a = ctx.characters[CharacterId("A")]
+    char_b = ctx.characters[CharacterId("B")]
+    char_a.status.curr_hp = 25
+    char_b.status.curr_hp = 25
+
+    assert ps.winner() is None
+
+
 def test_practice_command_with_two_bracket_groups_is_rejected_with_explicit_error():
     """캐릭터 계정이 대괄호를 두 개로 나눠 보내면(예: '[A] [B]'), 파서의 탐욕적
     매칭 때문에 하나만 조용히 처리되고 나머지가 사라지는 문제가 있었다 —
