@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
+os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
 import gspread  # noqa: E402
 

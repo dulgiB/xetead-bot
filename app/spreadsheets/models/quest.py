@@ -45,19 +45,20 @@ class QuestLocationData:
 
     `id`가 장소 이름이고 `name`이 비어 있는 행이 장소 행이다. 그 장소에
     속한 의뢰 행들의 `id`는 `{장소 이름}_{의뢰 type}`로 고정된다
-    (`load_general_quest_sheet` 참고).
+    (`load_general_quest_sheet` 참고). 장소 행에는 수주 상태 개념이 없어
+    `description_normal`은 쓰지 않고 `description_quest`만 읽는다.
     """
 
     id: str
     active: bool
-    description: str
+    description_quest: str
 
     @classmethod
     def from_dict(cls, raw: dict) -> "QuestLocationData":
         return cls(
             id=str(raw["id"]),
             active=parse_spreadsheet_bool(raw.get("active", False)),
-            description=str(raw.get("description", "") or ""),
+            description_quest=str(raw.get("description_quest", "") or ""),
         )
 
 
@@ -69,7 +70,8 @@ class QuestData:
     active: bool
     location: str  # 세부 장소 표시 이름 (예: 광장/상점가/항구)
     name: str
-    description: str
+    description_quest: str  # 미수주 상태에서 노출할 설명
+    description_normal: str  # 수주된 이후 노출할 설명
     type: str  # 운반 / 탐사 / 전투
     subtype: str  # 상시 / 일반
     reward: str
@@ -83,7 +85,8 @@ class QuestData:
             active=parse_spreadsheet_bool(raw.get("active", False)),
             location=str(raw.get("location", "") or ""),
             name=str(raw.get("name", "") or ""),
-            description=str(raw.get("description", "") or ""),
+            description_quest=str(raw.get("description_quest", "") or ""),
+            description_normal=str(raw.get("description_normal", "") or ""),
             type=str(raw.get("type", "") or ""),
             subtype=str(raw.get("subtype", "") or ""),
             reward=str(raw.get("reward", "") or ""),
@@ -93,3 +96,6 @@ class QuestData:
 
     def taken_by_list(self) -> list[str]:
         return [a.strip() for a in self.taken_by.split(",") if a.strip()]
+
+    def current_description(self) -> str:
+        return self.description_normal if self.taken_by_list() else self.description_quest

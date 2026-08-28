@@ -862,75 +862,13 @@ def _cmd_proxy(
 ) -> tuple[str, str, Optional[BattleCommandLog]]:
     """반환값: (reply_text, calc_text, battle_log_or_None). calc_text가
     비어 있지 않으면 호출측이 spoiler_text="계산식" 후속 게시물로 이어
-    보낸다."""
-    # 상시전투 중 프록시 (적군 커맨드 대행) — 동시에 여러 대련/상시전투가
-    # 진행될 수 있으므로, char_name이 배치된 세션을 선형 탐색으로 찾는다
-    # (find_dm_battle_by_field_id와 동일한 이유로 동시 세션 수가 적어 문제없음).
-    active_practices = [
-        p for p in state.practices.values() if p.active_post_id is not None
-    ]
-    if active_practices:
-        ps = None
-        char_id = None
-        for candidate in active_practices:
-            resolved = candidate.context.resolve_character_id(CharacterId(char_name))
-            if resolved in candidate.context.characters:
-                ps, char_id = candidate, resolved
-                break
-        if ps is None or char_id is None:
-            return (
-                f"◊ 지정한 캐릭터({char_name})는 대련/상시전투에 참여하고 있지 않습니다.",
-                "",
-                None,
-            )
+    보낸다.
 
-        field_id = ps.field_id
-        round_n = ps.round_n
-        phase = ps.phase.value if ps.phase is not None else ""
-
-        try:
-            command = parse_character_command(char_id, cmd_str, ps.context)
-            if command is None:
-                return "◊ 커맨드 형식을 인식할 수 없습니다.", "", None
-            result = ps.manager.process_command(command)
-            entries = [
-                entry
-                for part_result in result.part_results
-                for entry in part_result.log_entries
-            ]
-            battle_log = BattleCommandLog(
-                field_id=field_id,
-                round_n=round_n,
-                phase=phase,
-                battle_type=(
-                    FieldBattleType.INVESTIGATION
-                    if ps.is_investigation
-                    else FieldBattleType.PRACTICE
-                ),
-                command_text=cmd_str,
-                mastodon_id=acct,
-                entries=entries,
-            )
-            reply_text, calc_text = format_battle_reply(
-                ps.context, char_id, result.part_results
-            )
-            return reply_text, calc_text, battle_log
-        except CommandValidationError as e:
-            battle_log = BattleCommandLog(
-                field_id=field_id,
-                round_n=round_n,
-                phase=phase,
-                battle_type=(
-                    FieldBattleType.INVESTIGATION
-                    if ps.is_investigation
-                    else FieldBattleType.PRACTICE
-                ),
-                command_text=cmd_str,
-                mastodon_id=acct,
-                error_trace=traceback.format_exc(),
-            )
-            return f"◊ {e}", "", battle_log
-
+    대련/상시전투 참가자 대상 프록시는 main.py의 __dispatch()가
+    _handle_practice_proxy_command()로 이 함수보다 먼저 가로채 처리한다
+    (처리 직후 자동으로 다음 페이즈/라운드로 전환해야 하는데, 이 함수는
+    본 전투 전용이라 그 전환 로직이 없다) — 그래서 여기 도달하는 시점엔
+    이미 본 전투(state.session) 대상이라고 봐도 된다."""
     if state.session is None or not state.session.started:
         return "◊ 진행 중인 전투가 없습니다.", "", None
 

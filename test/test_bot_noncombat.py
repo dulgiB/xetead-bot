@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
+os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
 import random  # noqa: E402
 import time  # noqa: E402
@@ -105,9 +106,11 @@ def test_handle_roll_reply_labels_dice_part_with_1d6(monkeypatch):
 def _quest_location(
     location_id: str = "아도스",
     active: bool = True,
-    description: str = "항구 마을이다.",
+    description_quest: str = "항구 마을이다.",
 ) -> QuestLocationData:
-    return QuestLocationData(id=location_id, active=active, description=description)
+    return QuestLocationData(
+        id=location_id, active=active, description_quest=description_quest
+    )
 
 
 def _quest(
@@ -115,7 +118,8 @@ def _quest(
     quest_type: str = "운반",
     venue: str = "광장",
     name: str = "광장 의뢰",
-    description: str = "어쩌구",
+    description_quest: str = "어쩌구",
+    description_normal: str = "이미 처리된 의뢰다.",
     subtype: str = "상시",
     reward: str = "6G",
     available_until: str = "다음 스토리 진행 전까지",
@@ -126,7 +130,8 @@ def _quest(
         active=False,
         location=venue,
         name=name,
-        description=description,
+        description_quest=description_quest,
+        description_normal=description_normal,
         type=quest_type,
         subtype=subtype,
         reward=reward,
@@ -183,7 +188,7 @@ def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch
     # 전원이 정확히 기록됐는지와 로그에 남는지만 확인한다.
     assert result == (
         "「광장 의뢰」 의뢰를 받았다!\n\n"
-        "◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @test-admin"
+        "◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @test-world"
     )
     assert calls == [("아도스_운반", "user1,user2,user3")]
     assert log_info is not None
@@ -283,7 +288,7 @@ def test_investigation_decline_reports_location_and_tags_admin(monkeypatch):
 
     result, log_info = handle_investigation_decline(acct, state, in_reply_to_id=999)
 
-    assert result == "의뢰는 수락하지 않고 광장 일대를 둘러보기로 했다. @test-admin"
+    assert result == "의뢰는 수락하지 않고 광장 일대를 둘러보기로 했다. @test-world"
     assert log_info is not None
 
 
@@ -303,7 +308,7 @@ def test_investigation_start_uses_location_description_as_menu_intro(monkeypatch
         noncombat_module,
         "load_general_quest_sheet",
         lambda spreadsheet, cache=None: (
-            _quest_location(description="한적한 항구 마을이다. 어디로 가 볼까?"),
+            _quest_location(description_quest="한적한 항구 마을이다. 어디로 가 볼까?"),
             [
                 _quest(quest_type="운반", venue="광장"),
                 _quest(quest_type="탐사", venue="상점가"),
@@ -328,7 +333,7 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "load_general_quest_sheet",
         lambda spreadsheet, cache=None: (
             _quest_location(),
-            [_quest(venue="광장", name="광장 의뢰", description="어쩌구")],
+            [_quest(venue="광장", name="광장 의뢰", description_quest="어쩌구")],
         ),
     )
 
@@ -339,7 +344,7 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "\n"
         "어쩌구\n"
         "\n"
-        "[일반 의뢰] 광장 의뢰\n"
+        "**[일반 의뢰] 광장 의뢰**\n"
         "▸ 계열: 운반 - 상시\n"
         "▸ 클리어 가능 기간: 다음 스토리 진행 전까지\n"
         "▸ 보상: 6G\n"
@@ -350,6 +355,45 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "입력해 주세요. 의뢰를 받는 대신 이 장소에서 자율 탐사를 진행하려면 "
         "키워드가 없는 답글을 보내 주세요."
     )
+    assert state.noncombat.investigation_acct_to_quest_id[acct] == "아도스_운반"
+
+
+def test_investigation_venue_choice_hides_accept_prompt_when_taken(monkeypatch):
+    """이미 수주된 의뢰는 description_quest 대신 description_normal을
+    노출하고, 수락 유도 문구 없이 자율 탐사/이동 안내만 보여줘야 한다."""
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [
+                _quest(
+                    venue="광장",
+                    name="광장 의뢰",
+                    description_quest="어쩌구",
+                    description_normal="이미 처리된 일이다.",
+                    taken_by="user9",
+                )
+            ],
+        ),
+    )
+
+    result, log_info = handle_investigation_venue_choice(acct, "광장", state)
+
+    assert result == (
+        "[광장](으)로 이동했다.\n"
+        "\n"
+        "이미 처리된 일이다.\n"
+        "\n"
+        "◊ 이 장소의 의뢰는 이미 누군가에 의해 수주되었습니다. 커맨드가 없는 "
+        "답글을 보내 자율 탐사를 시작하거나, 커맨드를 입력해 다른 장소로 "
+        "이동할 수 있습니다."
+    )
+    assert "어쩌구" not in result
+    assert "이 의뢰를 수락할까?" not in result
+    assert "[일반 의뢰]" not in result
     assert state.noncombat.investigation_acct_to_quest_id[acct] == "아도스_운반"
 
 
@@ -370,7 +414,7 @@ def test_investigation_venue_choice_free_explore_tags_admin(monkeypatch):
 
     assert result == (
         "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
-        "정보를 수집할 수 있다. @test-admin"
+        "정보를 수집할 수 있다. @test-world"
     )
 
 
@@ -786,7 +830,7 @@ def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
         "load_general_quest_sheet",
         lambda spreadsheet, cache=None: (
             _quest_location(),
-            [_quest(venue="장소A", name="퀘스트1", description="설명")],
+            [_quest(venue="장소A", name="퀘스트1", description_quest="설명")],
         ),
     )
 

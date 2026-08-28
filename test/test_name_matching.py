@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
+os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
 from battle.core.battlefield_context import BattlefieldContext  # noqa: E402
 from battle.core.commands.admin import ChangePhaseCommand  # noqa: E402
