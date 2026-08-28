@@ -647,6 +647,7 @@ class MastodonBotListener(StreamListener):
                 text, state, acct, require_investigation=not is_admin
             )
             if proxy_ps is not None:
+                assert proxy_reply is not None
                 practice_participants = list(proxy_ps.expected_accts)
                 practice_visibility = proxy_ps.visibility
                 reply_status = self._reply_with_calc(
@@ -1430,6 +1431,7 @@ def _finalize_practice_phase(
 
     반환값: (game_post_text, ended). ended=True면 ps가 이미
     state.practices에서 제거된 상태다."""
+    assert ps.active_post_id is not None  # 호출측이 이미 확인함
     battle_mode = "상시전투" if ps.is_investigation else "대련"
 
     if current_phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
