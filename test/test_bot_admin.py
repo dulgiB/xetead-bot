@@ -1636,7 +1636,9 @@ def _start_active_investigation(
     1명(계정 있음, SIDE_1)과 에너미 1명(계정 없음, SIDE_2)이 배치돼 있다.
     호출측이 set_phase_for_restore로 원하는 페이즈/선공·후공을 지정한다."""
     ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
-    ctx.add_character(get_test_preset("아군"), SideType.SIDE_1, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("아군"), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
     ctx.add_character(
         get_test_preset("적", max_hp=enemy_max_hp),
         SideType.SIDE_2,
@@ -1740,8 +1742,12 @@ def test_world_proxy_cannot_control_duel_participants(monkeypatch):
         ),
     )
     ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
-    ctx.add_character(get_test_preset("검사"), SideType.SIDE_1, BattlefieldColumnIndex(0))
-    ctx.add_character(get_test_preset("궁수"), SideType.SIDE_2, BattlefieldColumnIndex(0))
+    ctx.add_character(
+        get_test_preset("검사"), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("궁수"), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
     manager = PracticeRoundManager(ctx)
     ps = PracticeBattleState(
         context=ctx,

@@ -98,4 +98,6 @@ class QuestData:
         return [a.strip() for a in self.taken_by.split(",") if a.strip()]
 
     def current_description(self) -> str:
-        return self.description_normal if self.taken_by_list() else self.description_quest
+        return (
+            self.description_normal if self.taken_by_list() else self.description_quest
+        )
