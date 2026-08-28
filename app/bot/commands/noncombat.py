@@ -89,7 +89,9 @@ FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
 
 # main.py와 별개로 읽는다 — bot.main이 이 모듈을 import하므로(순환 import),
 # 여기서 bot.main.ADMIN_MASTODON_ID를 직접 가져올 수 없다.
-ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
+# 상시조사에서 수동 진행으로 인계할 때는 admin이 아니라 세계관 서술을
+# 담당하는 별도 계정(WORLD_MASTODON_ID)을 태그한다.
+WORLD_MASTODON_ID: str = os.environ["WORLD_MASTODON_ID"]
 
 
 def parse_stat_name(text: str) -> Optional[str]:
@@ -733,7 +735,7 @@ def handle_investigation_start(
         msg = "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    lines = [location.description]
+    lines = [location.description_quest]
     for quest in quests:
         lines.append(f"▸ [{quest.location}]")
     lines.append(f"▸ {FREE_EXPLORE_LABEL} (자율 탐사)")
@@ -783,7 +785,7 @@ def handle_investigation_venue_choice(
         if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
             msg = (
                 "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
-                f"정보를 수집할 수 있다. @{ADMIN_MASTODON_ID}"
+                f"정보를 수집할 수 있다. @{WORLD_MASTODON_ID}"
             )
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
         msg = "◊ 등록되지 않은 장소입니다."
@@ -791,13 +793,28 @@ def handle_investigation_venue_choice(
 
     nc.investigation_acct_to_quest_id[acct] = quest.id
 
+    if quest.taken_by_list():
+        lines = [
+            f"[{quest.location}](으)로 이동했다.",
+            "",
+            quest.current_description(),
+            "",
+            "◊ 이 장소의 의뢰는 이미 누군가에 의해 수주되었습니다. 커맨드가 없는 "
+            "답글을 보내 자율 탐사를 시작하거나, 커맨드를 입력해 다른 장소로 "
+            "이동할 수 있습니다.",
+        ]
+        reply = "\n".join(lines)
+        return reply, NoncombatLogInfo(
+            command_text=command_text, result=f"이미 수주된 의뢰 안내: {quest.name}"
+        )
+
     reward_desc = quest.reward if quest.reward else "미정"
     lines = [
         f"[{quest.location}](으)로 이동했다.",
         "",
-        quest.description,
+        quest.current_description(),
         "",
-        f"[일반 의뢰] {quest.name}",
+        f"**[일반 의뢰] {quest.name}**",
         f"▸ 계열: {quest.type} - {quest.subtype}",
         f"▸ 클리어 가능 기간: {quest.available_until}",
         f"▸ 보상: {reward_desc}",
@@ -890,7 +907,7 @@ def handle_investigation_accept(
 
     reply = (
         f"「{quest.name}」 의뢰를 받았다!\n\n"
-        f"◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @{ADMIN_MASTODON_ID}"
+        f"◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @{WORLD_MASTODON_ID}"
     )
     return reply, NoncombatLogInfo(
         command_text=command_text,
@@ -930,6 +947,6 @@ def handle_investigation_decline(
     location = quest.location if quest else ""
 
     msg = (
-        f"의뢰는 수락하지 않고 {location} 일대를 둘러보기로 했다. @{ADMIN_MASTODON_ID}"
+        f"의뢰는 수락하지 않고 {location} 일대를 둘러보기로 했다. @{WORLD_MASTODON_ID}"
     )
     return msg, NoncombatLogInfo(command_text=command_text, result="의뢰 미수락")

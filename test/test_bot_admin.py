@@ -1,6 +1,7 @@
 import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
+os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
 import contextlib
 import itertools
@@ -18,7 +19,7 @@ from battle.objects.models import CharacterId  # noqa: E402
 from battle.objects.skill.effects import SkillEffectAddBuff  # noqa: E402
 from battle.objects.skill.models import SkillData  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
-from battle.practice.define import SideType  # noqa: E402
+from battle.practice.define import PracticeRoundPhase, SideType  # noqa: E402
 from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
 from bot import log_sheets  # noqa: E402
 from bot import main as main_module  # noqa: E402
@@ -1552,6 +1553,230 @@ def test_investigation_battle_remains_admin_only(monkeypatch):
 
     assert not state.practices
     assert mastodon.status_post_calls == []
+
+
+def test_world_account_can_start_investigation_battle(monkeypatch):
+    """world 계정(WORLD_MASTODON_ID)은 [상시전투] 개시(+ 같은 메시지의
+    적군 배치)를 admin과 동등하게 사용할 수 있어야 한다."""
+    state = _make_state()
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification(
+            "test-world",
+            1,
+            0,
+            "[상시전투] [배치/적 캐릭터/적군 1열]",
+            extra_mentions=["moirak_test"],
+        )
+    )
+
+    assert len(state.practices) == 1
+    ps = _only_practice(state)
+    assert ps.is_investigation
+    assert ps.expected_accts == ["moirak_test"]
+    assert "상시전투 준비" in mastodon.status_post_calls[-1]["status"]
+
+
+def test_world_account_cannot_use_other_admin_commands(monkeypatch):
+    """world 계정은 [상시전투] 개시/프록시 이외의 admin 전용 커맨드([전투준비]
+    등)에는 접근할 수 없어야 한다."""
+    state = _make_state()
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("test-world", 1, 0, "[전투준비]"))
+
+    assert state.session is not None and not state.session.started
+    assert mastodon.status_post_calls == []
+
+
+def _start_active_investigation(
+    state: BotState,
+    *,
+    ally_acct: str = "ally_test",
+    active_post_id: int = 5000,
+    enemy_max_hp: int = 500,
+) -> PracticeBattleState:
+    """이미 개시되어 특정 페이즈에 놓인 상시전투를 직접 조립한다 — 아군
+    1명(계정 있음, SIDE_1)과 에너미 1명(계정 없음, SIDE_2)이 배치돼 있다.
+    호출측이 set_phase_for_restore로 원하는 페이즈/선공·후공을 지정한다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("아군"), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적", max_hp=enemy_max_hp),
+        SideType.SIDE_2,
+        BattlefieldColumnIndex(0),
+    )
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(
+        context=ctx,
+        manager=manager,
+        is_investigation=True,
+        expected_accts=[ally_acct],
+        active_post_id=active_post_id,
+        round_limit=5,
+    )
+    state.practices[active_post_id] = ps
+    state.char_dict[ally_acct] = get_test_preset("아군")
+    return ps
+
+
+def test_admin_proxy_for_investigation_enemy_advances_to_next_round(monkeypatch):
+    """계정이 없는 에너미가 그 라운드의 마지막 행동(후공)을 admin 프록시로
+    수행하면, 캐릭터 본인 답글과 동일하게 자동으로 다음 라운드(선공
+    페이즈)로 전환돼야 한다 — 예전에는 프록시 경로가 이 전환을 전혀 하지
+    않아, 에너미가 후공으로 행동한 순간 상시전투가 영구히 멈췄다."""
+    state = _make_state()
+    ps = _start_active_investigation(state)
+    ps.round_n = 1
+    ps.first_mover = SideType.SIDE_1
+    ps.second_mover = SideType.SIDE_2
+    ps.manager.set_phase_for_restore(
+        PracticeRoundPhase.SECOND_MOVER_ACTION, SideType.SIDE_1, SideType.SIDE_2
+    )
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification("test-admin", 1, ps.active_post_id, "◊ 적 [공격/아군]")
+    )
+
+    assert ps.round_n == 2
+    assert ps.phase == PracticeRoundPhase.FIRST_MOVER_ACTION
+    game_post = mastodon.status_post_calls[-1]["status"]
+    assert "[2라운드] 선공" in game_post
+    # 다음 라운드 안내 게시물이 새 active_post_id로 등록돼 있어야 이어서
+    # 커맨드를 받을 수 있다.
+    assert ps.active_post_id in state.practices
+
+
+def test_world_proxy_for_investigation_enemy_also_advances_round(monkeypatch):
+    """world 계정의 상시전투 프록시도 admin과 동일하게 자동 전환돼야
+    한다."""
+    state = _make_state()
+    ps = _start_active_investigation(state)
+    ps.round_n = 1
+    ps.first_mover = SideType.SIDE_1
+    ps.second_mover = SideType.SIDE_2
+    ps.manager.set_phase_for_restore(
+        PracticeRoundPhase.SECOND_MOVER_ACTION, SideType.SIDE_1, SideType.SIDE_2
+    )
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification("test-world", 1, ps.active_post_id, "◊ 적 [공격/아군]")
+    )
+
+    assert ps.round_n == 2
+    assert ps.phase == PracticeRoundPhase.FIRST_MOVER_ACTION
+
+
+def test_world_proxy_cannot_control_duel_participants(monkeypatch):
+    """world 계정의 프록시 권한은 상시전투 참가자로 한정된다 — 대련
+    (is_investigation=False)은 참가자 전원이 실제 계정이라 world가 대신
+    조작할 수 없어야 한다."""
+    state = _make_state()
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("검사"), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("궁수"), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(
+        context=ctx,
+        manager=manager,
+        is_investigation=False,
+        expected_accts=["swordsman_acct", "archer_acct"],
+        active_post_id=6000,
+    )
+    ps.round_n = 1
+    ps.manager.set_phase_for_restore(
+        PracticeRoundPhase.FIRST_MOVER_ACTION, SideType.SIDE_1, SideType.SIDE_2
+    )
+    state.practices[6000] = ps
+    archer_hp_before = ps.context.characters[CharacterId("궁수")].status.curr_hp
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(
+        _make_notification("test-world", 1, 6000, "◊ 검사 [공격/궁수]")
+    )
+
+    # world는 대련 참가자가 아니므로 프록시로 대신 행동시킬 수 없다 — 라운드/
+    # 페이즈가 그대로고, 궁수도 대미지를 입지 않아야 한다. (in_reply_to_id가
+    # 활성 대련 게시물과 일치해 "등록된 캐릭터를 찾을 수 없습니다" 같은 에러
+    # 답글 자체는 갈 수 있지만, 실제 공격은 전혀 적용되지 않는다.)
+    assert ps.round_n == 1
+    assert ps.phase == PracticeRoundPhase.FIRST_MOVER_ACTION
+    archer_hp_after = ps.context.characters[CharacterId("궁수")].status.curr_hp
+    assert archer_hp_after == archer_hp_before
 
 
 def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
