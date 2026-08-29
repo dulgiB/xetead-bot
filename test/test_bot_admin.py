@@ -754,12 +754,17 @@ def test_investigation_battle_with_inline_enemy_placement_is_not_routed_to_manua
 
 
 class _FakeMastodon:
-    def __init__(self):
+    def __init__(self, ancestors: list[dict] | None = None):
         self._next_id = itertools.count(9000)
         self._next_media_id = itertools.count(1000)
         self.media_post_calls: list[str] = []
         self.status_post_calls: list[dict] = []
         self.last_media_id: int = 0
+        # _thread_participants()가 조회하는 스레드 조상 목록 — 기본값(빈
+        # 목록)은 "스레드 히스토리 없음"과 동일해 기존 테스트 동작을
+        # 그대로 보존한다. 스레드 참여자 수집을 검증하는 테스트만 채워
+        # 넣으면 된다.
+        self.status_context_ancestors: list[dict] = ancestors or []
 
     def status_post(self, *args, **kwargs):
         if args:
@@ -771,6 +776,9 @@ class _FakeMastodon:
         self.media_post_calls.append(str(media_file))
         self.last_media_id = next(self._next_media_id)
         return {"id": self.last_media_id}
+
+    def status_context(self, status_id):
+        return {"ancestors": self.status_context_ancestors, "descendants": []}
 
 
 def _make_notification(
@@ -1344,6 +1352,54 @@ def test_practice_settlement_post_mentions_all_participants(monkeypatch):
     round_call = mastodon.status_post_calls[-1]
     assert "@swordsman_acct" in round_call["status"]
     assert "@archer_acct" in round_call["status"]
+
+
+def test_practice_prep_includes_thread_ancestors_not_just_direct_mentions(
+    monkeypatch,
+):
+    """[대련] 시작 시, 이 답글에 직접 멘션되지 않았어도 스레드의 조상
+    게시물에 등장했던 인원은 참여 대상에 포함돼야 한다 — 마스토돈
+    클라이언트가 답글 작성 시 이전 멘션을 지우거나 일부만 남겨도 실제
+    참여자 전원을 놓치지 않기 위함이다."""
+    state = _make_state()
+    char_dict = {
+        "swordsman_acct": get_test_preset("검사"),
+        "archer_acct": get_test_preset("궁수"),
+    }
+    name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
+    )
+    ancestors = [
+        {"account": {"acct": "archer_acct"}, "mentions": []},
+    ]
+    mastodon = _FakeMastodon(ancestors=ancestors)
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    # archer_acct를 명시적으로 멘션하지 않고 [대련]만 보낸다 — 스레드
+    # 조상(위 ancestors)에 archer_acct가 등장했으므로 그래도 포함돼야 한다.
+    listener.on_notification(_make_notification("swordsman_acct", 1, 500, "[대련]"))
+
+    assert set(_only_practice(state).expected_accts) == {
+        "swordsman_acct",
+        "archer_acct",
+    }
 
 
 def test_practice_can_be_started_directly_by_character_account(monkeypatch):
