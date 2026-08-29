@@ -616,6 +616,46 @@ class MastodonBotListener(StreamListener):
                 "멘션 처리 중 오류 (acct=%s, status_id=%s)", acct, status_id
             )
 
+    def _thread_participants(
+        self,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        direct_mentions: list[str],
+        acct: str,
+    ) -> list[str]:
+        """이 게시물이 속한 스레드에 이미 등장한 모든 계정(조상 게시물의
+        작성자 + 그 게시물들의 멘션)을 direct_mentions에 더해 모은다.
+        마스토돈 클라이언트가 답글 작성 시 이전 멘션 중 일부만 남기거나
+        전부 지워도, [대련]/[상시전투]/[수락]처럼 참여자 목록을 만드는
+        커맨드가 스레드 참여자 전원을 놓치지 않게 하기 위함이다.
+
+        전투 중 커맨드(이동/공격/스킬 등)처럼 mentions를 쓰지 않는
+        고빈도 경로에서는 호출하지 않는다 — 매번 status_context()로 추가
+        API 호출이 들어가므로, 실제로 참여자 목록이 필요한 소수의 커맨드
+        호출부에서만 지연 호출한다."""
+        accounts: list[str] = []
+        seen: set[str] = set()
+
+        def add(candidate: str) -> None:
+            if candidate not in (self._bot_acct, acct) and candidate not in seen:
+                seen.add(candidate)
+                accounts.append(candidate)
+
+        for m in direct_mentions:
+            add(m)
+
+        if in_reply_to_id is not None:
+            try:
+                context = self._mastodon.status_context(status_id)
+                for ancestor in context.get("ancestors", []):
+                    add(ancestor["account"]["acct"])
+                    for m in ancestor.get("mentions", []):
+                        add(m["acct"])
+            except Exception:
+                logger.exception("스레드 참여자 조회 실패 (status_id=%s)", status_id)
+
+        return accounts
+
     def __dispatch(
         self,
         acct: str,
@@ -675,11 +715,14 @@ class MastodonBotListener(StreamListener):
             _RE_INVESTIGATION_BATTLE_SELF.search(text)
         )
         if is_admin or is_investigation_self_mention:
+            thread_mentions = self._thread_participants(
+                status_id, in_reply_to_id, mentions or [], acct
+            )
             result: AdminCommandResult = handle_admin_command(
                 text,
                 state,
                 acct=acct,
-                mentions=mentions or [],
+                mentions=thread_mentions,
                 visibility=visibility,
                 in_reply_to_id=in_reply_to_id,
             )
@@ -690,17 +733,22 @@ class MastodonBotListener(StreamListener):
         # (배치는 이 명령 안에 [배치/이름/적군 N열]로 함께 실어 처리된다).
         # 그 외 admin 전용 커맨드([전투준비] 등)에는 접근할 수 없다.
         if is_world and admin_commands._RE_INVESTIGATION_BATTLE.search(text):
+            thread_mentions = self._thread_participants(
+                status_id, in_reply_to_id, mentions or [], acct
+            )
             result = admin_commands._cmd_investigation_battle(
-                text, mentions or [], state, visibility
+                text, thread_mentions, state, visibility
             )
             self._post_admin_result(result, status_id, acct, visibility, state)
             return
 
         # 1.5. 캐릭터 계정이 직접 [대련]을 시작 — 대련은 (상시전투와 달리)
         # Admin 커맨드가 아니라 캐릭터 전용 커맨드다. 발신 캐릭터 자신과
-        # 함께 멘션된 상대가 참여 대상이 된다.
+        # 함께 멘션된 상대(스레드에 이미 등장한 인원 포함)가 참여 대상이 된다.
         if acct in state.char_dict and admin_commands._RE_PRACTICE_PREP.search(text):
-            expected_accts = [acct] + [m for m in (mentions or []) if m != acct]
+            expected_accts = [acct] + self._thread_participants(
+                status_id, in_reply_to_id, mentions or [], acct
+            )
             result = admin_commands._cmd_practice_prep(
                 expected_accts, state, visibility
             )
@@ -936,10 +984,13 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id in nc.get_investigation_overview_post_ids()
             and _RE_ACCEPT.search(text)
         ):
-            response, log_info = handle_investigation_accept(
-                acct, mentions or [], state, in_reply_to_id
+            thread_mentions = self._thread_participants(
+                status_id, in_reply_to_id, mentions or [], acct
             )
-            expected_accts = [acct] + [m for m in (mentions or []) if m != acct]
+            response, log_info = handle_investigation_accept(
+                acct, thread_mentions, state, in_reply_to_id
+            )
+            expected_accts = [acct] + thread_mentions
             reply_status = self._reply(
                 status_id, acct, visibility, response, mention_accts=expected_accts
             )
