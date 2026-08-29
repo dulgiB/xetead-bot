@@ -39,6 +39,7 @@ from bot.commands.noncombat import (
     handle_daily_quest_start,
     handle_investigation_accept,
     handle_investigation_decline,
+    handle_investigation_menu_idle_reply,
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
@@ -909,16 +910,22 @@ class MastodonBotListener(StreamListener):
             and in_reply_to_id in nc.get_investigation_menu_post_ids()
         ):
             menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
-            if menu_acct == acct and count_bracket_groups(text) >= 1:
-                venue_name = text.strip().strip("[]")
-                response, log_info = handle_investigation_venue_choice(
-                    acct, venue_name, state
-                )
-                post = self._reply(status_id, acct, visibility, response)
-                _persist_noncombat_log(state, log_info, str(post["id"]))
-                finalize_investigation_overview_post(acct, post["id"], state)
-            # menu_acct != acct(타인의 메뉴 게시물)이거나 대괄호 커맨드 자체가
-            # 없는 답글(사담 등)이면 조용히 무시한다.
+            if menu_acct == acct:
+                if count_bracket_groups(text) >= 1:
+                    venue_name = text.strip().strip("[]")
+                    response, log_info = handle_investigation_venue_choice(
+                        acct, venue_name, state
+                    )
+                    post = self._reply(status_id, acct, visibility, response)
+                    _persist_noncombat_log(state, log_info, str(post["id"]))
+                    finalize_investigation_overview_post(acct, post["id"], state)
+                else:
+                    # 대괄호 커맨드 자체가 없는 답글(사담 등) — 장소를 정하지
+                    # 않고 자율적으로 둘러본 것으로 안내하고 world를 태그한다.
+                    response, log_info = handle_investigation_menu_idle_reply()
+                    post = self._reply(status_id, acct, visibility, response)
+                    _persist_noncombat_log(state, log_info, str(post["id"]))
+            # menu_acct != acct(타인의 메뉴 게시물)이면 조용히 무시한다.
             return
 
         # 8. 상시조사 수락 답글 (의뢰 개요 포스트에 대한 [수락] 답글)

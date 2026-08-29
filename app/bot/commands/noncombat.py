@@ -752,6 +752,15 @@ def finalize_investigation_menu_post(
     state.noncombat.investigation_menu_post_id[acct] = post_id
 
 
+def handle_investigation_menu_idle_reply() -> tuple[str, Optional[NoncombatLogInfo]]:
+    """[상시조사] 메뉴 게시물에 [장소명] 없이(사담 등) 직속 답글이 달리면
+    → 자율적으로 주변을 둘러본 것으로 안내하고, GM이 이어서 서술할 수
+    있도록 world 계정을 태그한다."""
+    command_text = "(상시조사 메뉴 답글, 장소 미지정)"
+    msg = f"원하는 곳을 둘러보기로 했다. @{WORLD_MASTODON_ID}"
+    return msg, NoncombatLogInfo(command_text=command_text, result="장소 미지정")
+
+
 def handle_investigation_venue_choice(
     acct: str, venue_name: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
