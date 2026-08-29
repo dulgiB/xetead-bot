@@ -22,6 +22,7 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_daily_quest_start,
     handle_investigation_accept,
     handle_investigation_decline,
+    handle_investigation_menu_idle_reply,
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
@@ -299,6 +300,15 @@ def test_investigation_decline_without_known_overview_post_errors(monkeypatch):
     result, log_info = handle_investigation_decline(acct, state, in_reply_to_id=999)
 
     assert "찾을 수 없습니다" in result
+
+
+def test_investigation_menu_idle_reply_tags_world():
+    """[상시조사] 메뉴 게시물에 [장소명] 없이(사담 등) 직속 답글이 오면,
+    장소를 정하지 않고 둘러본 것으로 안내하며 world를 태그해야 한다."""
+    result, log_info = handle_investigation_menu_idle_reply()
+
+    assert result == "원하는 곳을 둘러보기로 했다. @test-world"
+    assert log_info is not None
 
 
 def test_investigation_start_uses_location_description_as_menu_intro(monkeypatch):
