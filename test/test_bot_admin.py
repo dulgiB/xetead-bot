@@ -34,6 +34,7 @@ from bot.main import BotState, MastodonBotListener, _handle_practice_command  # 
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
+from test_bot_noncombat import _quest, _quest_location  # noqa: E402
 from test_load_battle_data import _base_sheets, _FakeSpreadsheet  # noqa: E402
 
 
@@ -1553,6 +1554,38 @@ def test_investigation_battle_remains_admin_only(monkeypatch):
 
     assert not state.practices
     assert mastodon.status_post_calls == []
+
+
+def test_investigation_menu_reply_extracts_venue_amid_chatter(monkeypatch):
+    """상시조사 메뉴 답글에 사담이 대괄호 앞뒤로 붙어도("[광장] 사담",
+    "사담 [광장]") 장소 커맨드로 정상 인식돼야 한다 — 예전엔 답글 전체가
+    정확히 "[장소명]"이어야만 파싱되어, 사담이 조금이라도 섞이면 엉뚱한
+    문자열로 깨졌다."""
+    state = _make_state()
+    state.noncombat.investigation_menu_post_id["user1"] = 100
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(
+        main_module.noncombat_commands,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [_quest(venue="광장", name="광장 의뢰")],
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("user1", 1, 100, "사담 [광장] 사담"))
+
+    assert "[광장](으)로 이동했다." in mastodon.status_post_calls[-1]["status"]
 
 
 def test_world_account_can_start_investigation_battle(monkeypatch):
