@@ -27,6 +27,7 @@ from bot.battle_reply_text import (
     format_eliminated_characters,
 )
 from bot.commands import admin as admin_commands
+from bot.commands import noncombat as noncombat_commands
 from bot.commands.admin import AdminCommandResult, handle_admin_command
 from bot.commands.character import handle_character_command
 from bot.commands.noncombat import (
@@ -911,8 +912,9 @@ class MastodonBotListener(StreamListener):
         ):
             menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
             if menu_acct == acct:
-                if count_bracket_groups(text) >= 1:
-                    venue_name = text.strip().strip("[]")
+                bracket_match = noncombat_commands._RE_BARE_BRACKET.search(text)
+                if bracket_match:
+                    venue_name = bracket_match.group(1).strip()
                     response, log_info = handle_investigation_venue_choice(
                         acct, venue_name, state
                     )
