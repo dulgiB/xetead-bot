@@ -31,6 +31,7 @@ from bot.commands.admin import (  # noqa: E402
     _cmd_continue_battle,
 )
 from bot.main import BotState, MastodonBotListener, _handle_practice_command  # noqa: E402
+from bot.noncombat_state import InvestigationSession  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
@@ -1618,7 +1619,9 @@ def test_investigation_menu_reply_extracts_venue_amid_chatter(monkeypatch):
     정확히 "[장소명]"이어야만 파싱되어, 사담이 조금이라도 섞이면 엉뚱한
     문자열로 깨졌다."""
     state = _make_state()
-    state.noncombat.investigation_menu_post_id["user1"] = 100
+    state.noncombat.investigations["user1"] = InvestigationSession(
+        field_id="100", acct="user1", menu_post_id=100
+    )
     monkeypatch.setattr(
         main_module,
         "load_char_data",
@@ -1636,12 +1639,131 @@ def test_investigation_menu_reply_extracts_venue_amid_chatter(monkeypatch):
             [_quest(venue="광장", name="광장 의뢰")],
         ),
     )
+    monkeypatch.setattr(
+        main_module.noncombat_commands,
+        "upsert_investigation_session",
+        lambda *a, **k: None,
+    )
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
     listener.on_notification(_make_notification("user1", 1, 100, "사담 [광장] 사담"))
 
     assert "[광장](으)로 이동했다." in mastodon.status_post_calls[-1]["status"]
+
+
+def test_investigation_venue_choice_resolves_via_thread_ancestors(monkeypatch):
+    """메뉴 게시물에 대한 직속 답글이 아니라, 사담을 몇 번 주고받은 뒤의
+    중첩된 답글이어도 장소 커맨드가 있으면 스레드 조상을 거슬러 올라가
+    같은 세션을 찾아 정상 처리해야 한다."""
+    state = _make_state()
+    state.noncombat.investigations["user1"] = InvestigationSession(
+        field_id="100", acct="user1", menu_post_id=100
+    )
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(
+        main_module.noncombat_commands,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [_quest(venue="광장", name="광장 의뢰")],
+        ),
+    )
+    monkeypatch.setattr(
+        main_module.noncombat_commands,
+        "upsert_investigation_session",
+        lambda *a, **k: None,
+    )
+    # 메뉴(100) → 사담(101) → 사담(102) 순으로 스레드가 이어졌고, 이번
+    # 답글은 102에 대한 답글이다 — 메뉴 게시물(100)의 직속 답글이 아니다.
+    ancestors = [
+        {"id": 100, "account": {"acct": "bot"}, "mentions": []},
+        {"id": 101, "account": {"acct": "user1"}, "mentions": []},
+        {"id": 102, "account": {"acct": "user2"}, "mentions": []},
+    ]
+    mastodon = _FakeMastodon(ancestors=ancestors)
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("user1", 1, 102, "[광장]"))
+
+    assert "[광장](으)로 이동했다." in mastodon.status_post_calls[-1]["status"]
+
+
+def test_investigation_session_ends_after_idle_reply_and_stops_matching(monkeypatch):
+    """world가 태그되는 응답(장소 미지정 안내)이 나가면 그 세션은
+    종료되고, 그 뒤로는 같은 메뉴 게시물에 실제 장소 커맨드를 보내도 더
+    이상 처리되지 않아야 한다."""
+    state = _make_state()
+    state.noncombat.investigations["user1"] = InvestigationSession(
+        field_id="100", acct="user1", menu_post_id=100
+    )
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(
+        main_module.noncombat_commands,
+        "upsert_investigation_session",
+        lambda *a, **k: None,
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("user1", 1, 100, "그냥 둘러본다"))
+
+    assert "원하는 곳을 둘러보기로 했다" in mastodon.status_post_calls[-1]["status"]
+    assert state.noncombat.investigations["user1"].ended is True
+
+    monkeypatch.setattr(
+        main_module.noncombat_commands,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
+    )
+    calls_before = len(mastodon.status_post_calls)
+
+    listener.on_notification(_make_notification("user1", 2, 100, "[광장]"))
+
+    assert len(mastodon.status_post_calls) == calls_before
+
+
+def test_investigation_nested_casual_chat_does_not_end_session(monkeypatch):
+    """스레드 조상으로만 세션과 연결되는(직속 답글이 아닌) 사담은 세션을
+    끝내지 않고 아무 응답도 남기지 않아야 한다 — 뒤이어 실제 장소 커맨드가
+    올 수 있으므로."""
+    state = _make_state()
+    state.noncombat.investigations["user1"] = InvestigationSession(
+        field_id="100", acct="user1", menu_post_id=100
+    )
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    ancestors = [{"id": 100, "account": {"acct": "bot"}, "mentions": []}]
+    mastodon = _FakeMastodon(ancestors=ancestors)
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("user1", 1, 555, "그냥 사담이다"))
+
+    assert mastodon.status_post_calls == []
+    assert state.noncombat.investigations["user1"].ended is False
 
 
 def test_world_account_can_start_investigation_battle(monkeypatch):

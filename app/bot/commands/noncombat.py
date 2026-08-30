@@ -30,8 +30,12 @@ from bot.load_data import (
     update_character_quest_date,
     update_quest_taken_by,
 )
-from bot.log_sheets import NoncombatLogInfo, append_ledger_row
-from bot.noncombat_state import DailyQuestMidState
+from bot.log_sheets import (
+    NoncombatLogInfo,
+    append_ledger_row,
+    upsert_investigation_session,
+)
+from bot.noncombat_state import DailyQuestMidState, InvestigationSession
 
 if TYPE_CHECKING:
     from bot.main import BotState
@@ -748,39 +752,55 @@ def handle_investigation_start(
 
 def finalize_investigation_menu_post(
     acct: str, post_id: int, state: "BotState"
-) -> None:
-    state.noncombat.investigation_menu_post_id[acct] = post_id
+) -> InvestigationSession:
+    """새 상시조사 메뉴 게시물로 세션을 (재)시작한다. 그 acct에 이미 진행
+    중인 세션이 있으면(끝맺지 않고 다시 [상시조사]를 보낸 경우) 먼저
+    종료 처리해 시트에 반영한다."""
+    nc = state.noncombat
+    prior = nc.investigations.get(acct)
+    if prior is not None and not prior.ended:
+        prior.ended = True
+        upsert_investigation_session(state.spreadsheet, prior, cache=state.sheet_cache)
+
+    session = InvestigationSession(
+        field_id=str(post_id), acct=acct, menu_post_id=post_id
+    )
+    nc.investigations[acct] = session
+    upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
+    return session
 
 
-def handle_investigation_menu_idle_reply() -> tuple[str, Optional[NoncombatLogInfo]]:
+def handle_investigation_menu_idle_reply(
+    session: InvestigationSession, state: "BotState"
+) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[상시조사] 메뉴 게시물에 [장소명] 없이(사담 등) 직속 답글이 달리면
     → 자율적으로 주변을 둘러본 것으로 안내하고, GM이 이어서 서술할 수
-    있도록 world 계정을 태그한다."""
+    있도록 world 계정을 태그한다. world가 태그되는 순간이므로 세션은
+    여기서 종료된다."""
     command_text = "(상시조사 메뉴 답글, 장소 미지정)"
+    session.ended = True
+    upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
     msg = f"원하는 곳을 둘러보기로 했다. @{WORLD_MASTODON_ID}"
     return msg, NoncombatLogInfo(command_text=command_text, result="장소 미지정")
 
 
 def handle_investigation_venue_choice(
-    acct: str, venue_name: str, state: "BotState"
+    session: InvestigationSession, venue_name: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """장소 선택 → '일반 의뢰' 시트를 읽어 개요 반환."""
     command_text = f"[상시조사/{venue_name}]"
-    nc = state.noncombat
 
     try:
         location, quests = load_general_quest_sheet(
             state.spreadsheet, cache=state.sheet_cache
         )
     except Exception as e:
-        nc.investigation_acct_to_quest_id.pop(acct, None)
         msg = f"◊ 의뢰 정보를 불러오는 중 오류가 발생했습니다: {e}"
         return msg, NoncombatLogInfo(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
     if location is None or not quests:
-        nc.investigation_acct_to_quest_id.pop(acct, None)
         msg = "◊ 등록되지 않은 장소입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
@@ -788,19 +808,26 @@ def handle_investigation_venue_choice(
     matched_venue = resolve_matching_key(venue_name, venue_lookup.keys())
     quest = venue_lookup.get(matched_venue)
     if quest is None:
-        # 이 답글은 유효한 의뢰 개요가 아니므로, 이전에 선택했던 의뢰가 남아 있다면
-        # 지워 [수락] 시 엉뚱한(예전) 의뢰가 수주되는 것을 방지한다.
-        nc.investigation_acct_to_quest_id.pop(acct, None)
         if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
+            session.ended = True
+            upsert_investigation_session(
+                state.spreadsheet, session, cache=state.sheet_cache
+            )
             msg = (
                 "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
                 f"정보를 수집할 수 있다. @{WORLD_MASTODON_ID}"
             )
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+        # 이 답글은 유효한 의뢰 개요가 아니다 — 이전에 선택했던 quest_id가
+        # 남아 있으면, 뒤이어 finalize_investigation_overview_post가 이
+        # (틀린) 답글을 그 옛 의뢰의 개요인 것처럼 등록해 [수락] 시 엉뚱한
+        # 의뢰가 수주되는 것을 방지하기 위해 지운다.
+        session.quest_id = None
         msg = "◊ 등록되지 않은 장소입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    nc.investigation_acct_to_quest_id[acct] = quest.id
+    session.quest_id = quest.id
+    upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
 
     if quest.taken_by_list():
         lines = [
@@ -841,19 +868,23 @@ def handle_investigation_venue_choice(
 
 
 def finalize_investigation_overview_post(
-    acct: str, post_id: int, state: "BotState"
+    session: InvestigationSession, post_id: int, state: "BotState"
 ) -> None:
-    nc = state.noncombat
-    quest_id = nc.investigation_acct_to_quest_id.pop(acct, None)
-    if quest_id is not None:
-        nc.investigation_overview_quest[post_id] = quest_id
+    """의뢰 개요 답글이 실제로 게시된 뒤, 그 게시물 id를 세션에 기록한다.
+
+    handle_investigation_venue_choice가 유효한 의뢰를 찾지 못했거나(장소
+    오류) 자율 탐사로 세션을 이미 종료한 경우엔 session.quest_id가 비어
+    있으므로 아무 것도 하지 않는다."""
+    if session.quest_id is None:
+        return
+    session.overview_post_id = post_id
+    upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
 
 
 def handle_investigation_accept(
-    acct: str,
+    session: InvestigationSession,
     mentions: list[str],
     state: "BotState",
-    in_reply_to_id: Optional[int] = None,
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[수락] → 답글에 멘션된 인원 전원(+ 발신자)을 참여자로 등록하고 '일반
     의뢰' 시트의 taken_by에 기록한다.
@@ -863,13 +894,8 @@ def handle_investigation_accept(
     또 수주할 수는 없다(taken_by 기준으로 확인).
     """
     command_text = "[수락]"
-    nc = state.noncombat
-
-    quest_id = (
-        nc.investigation_overview_quest.get(in_reply_to_id)
-        if in_reply_to_id is not None
-        else None
-    )
+    acct = session.acct
+    quest_id = session.quest_id
     if quest_id is None:
         msg = "◊ 수락할 의뢰가 없습니다. 먼저 [상시조사]로 의뢰를 확인해 주세요."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -914,6 +940,9 @@ def handle_investigation_accept(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
+    session.ended = True
+    upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
+
     reply = (
         f"「{quest.name}」 의뢰를 받았다!\n\n"
         f"◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @{WORLD_MASTODON_ID}"
@@ -925,21 +954,15 @@ def handle_investigation_accept(
 
 
 def handle_investigation_decline(
-    acct: str,
+    session: InvestigationSession,
     state: "BotState",
-    in_reply_to_id: Optional[int] = None,
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """의뢰 개요 게시물에 [수락]도 다른 인식 가능한 커맨드도 아닌 답글이
     달리면 → 의뢰를 받지 않고 자리를 떠난 것으로 안내하고, GM이 이어서
-    서술할 수 있도록 admin을 태그한다."""
+    서술할 수 있도록 world를 태그한다. world가 태그되는 순간이므로 세션은
+    여기서 종료된다."""
     command_text = "(의뢰 개요 답글, 미수락)"
-    nc = state.noncombat
-
-    quest_id = (
-        nc.investigation_overview_quest.get(in_reply_to_id)
-        if in_reply_to_id is not None
-        else None
-    )
+    quest_id = session.quest_id
     if quest_id is None:
         msg = "◊ 의뢰 정보를 찾을 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -954,6 +977,9 @@ def handle_investigation_decline(
 
     quest = next((q for q in quests if q.id == quest_id), None)
     location = quest.location if quest else ""
+
+    session.ended = True
+    upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
 
     msg = (
         f"의뢰는 수락하지 않고 {location} 일대를 둘러보기로 했다. @{WORLD_MASTODON_ID}"

@@ -10,35 +10,39 @@ class DailyQuestMidState:
 
 
 @dataclass
+class InvestigationSession:
+    """[상시조사] 진행 중 상태 하나. "필드" 시트에 field_id로 upsert되어
+    봇 재기동에도 살아남고, 사담이 섞여도 스레드 조상만 거슬러 올라가면
+    다시 찾을 수 있다(main.py의 MastodonBotListener._resolve_investigation_session
+    참고).
+
+    world 계정이 태그되는 응답(자율 탐사/장소 미지정/수락/미수락)이 나가면
+    ended=True가 되고, 그 뒤로는 같은 스레드에 어떤 답글이 와도 더 이상
+    상시조사 컨텍스트로 인식되지 않는다.
+    """
+
+    field_id: str  # "필드" 시트 upsert 키. str(menu_post_id)로 고정.
+    acct: str
+    menu_post_id: int
+    overview_post_id: Optional[int] = None
+    quest_id: Optional[str] = None
+    ended: bool = False
+
+
+@dataclass
 class NonCombatState:
-    # acct → 봇이 보낸 조사 메뉴 게시물 ID
-    investigation_menu_post_id: dict[str, int] = field(default_factory=dict)
-    # acct → 방금 확인한 의뢰 개요의 quest_id (finalize 시 아래
-    # investigation_overview_quest로 옮겨지는 임시 다리 역할)
-    investigation_acct_to_quest_id: dict[str, str] = field(default_factory=dict)
-    # 봇이 보낸 의뢰 개요 게시물 ID → quest_id ([수락] 답글의 대상 의뢰 판별용)
-    investigation_overview_quest: dict[int, str] = field(default_factory=dict)
+    # acct → 진행 중(또는 방금 종료된) 상시조사 세션. 한 acct당 최대 1개만
+    # 유지한다 — 새 [상시조사]가 시작되면 이전 세션은 ended=True로 정리된다.
+    investigations: dict[str, InvestigationSession] = field(default_factory=dict)
 
     # 일일 의뢰 중간 상태 (acct → DailyQuestMidState)
     daily_quest_mid: dict[str, DailyQuestMidState] = field(default_factory=dict)
 
-    def reset_investigation(self) -> None:
-        """상시조사 종료 시 관련 상태를 초기화한다."""
-        self.investigation_menu_post_id.clear()
-        self.investigation_acct_to_quest_id.clear()
-        self.investigation_overview_quest.clear()
-
     def get_daily_quest_post_ids(self) -> set[int]:
         return {s.bot_reply_post_id for s in self.daily_quest_mid.values()}
 
-    def get_investigation_menu_post_ids(self) -> set[int]:
-        return set(self.investigation_menu_post_id.values())
-
-    def get_investigation_overview_post_ids(self) -> set[int]:
-        return set(self.investigation_overview_quest.keys())
-
-    def find_acct_by_investigation_menu_post(self, post_id: int) -> Optional[str]:
-        for acct, pid in self.investigation_menu_post_id.items():
-            if pid == post_id:
-                return acct
-        return None
+    def get_active_investigation(self, acct: str) -> Optional[InvestigationSession]:
+        session = self.investigations.get(acct)
+        if session is None or session.ended:
+            return None
+        return session

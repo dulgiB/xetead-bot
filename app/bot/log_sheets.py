@@ -28,6 +28,7 @@ from gspread.utils import ValueInputOption
 from battle.core.commands.models import BattleLogEntry
 from battle.objects.models import CharacterId
 
+from bot.noncombat_state import InvestigationSession
 from bot.sheet_cache import SheetCache
 
 if TYPE_CHECKING:
@@ -37,16 +38,19 @@ logger = logging.getLogger(__name__)
 
 
 class FieldBattleType(str, Enum):
-    """ "필드" 시트 한 행이 어떤 종류의 전투를 기록하는지 구분한다.
+    """ "필드" 시트 한 행이 어떤 종류의 전투/세션을 기록하는지 구분한다.
 
-    전투 재개(재기동 복원) 시 이 값으로 본 전투/DM 전투/대련/상시전투 중
-    무엇을 복원할지 분기한다.
+    재개(재기동 복원) 시 이 값으로 본 전투/DM 전투/대련/상시전투/상시조사 중
+    무엇을 복원할지 분기한다. INVESTIGATION_QUEST(상시조사)는 전투가 아니라
+    [상시조사]의 메뉴/의뢰 개요 진행 상태를 기록한다 — INVESTIGATION(상시전투,
+    상시조사 수락 후 실제로 벌어지는 전투)과 이름이 비슷하니 혼동하지 말 것.
     """
 
     MAIN = "본전투"
     DM = "DM전투"
     PRACTICE = "대련"
     INVESTIGATION = "상시전투"
+    INVESTIGATION_QUEST = "상시조사"
 
 
 @dataclass(frozen=True)
@@ -454,6 +458,37 @@ def update_field_meta(
     ws.update_cell(row_idx, 8, json.dumps(existing_meta, ensure_ascii=False))
     if cache is not None:
         cache.invalidate(_FIELD_SHEET)
+
+
+def upsert_investigation_session(
+    spreadsheet: gspread.Spreadsheet,
+    session: InvestigationSession,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """[상시조사] 세션 진행 상태를 "필드" 시트에 upsert한다.
+
+    본전투/대련처럼 크래시 복구 대상이 되는 것뿐 아니라, 사담이 섞여도
+    스레드 조상만 거슬러 올라가면 같은 세션을 다시 찾을 수 있어야 하므로
+    (MastodonBotListener._resolve_investigation_session), 메뉴/개요
+    게시물 id가 바뀔 때마다 매번 최신 상태로 덮어써야 한다. round/phase/
+    characters는 상시조사에 의미가 없어 항상 기본값을 쓴다."""
+    meta = {
+        "acct": session.acct,
+        "menu_post_id": session.menu_post_id,
+        "overview_post_id": session.overview_post_id,
+        "quest_id": session.quest_id,
+    }
+    upsert_field_row(
+        spreadsheet,
+        session.field_id,
+        FieldBattleType.INVESTIGATION_QUEST,
+        round_n=0,
+        phase="",
+        characters=[],
+        ended=session.ended,
+        meta=meta,
+        cache=cache,
+    )
 
 
 @dataclass(frozen=True)

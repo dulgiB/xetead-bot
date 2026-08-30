@@ -54,7 +54,7 @@ from bot import field_restore, log_sheets
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data
-from bot.noncombat_state import DailyQuestMidState, NonCombatState
+from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCombatState
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 from bot.sheet_cache import SheetCache
@@ -656,6 +656,55 @@ class MastodonBotListener(StreamListener):
 
         return accounts
 
+    def _resolve_investigation_session(
+        self,
+        acct: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        state: "BotState",
+    ) -> tuple[Optional[InvestigationSession], str, bool]:
+        """acct의 활성 상시조사 세션이 이 답글에 연관되는지 확인한다.
+
+        직속 답글이 가장 흔하고 저렴한 경로라 먼저 확인하고, 아니면
+        status_context()로 스레드 조상까지 거슬러 올라가 세션의 메뉴/개요
+        게시물이 그 안에 있는지 찾는다 — 사담이 몇 번을 이어지든 같은
+        스레드인 이상 세션을 다시 찾아낼 수 있게 하기 위함이다. 활성
+        세션이 아예 없는 acct는 이 조상 조회 자체를 하지 않는다(고빈도
+        메시지에서 불필요한 API 호출을 피하기 위함).
+
+        반환값: (session_or_None, stage, is_direct). stage는
+        "menu"|"overview". is_direct는 in_reply_to_id가 세션의 게시물을
+        정확히 가리키는지(스레드 조상으로만 찾은 게 아닌지) 여부다 —
+        사담(인식 가능한 커맨드가 없는 답글)에 대한 종결성 응답(장소
+        미지정/미수락 안내)은 직속 답글에서만 트리거해야 하므로, 조상
+        경유로만 찾은 경우와 구분해야 한다."""
+        session = state.noncombat.get_active_investigation(acct)
+        if session is None:
+            return None, "", False
+
+        if in_reply_to_id == session.overview_post_id:
+            return session, "overview", True
+        if in_reply_to_id == session.menu_post_id:
+            return session, "menu", True
+
+        if in_reply_to_id is None:
+            return None, "", False
+
+        try:
+            context = self._mastodon.status_context(status_id)
+            ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
+        except Exception:
+            logger.exception("스레드 상시조사 세션 조회 실패 (status_id=%s)", status_id)
+            return None, "", False
+
+        if session.overview_post_id is not None and (
+            session.overview_post_id in ancestor_ids
+        ):
+            return session, "overview", False
+        if session.menu_post_id in ancestor_ids:
+            return session, "menu", False
+        return None, "", False
+
     def __dispatch(
         self,
         acct: str,
@@ -953,42 +1002,50 @@ class MastodonBotListener(StreamListener):
                 _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
-        # 7. 상시조사 메뉴 답글 (봇이 4개 선택지를 보낸 포스트에 대한 답글)
-        if (
-            in_reply_to_id is not None
-            and in_reply_to_id in nc.get_investigation_menu_post_ids()
-        ):
-            menu_acct = nc.find_acct_by_investigation_menu_post(in_reply_to_id)
-            if menu_acct == acct:
-                bracket_match = noncombat_commands._RE_BARE_BRACKET.search(text)
-                if bracket_match:
-                    venue_name = bracket_match.group(1).strip()
-                    response, log_info = handle_investigation_venue_choice(
-                        acct, venue_name, state
-                    )
-                    post = self._reply(status_id, acct, visibility, response)
-                    _persist_noncombat_log(state, log_info, str(post["id"]))
-                    finalize_investigation_overview_post(acct, post["id"], state)
-                else:
-                    # 대괄호 커맨드 자체가 없는 답글(사담 등) — 장소를 정하지
-                    # 않고 자율적으로 둘러본 것으로 안내하고 world를 태그한다.
-                    response, log_info = handle_investigation_menu_idle_reply()
-                    post = self._reply(status_id, acct, visibility, response)
-                    _persist_noncombat_log(state, log_info, str(post["id"]))
-            # menu_acct != acct(타인의 메뉴 게시물)이면 조용히 무시한다.
-            return
+        # 7/8. 상시조사 진행 중 답글 — 메뉴/의뢰 개요 게시물에 대한 직속
+        # 답글이거나, 그 사이에 사담이 섞여도 스레드 조상을 거슬러 올라가면
+        # 여전히 같은(아직 world가 태그되지 않은) 세션으로 인식된다.
+        investigation_session, investigation_stage, investigation_is_direct = (
+            self._resolve_investigation_session(acct, status_id, in_reply_to_id, state)
+        )
+        if investigation_session is not None and investigation_stage == "menu":
+            bracket_match = noncombat_commands._RE_BARE_BRACKET.search(text)
+            if bracket_match:
+                venue_name = bracket_match.group(1).strip()
+                response, log_info = handle_investigation_venue_choice(
+                    investigation_session, venue_name, state
+                )
+                post = self._reply(status_id, acct, visibility, response)
+                _persist_noncombat_log(state, log_info, str(post["id"]))
+                finalize_investigation_overview_post(
+                    investigation_session, post["id"], state
+                )
+                return
+            if investigation_is_direct:
+                # 메뉴 게시물에 대한 직속 답글에 장소 커맨드가 없으면(사담
+                # 등) 장소를 정하지 않고 자율적으로 둘러본 것으로 안내하고
+                # world를 태그한다(세션 종료).
+                response, log_info = handle_investigation_menu_idle_reply(
+                    investigation_session, state
+                )
+                post = self._reply(status_id, acct, visibility, response)
+                _persist_noncombat_log(state, log_info, str(post["id"]))
+                return
+            # 스레드 조상으로만 연결된 사담(직속 답글이 아니고 장소 커맨드도
+            # 없음)은 세션을 그대로 유지한 채 아무 것도 하지 않고 다른
+            # 커맨드 인식을 계속 시도한다 — 뒤이어 진짜 커맨드가 올 수
+            # 있으므로 여기서 return하지 않는다.
 
-        # 8. 상시조사 수락 답글 (의뢰 개요 포스트에 대한 [수락] 답글)
         if (
-            in_reply_to_id is not None
-            and in_reply_to_id in nc.get_investigation_overview_post_ids()
+            investigation_session is not None
+            and investigation_stage == "overview"
             and _RE_ACCEPT.search(text)
         ):
             thread_mentions = self._thread_participants(
                 status_id, in_reply_to_id, mentions or [], acct
             )
             response, log_info = handle_investigation_accept(
-                acct, thread_mentions, state, in_reply_to_id
+                investigation_session, thread_mentions, state
             )
             expected_accts = [acct] + thread_mentions
             reply_status = self._reply(
@@ -1061,14 +1118,17 @@ class MastodonBotListener(StreamListener):
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
-        # 15. 의뢰 개요 포스트에 대한 그 외의 답글 ([수락]도 아니고 위의 다른
-        # 커맨드에도 매칭되지 않음) — 의뢰를 받지 않고 떠난 것으로 안내
+        # 15. 의뢰 개요 게시물에 대한 그 외의 "직속" 답글([수락]도 아니고
+        # 위의 다른 커맨드에도 매칭되지 않음) — 의뢰를 받지 않고 떠난
+        # 것으로 안내(세션 종료). 스레드 조상으로만 연결된 답글(사담)은
+        # 여기서도 무시해 세션을 유지한다 — [수락]이 나중에 올 수 있으므로.
         if (
-            in_reply_to_id is not None
-            and in_reply_to_id in nc.get_investigation_overview_post_ids()
+            investigation_session is not None
+            and investigation_stage == "overview"
+            and investigation_is_direct
         ):
             response, log_info = handle_investigation_decline(
-                acct, state, in_reply_to_id
+                investigation_session, state
             )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))

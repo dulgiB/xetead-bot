@@ -27,6 +27,7 @@ from battle.practice.round_manager import PracticeRoundManager
 
 from bot.dm_battle_state import DmBattleState
 from bot.log_sheets import FieldBattleType, FieldRow, load_open_battle_rows
+from bot.noncombat_state import InvestigationSession
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 
@@ -76,6 +77,8 @@ def restore_all(
                     item_dict,
                     inventory,
                 )
+            elif row.battle_type == FieldBattleType.INVESTIGATION_QUEST:
+                summary = _restore_investigation_session(state, row)
             else:
                 summary = _restore_practice_battle(
                     state, row, buff_dict, skill_dict, passive_skill_dict, item_dict
@@ -347,3 +350,34 @@ def _restore_practice_battle(
         f"{battle_label} {row.round_n}라운드 {phase.value} — "
         f"캐릭터 {restored}명 복원 (field_id={row.field_id})"
     )
+
+
+def _restore_investigation_session(state: "BotState", row: FieldRow) -> Optional[str]:
+    """[상시조사] 진행 상태(메뉴/의뢰 개요 게시물, 선택한 quest_id)를
+    복원한다 — 전투와 달리 라운드/페이즈/캐릭터 배치 개념이 없어 meta만
+    읽으면 된다."""
+    meta = row.meta
+    acct = meta.get("acct")
+    menu_post_id = meta.get("menu_post_id")
+    if not acct or menu_post_id is None:
+        logger.warning(
+            "상시조사 세션 복원 실패: acct/menu_post_id 메타가 없습니다 (field_id=%s)",
+            row.field_id,
+        )
+        return None
+
+    session = InvestigationSession(
+        field_id=row.field_id,
+        acct=acct,
+        menu_post_id=int(menu_post_id),
+        overview_post_id=(
+            int(meta["overview_post_id"])
+            if meta.get("overview_post_id") is not None
+            else None
+        ),
+        quest_id=meta.get("quest_id"),
+    )
+    state.noncombat.investigations[acct] = session
+
+    stage = "의뢰 개요" if session.overview_post_id is not None else "메뉴"
+    return f"상시조사 {stage} 단계 — {acct} 복원 (field_id={row.field_id})"
