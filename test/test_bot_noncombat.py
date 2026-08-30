@@ -22,7 +22,6 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_daily_quest_start,
     handle_investigation_accept,
     handle_investigation_decline,
-    handle_investigation_menu_idle_reply,
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
@@ -327,19 +326,6 @@ def test_investigation_decline_without_known_overview_post_errors():
     assert "찾을 수 없습니다" in result
 
 
-def test_investigation_menu_idle_reply_tags_world():
-    """[상시조사] 메뉴 게시물에 [장소명] 없이(사담 등) 직속 답글이 오면,
-    장소를 정하지 않고 둘러본 것으로 안내하며 world를 태그해야 한다."""
-    state = _make_state("user1")
-    session = _investigation_session(acct="user1")
-
-    result, log_info = handle_investigation_menu_idle_reply(session, state)
-
-    assert result == "원하는 곳을 둘러보기로 했다. @test-world"
-    assert log_info is not None
-    assert session.ended is True
-
-
 def test_investigation_start_uses_location_description_as_menu_intro(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
@@ -361,6 +347,7 @@ def test_investigation_start_uses_location_description_as_menu_intro(monkeypatch
     assert result.startswith("한적한 항구 마을이다. 어디로 가 볼까?")
     assert "▸ [광장]" in result
     assert "▸ [상점가]" in result
+    assert "▸ [자율 탐사]" in result
     assert "▸ [항구]" in result
 
 
@@ -450,9 +437,7 @@ def test_investigation_venue_choice_free_explore_tags_admin(monkeypatch):
         lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
     )
 
-    result, log_info = handle_investigation_venue_choice(
-        session, "그 외의 장소를 찾아본다.", state
-    )
+    result, log_info = handle_investigation_venue_choice(session, "자율 탐사", state)
 
     assert result == (
         "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "

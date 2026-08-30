@@ -89,7 +89,7 @@ _ITEM_TARGET_RULE_LABELS: dict[str, str] = {
     "SkillTargetRuleAllyColumn": "열/1",
 }
 
-FREE_EXPLORE_LABEL = "그 외의 장소를 찾아본다."
+FREE_EXPLORE_LABEL = "자율 탐사"
 
 # main.py와 별개로 읽는다 — bot.main이 이 모듈을 import하므로(순환 import),
 # 여기서 bot.main.ADMIN_MASTODON_ID를 직접 가져올 수 없다.
@@ -742,7 +742,7 @@ def handle_investigation_start(
     lines = [location.description_quest]
     for quest in quests:
         lines.append(f"▸ [{quest.location}]")
-    lines.append(f"▸ {FREE_EXPLORE_LABEL} (자율 탐사)")
+    lines.append(f"▸ [{FREE_EXPLORE_LABEL}]")
     reply = "\n".join(lines)
     return reply, NoncombatLogInfo(
         command_text=command_text,
@@ -770,20 +770,6 @@ def finalize_investigation_menu_post(
     return session
 
 
-def handle_investigation_menu_idle_reply(
-    session: InvestigationSession, state: "BotState"
-) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[상시조사] 메뉴 게시물에 [장소명] 없이(사담 등) 직속 답글이 달리면
-    → 자율적으로 주변을 둘러본 것으로 안내하고, GM이 이어서 서술할 수
-    있도록 world 계정을 태그한다. world가 태그되는 순간이므로 세션은
-    여기서 종료된다."""
-    command_text = "(상시조사 메뉴 답글, 장소 미지정)"
-    session.ended = True
-    upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
-    msg = f"원하는 곳을 둘러보기로 했다. @{WORLD_MASTODON_ID}"
-    return msg, NoncombatLogInfo(command_text=command_text, result="장소 미지정")
-
-
 def handle_investigation_venue_choice(
     session: InvestigationSession, venue_name: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
@@ -808,7 +794,7 @@ def handle_investigation_venue_choice(
     matched_venue = resolve_matching_key(venue_name, venue_lookup.keys())
     quest = venue_lookup.get(matched_venue)
     if quest is None:
-        if "자율 탐사" in venue_name or venue_name == FREE_EXPLORE_LABEL:
+        if resolve_matching_key(venue_name, [FREE_EXPLORE_LABEL]) == FREE_EXPLORE_LABEL:
             session.ended = True
             upsert_investigation_session(
                 state.spreadsheet, session, cache=state.sheet_cache

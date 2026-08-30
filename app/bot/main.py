@@ -40,7 +40,6 @@ from bot.commands.noncombat import (
     handle_daily_quest_start,
     handle_investigation_accept,
     handle_investigation_decline,
-    handle_investigation_menu_idle_reply,
     handle_investigation_start,
     handle_investigation_venue_choice,
     handle_roll,
@@ -1011,6 +1010,9 @@ class MastodonBotListener(StreamListener):
         if investigation_session is not None and investigation_stage == "menu":
             bracket_match = noncombat_commands._RE_BARE_BRACKET.search(text)
             if bracket_match:
+                # [자율 탐사]도 handle_investigation_venue_choice가 그대로
+                # 처리한다(등록된 장소가 아니면서 이 라벨과 일치하는 경우를
+                # 내부에서 분기).
                 venue_name = bracket_match.group(1).strip()
                 response, log_info = handle_investigation_venue_choice(
                     investigation_session, venue_name, state
@@ -1021,20 +1023,11 @@ class MastodonBotListener(StreamListener):
                     investigation_session, post["id"], state
                 )
                 return
-            if investigation_is_direct:
-                # 메뉴 게시물에 대한 직속 답글에 장소 커맨드가 없으면(사담
-                # 등) 장소를 정하지 않고 자율적으로 둘러본 것으로 안내하고
-                # world를 태그한다(세션 종료).
-                response, log_info = handle_investigation_menu_idle_reply(
-                    investigation_session, state
-                )
-                post = self._reply(status_id, acct, visibility, response)
-                _persist_noncombat_log(state, log_info, str(post["id"]))
-                return
-            # 스레드 조상으로만 연결된 사담(직속 답글이 아니고 장소 커맨드도
-            # 없음)은 세션을 그대로 유지한 채 아무 것도 하지 않고 다른
-            # 커맨드 인식을 계속 시도한다 — 뒤이어 진짜 커맨드가 올 수
-            # 있으므로 여기서 return하지 않는다.
+            # 장소 커맨드(장소명 또는 [자율 탐사]) 자체가 없는 답글(사담
+            # 등)은 직속 답글이든 스레드 조상으로만 연결된 것이든 세션을
+            # 그대로 유지한 채 아무 것도 하지 않고 다른 커맨드 인식을
+            # 계속 시도한다 — [자율 탐사]를 명시적으로 입력해야만 world로
+            # 인계된다.
 
         if (
             investigation_session is not None

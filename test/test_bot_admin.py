@@ -1697,10 +1697,40 @@ def test_investigation_venue_choice_resolves_via_thread_ancestors(monkeypatch):
     assert "[광장](으)로 이동했다." in mastodon.status_post_calls[-1]["status"]
 
 
-def test_investigation_session_ends_after_idle_reply_and_stops_matching(monkeypatch):
-    """world가 태그되는 응답(장소 미지정 안내)이 나가면 그 세션은
-    종료되고, 그 뒤로는 같은 메뉴 게시물에 실제 장소 커맨드를 보내도 더
-    이상 처리되지 않아야 한다."""
+def test_investigation_bare_chat_reply_does_nothing_and_keeps_session_open(
+    monkeypatch,
+):
+    """메뉴 게시물에 장소 커맨드도 [자율 탐사]도 없는 순수 사담 답글은
+    (직속 답글이라도) 아무 응답도 남기지 않고 세션도 끝나지 않아야 한다 —
+    [자율 탐사]를 명시적으로 입력해야만 world로 인계된다."""
+    state = _make_state()
+    state.noncombat.investigations["user1"] = InvestigationSession(
+        field_id="100", acct="user1", menu_post_id=100
+    )
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("user1", 1, 100, "그냥 둘러본다"))
+
+    assert mastodon.status_post_calls == []
+    assert state.noncombat.investigations["user1"].ended is False
+
+
+def test_investigation_explicit_free_explore_ends_session_and_stops_matching(
+    monkeypatch,
+):
+    """[자율 탐사]를 명시적으로 입력하면 world가 태그되며 세션이 종료되고,
+    그 뒤로는 같은 메뉴 게시물에 실제 장소 커맨드를 보내도 더 이상
+    처리되지 않아야 한다."""
     state = _make_state()
     state.noncombat.investigations["user1"] = InvestigationSession(
         field_id="100", acct="user1", menu_post_id=100
@@ -1719,19 +1749,19 @@ def test_investigation_session_ends_after_idle_reply_and_stops_matching(monkeypa
         "upsert_investigation_session",
         lambda *a, **k: None,
     )
-    mastodon = _FakeMastodon()
-    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
-
-    listener.on_notification(_make_notification("user1", 1, 100, "그냥 둘러본다"))
-
-    assert "원하는 곳을 둘러보기로 했다" in mastodon.status_post_calls[-1]["status"]
-    assert state.noncombat.investigations["user1"].ended is True
-
     monkeypatch.setattr(
         main_module.noncombat_commands,
         "load_general_quest_sheet",
         lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
     )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener.on_notification(_make_notification("user1", 1, 100, "[자율 탐사]"))
+
+    assert "다른 곳에 가보기로 했다" in mastodon.status_post_calls[-1]["status"]
+    assert state.noncombat.investigations["user1"].ended is True
+
     calls_before = len(mastodon.status_post_calls)
 
     listener.on_notification(_make_notification("user1", 2, 100, "[광장]"))
