@@ -160,6 +160,73 @@ def test_restore_dm_battle_skips_when_active_post_id_missing():
     assert state.dm_battles == {}
 
 
+def test_restore_investigation_session_menu_stage():
+    """개요 게시물 이전(메뉴 답글 대기 중)에 재기동해도 acct/menu_post_id만
+    으로 세션을 복원할 수 있어야 한다."""
+    state = _make_state({})
+    row = FieldRow(
+        field_id="100",
+        battle_type=FieldBattleType.INVESTIGATION_QUEST,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={"acct": "user1", "menu_post_id": 100},
+    )
+
+    summary = field_restore._restore_investigation_session(state, row)
+
+    assert summary is not None
+    session = state.noncombat.investigations["user1"]
+    assert session.field_id == "100"
+    assert session.menu_post_id == 100
+    assert session.overview_post_id is None
+    assert session.quest_id is None
+    assert session.ended is False
+
+
+def test_restore_investigation_session_overview_stage():
+    """의뢰 개요까지 진행된 뒤 재기동하면 overview_post_id/quest_id도
+    함께 복원돼야 한다."""
+    state = _make_state({})
+    row = FieldRow(
+        field_id="100",
+        battle_type=FieldBattleType.INVESTIGATION_QUEST,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={
+            "acct": "user1",
+            "menu_post_id": 100,
+            "overview_post_id": 200,
+            "quest_id": "아도스_운반",
+        },
+    )
+
+    summary = field_restore._restore_investigation_session(state, row)
+
+    assert summary is not None
+    session = state.noncombat.investigations["user1"]
+    assert session.overview_post_id == 200
+    assert session.quest_id == "아도스_운반"
+
+
+def test_restore_investigation_session_skips_when_meta_missing():
+    state = _make_state({})
+    row = FieldRow(
+        field_id="100",
+        battle_type=FieldBattleType.INVESTIGATION_QUEST,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={},
+    )
+
+    summary = field_restore._restore_investigation_session(state, row)
+
+    assert summary is None
+    assert state.noncombat.investigations == {}
+
+
 def test_restore_practice_battle_restores_hp_and_movers():
     state = _make_state(
         {
