@@ -466,6 +466,8 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `SkillTargetRuleNamedWithColumn`| 캐릭터 1명 + 인접 열 1개(생략 가능) — 열을 지정하면 그 캐릭터를 이동시킴  |
 | `SkillTargetRuleColumn`         | 열 번호로 지정, 해당 열의 **적군** 전원                       |
 | `SkillTargetRuleAllyColumn`     | 열 번호로 지정, 해당 열의 **아군** 전원                       |
+| `SkillTargetRuleColumnRange`    | 열 번호 1개로 지정, 그 열 ±2열(최대 5열)의 **적군** 전원 — 필드 경계를 넘는 열은 자연히 제외 |
+| `SkillTargetRuleAllAllies`      | 입력 없이 시전자와 같은 진영 전원(시전자 자신·동료 제외)              |
 
 ---
 

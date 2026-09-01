@@ -78,6 +78,45 @@ class SkillTargetRuleColumn(SkillTargetRule):
 
 
 @dataclass(frozen=True)
+class SkillTargetRuleColumnRange(SkillTargetRule):
+    """
+    사용자의 사거리 내 열 1개를 지정하면, 그 열을 중심으로 좌우 2열씩
+    확장한 최대 5개 열(총 5열) 전체를 대상으로 하는 스킬 효과.
+    필드 경계를 넘어가는 열은 자연히 제외되어 5개 미만이 될 수 있다.
+    - 대상 진영은 SkillTargetRuleColumn과 동일하게 항상 시전자의 적 진영.
+    - 인원 상한 없음 (광역기 개념)
+
+    ex. 본인의 사거리 내 열 하나를 지정해 그 열 ±2열, 총 5열의 적 전체를 공격
+    """
+
+    COLUMN_RANGE_RADIUS = 2
+
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
+    ) -> list[CharacterId]:
+        target_id_list: list[CharacterId] = []
+        target_faction = self.context.characters[self.skill_holder_id].foe_faction
+
+        assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
+        columns = cast(list[BattlefieldColumnIndex], targets)
+
+        expanded_column_values: set[int] = set()
+        for column in columns:
+            for offset in range(
+                -self.COLUMN_RANGE_RADIUS, self.COLUMN_RANGE_RADIUS + 1
+            ):
+                candidate = column.value + offset
+                if 0 <= candidate < BattlefieldColumnIndex.NONE.value:
+                    expanded_column_values.add(candidate)
+
+        for column_value in sorted(expanded_column_values):
+            column = BattlefieldColumnIndex(column_value)
+            target_id_list += self.context.position_map[target_faction][column].values()
+
+        return target_id_list
+
+
+@dataclass(frozen=True)
 class SkillTargetRuleAllyColumn(SkillTargetRule):
     """
     사용자의 사거리 내 0-6 사이의 위치 index를 기준으로, 시전자와 같은 진영의
@@ -98,6 +137,35 @@ class SkillTargetRuleAllyColumn(SkillTargetRule):
         for column in columns:
             target_id_list += self.context.position_map[target_faction][column].values()
         return target_id_list
+
+
+@dataclass(frozen=True)
+class SkillTargetRuleAllAllies(SkillTargetRule):
+    """
+    시전자와 동일 진영의 모든 캐릭터를 대상으로 하는 스킬 효과. 시전자
+    자신과 동료(소환수 등, position_map 슬롯을 차지하지 않는 존재)는
+    대상에서 제외한다.
+    - 열/이름 입력을 받지 않는다(ignores_input_targets=True).
+    - 인원 상한 없음 (광역기 개념)
+
+    ex. 자신을 희생해 자신을 제외한 아군 전체를 회복
+    """
+
+    @property
+    def ignores_input_targets(self) -> bool:
+        return True
+
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
+    ) -> list[CharacterId]:
+        holder = self.context.characters[self.skill_holder_id]
+        return [
+            char_id
+            for char_id, char in self.context.characters.items()
+            if char_id != self.skill_holder_id
+            and char_id not in self.context.companion_owners
+            and char.faction == holder.faction
+        ]
 
 
 @dataclass(frozen=True)
