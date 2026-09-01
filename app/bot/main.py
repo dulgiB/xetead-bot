@@ -1300,23 +1300,31 @@ class MastodonBotListener(StreamListener):
         if not calc_text:
             return self._reply(in_reply_to_id, acct, visibility, text, media_ids)
 
-        if len(text) > _MAX_POST_LENGTH:
-            return self._reply_then_calc_followup(
-                in_reply_to_id, acct, visibility, text, calc_text, media_ids
-            )
-
         mention_prefix = f"@{acct} "
         # spoiler_text에 번호 접미사(" (N/N)")가 붙을 수 있으므로, 먼저
         # 접미사 없이 나눠 조각 수를 가늠한 뒤 필요하면 그 접미사 길이만큼
         # 예산을 줄여 다시 나눈다.
         provisional_chunks = _split_for_post(calc_text, len(mention_prefix) + len(text))
-        if len(provisional_chunks) > 1:
-            suffix_len = len(f" ({len(provisional_chunks)}/{len(provisional_chunks)})")
-            calc_chunks = _split_for_post(
-                calc_text, len(mention_prefix) + len(text) + suffix_len
+        suffix_len = (
+            len(f" ({len(provisional_chunks)}/{len(provisional_chunks)})")
+            if len(provisional_chunks) > 1
+            else 0
+        )
+        # spoiler_text(=text, 여러 조각이면 위 접미사까지 포함)가 그
+        # 자체로 500자 한도를 넘으면 이 CW 합본 경로로는 표현할 수 없다 —
+        # text만 보고 넘기던 예전 체크는 text가 495자 안팎처럼 한도에
+        # 근접했을 때 접미사(예: " (2/5)")가 더해지며 500자를 살짝
+        # 넘기는 경우를 놓쳐, status_post()가 422로 실패한 적이 있다.
+        if len(text) + suffix_len > _MAX_POST_LENGTH:
+            return self._reply_then_calc_followup(
+                in_reply_to_id, acct, visibility, text, calc_text, media_ids
             )
-        else:
-            calc_chunks = provisional_chunks
+
+        calc_chunks = (
+            _split_for_post(calc_text, len(mention_prefix) + len(text) + suffix_len)
+            if suffix_len
+            else provisional_chunks
+        )
 
         multiple = len(calc_chunks) > 1
 
