@@ -1133,7 +1133,7 @@ def _format_named_reply(
     파트만 보고 따로 계산해 합산이 되지 않는다."""
     parts = drop_intermediate_consecutive_moves(part_results)
     merged_lines = {
-        **merge_damage_heal_lines(parts),
+        **merge_damage_heal_lines(context, parts),
         **merge_stackable_buff_add_lines(parts),
     }
     emitted: set[tuple[BattleLogEntryKind, str]] = set()

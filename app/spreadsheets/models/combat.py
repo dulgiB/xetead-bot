@@ -19,6 +19,10 @@ class CombatCharacterDataFromSpreadsheet:
     max_cost: int
     passive_skill_id: str
     skill_id_list: list[str]
+    # "에너미" 시트 전용 체크박스(hide_hp). "캐릭터" 시트에는 컬럼 자체가
+    # 없어 기본값 False로 채워진다. 공개 노출 지점(필드 시트/전투 답글)에서
+    # 체력을 "?/?"로 가리는 데 쓰인다.
+    hide_hp: bool = False
 
     @classmethod
     def from_dict(cls, raw: SpreadsheetRow) -> "CombatCharacterDataFromSpreadsheet":
@@ -37,4 +41,5 @@ class CombatCharacterDataFromSpreadsheet:
                 str(raw.get(f"skill_{i + 1}_id", "") or "")
                 for i in range(MAX_SKILL_SLOT_COUNT)
             ],
+            hide_hp=parse_spreadsheet_bool(raw.get("hide_hp", False)),
         )
