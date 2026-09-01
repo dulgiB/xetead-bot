@@ -35,18 +35,22 @@ from battle.objects.skill.target_functions import (
     SkillTargetRule,
     SkillTargetRuleAllyColumn,
     SkillTargetRuleColumn,
+    SkillTargetRuleColumnRange,
 )
 
 
 def _mark_ignores_taunt_if_column_target(
     target_rule: SkillTargetRule, damage_list: list[DamageData]
 ) -> list[DamageData]:
-    """열 광역 target rule(SkillTargetRuleColumn/AllyColumn)로 생성된
-    대미지는 도발 리다이렉트를 적용하지 않는다 — 열에 있는 각 대상이
+    """열 광역 target rule(SkillTargetRuleColumn/AllyColumn/ColumnRange)로
+    생성된 대미지는 도발 리다이렉트를 적용하지 않는다 — 열에 있는 각 대상이
     "이동해서 벗어날지, 맞고 버틸지"를 개별적으로 판단해야 하는 설계라,
     도발이 적용되면 열 전체 대미지가 도발자 한 명에게 몰려 그 설계가
     무너진다."""
-    if not isinstance(target_rule, (SkillTargetRuleColumn, SkillTargetRuleAllyColumn)):
+    if not isinstance(
+        target_rule,
+        (SkillTargetRuleColumn, SkillTargetRuleAllyColumn, SkillTargetRuleColumnRange),
+    ):
         return damage_list
     return [replace(damage, ignores_taunt=True) for damage in damage_list]
 

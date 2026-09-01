@@ -276,6 +276,7 @@ class BattlefieldContext:
                 data.curr_hp,
             ),
             skills=skills,
+            hide_hp=data.hide_hp,
         )
 
         if (

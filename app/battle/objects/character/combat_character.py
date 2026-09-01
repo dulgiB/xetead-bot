@@ -18,6 +18,7 @@ class CombatCharacter:
         stats: CombatStats,
         *,
         skills: list[Skill],
+        hide_hp: bool = False,
     ):
         self.field = context
         self.id = char_id
@@ -25,6 +26,9 @@ class CombatCharacter:
         self.faction: FactionType = faction
         self.status: CombatStats = stats
         self.skills = skills
+        # 공개 노출 지점(필드 시트/전투 답글)에서 체력을 "?/?"로 가릴지
+        # 여부. "에너미" 시트의 hide_hp 체크박스에서 온다.
+        self.hide_hp = hide_hp
 
     def __str__(self):
         return f"{self.id} ({self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]})"

@@ -31,6 +31,7 @@ from battle.objects.models import CharacterId
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.character.combat_character import CombatCharacter
+    from battle.objects.skill.models import SkillData
 
 
 _MARKDOWN_SPECIAL_CHARS = re.compile(r"([\\`*_~^])")
@@ -45,6 +46,26 @@ def escape_markdown(text: str) -> str:
     나오면 그 사이 전체가 밑줄로 묶여버림). 그래서 화면에 그대로 보여줄
     이름/id는 반드시 이 함수로 이스케이프한 뒤 문자열에 끼워 넣는다."""
     return _MARKDOWN_SPECIAL_CHARS.sub(r"\\\1", text)
+
+
+_HIDDEN_HP_TEXT = "?/?"
+
+
+def _format_hp_fraction(character: "CombatCharacter") -> str:
+    """공개 답글에 체력을 "N/M"으로 보여준다. character.hide_hp가 True면
+    ("에너미" 시트의 hide_hp 체크박스) 실제 숫자 대신 "?/?"로 가린다."""
+    if character.hide_hp:
+        return _HIDDEN_HP_TEXT
+    return f"{character.status.curr_hp}/{character.status[CombatStatType.MAX_HP]}"
+
+
+def _is_hp_hidden(context: "BattlefieldContext", target_name: str) -> bool:
+    """BattleLogEntry.target_name(문자열)으로 캐릭터를 찾아 hide_hp를
+    확인한다. 이미 필드에서 제거된 대상(사망 등)은 확인할 방법이 없으니
+    보수적으로 False(공개)로 취급한다 — 애초에 hide_hp 캐릭터가 사망
+    직후의 hp_after는 대부분 0이라 가려도 실익이 적다."""
+    character = context.characters.get(CharacterId(target_name))
+    return character.hide_hp if character is not None else False
 
 
 def format_battle_reply(
@@ -81,7 +102,10 @@ def format_battle_reply(
     merged_lines = (
         _merged_lines
         if _merged_lines is not None
-        else {**merge_damage_heal_lines(parts), **merge_stackable_buff_add_lines(parts)}
+        else {
+            **merge_damage_heal_lines(context, parts),
+            **merge_stackable_buff_add_lines(parts),
+        }
     )
     emitted = _emitted if _emitted is not None else set()
 
@@ -102,6 +126,7 @@ _MERGEABLE_KINDS = (BattleLogEntryKind.DAMAGE, BattleLogEntryKind.HEAL)
 
 
 def merge_damage_heal_lines(
+    context: "BattlefieldContext",
     part_results: list[CommandPartProcessResult],
 ) -> dict[tuple[BattleLogEntryKind, str], str]:
     """part_results 전체에 걸쳐 같은 (종류, 대상) 조합의 대미지/회복을
@@ -139,10 +164,12 @@ def merge_damage_heal_lines(
         if hp_after is None:
             lines[key] = f"▹ {target_name} | {sign}{total}{label_suffix}"
         else:
-            lines[key] = (
-                f"▹ {target_name} | {sign}{total} → "
-                f"{hp_after}/{last_max_hp[key]}{label_suffix}"
+            hp_text = (
+                _HIDDEN_HP_TEXT
+                if _is_hp_hidden(context, raw_target_name)
+                else f"{hp_after}/{last_max_hp[key]}"
             )
+            lines[key] = f"▹ {target_name} | {sign}{total} → {hp_text}{label_suffix}"
     return lines
 
 
@@ -302,9 +329,8 @@ def format_final_hp_roster(context: "BattlefieldContext") -> str:
 
 
 def _format_roster_line(character: "CombatCharacter", bullet: str) -> str:
-    curr_hp = character.status.curr_hp
-    max_hp = character.status[CombatStatType.MAX_HP]
-    return f"{bullet} {escape_markdown(character.id.name)} | {curr_hp}/{max_hp}"
+    hp_text = _format_hp_fraction(character)
+    return f"{bullet} {escape_markdown(character.id.name)} | {hp_text}"
 
 
 def _header_and_log_entries(
@@ -327,12 +353,16 @@ def _format_part(
     part, header, log_entries = _header_and_log_entries(caster_id, part_result)
 
     body_lines = []
-    if show_skill_preview and part.type_ == ActionType.SKILL:
-        # 예고 미리보기는 적 PRE 선언 전용이라, 이 시점엔 대미지/힐 등
-        # 실제 결과가 아직 없는 경우(대부분)가 많다 — 그때도 무엇을
-        # 선언했는지(대상)는 알아야 하므로 헤더를 항상 함께 보여준다.
-        body_lines.append(header)
-        body_lines.append(_format_skill_preview(context, part))
+    if part.type_ == ActionType.SKILL:
+        assert part.skill_id is not None
+        skill_data = context.get_skill_data_by_id(part.skill_id)
+        # 예고 미리보기는 원래 적 PRE 선언 전용이지만, reveal_effect=True인
+        # 캐릭터 스킬은 아군이 선언할 때도 동일하게 표시한다. 이 시점엔
+        # 대미지/힐 등 실제 결과가 아직 없는 경우(적 PRE 선언 등)가 많아
+        # 무엇을 선언했는지(대상)는 알아야 하므로 헤더를 항상 함께 보여준다.
+        if show_skill_preview or skill_data.reveal_effect:
+            body_lines.append(header)
+            body_lines.append(_format_skill_preview(skill_data))
 
     calc_lines = []
     for entry in log_entries:
@@ -379,9 +409,7 @@ def _format_part(
 _BLIND_SKILL_TEXT = "[효과 미확인]"
 
 
-def _format_skill_preview(context: "BattlefieldContext", part: CommandPart) -> str:
-    assert part.skill_id is not None
-    skill_data = context.get_skill_data_by_id(part.skill_id)
+def _format_skill_preview(skill_data: "SkillData") -> str:
     text = skill_data.description if skill_data.revealed else _BLIND_SKILL_TEXT
     return f"　↳ {escape_markdown(text)}"
 
@@ -445,9 +473,9 @@ def _format_entry(
     조립해 (본문 줄, 계산식 또는 None, 최종 값 표시 또는 None)을 반환한다 —
     여러 캐릭터/효과 줄이 나열될 때도 한눈에 구분되게 하기 위함이다."""
     if entry.kind == BattleLogEntryKind.DAMAGE:
-        return _format_damage_or_heal(entry, sign="-")
+        return _format_damage_or_heal(context, entry, sign="-")
     if entry.kind == BattleLogEntryKind.HEAL:
-        return _format_damage_or_heal(entry, sign="+")
+        return _format_damage_or_heal(context, entry, sign="+")
     if entry.kind == BattleLogEntryKind.MOVE:
         # entry.result는 build_log_entries()가 그 이동이 적용된 시점의
         # move_data.to_position으로 이미 만들어 둔 값이다 — 여기서
@@ -471,11 +499,13 @@ def _format_entry(
 
 
 def _format_damage_or_heal(
-    entry: BattleLogEntry, *, sign: str
+    context: "BattlefieldContext", entry: BattleLogEntry, *, sign: str
 ) -> tuple[str, Optional[str], Optional[str]]:
     # entry.hp_after/max_hp는 이 대미지/회복이 적용된 "그 시점"의 스냅샷이다.
     # 같은 커맨드에서 같은 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상),
     # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
+    # (hide_hp 확인용 조회는 살아있는 캐릭터 존재 여부만 보므로 이 문제와
+    # 무관하다 — 실제 HP 값은 여전히 entry의 스냅샷을 그대로 쓴다.)
     final_value = f"{sign}{entry.value}"
     target_name = escape_markdown(entry.target_name)
     label_suffix = "".join(
@@ -485,10 +515,12 @@ def _format_damage_or_heal(
         # 대미지로 사망해 전장에서 제거된 경우 등 — 잔여 체력을 보여줄 수 없다.
         line = f"▹ {target_name} | {final_value}{label_suffix}"
     else:
-        line = (
-            f"▹ {target_name} | {final_value} → "
-            f"{entry.hp_after}/{entry.max_hp}{label_suffix}"
+        hp_text = (
+            _HIDDEN_HP_TEXT
+            if _is_hp_hidden(context, entry.target_name)
+            else f"{entry.hp_after}/{entry.max_hp}"
         )
+        line = f"▹ {target_name} | {final_value} → {hp_text}{label_suffix}"
     roll_display = (
         escape_markdown(entry.roll_display) if entry.roll_display is not None else None
     )

@@ -74,6 +74,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `max_cost`                   | 최대 코스트                                                |
 | `passive_skill_id`           | 패시브 스킬 ID                                             |
 | `skill_1_id` ~ `skill_N_id`  | 스킬 ID 목록 (`스킬_에너미` 시트의 `id` 참조)                       |
+| `hide_hp` (선택)              | 체크박스(boolean). 체크 시 공개 필드 시트와 전투 답글에서 이 에너미의 체력이 실제 숫자 대신 `?/?`로 표시된다(미체크가 기본값). 캐릭터 시트에는 이 컬럼이 없다 |
 
 - `에너미` 시트 자체가 없어도(레거시 데이터) 봇은 경고만 남기고 에너미 없이 정상 동작한다.
 - `mastodon_id`가 있는 에너미는 캐릭터와 동일하게 본인 계정으로 전투 커맨드를 입력할 수 있다.
@@ -448,6 +449,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `BuffHealAndBuffStackOnDealingDamage`     | 대미지를 줄 때마다 그 대미지의 %만큼 자가 회복 + 조건 충족 시 참조 버프 1스택 부여 (버프_패시브 전용) |
 | `BuffReduceCostNextRound`                 | 다음 라운드 시작 시 1회, 코스트를 지정한 만큼 감소             |
 | `BuffIgnite`                              | 부여 시점 대상의 열을 저장해두는 디버프. 지속시간이 끝나는 라운드 종료 시점에 대상이 그 열에 그대로 있으면 부여자 공격 굴림 150% 대미지. 서로 다른 열로 부여되면 동시에 여러 개 유지 가능(재부여 판정에 열 값도 반영) |
+| `BuffNextBasicAttackPercentOfTargetMaxHp` | 홀더의 기본 공격(스킬 아님)이 가하는 대미지를 대상 최대체력의 value%로 대체 (피격 시에는 미발동) |
 
 ### 도발 상세
 
@@ -466,6 +468,8 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `SkillTargetRuleNamedWithColumn`| 캐릭터 1명 + 인접 열 1개(생략 가능) — 열을 지정하면 그 캐릭터를 이동시킴  |
 | `SkillTargetRuleColumn`         | 열 번호로 지정, 해당 열의 **적군** 전원                       |
 | `SkillTargetRuleAllyColumn`     | 열 번호로 지정, 해당 열의 **아군** 전원                       |
+| `SkillTargetRuleColumnRange`    | 열 번호 1개로 지정, 그 열 ±2열(최대 5열)의 **적군** 전원 — 필드 경계를 넘는 열은 자연히 제외 |
+| `SkillTargetRuleAllAllies`      | 입력 없이 시전자와 같은 진영 전원(시전자 자신·동료 제외)              |
 
 ---
 

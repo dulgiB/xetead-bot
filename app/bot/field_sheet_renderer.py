@@ -230,11 +230,13 @@ def _format_declared_command(command: CharacterCommand) -> str:
 
 
 def _format_name_line(char: "CombatCharacter") -> str:
-    curr_hp = char.status.curr_hp
-    max_hp = char.status[CombatStatType.MAX_HP]
+    if char.hide_hp:
+        hp_text = "?/?"
+    else:
+        hp_text = f"{char.status.curr_hp}/{char.status[CombatStatType.MAX_HP]}"
     remaining_cost = char.status.remaining_cost
     max_cost = char.status[CombatStatType.COST_PER_TURN]
-    return f"{char.id.name}\n[{curr_hp}/{max_hp}] [{remaining_cost}/{max_cost}]"
+    return f"{char.id.name}\n[{hp_text}] [{remaining_cost}/{max_cost}]"
 
 
 def _format_stats_line(char: "CombatCharacter") -> str:
