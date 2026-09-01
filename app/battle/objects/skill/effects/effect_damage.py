@@ -48,6 +48,8 @@ class SkillEffectDamage(SkillEffectBase):
                     target_id=target,
                     value=damage_value,
                     is_magic_attack=is_magic_attack,
+                    ignores_taunt=self.ignores_taunt,
+                    triggers_holder_action_buffs=not self.ignores_defensive_buffs,
                 )
                 for target in targets
             ],

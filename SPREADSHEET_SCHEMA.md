@@ -117,6 +117,8 @@
 | `condition_value_N`         | (선택) `condition_N`이 참조하는 정수값                                                |
 | `reference_buff_id_N`       | (선택) 다른 버프 id를 참조해야 하는 효과 전용(예: holder가 보유한 다른 버프의 스택 수를 새 버프의 수치로 스냅샷). `BuffData.reference_buff_id`와 동일한 목적                |
 | `required_target_buff_id_N` | (선택) 대상이 이미 보유하고 있어야 이 effect가 적용되는 버프 id(선행 디버프 존재를 요구하는 콤보용 게이트). `buff_id_N`(이 effect가 부여/조회하는 버프)과는 별개다 |
+| `ignores_taunt_N`           | (선택) 체크박스(boolean, 기본값 미체크). 체크하면 이 effect가 만드는 대미지가 도발(`get_target_override`) 리다이렉트를 무시한다. 열 광역 target_rule(`SkillTargetRuleColumn`/`SkillTargetRuleAllyColumn`/`SkillTargetRuleColumnRange`)은 이 컬럼과 무관하게 항상 무시하도록 별도 처리되며, 이 컬럼은 개체 지정 등 그 외 target_rule에서 도발을 무시해야 할 때 쓴다(둘은 OR로 합쳐진다) |
+| `ignores_defensive_buffs_N` | (선택) 체크박스(boolean, 기본값 미체크). 체크하면 이 effect가 만드는 대미지가 **대상 본인**이 보유한 ON_ACTION 버프(방어/반격/반사류, 예: `BuffGuardReflect`)를 전혀 발동시키지 않는다. 주로 `target_override=자신`인 자멸형 자기 대미지가 시전자 본인의 방어 패시브에 막혀 의도한 수치가 안 나오는 문제를 막는 용도. 같은 대상을 향한 다른 대미지 중 하나라도 이 컬럼이 미체크면 정상적으로 발동한다(OR로 합쳐짐) |
 
 `effect_N` 컬럼이 비어 있으면 그 순번의 효과는 없는 것으로 처리된다(아이템은
 `effect_0`이 비어 있으면 로드 자체가 실패한다).

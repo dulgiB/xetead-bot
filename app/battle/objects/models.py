@@ -386,6 +386,13 @@ class DamageData:
     # target rule(SkillTargetRuleColumn/SkillTargetRuleAllyColumn)에서
     # 생성된 항목은 command_expanders.py에서 이 값을 True로 표시한다.
     ignores_taunt: bool = False
+    # False면 대상 본인이 보유한 ON_ACTION 버프(BuffGuardReflect 등 방어/반격/
+    # 반사류 포함)를 이 대미지에 한해 전혀 발동시키지 않는다. 자멸형 자기
+    # 대미지(공격자==대상)가 시전자 본인의 방어 패시브에 막혀 의도한 수치가
+    # 나오지 않는 문제를 막는 용도. `command_calculator.py`의 ON_HIT
+    # `_apply_buff_events()` 호출 여부를 결정한다 — 같은 대상을 향한 다른
+    # 대미지 중 하나라도 True면 정상적으로 발동한다(OR로 합쳐짐).
+    triggers_holder_action_buffs: bool = True
     # 반격/반사/코모이디아류처럼 이 대미지를 실제로 가한 쪽이 공격자 본인이
     # 아니라 제3자(버프 보유자)일 때, 답글 요약에 "[라벨]"로 그 발생 원인을
     # 밝히기 위한 표시용 문자열. None이면 캐릭터 본인의 직접 행동으로 간주해

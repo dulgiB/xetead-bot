@@ -53,6 +53,19 @@ class SkillEffectBase(abc.ABC):
     # 대상이 이미 보유하고 있어야 하는 버프 id(선행 디버프 존재를 요구하는
     # 콤보용 게이트). buff_id(이 효과가 부여/조회하는 버프)와는 별개다.
     required_target_buff_id: Optional[str] = None
+    # 이 효과가 만드는 대미지가 도발 리다이렉트를 무시하는지. 열 광역
+    # target_rule이면 command_expanders.py의
+    # _mark_ignores_taunt_if_column_target()가 별도로 True를 강제하므로,
+    # 이 필드는 개체 지정 효과에서 도발을 무시해야 할 때만 켠다(둘은 OR로
+    # 합쳐진다 — 아래에서 True로 강제되는 경로가 이 필드를 False로 되돌리지
+    # 않는다).
+    ignores_taunt: bool = False
+    # 이 효과가 만드는 대미지가 대상 본인이 보유한 ON_ACTION 버프(방어/반격/
+    # 반사류 포함)를 전혀 발동시키지 않는지. 자멸형 자기 대미지(target_override=
+    # 자신)가 시전자 본인의 방어 패시브(마법 무효화/반사 등)에 막혀 의도한
+    # 수치가 나오지 않는 문제를 막는 용도 — 공격자==대상인 자기 대미지에서
+    # 주로 쓴다. `DamageData.triggers_holder_action_buffs`로 전달된다.
+    ignores_defensive_buffs: bool = False
 
     @property
     def condition(self) -> Optional["Condition"]:
@@ -197,6 +210,10 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
         if required_target_buff_id_raw is not None
         else None
     )
+    ignores_taunt = parse_spreadsheet_bool(data.get(f"ignores_taunt_{index}", False))
+    ignores_defensive_buffs = parse_spreadsheet_bool(
+        data.get(f"ignores_defensive_buffs_{index}", False)
+    )
 
     return effect(
         value_source=value_source,
@@ -213,6 +230,8 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
         gate_value=gate_value,
         reference_buff_id=reference_buff_id,
         required_target_buff_id=required_target_buff_id,
+        ignores_defensive_buffs=ignores_defensive_buffs,
+        ignores_taunt=ignores_taunt,
     )
 
 

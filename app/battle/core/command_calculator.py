@@ -396,6 +396,17 @@ class CommandPartCalculator:
             if attacker_id in self._on_attack_fired:
                 continue
             self._on_attack_fired.add(attacker_id)
+            # 공격자==대상인 자멸형 자기 대미지(triggers_holder_action_buffs=
+            # False)는, 이 ON_ATTACK 디스패치가 char_id=attacker_id로
+            # buff_container를 조회하기 때문에 대상 본인의 ON_ACTION 버프
+            # (GuardReflect 등, 역할과 무관하게 target_id==holder만으로
+            # 필터링함)가 여기서 먼저 발동해버릴 수 있다 — ON_HIT 쪽 가드만으로는
+            # 막을 수 없으므로 동일하게 건너뛴다.
+            if (
+                attacker_id == damage_calc.base.target_id
+                and not damage_calc.base.triggers_holder_action_buffs
+            ):
+                continue
             self._apply_buff_events(
                 effect_seq_number,
                 attacker_id,
@@ -407,12 +418,21 @@ class CommandPartCalculator:
             target_id = damage_calc.base.target_id
             if target_id not in self._on_hit_fired:
                 self._on_hit_fired.add(target_id)
-                self._apply_buff_events(
-                    effect_seq_number,
-                    target_id,
-                    BuffCountDeductCondition.ON_HIT,  # noqa: F821
-                    damage_calc.base.attacker_id,
-                )
+                # 같은 대상을 향한 이 효과의 대미지 중 하나라도
+                # triggers_holder_action_buffs=True면 정상적으로 대상 본인의
+                # ON_ACTION 버프(방어/반격/반사류)를 발동시킨다 — 전부
+                # False(예: 자멸형 자기 대미지)일 때만 건너뛴다.
+                if any(
+                    dc.base.target_id == target_id
+                    and dc.base.triggers_holder_action_buffs
+                    for dc in live_damage_calcs
+                ):
+                    self._apply_buff_events(
+                        effect_seq_number,
+                        target_id,
+                        BuffCountDeductCondition.ON_HIT,  # noqa: F821
+                        damage_calc.base.attacker_id,
+                    )
             # 방금 적용한 ON_HIT 버프(반사 등)가 이 damage_calc를 무효화하며
             # damage_data_list에서 완전히 제거했을 수 있다(BuffReflect 등 —
             # to_nullify 항목을 remove하고 공격자를 대상으로 한 새 항목으로
