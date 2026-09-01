@@ -267,6 +267,9 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 
 - `CommandPart`, `CommandPartData`, `SkillData`, `BuffData` 등 핵심 데이터 클래스는 `frozen=True`.
 - `BattlefieldContext.characters`에서 제거된 캐릭터는 사망 처리된 것이다 (`remove_character()`).
+  라운드 종료 시 자동 제거(`_remove_eliminated_characters()`)는 **적군에만** 적용된다 —
+  아군은 체력이 0이 되어도 자동으로 제거되지 않고, admin이 `[탈락/이름]`
+  (`force_remove_character()`)으로 명시적으로 제거해야 필드에서 사라진다.
 - `try_expansion_if_valid()`에서 검증 실패 시 `CommandValidationError`를 raise하며, 코스트 차감은 검증 통과 후에만 수행한다.
 - 스킬 효과 하나당 `CommandPartData` 하나가 생성된다. 즉 `parts_list`의 길이 ≥ 커맨드 파트 수.
 
