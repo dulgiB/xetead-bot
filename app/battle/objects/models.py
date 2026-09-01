@@ -116,6 +116,10 @@ class BaseValueIndicator:
             return calculator.context.find_character_position(user_id).value
         elif self.value_source == ValueSourceType.TARGET_CURR_HP:
             return calculator.context.characters[target_id].status.curr_hp
+        elif self.value_source == ValueSourceType.TARGET_MAX_HP:
+            return calculator.context.characters[target_id].status[
+                CombatStatType.MAX_HP
+            ]
         elif self.value_source == ValueSourceType.TARGET_CURR_POSITION:
             return calculator.context.find_character_position(target_id).value
 

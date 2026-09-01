@@ -69,6 +69,7 @@ class ValueSourceType(str, Enum):
     SELF_CURR_HP = "자신의 현재 체력"
     SELF_CURR_POSITION = "자신의 현재 위치"
     TARGET_CURR_HP = "상대의 현재 체력"
+    TARGET_MAX_HP = "상대의 최대 체력"
     TARGET_CURR_POSITION = "상대의 현재 위치"
 
     GIVEN_DAMAGE = "해당 공격으로 입힌 대미지"

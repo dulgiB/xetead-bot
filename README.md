@@ -448,6 +448,7 @@ PYTHONPATH=app uv run python app/bot/main.py
 | `BuffHealAndBuffStackOnDealingDamage`     | 대미지를 줄 때마다 그 대미지의 %만큼 자가 회복 + 조건 충족 시 참조 버프 1스택 부여 (버프_패시브 전용) |
 | `BuffReduceCostNextRound`                 | 다음 라운드 시작 시 1회, 코스트를 지정한 만큼 감소             |
 | `BuffIgnite`                              | 부여 시점 대상의 열을 저장해두는 디버프. 지속시간이 끝나는 라운드 종료 시점에 대상이 그 열에 그대로 있으면 부여자 공격 굴림 150% 대미지. 서로 다른 열로 부여되면 동시에 여러 개 유지 가능(재부여 판정에 열 값도 반영) |
+| `BuffNextBasicAttackPercentOfTargetMaxHp` | 홀더의 기본 공격(스킬 아님)이 가하는 대미지를 대상 최대체력의 value%로 대체 (피격 시에는 미발동) |
 
 ### 도발 상세
 
