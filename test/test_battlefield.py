@@ -169,11 +169,13 @@ def test_alive_character_not_removed_at_round_end(battle_setup):
 
 def test_eliminated_owner_removes_companion_together(empty_context):
     """소환자가 탈락하면, 동료의 현재 체력과 무관하게 동료도 함께 제거되어야
-    한다 — 소환자가 없으면 동료를 재소환할 주체 자체가 없어지기 때문이다."""
+    한다 — 소환자가 없으면 동료를 재소환할 주체 자체가 없어지기 때문이다.
+    아군은 라운드 종료 시 자동 탈락 대상이 아니므로(별도 테스트 참고),
+    이 자동 탈락 경로는 적군 소환자로 검증한다."""
     owner_id = CharacterId("소환사")
     companion_id = CharacterId("동료")
     empty_context.add_character(
-        get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        get_test_preset("소환사"), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
     owner = empty_context.characters[owner_id]
     empty_context._spawn_companion_character(owner, companion_id, 50)
@@ -187,6 +189,42 @@ def test_eliminated_owner_removes_companion_together(empty_context):
     assert owner_id not in empty_context.characters
     assert companion_id not in empty_context.characters
     assert set(manager.get_last_eliminated_characters()) == {owner_id, companion_id}
+
+
+def test_ally_at_zero_hp_is_not_auto_eliminated(empty_context):
+    """아군은 체력이 0이 되어도 라운드 종료 시 자동으로 필드에서 제거되지
+    않는다 — admin이 [탈락/이름]으로 명시적으로 제거하기 전까지는 계속
+    남아 있어야 한다."""
+    ally_id = CharacterId("소환사")
+    empty_context.add_character(
+        get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    empty_context.characters[ally_id].status.curr_hp = 0
+
+    manager = RoundManager(empty_context)
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+
+    assert ally_id in empty_context.characters
+    assert manager.get_last_eliminated_characters() == []
+
+
+def test_force_remove_character_removes_ally_owner_and_companion(empty_context):
+    """`force_remove_character()`([탈락/이름] admin 커맨드가 호출하는 경로)는
+    체력과 무관하게 즉시 제거하며, 소환자를 지정하면 동료도 함께 제거한다."""
+    owner_id = CharacterId("소환사")
+    companion_id = CharacterId("동료")
+    empty_context.add_character(
+        get_test_preset("소환사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    owner = empty_context.characters[owner_id]
+    empty_context._spawn_companion_character(owner, companion_id, 50)
+    owner.status.curr_hp = 0
+
+    removed = empty_context.force_remove_character(owner_id)
+
+    assert set(removed) == {owner_id, companion_id}
+    assert owner_id not in empty_context.characters
+    assert companion_id not in empty_context.characters
 
 
 def test_eliminated_companion_alone_does_not_affect_owner(empty_context):

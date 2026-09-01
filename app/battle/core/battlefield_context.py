@@ -447,11 +447,18 @@ class BattlefieldContext:
         return log_entries, eliminated
 
     def _remove_eliminated_characters(self) -> list[CharacterId]:
-        """체력이 0 이하인 캐릭터를 필드에서 제거한다. 라운드 도중이 아니라
-        라운드 종료 시점에 한 번만 처리한다 — 도중에 즉시 제거하면 같은
-        라운드 안에서 그 캐릭터를 참조하는 다른 효과(광역기의 나머지 대상,
-        반응형 버프의 사거리/위치 조회 등)가 예기치 않게 실패할 수 있다.
-        그동안 체력 0인 캐릭터는 지금처럼 필드에 남아 있는 채로 정상 처리된다.
+        """체력이 0 이하인 **적군** 캐릭터를 필드에서 제거한다. 라운드
+        도중이 아니라 라운드 종료 시점에 한 번만 처리한다 — 도중에 즉시
+        제거하면 같은 라운드 안에서 그 캐릭터를 참조하는 다른 효과(광역기의
+        나머지 대상, 반응형 버프의 사거리/위치 조회 등)가 예기치 않게
+        실패할 수 있다. 그동안 체력 0인 캐릭터는 지금처럼 필드에 남아 있는
+        채로 정상 처리된다.
+
+        **아군은 체력이 0이 되어도 이 자동 탈락 대상이 아니다** — admin이
+        `[탈락/이름]`으로 명시적으로 제거하기 전까지는 계속 필드에 남아
+        평소처럼 행동/피격당한다(부활 회복 등으로 다시 양수 체력이 될
+        수도 있으므로). `force_remove_character()`가 그 명시적 제거
+        경로다.
 
         동료(소환수)의 생애주기는 소환자(owner)에게 종속된다:
         - 동료 자신의 체력이 0이 되는 것은 단독으로 탈락 처리하지 않는다 —
@@ -463,6 +470,9 @@ class BattlefieldContext:
         eliminated: list[CharacterId] = []
         for char_id, char in self.characters.items():
             if char.status.curr_hp > 0:
+                continue
+            if char.faction != FactionType.ENEMY:
+                # 아군은 admin이 [탈락/이름]으로 직접 제거하기 전까지 유지된다.
                 continue
             if char_id in self.companion_owners:
                 # 동료 자신의 탈락 — 단독으로는 처리하지 않는다.
@@ -476,6 +486,20 @@ class BattlefieldContext:
         for char_id in eliminated:
             self.remove_character(char_id)
         return eliminated
+
+    def force_remove_character(self, char_id: CharacterId) -> list[CharacterId]:
+        """admin이 `[탈락/이름]`으로 명시적으로 캐릭터를 필드에서 제거한다.
+
+        0 체력이어도 자동으로는 탈락하지 않는 아군을 admin이 직접 사망
+        처리할 때 쓴다. 소환자가 제거되면 동료도 함께 제거하는 규칙은
+        `_remove_eliminated_characters()`와 동일하게 따른다."""
+        removed = [char_id]
+        companion_id = self.find_companion_id(char_id)
+        if companion_id is not None and companion_id in self.characters:
+            removed.append(companion_id)
+        for target_id in removed:
+            self.remove_character(target_id)
+        return removed
 
     def on_battle_start(self) -> None:
         self.buff_container.on_battle_start()
