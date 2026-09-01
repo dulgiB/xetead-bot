@@ -5,6 +5,7 @@ os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
 import contextlib
 import itertools
+import threading
 from pathlib import Path
 
 from battle.core.commands.define import RoundPhaseType  # noqa: E402
@@ -734,7 +735,7 @@ def test_investigation_battle_with_inline_enemy_placement_is_not_routed_to_manua
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -832,14 +833,14 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
 
     listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("user1", 1, 1000, "[아군/1열]"))
+    listener._process_notification(_make_notification("user1", 1, 1000, "[아군/1열]"))
 
     assert ps.prep_post_id == 0
     assert len(ps.context.characters) == 1
     round_n_after_start = ps.round_n
 
     # 같은 참가자가 이미 소모된 원본 준비 게시물(1000)에 다시 답글
-    listener.on_notification(_make_notification("user1", 2, 1000, "[아군/2열]"))
+    listener._process_notification(_make_notification("user1", 2, 1000, "[아군/2열]"))
 
     assert len(ps.context.characters) == 1
     assert ps.round_n == round_n_after_start
@@ -876,7 +877,7 @@ def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투준비]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투준비]"))
 
     assert len(mastodon.status_post_calls) == 1
     prep_call = mastodon.status_post_calls[0]
@@ -885,7 +886,7 @@ def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
 
     prep_post_id = state.preparation_status_id
     state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("ally_acct", 2, prep_post_id, "아무 코멘트")
     )
 
@@ -898,7 +899,72 @@ def test_malformed_notification_does_not_raise():
     state = _make_state()
     listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
 
-    listener.on_notification({"type": "mention", "account": {"acct": "user1"}})
+    listener._process_notification({"type": "mention", "account": {"acct": "user1"}})
+
+
+def test_on_notification_enqueues_without_processing_synchronously():
+    """`on_notification`은 큐에 넣고 즉시 반환할 뿐, 그 자리에서 실제
+    처리(스프레드시트/Mastodon API 호출 등)를 하지 않아야 한다 — 스트리밍
+    읽기 스레드를 처리 시간만큼 붙잡아 두지 않는 것이 이 분리의 목적이다."""
+    state = _make_state()
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    notification = _make_notification("test-admin", 1, 0, "[전투준비]")
+    listener.on_notification(notification)
+
+    assert state.preparation_status_id is None
+    assert listener._notification_queue.qsize() == 1
+    assert listener._notification_queue.get_nowait() is notification
+
+
+def test_notification_worker_drains_queue_in_order(monkeypatch):
+    """`_notification_worker`는 큐에 쌓인 알림을 도착 순서(FIFO)대로
+    하나씩 처리해야 한다 — 같은 전투의 커맨드가 뒤섞여 처리되면 코스트
+    차감/라운드 전환 순서가 꼬일 수 있다."""
+    state = _make_state()
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    processed: list[str] = []
+    original = listener._process_notification
+
+    def _tracking_process(notification):
+        processed.append(notification["status"]["content"])
+        original(notification)
+
+    listener._process_notification = _tracking_process
+    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투준비]"))
+    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+
+    worker = threading.Thread(target=listener._notification_worker, daemon=True)
+    worker.start()
+    listener._notification_queue.join()
+
+    assert processed == ["<p>@bot [전투준비]</p>", "<p>@bot [진행]</p>"]
 
 
 @contextlib.contextmanager
@@ -955,7 +1021,7 @@ def test_round_start_game_post_attaches_field_image(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
 
     public_posts = [c for c in mastodon.status_post_calls if "in_reply_to_id" not in c]
     assert len(public_posts) == 1
@@ -992,11 +1058,11 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
-    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener._process_notification(_make_notification("test-admin", 2, 0, "[진행]"))
     active_post_id = state.active_phase_post_id
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
     )
 
@@ -1039,12 +1105,12 @@ def test_character_command_reply_merges_calc_into_single_cw_post(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
-    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener._process_notification(_make_notification("test-admin", 2, 0, "[진행]"))
     active_post_id = state.active_phase_post_id
 
     before_calls = len(mastodon.status_post_calls)
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("ally_acct", 3, active_post_id, "[공격/적 캐릭터]")
     )
     new_calls = mastodon.status_post_calls[before_calls:]
@@ -1091,11 +1157,11 @@ def test_main_battle_idle_chat_still_gets_error_reply(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
-    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener._process_notification(_make_notification("test-admin", 2, 0, "[진행]"))
     active_post_id = state.active_phase_post_id
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("ally_acct", 3, active_post_id, "화이팅!")
     )
 
@@ -1133,11 +1199,11 @@ def test_character_command_with_two_bracket_groups_is_rejected_with_explicit_err
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
-    listener.on_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener._process_notification(_make_notification("test-admin", 2, 0, "[진행]"))
     active_post_id = state.active_phase_post_id
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "ally_acct", 3, active_post_id, "[공격/적 캐릭터] [공격/적 캐릭터]"
         )
@@ -1170,7 +1236,7 @@ def test_ally_action_phase_post_attaches_field_image(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[진행]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[진행]"))
 
     public_posts = [c for c in mastodon.status_post_calls if "in_reply_to_id" not in c]
     assert len(public_posts) == 1
@@ -1205,7 +1271,7 @@ def test_phase_post_falls_back_to_text_board_when_image_capture_fails(monkeypatc
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-admin", 1, 0, "[진행]"))
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[진행]"))
 
     public_posts = [c for c in mastodon.status_post_calls if "in_reply_to_id" not in c]
     assert len(public_posts) == 1
@@ -1248,7 +1314,7 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "swordsman_acct",
             1,
@@ -1263,10 +1329,10 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     assert prep_call["in_reply_to_id"] == 1
     prep_post_id = _only_practice(state).prep_post_id
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/3열]")
     )
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("archer_acct", 3, prep_post_id, "[2팀/5열]")
     )
     start_call = mastodon.status_post_calls[-1]
@@ -1280,7 +1346,7 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
         else ("archer_acct", "검사")
     )
     calls_before_action = len(mastodon.status_post_calls)
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(first_acct, 4, active_post_id, f"[공격/{second_name}]")
     )
     # 캐릭터의 커맨드 답글이 이 액션으로 발생하는 첫 번째 게시물이다 — 다음
@@ -1326,17 +1392,17 @@ def test_practice_settlement_post_mentions_all_participants(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "swordsman_acct", 1, 0, "[대련]", extra_mentions=["archer_acct"]
         )
     )
     prep_post_id = _only_practice(state).prep_post_id
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/3열]")
     )
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("archer_acct", 3, prep_post_id, "[2팀/5열]")
     )
 
@@ -1346,7 +1412,7 @@ def test_practice_settlement_post_mentions_all_participants(monkeypatch):
         if _only_practice(state).first_mover.value == "1팀"
         else ("archer_acct", "검사")
     )
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(first_acct, 4, active_post_id, f"[공격/{second_name}]")
     )
 
@@ -1395,7 +1461,9 @@ def test_practice_prep_includes_thread_ancestors_not_just_direct_mentions(
 
     # archer_acct를 명시적으로 멘션하지 않고 [대련]만 보낸다 — 스레드
     # 조상(위 ancestors)에 archer_acct가 등장했으므로 그래도 포함돼야 한다.
-    listener.on_notification(_make_notification("swordsman_acct", 1, 500, "[대련]"))
+    listener._process_notification(
+        _make_notification("swordsman_acct", 1, 500, "[대련]")
+    )
 
     assert set(_only_practice(state).expected_accts) == {
         "swordsman_acct",
@@ -1436,7 +1504,7 @@ def test_practice_can_be_started_directly_by_character_account(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "swordsman_acct", 1, 0, "[대련]", extra_mentions=["archer_acct"]
         )
@@ -1496,7 +1564,7 @@ def test_two_practice_sessions_run_concurrently_without_blocking_or_state_bleed(
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
     # 검사/궁수의 대련을 시작한다.
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "swordsman_acct", 1, 0, "[대련]", extra_mentions=["archer_acct"]
         )
@@ -1506,7 +1574,7 @@ def test_two_practice_sessions_run_concurrently_without_blocking_or_state_bleed(
     # 아직 검사/궁수 대련이 포지션 선언 대기 중인데도, 마법사/힐러가 별도
     # 대련을 시작할 수 있어야 한다 — 예전에는 "이미 진행 중인 대련/상시전투가
     # 있습니다" 오류로 막혔다.
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("mage_acct", 2, 0, "[대련]", extra_mentions=["healer_acct"])
     )
     assert len(state.practices) == 2
@@ -1517,14 +1585,16 @@ def test_two_practice_sessions_run_concurrently_without_blocking_or_state_bleed(
     prep_id_1, prep_id_2 = prep_ids
 
     # 각 세션의 포지션 선언을 완료해 둘 다 활성 페이즈로 전환한다.
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 3, prep_id_1, "[1팀/3열]")
     )
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("archer_acct", 4, prep_id_1, "[2팀/5열]")
     )
-    listener.on_notification(_make_notification("mage_acct", 5, prep_id_2, "[1팀/3열]"))
-    listener.on_notification(
+    listener._process_notification(
+        _make_notification("mage_acct", 5, prep_id_2, "[1팀/3열]")
+    )
+    listener._process_notification(
         _make_notification("healer_acct", 6, prep_id_2, "[2팀/5열]")
     )
 
@@ -1563,7 +1633,7 @@ def test_admin_can_no_longer_start_practice_directly(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -1607,7 +1677,9 @@ def test_investigation_battle_remains_admin_only(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("swordsman_acct", 1, 0, "[상시전투]"))
+    listener._process_notification(
+        _make_notification("swordsman_acct", 1, 0, "[상시전투]")
+    )
 
     assert not state.practices
     assert mastodon.status_post_calls == []
@@ -1647,7 +1719,9 @@ def test_investigation_menu_reply_extracts_venue_amid_chatter(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("user1", 1, 100, "사담 [광장] 사담"))
+    listener._process_notification(
+        _make_notification("user1", 1, 100, "사담 [광장] 사담")
+    )
 
     assert "[광장](으)로 이동했다." in mastodon.status_post_calls[-1]["status"]
 
@@ -1692,7 +1766,7 @@ def test_investigation_venue_choice_resolves_via_thread_ancestors(monkeypatch):
     mastodon = _FakeMastodon(ancestors=ancestors)
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("user1", 1, 102, "[광장]"))
+    listener._process_notification(_make_notification("user1", 1, 102, "[광장]"))
 
     assert "[광장](으)로 이동했다." in mastodon.status_post_calls[-1]["status"]
 
@@ -1719,7 +1793,7 @@ def test_investigation_bare_chat_reply_does_nothing_and_keeps_session_open(
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("user1", 1, 100, "그냥 둘러본다"))
+    listener._process_notification(_make_notification("user1", 1, 100, "그냥 둘러본다"))
 
     assert mastodon.status_post_calls == []
     assert state.noncombat.investigations["user1"].ended is False
@@ -1757,14 +1831,14 @@ def test_investigation_explicit_free_explore_ends_session_and_stops_matching(
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("user1", 1, 100, "[자율 탐사]"))
+    listener._process_notification(_make_notification("user1", 1, 100, "[자율 탐사]"))
 
     assert "다른 곳에 가보기로 했다" in mastodon.status_post_calls[-1]["status"]
     assert state.noncombat.investigations["user1"].ended is True
 
     calls_before = len(mastodon.status_post_calls)
 
-    listener.on_notification(_make_notification("user1", 2, 100, "[광장]"))
+    listener._process_notification(_make_notification("user1", 2, 100, "[광장]"))
 
     assert len(mastodon.status_post_calls) == calls_before
 
@@ -1790,7 +1864,7 @@ def test_investigation_nested_casual_chat_does_not_end_session(monkeypatch):
     mastodon = _FakeMastodon(ancestors=ancestors)
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("user1", 1, 555, "그냥 사담이다"))
+    listener._process_notification(_make_notification("user1", 1, 555, "그냥 사담이다"))
 
     assert mastodon.status_post_calls == []
     assert state.noncombat.investigations["user1"].ended is False
@@ -1827,7 +1901,7 @@ def test_world_account_can_start_investigation_battle(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-world",
             1,
@@ -1860,7 +1934,7 @@ def test_world_account_cannot_use_other_admin_commands(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(_make_notification("test-world", 1, 0, "[전투준비]"))
+    listener._process_notification(_make_notification("test-world", 1, 0, "[전투준비]"))
 
     assert state.session is not None and not state.session.started
     assert mastodon.status_post_calls == []
@@ -1924,7 +1998,7 @@ def test_admin_proxy_for_investigation_enemy_advances_to_next_round(monkeypatch)
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("test-admin", 1, ps.active_post_id, "◊ 적 [공격/아군]")
     )
 
@@ -1960,7 +2034,7 @@ def test_world_proxy_for_investigation_enemy_also_advances_round(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("test-world", 1, ps.active_post_id, "◊ 적 [공격/아군]")
     )
 
@@ -2006,7 +2080,7 @@ def test_world_proxy_cannot_control_duel_participants(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("test-world", 1, 6000, "◊ 검사 [공격/궁수]")
     )
 
@@ -2527,7 +2601,7 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "swordsman_acct",
             1,
@@ -2539,7 +2613,7 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
     )
     prep_post_id = _only_practice(state).prep_post_id
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/9열]")
     )
 
@@ -2548,7 +2622,7 @@ def test_practice_declaration_out_of_range_column_gets_error_reply_and_can_retry
     assert "swordsman_acct" not in _only_practice(state).declared
 
     # 형식을 고쳐 재시도하면 정상적으로 선언이 성립해야 한다.
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 3, prep_post_id, "[1팀/3열]")
     )
     assert "swordsman_acct" in _only_practice(state).declared
@@ -2587,7 +2661,7 @@ def test_practice_idle_chat_reply_is_silently_ignored(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "swordsman_acct",
             1,
@@ -2598,16 +2672,16 @@ def test_practice_idle_chat_reply_is_silently_ignored(monkeypatch):
         )
     )
     prep_post_id = _only_practice(state).prep_post_id
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/1열]")
     )
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("archer_acct", 3, prep_post_id, "[2팀/1열]")
     )
     active_post_id = _only_practice(state).active_post_id
     calls_before = len(mastodon.status_post_calls)
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 4, active_post_id, "화이팅!")
     )
 
@@ -2617,7 +2691,7 @@ def test_practice_idle_chat_reply_is_silently_ignored(monkeypatch):
     )  # 타래가 그대로 유지된다
 
     # 이어서 정상 커맨드를 보내면 여전히 같은 게시물에 답글로 이어져야 한다.
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("swordsman_acct", 5, active_post_id, "[이동/2]")
     )
     assert len(mastodon.status_post_calls) > calls_before
@@ -2671,7 +2745,7 @@ def test_dm_battle_idle_chat_reply_is_silently_ignored(monkeypatch):
         monkeypatch
     )
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2683,11 +2757,13 @@ def test_dm_battle_idle_chat_reply_is_silently_ignored(monkeypatch):
     )
     dm_state = next(iter(state.dm_battles.values()))
     pre_post_id = dm_state.active_post_id
-    listener.on_notification(_make_notification("test-admin", 2, pre_post_id, "[진행]"))
+    listener._process_notification(
+        _make_notification("test-admin", 2, pre_post_id, "[진행]")
+    )
     active_post_id = dm_state.active_post_id
     calls_before = len(mastodon.status_post_calls)
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("player_acct", 3, active_post_id, "다들 화이팅!")
     )
 
@@ -2695,7 +2771,7 @@ def test_dm_battle_idle_chat_reply_is_silently_ignored(monkeypatch):
     assert dm_state.active_post_id == active_post_id
 
     # 이어서 정상 커맨드를 보내면 여전히 같은 게시물에 답글로 이어져야 한다.
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("player_acct", 4, active_post_id, "[공격/고블린]")
     )
     assert len(mastodon.status_post_calls) > calls_before
@@ -2709,7 +2785,7 @@ def test_dm_battle_start_places_enemy_by_command_and_allies_by_mention(monkeypat
         monkeypatch
     )
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2743,7 +2819,7 @@ def test_dm_battle_game_posts_mention_participants_so_they_remain_visible(monkey
         monkeypatch, enemy_max_hp=1
     )
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2759,12 +2835,14 @@ def test_dm_battle_game_posts_mention_participants_so_they_remain_visible(monkey
     dm_state = next(iter(state.dm_battles.values()))
     pre_post_id = dm_state.active_post_id
 
-    listener.on_notification(_make_notification("test-admin", 2, pre_post_id, "[진행]"))
+    listener._process_notification(
+        _make_notification("test-admin", 2, pre_post_id, "[진행]")
+    )
     ally_call = mastodon.status_post_calls[-1]
     assert "@player_acct" in ally_call["status"]
 
     active_post_id = dm_state.active_post_id
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("player_acct", 3, active_post_id, "[공격/고블린]")
     )
     end_call = mastodon.status_post_calls[-1]
@@ -2780,7 +2858,7 @@ def test_dm_battle_start_silently_accepts_faction_prefixed_column(monkeypatch):
         monkeypatch
     )
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2808,7 +2886,7 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
         monkeypatch, enemy_max_hp=1
     )
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2825,7 +2903,7 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     pre_post_id = dm_state.active_post_id
 
     # admin 프록시로 적 PRE 선언 (이동만, 대미지 없음)
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("test-admin", 2, pre_post_id, "고블린 [이동/2열]")
     )
     proxy_reply = mastodon.status_post_calls[-1]
@@ -2836,7 +2914,9 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     # 이어져야 한다(이전 공지에 다시 답글로 달면 확인 답글과 형제가 되어
     # 스레드가 갈라진다).
     calls_before_advance = len(mastodon.status_post_calls)
-    listener.on_notification(_make_notification("test-admin", 3, pre_post_id, "[진행]"))
+    listener._process_notification(
+        _make_notification("test-admin", 3, pre_post_id, "[진행]")
+    )
     confirmation_id = 9000 + calls_before_advance
     ally_call = mastodon.status_post_calls[-1]
     assert ally_call["visibility"] == "direct"
@@ -2846,7 +2926,7 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     assert active_post_id != pre_post_id
 
     # 아군이 공격해 적을 전멸시킴 — [진행] 없이 즉시 종료돼야 함
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("player_acct", 4, active_post_id, "[공격/고블린]")
     )
 
@@ -2867,7 +2947,7 @@ def test_dm_battle_phase_posts_chain_off_confirmation_not_stale_post(monkeypatch
         monkeypatch, enemy_max_hp=100
     )
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2883,7 +2963,9 @@ def test_dm_battle_phase_posts_chain_off_confirmation_not_stale_post(monkeypatch
     def advance(status_id, text):
         nonlocal tip
         calls_before = len(mastodon.status_post_calls)
-        listener.on_notification(_make_notification("test-admin", status_id, tip, text))
+        listener._process_notification(
+            _make_notification("test-admin", status_id, tip, text)
+        )
         confirmation_id = 9000 + calls_before
         game_post_call = mastodon.status_post_calls[-1]
         assert game_post_call["in_reply_to_id"] == confirmation_id
@@ -2894,7 +2976,9 @@ def test_dm_battle_phase_posts_chain_off_confirmation_not_stale_post(monkeypatch
     advance(2, "[진행]")
 
     # 아군 커맨드(고블린을 전멸시키지 않을 정도로만 공격) — 별도 game_post 없음
-    listener.on_notification(_make_notification("player_acct", 3, tip, "[공격/고블린]"))
+    listener._process_notification(
+        _make_notification("player_acct", 3, tip, "[공격/고블린]")
+    )
     tip = dm_state.active_post_id
 
     # [진행] → ENEMY_POST_ACTION (정산)
@@ -2914,7 +2998,7 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
         monkeypatch, enemy_max_hp=100
     )
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2927,10 +3011,12 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
     dm_state = next(iter(state.dm_battles.values()))
     pre_post_id = dm_state.active_post_id
 
-    listener.on_notification(_make_notification("test-admin", 2, pre_post_id, "[진행]"))
+    listener._process_notification(
+        _make_notification("test-admin", 2, pre_post_id, "[진행]")
+    )
     active_post_id = dm_state.active_post_id
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification("player_acct", 3, active_post_id, "[공격/고블린]")
     )
 
@@ -2982,7 +3068,7 @@ def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
     mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             1,
@@ -2992,7 +3078,7 @@ def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
             extra_mentions=["player1_acct"],
         )
     )
-    listener.on_notification(
+    listener._process_notification(
         _make_notification(
             "test-admin",
             2,

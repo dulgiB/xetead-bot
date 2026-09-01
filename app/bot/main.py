@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 import re
 import threading
 import time
@@ -500,6 +501,10 @@ class MastodonBotListener(StreamListener):
         self._state = state
         self._bot_acct = bot_acct
         self._last_event_at = time.monotonic()
+        # on_notification()은 이 큐에 넣기만 하고 즉시 반환한다 — 실제 처리는
+        # _notification_worker()가 도는 별도 스레드가 순서대로 꺼내 수행한다.
+        # (자세한 이유는 on_notification()/_notification_worker() 참고)
+        self._notification_queue: "queue.Queue[dict]" = queue.Queue()
 
     def on_abort(self, err: Exception) -> None:
         """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
@@ -528,7 +533,12 @@ class MastodonBotListener(StreamListener):
         정상적인 새 알림이 서버에 도착했는데도 봇이 30분 넘게 아무것도 처리
         못한 채 멈춰 있던 장애가 있었다. 하트비트 최종 수신 시각을 직접
         추적해 임계값을 넘기면 현재 연결을 강제로 닫아, 라이브러리의 기존
-        reconnect_async 경로(on_abort → 백그라운드 재연결)를 타게 만든다."""
+        reconnect_async 경로(on_abort → 백그라운드 재연결)를 타게 만든다.
+
+        `on_notification`이 처리를 큐로 넘기고 즉시 반환하게 된 뒤로는,
+        이 스레드가 느려질 원인이 우리 쪽 처리 지연(스프레드시트/Mastodon
+        API 호출 등)일 수는 없다 — 순수하게 서버/네트워크 쪽 silent hang만
+        이 워치독의 대상이다."""
         while handle.is_alive():
             time.sleep(_STREAM_WATCHDOG_CHECK_INTERVAL_SEC)
             idle_sec = time.monotonic() - self._last_event_at
@@ -566,6 +576,32 @@ class MastodonBotListener(StreamListener):
             return []
 
     def on_notification(self, notification: dict) -> None:
+        """스트리밍 SSE를 읽는 스레드에서 매 이벤트마다 동기 호출된다.
+
+        여기서는 큐에 넣기만 하고 즉시 반환한다 — 실제 처리(스프레드시트
+        조회/기록, Mastodon API 호출 등)를 이 자리에서 하면, 그 호출이
+        느려지거나 재시도에 걸리는 동안 이 스레드가 서버 하트비트를 읽지
+        못해 watchdog(60초 무응답 시 강제 재연결, watchdog() 참고)가
+        개입하고 그 사이 도착한 다른 알림이 유실될 수 있었다. 처리 시간이
+        읽기 스레드를 절대 막지 않도록, 실제 처리는 `_notification_worker`가
+        도는 별도 스레드로 완전히 넘긴다."""
+        self._notification_queue.put(notification)
+
+    def _notification_worker(self) -> None:
+        """`on_notification`이 큐에 넣은 알림을 순서대로(FIFO) 처리하는
+        전용 워커 스레드의 루프.
+
+        스트리밍 읽기 스레드와 분리하는 것만이 목적이라 워커는 항상
+        하나만 둔다 — BotState/BattleSession 등은 스레드 세이프하지
+        않고, 같은 전투의 커맨드가 도착 순서와 다르게 처리되면 코스트
+        차감/라운드 전환 순서가 꼬일 수 있다. 워커 여러 개로 병렬
+        처리하는 것은 안전하지도, 필요하지도 않다."""
+        while True:
+            notification = self._notification_queue.get()
+            self._process_notification(notification)
+            self._notification_queue.task_done()
+
+    def _process_notification(self, notification: dict) -> None:
         acct: Optional[str] = None
         status_id: Optional[int] = None
         try:
@@ -1996,6 +2032,12 @@ def main() -> None:
         target=listener.watchdog, args=(handle,), daemon=True
     )
     watchdog_thread.start()
+    # 알림 처리를 스트리밍 읽기 스레드에서 분리하는 워커(on_notification/
+    # _notification_worker 참고) — 데몬 스레드라 프로세스 종료 시 함께 죽는다.
+    notification_worker_thread = threading.Thread(
+        target=listener._notification_worker, daemon=True
+    )
+    notification_worker_thread.start()
     while handle.is_alive():
         time.sleep(60)
 
