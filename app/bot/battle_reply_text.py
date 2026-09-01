@@ -31,6 +31,7 @@ from battle.objects.models import CharacterId
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.character.combat_character import CombatCharacter
+    from battle.objects.skill.models import SkillData
 
 
 _MARKDOWN_SPECIAL_CHARS = re.compile(r"([\\`*_~^])")
@@ -352,12 +353,16 @@ def _format_part(
     part, header, log_entries = _header_and_log_entries(caster_id, part_result)
 
     body_lines = []
-    if show_skill_preview and part.type_ == ActionType.SKILL:
-        # 예고 미리보기는 적 PRE 선언 전용이라, 이 시점엔 대미지/힐 등
-        # 실제 결과가 아직 없는 경우(대부분)가 많다 — 그때도 무엇을
-        # 선언했는지(대상)는 알아야 하므로 헤더를 항상 함께 보여준다.
-        body_lines.append(header)
-        body_lines.append(_format_skill_preview(context, part))
+    if part.type_ == ActionType.SKILL:
+        assert part.skill_id is not None
+        skill_data = context.get_skill_data_by_id(part.skill_id)
+        # 예고 미리보기는 원래 적 PRE 선언 전용이지만, reveal_effect=True인
+        # 캐릭터 스킬은 아군이 선언할 때도 동일하게 표시한다. 이 시점엔
+        # 대미지/힐 등 실제 결과가 아직 없는 경우(적 PRE 선언 등)가 많아
+        # 무엇을 선언했는지(대상)는 알아야 하므로 헤더를 항상 함께 보여준다.
+        if show_skill_preview or skill_data.reveal_effect:
+            body_lines.append(header)
+            body_lines.append(_format_skill_preview(skill_data))
 
     calc_lines = []
     for entry in log_entries:
@@ -404,9 +409,7 @@ def _format_part(
 _BLIND_SKILL_TEXT = "[효과 미확인]"
 
 
-def _format_skill_preview(context: "BattlefieldContext", part: CommandPart) -> str:
-    assert part.skill_id is not None
-    skill_data = context.get_skill_data_by_id(part.skill_id)
+def _format_skill_preview(skill_data: "SkillData") -> str:
     text = skill_data.description if skill_data.revealed else _BLIND_SKILL_TEXT
     return f"　↳ {escape_markdown(text)}"
 

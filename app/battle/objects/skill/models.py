@@ -253,6 +253,10 @@ class SkillData:
     # 블라인드 처리할지 여부. "스킬_에너미" 시트의 is_revealed 체크박스
     # 컬럼에서 온다. 컬럼이 없는 시트(스킬_캐릭터 등)는 항상 True(공개).
     revealed: bool = True
+    # 캐릭터 스킬 전용: 원래는 아군 선언에 예고 줄이 붙지 않지만(에너미
+    # 전용 기능), 이 값이 True인 스킬은 아군이 선언해도 예고 줄이 표시된다.
+    # "스킬_캐릭터" 시트의 reveal_effect 체크박스 컬럼에서 온다.
+    reveal_effect: bool = False
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "SkillData":
@@ -270,6 +274,7 @@ class SkillData:
             effects=skill_effects,
             description=str(data["description"]),
             revealed=parse_spreadsheet_bool(data.get("is_revealed", True)),
+            reveal_effect=parse_spreadsheet_bool(data.get("reveal_effect", False)),
         )
 
     def to_skill_instance(
