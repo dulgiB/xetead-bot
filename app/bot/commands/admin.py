@@ -77,6 +77,9 @@ _RE_BATTLE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('전투준비')}]
 _RE_MANUAL_PLACE = re.compile(
     rf"\[{whitespace_tolerant_literal('배치')}\s*/\s*([^/\]]+?)\s*/\s*([^/\]]+)]"
 )
+_RE_FORCE_ELIMINATE = re.compile(
+    rf"\[{whitespace_tolerant_literal('탈락')}\s*/\s*([^/\]]+?)]"
+)
 _RE_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투개시')}]")
 _RE_BATTLE_NAME = re.compile(r"「(.+?)」")
 _RE_PHASE = re.compile(rf"\[{whitespace_tolerant_literal('진행')}]")
@@ -267,6 +270,13 @@ def handle_admin_command(
         reply_parts.extend(errors)
         return AdminCommandResult("\n".join(reply_parts))
 
+    if force_eliminate_matches := list(_RE_FORCE_ELIMINATE.finditer(text)):
+        replies = [
+            _cmd_force_eliminate(m.group(1).strip(), state)
+            for m in force_eliminate_matches
+        ]
+        return AdminCommandResult("\n".join(replies))
+
     if _RE_BATTLE_START.search(text):
         name_match = _RE_BATTLE_NAME.search(text)
         battle_name = name_match.group(1).strip() if name_match else None
@@ -428,6 +438,50 @@ def _cmd_manual_place(
 
     state.pending_placements.append((name, faction, column))
     return _ManualPlaceOutcome(True, label)
+
+
+def _cmd_force_eliminate(name: str, state: "BotState") -> str:
+    """`[탈락/이름]` — 아군은 체력이 0이 되어도 라운드 종료 시 자동으로는
+    필드에서 제거되지 않으므로(`BattlefieldContext._remove_eliminated_characters()`
+    참고), admin이 명시적으로 사망/이탈 처리할 때 쓴다. 진영 제한은 두지
+    않는다 — 적군을 서사적으로 조기 퇴장시키는 용도로도 쓸 수 있다."""
+    if state.session is None or not state.session.started:
+        return "◊ 진행 중인 전투가 없습니다."
+
+    char_id = state.session.context.resolve_character_id(CharacterId(name))
+    if char_id not in state.session.context.characters:
+        return f"◊ 지정한 캐릭터({name})는 전투에 참여하고 있지 않습니다."
+
+    removed = state.session.context.force_remove_character(char_id)
+
+    try:
+        upsert_field_row(
+            state.spreadsheet,
+            str(state.preparation_status_id),
+            battle_type=FieldBattleType.MAIN,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            characters=build_field_characters(state.session.context, include_hp=False),
+            meta={"name": state.session.name},
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        _log_system_error("필드 시트 저장")
+
+    try:
+        render_public_field_sheet(
+            state.field_spreadsheet,
+            state.session.context,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            battle_name=state.session.name,
+            cache=state.field_sheet_cache,
+        )
+    except Exception:
+        _log_system_error("공개 필드 시트 실시간 갱신")
+
+    return format_eliminated_characters(removed)
 
 
 def _check_enemy_skill_timing_config(state: "BotState") -> Optional[str]:
