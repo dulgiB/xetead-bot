@@ -10,6 +10,12 @@
 (`SkillData`/`SkillEffectBase`), `app/battle/objects/passive_skill/models.py`
 (`PassiveSkillData`).
 
+모든 로딩 코드는 `gspread`의 `get_all_records()`(헤더 이름 기반 dict)로 행을
+읽고, 시트에 쓰는 코드도 `header.index("컬럼명")`으로 위치를 동적으로 찾으므로
+시트의 실제 컬럼 **순서**는 로딩/파싱에 영향을 주지 않는다. 다만 가독성을 위해
+`description`(설명 텍스트)류 컬럼은 관례적으로 각 시트의 **가장 마지막**
+컬럼에 둔다 — 새 컬럼을 추가할 때도 이 관례를 유지한다.
+
 ---
 
 ## 버프 시트 (`버프`)
@@ -31,9 +37,9 @@
 | `condition`                        | 적용 조건 클래스 이름 ([Condition 클래스 참고](#condition-클래스-참고)). 비우면 조건 없이 항상 적용            |
 | `condition_value`                  | `condition`이 참조하는 정수값 (예: 퍼센트 임계값, 명수 등 — 조건 클래스마다 의미가 다름)                       |
 | `is_debuff`                        | 디버프 여부 (boolean). `TargetHasDebuffCondition` 등에서 조회                             |
-| `description`                     | 표시용 설명                                                                          |
 | `max_stack`                        | 최대 적층 스택 수. 비우면 적층 불가(재부여 시 지속시간만 갱신, 스택은 그대로)                                 |
 | `reference_buff_id`                | 다른 버프 id를 참조해야 하는 버프 전용 (스택 수 기반 대미지 등). 대부분의 버프에는 필요 없음                       |
+| `description`                     | 표시용 설명                                                                          |
 
 지속시간(`duration_turn_value`/`duration_count_value`)을 둘 다 비우면 패시브
 (영구) 버프가 된다.
@@ -54,8 +60,8 @@
 | `value_type_1`      | `value_1`의 참고용 표기(`정수`/`퍼센트`). "버프" 시트의 `value_type_1`과 동일 |
 | `condition`         | 적용 조건 클래스 이름 (선택)                                      |
 | `condition_value`   | `condition`이 참조하는 정수값                                  |
-| `description`       | 표시용 설명                                                 |
 | `reference_buff_id` | 다른 버프 id 참조 (선택)                                       |
+| `description`       | 표시용 설명                                                 |
 
 ## 스킬_캐릭터 / 스킬_에너미 시트
 
@@ -70,10 +76,10 @@
 | `target_rule`  | 대상 규칙 클래스명 ([README.md#스킬-대상-규칙](README.md#스킬-대상-규칙) 참조) |
 | `target_count` | 지정 가능한 대상 수 상한                                         |
 | `cost`         | 코스트                                                   |
-| `description`  | 봇이 그대로 노출할 스킬 설명                                       |
+| `effect_0`~`effect_2` (및 부속 컬럼) | 효과 최대 3개, [`effect_N` 컬럼 패턴](#effect_n-컬럼-패턴-스킬아이템-공용) 참조. `_N` 접미사가 붙은 부속 컬럼(`condition_N`, `reference_buff_id_N`, `ignores_taunt_N` 등)은 시트 안에서 실제로도 그 `effect_N` 바로 옆(다음 `effect_{N+1}` 앞)에 위치해야 한다 — 시트 뒤쪽에 따로 떨어뜨려 두지 않는다 |
 | `is_revealed` (선택, 스킬_에너미 전용) | 체크박스(boolean). 체크 = 공개(설명 노출), 미체크(기본값) = 아직 블라인드. 에너미가 이 스킬을 PRE 페이즈에 처음 선언하면 봇이 자동으로 체크해 그 다음 선언부터 설명을 노출한다([CLAUDE.md](CLAUDE.md) 참고). 컬럼 자체가 없거나 스킬_캐릭터 시트에는 항상 공개로 처리된다. |
 | `reveal_effect` (선택, 스킬_캐릭터 전용) | 체크박스(boolean, 기본값 미체크). 체크하면 이 스킬을 아군이 선언할 때도 에너미 PRE 선언처럼 `↳ {description}` 예고 줄이 붙는다. 스킬_에너미의 `is_revealed`와 달리 블라인드 처리는 없다 |
-| `effect_0`~`effect_2` (및 부속 컬럼) | 효과 최대 3개, [`effect_N` 컬럼 패턴](#effect_n-컬럼-패턴-스킬아이템-공용) 참조 |
+| `description`  | 봇이 그대로 노출할 스킬 설명                                       |
 
 ## 스킬_패시브 시트 (`스킬_패시브`)
 
