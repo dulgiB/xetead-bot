@@ -95,8 +95,12 @@ def capture_field_sheet_image(
         else spreadsheet.worksheet(_FIELD_SHEET)
     )
     gid = ws.id
+    # 타임아웃을 명시하지 않으면 requests가 무한 대기한다 — Google이 502 등
+    # 즉시 에러 대신 응답 자체를 오래 끌면, 이 호출을 처리 중인 알림 워커
+    # 스레드(main.py의 _notification_worker)가 그만큼 오래 막혀 뒤에 쌓인
+    # 다른 알림 처리가 지연된다.
     response = spreadsheet.client.session.get(
-        _export_url(spreadsheet.id, gid, range_a1)
+        _export_url(spreadsheet.id, gid, range_a1), timeout=30
     )
     response.raise_for_status()
 

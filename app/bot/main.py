@@ -1988,6 +1988,14 @@ def main() -> None:
     mastodon = _MarkdownMastodon(
         access_token=os.environ["MASTODON_ACCESS_TOKEN"],
         api_base_url=os.environ["MASTODON_API_BASE_URL"],
+        # 기본값(300초)은 status_post/media_post 등 알림 워커 스레드
+        # (_notification_worker)가 호출하는 일반 API 요청에도 그대로
+        # 적용된다. 이 요청들이 오래 걸리면(네트워크 지연 등) 그만큼 워커가
+        # 막혀 뒤에 쌓인 다른 알림 처리가 지연되므로, 30초면 실패를 훨씬
+        # 빨리 감지해 그 지연을 줄인다. 스트리밍 연결 자체의 read timeout은
+        # 이 값과 무관한 별도 상수(mastodon.py의 _DEFAULT_STREAM_TIMEOUT)를
+        # 쓰므로 영향받지 않는다.
+        request_timeout=30,
     )
 
     me = mastodon.me()
