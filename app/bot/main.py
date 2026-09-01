@@ -1,5 +1,6 @@
 import logging
 import os
+import queue
 import re
 import threading
 import time
@@ -500,6 +501,10 @@ class MastodonBotListener(StreamListener):
         self._state = state
         self._bot_acct = bot_acct
         self._last_event_at = time.monotonic()
+        # on_notification()은 이 큐에 넣기만 하고 즉시 반환한다 — 실제 처리는
+        # _notification_worker()가 도는 별도 스레드가 순서대로 꺼내 수행한다.
+        # (자세한 이유는 on_notification()/_notification_worker() 참고)
+        self._notification_queue: "queue.Queue[dict]" = queue.Queue()
 
     def on_abort(self, err: Exception) -> None:
         """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
@@ -528,7 +533,12 @@ class MastodonBotListener(StreamListener):
         정상적인 새 알림이 서버에 도착했는데도 봇이 30분 넘게 아무것도 처리
         못한 채 멈춰 있던 장애가 있었다. 하트비트 최종 수신 시각을 직접
         추적해 임계값을 넘기면 현재 연결을 강제로 닫아, 라이브러리의 기존
-        reconnect_async 경로(on_abort → 백그라운드 재연결)를 타게 만든다."""
+        reconnect_async 경로(on_abort → 백그라운드 재연결)를 타게 만든다.
+
+        `on_notification`이 처리를 큐로 넘기고 즉시 반환하게 된 뒤로는,
+        이 스레드가 느려질 원인이 우리 쪽 처리 지연(스프레드시트/Mastodon
+        API 호출 등)일 수는 없다 — 순수하게 서버/네트워크 쪽 silent hang만
+        이 워치독의 대상이다."""
         while handle.is_alive():
             time.sleep(_STREAM_WATCHDOG_CHECK_INTERVAL_SEC)
             idle_sec = time.monotonic() - self._last_event_at
@@ -566,6 +576,32 @@ class MastodonBotListener(StreamListener):
             return []
 
     def on_notification(self, notification: dict) -> None:
+        """스트리밍 SSE를 읽는 스레드에서 매 이벤트마다 동기 호출된다.
+
+        여기서는 큐에 넣기만 하고 즉시 반환한다 — 실제 처리(스프레드시트
+        조회/기록, Mastodon API 호출 등)를 이 자리에서 하면, 그 호출이
+        느려지거나 재시도에 걸리는 동안 이 스레드가 서버 하트비트를 읽지
+        못해 watchdog(60초 무응답 시 강제 재연결, watchdog() 참고)가
+        개입하고 그 사이 도착한 다른 알림이 유실될 수 있었다. 처리 시간이
+        읽기 스레드를 절대 막지 않도록, 실제 처리는 `_notification_worker`가
+        도는 별도 스레드로 완전히 넘긴다."""
+        self._notification_queue.put(notification)
+
+    def _notification_worker(self) -> None:
+        """`on_notification`이 큐에 넣은 알림을 순서대로(FIFO) 처리하는
+        전용 워커 스레드의 루프.
+
+        스트리밍 읽기 스레드와 분리하는 것만이 목적이라 워커는 항상
+        하나만 둔다 — BotState/BattleSession 등은 스레드 세이프하지
+        않고, 같은 전투의 커맨드가 도착 순서와 다르게 처리되면 코스트
+        차감/라운드 전환 순서가 꼬일 수 있다. 워커 여러 개로 병렬
+        처리하는 것은 안전하지도, 필요하지도 않다."""
+        while True:
+            notification = self._notification_queue.get()
+            self._process_notification(notification)
+            self._notification_queue.task_done()
+
+    def _process_notification(self, notification: dict) -> None:
         acct: Optional[str] = None
         status_id: Optional[int] = None
         try:
@@ -1300,23 +1336,31 @@ class MastodonBotListener(StreamListener):
         if not calc_text:
             return self._reply(in_reply_to_id, acct, visibility, text, media_ids)
 
-        if len(text) > _MAX_POST_LENGTH:
-            return self._reply_then_calc_followup(
-                in_reply_to_id, acct, visibility, text, calc_text, media_ids
-            )
-
         mention_prefix = f"@{acct} "
         # spoiler_text에 번호 접미사(" (N/N)")가 붙을 수 있으므로, 먼저
         # 접미사 없이 나눠 조각 수를 가늠한 뒤 필요하면 그 접미사 길이만큼
         # 예산을 줄여 다시 나눈다.
         provisional_chunks = _split_for_post(calc_text, len(mention_prefix) + len(text))
-        if len(provisional_chunks) > 1:
-            suffix_len = len(f" ({len(provisional_chunks)}/{len(provisional_chunks)})")
-            calc_chunks = _split_for_post(
-                calc_text, len(mention_prefix) + len(text) + suffix_len
+        suffix_len = (
+            len(f" ({len(provisional_chunks)}/{len(provisional_chunks)})")
+            if len(provisional_chunks) > 1
+            else 0
+        )
+        # spoiler_text(=text, 여러 조각이면 위 접미사까지 포함)가 그
+        # 자체로 500자 한도를 넘으면 이 CW 합본 경로로는 표현할 수 없다 —
+        # text만 보고 넘기던 예전 체크는 text가 495자 안팎처럼 한도에
+        # 근접했을 때 접미사(예: " (2/5)")가 더해지며 500자를 살짝
+        # 넘기는 경우를 놓쳐, status_post()가 422로 실패한 적이 있다.
+        if len(text) + suffix_len > _MAX_POST_LENGTH:
+            return self._reply_then_calc_followup(
+                in_reply_to_id, acct, visibility, text, calc_text, media_ids
             )
-        else:
-            calc_chunks = provisional_chunks
+
+        calc_chunks = (
+            _split_for_post(calc_text, len(mention_prefix) + len(text) + suffix_len)
+            if suffix_len
+            else provisional_chunks
+        )
 
         multiple = len(calc_chunks) > 1
 
@@ -1944,6 +1988,14 @@ def main() -> None:
     mastodon = _MarkdownMastodon(
         access_token=os.environ["MASTODON_ACCESS_TOKEN"],
         api_base_url=os.environ["MASTODON_API_BASE_URL"],
+        # 기본값(300초)은 status_post/media_post 등 알림 워커 스레드
+        # (_notification_worker)가 호출하는 일반 API 요청에도 그대로
+        # 적용된다. 이 요청들이 오래 걸리면(네트워크 지연 등) 그만큼 워커가
+        # 막혀 뒤에 쌓인 다른 알림 처리가 지연되므로, 30초면 실패를 훨씬
+        # 빨리 감지해 그 지연을 줄인다. 스트리밍 연결 자체의 read timeout은
+        # 이 값과 무관한 별도 상수(mastodon.py의 _DEFAULT_STREAM_TIMEOUT)를
+        # 쓰므로 영향받지 않는다.
+        request_timeout=30,
     )
 
     me = mastodon.me()
@@ -1988,6 +2040,12 @@ def main() -> None:
         target=listener.watchdog, args=(handle,), daemon=True
     )
     watchdog_thread.start()
+    # 알림 처리를 스트리밍 읽기 스레드에서 분리하는 워커(on_notification/
+    # _notification_worker 참고) — 데몬 스레드라 프로세스 종료 시 함께 죽는다.
+    notification_worker_thread = threading.Thread(
+        target=listener._notification_worker, daemon=True
+    )
+    notification_worker_thread.start()
     while handle.is_alive():
         time.sleep(60)
 
