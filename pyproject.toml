@@ -10,7 +10,7 @@ dependencies = [
     "pymupdf>=1.28.2",
     "pytest>=9.1.1",
     "python-dotenv>=1.2.3",
-    "regex>=2026.7.19",
+    "regex>=2026.8.31",
 ]
 
 [tool.setuptools.packages.find]
