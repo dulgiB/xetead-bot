@@ -802,10 +802,30 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
     )
 
 
+def _reset_main_battle_state(state: "BotState") -> None:
+    """본 전투 세션과 그에 딸린 게시물 id/대기 목록을 모두 비운다 —
+    [전투 종료]가 어느 단계에서 들어오든 남는 상태가 없어야 다음
+    [전투 준비]가 "이미 진행 중인 전투가 있습니다"로 막히지 않는다."""
+    state.session = None
+    state.preparation_status_id = None
+    state.active_phase_post_id = None
+    state.pending_participants.clear()
+    state.pending_placements.clear()
+
+
 def _cmd_end(state: "BotState") -> tuple[str, str]:
-    """반환값: (reply_text, calc_text)."""
-    if state.session is None or not state.session.started:
+    """반환값: (reply_text, calc_text).
+
+    페이즈와 무관하게 언제 입력해도 동작해야 하므로, [전투 개시] 전
+    (준비 단계)에도 받아 준비 상태를 취소한다 — 이 단계에서는 아직
+    전장에 캐릭터도, "필드" 시트 행도 없어 정산할 대상 자체가 없으므로
+    버프 훅/시트 기록 없이 상태만 되돌린다."""
+    if state.session is None:
         return "◊ 진행 중인 전투가 없습니다.", ""
+
+    if not state.session.started:
+        _reset_main_battle_state(state)
+        return "◊ 전투 종료 (전투 준비 취소)", ""
 
     context = state.session.context
     system_error = False
@@ -854,11 +874,7 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
         _log_system_error("공개 필드 시트 렌더링")
         system_error = True
 
-    state.session = None
-    state.preparation_status_id = None
-    state.active_phase_post_id = None
-    state.pending_participants.clear()
-    state.pending_placements.clear()
+    _reset_main_battle_state(state)
 
     battle_end_body, battle_end_calc = format_battle_end_log_entries(
         context, battle_end_entries

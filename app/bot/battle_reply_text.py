@@ -353,9 +353,11 @@ def _format_part(
     part, header, log_entries = _header_and_log_entries(caster_id, part_result)
 
     body_lines = []
+    hide_result_lines = False
     if part.type_ == ActionType.SKILL:
         assert part.skill_id is not None
         skill_data = context.get_skill_data_by_id(part.skill_id)
+        hide_result_lines = skill_data.hide_result_lines
         # 예고 미리보기는 원래 적 PRE 선언 전용이지만, reveal_effect=True인
         # 캐릭터 스킬은 아군이 선언할 때도 동일하게 표시한다. 이 시점엔
         # 대미지/힐 등 실제 결과가 아직 없는 경우(적 PRE 선언 등)가 많아
@@ -370,7 +372,13 @@ def _format_part(
         is_mergeable_buff_add = (
             entry.kind == BattleLogEntryKind.BUFF_ADD and entry.buff_label is not None
         )
-        if entry.kind in _MERGEABLE_KINDS or is_mergeable_buff_add:
+        if hide_result_lines:
+            # 본문 줄만 생략하고 계산식은 아래에서 그대로 쌓는다. emitted에는
+            # 일부러 등록하지 않는다 — 같은 대상의 대미지/회복이 같은 커맨드의
+            # 다른 파트에도 있으면 그쪽 합산 줄로는 계속 보여야 하므로,
+            # 여기서 키를 선점해 그 줄까지 지워 버리면 안 된다.
+            pass
+        elif entry.kind in _MERGEABLE_KINDS or is_mergeable_buff_add:
             # 같은 대상의 대미지/회복(또는 같은 적층형 버프 부여)이 다른
             # 파트(예: 공격을 여러 번 나눠 선언)에 이미 합산 줄로 나갔으면
             # 본문에는 또 넣지 않는다 — 계산식(calc_lines)은 이 파트 고유의
@@ -398,7 +406,10 @@ def _format_part(
     # 않고 빈 문자열을 반환한다 — 호출측이 그대로 건너뛴다.)
     if body_lines:
         body = "\n".join(body_lines)
-    elif not log_entries:
+    elif not log_entries or hide_result_lines:
+        # hide_result_lines 스킬이 reveal_effect도 아니라 예고 줄조차 없으면
+        # 위 루프가 본문을 통째로 비운다 — 그래도 무엇을 선언했는지는 남겨야
+        # 하므로 결과 없는 파트와 동일하게 헤더로 대체한다.
         body = header
     else:
         body = ""

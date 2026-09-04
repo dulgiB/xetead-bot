@@ -902,6 +902,91 @@ def _declare_enemy_skill(ctx: BattlefieldContext, skill_id: str, cmd_str: str) -
     return caster_id, ctx.results[before:]
 
 
+def _all_allies_heal_skill(**kwargs) -> SkillData:
+    return SkillData(
+        id="전체 회복",
+        target_rule="SkillTargetRuleAllAllies",
+        target_count=0,
+        cost=0,
+        effects=[
+            SkillEffectHeal(
+                ValueSourceType.TARGET_MAX_HP, 100, ValueType.PERCENT, None, None
+            )
+        ],
+        description="아군 전체의 체력을 최대치까지 회복한다.",
+        reveal_effect=True,
+        **kwargs,
+    )
+
+
+def test_hide_result_lines_skill_keeps_only_header_and_description_in_body():
+    """hide_result_lines=True인 스킬은 본문에 "▹ 대상 | 결과" 줄을 하나도
+    남기지 않는다 — 아군 전원을 한꺼번에 회복시키는 스킬은 대상 수만큼 줄이
+    불어나 본문이 길이 제한에 걸리는데, 효과는 description에 이미 다 적혀
+    있어 줄마다 반복할 실익이 없다. 수치는 계산식 쪽에 그대로 남는다."""
+    skill = _all_allies_heal_skill(hide_result_lines=True)
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"전체 회복": skill})
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="전체 회복"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    for i, column in ((2, 1), (3, 2)):
+        ctx.add_character(
+            get_test_preset(f"아군 {i}", initial_hp=50),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(column),
+        )
+
+    reply, calc = _run(ctx, manager, caster_id, "[전체 회복]")
+
+    assert reply == (
+        "**【전체 회복 ▸ 아군 1】**\n　↳ 아군 전체의 체력을 최대치까지 회복한다."
+    )
+    assert "▹" not in reply
+    assert "▹ 아군 2 | 100 × 1[계수] → +100" in calc
+    assert "▹ 아군 3 | 100 × 1[계수] → +100" in calc
+
+
+def test_hide_result_lines_skill_does_not_swallow_other_parts_line_for_same_target():
+    """숨김 처리는 그 스킬 파트의 본문 줄만 지운다 — 같은 커맨드의 다른
+    파트가 같은 대상을 건드리면 그쪽 합산 줄은 그대로 나와야 한다. 숨긴
+    파트가 합산 키를 선점해 버리면 뒤따르는 파트의 줄까지 사라진다."""
+    heal_skill = _all_allies_heal_skill(hide_result_lines=True)
+    single_heal = SkillData(
+        id="단일 회복",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectHeal(ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None)
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(
+        buff_dict={},
+        skill_dict={"전체 회복": heal_skill, "단일 회복": single_heal},
+    )
+    manager = _ally_action_manager(ctx)
+    caster_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="전체 회복", skill_2_id="단일 회복"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("아군 2", initial_hp=50),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(1),
+    )
+
+    reply, _calc = _run(ctx, manager, caster_id, "[전체 회복 - 단일 회복/아군 2]")
+
+    assert "▹ 아군 2" in reply
+
+
 def test_enemy_skill_preview_shows_description_when_revealed():
     skill = SkillData(
         id="스킬_1",

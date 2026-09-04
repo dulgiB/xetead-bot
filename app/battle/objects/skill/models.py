@@ -257,6 +257,14 @@ class SkillData:
     # 전용 기능), 이 값이 True인 스킬은 아군이 선언해도 예고 줄이 표시된다.
     # "스킬_캐릭터" 시트의 reveal_effect 체크박스 컬럼에서 온다.
     reveal_effect: bool = False
+    # True이면 답글 본문에서 이 스킬이 만든 "▹ 대상 | 결과" 줄을 전부
+    # 생략하고 헤더(+예고 줄)만 남긴다. 수치는 계산식 쪽에 그대로 남으므로
+    # 정보가 사라지지는 않는다. 아군 전체를 한꺼번에 회복/부활시키는
+    # 스킬처럼 대상 수만큼 줄이 불어나 본문이 통째로 잘려 나가는 경우에
+    # 쓴다 — 그런 스킬은 description에 효과가 이미 다 적혀 있어 줄마다
+    # 반복할 실익이 없다. "스킬_캐릭터"/"스킬_에너미" 시트의
+    # hide_result_lines 체크박스 컬럼에서 온다.
+    hide_result_lines: bool = False
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "SkillData":
@@ -275,6 +283,9 @@ class SkillData:
             description=str(data["description"]),
             revealed=parse_spreadsheet_bool(data.get("is_revealed", True)),
             reveal_effect=parse_spreadsheet_bool(data.get("reveal_effect", False)),
+            hide_result_lines=parse_spreadsheet_bool(
+                data.get("hide_result_lines", False)
+            ),
         )
 
     def to_skill_instance(
