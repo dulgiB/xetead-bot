@@ -691,6 +691,51 @@ class MastodonBotListener(StreamListener):
 
         return accounts
 
+    def _resolve_admin_reply_target(
+        self,
+        text: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        state: "BotState",
+    ) -> Optional[int]:
+        """handle_admin_command에 넘길 in_reply_to_id를 정한다.
+
+        DM 전투 커맨드는 그 전투 스레드의 tip 게시물(state.dm_battles의 키)에
+        답글을 달아야 인식된다 — tip은 페이즈가 넘어갈 때마다 바뀌므로,
+        스레드 중간의 오래된 게시물에 답글을 달면 그 전투로 라우팅되지
+        않는다. [전투 종료]만은 어느 시점에 입력해도 동작해야 하므로(전투를
+        접는 커맨드라 페이즈/게시물에 매일 이유가 없다), 직접 매칭이
+        실패하면 스레드 조상을 거슬러 올라가 그 스레드의 DM 전투를 찾아
+        tip id로 바꿔 준다. 못 찾으면 in_reply_to_id를 그대로 돌려준다.
+
+        이 보정이 없으면 DM 전투 스레드의 오래된 게시물에 단 [전투 종료]가
+        본 전투용 분기로 흘러가, 엉뚱하게 진행 중인 본 전투를 종료시키거나
+        "진행 중인 전투가 없습니다"로 실패한다.
+
+        조상 조회는 마스토돈 API 호출이 한 번 더 드는 경로라, 직접 매칭이
+        실패하고 진행 중인 DM 전투가 있으며 텍스트에 [전투 종료]가 실제로
+        들어 있을 때에만 한다."""
+        if in_reply_to_id is None or in_reply_to_id in state.dm_battles:
+            return in_reply_to_id
+        if not state.dm_battles or not admin_commands._RE_END.search(text):
+            return in_reply_to_id
+
+        try:
+            context = self._mastodon.status_context(status_id)
+        except Exception:
+            logger.exception("스레드 DM 전투 조회 실패 (status_id=%s)", status_id)
+            return in_reply_to_id
+
+        ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
+        for tip_id, dm in state.dm_battles.items():
+            # field_id([전투 발생] 응답 게시물)와 현재 tip 중 하나라도 조상에
+            # 있으면 이 스레드가 그 DM 전투의 스레드다.
+            if dm.active_post_id in ancestor_ids or (
+                dm.field_id.isdigit() and int(dm.field_id) in ancestor_ids
+            ):
+                return tip_id
+        return in_reply_to_id
+
     def _resolve_investigation_session(
         self,
         acct: str,
@@ -808,7 +853,9 @@ class MastodonBotListener(StreamListener):
                 acct=acct,
                 mentions=thread_mentions,
                 visibility=visibility,
-                in_reply_to_id=in_reply_to_id,
+                in_reply_to_id=self._resolve_admin_reply_target(
+                    text, status_id, in_reply_to_id, state
+                ),
             )
             self._post_admin_result(result, status_id, acct, visibility, state)
             return
@@ -1177,10 +1224,26 @@ class MastodonBotListener(StreamListener):
         [대련]처럼 같은 AdminCommandResult 셰이프를 반환하는 다른 진입점에서도
         재사용한다."""
         if not result.reply_text:
-            # reply_text가 비어 있으면 game_post_text를 단일 답글로 전송
+            # reply_text가 비어 있으면 game_post_text를 단일 답글로 전송.
+            # 이 경로에도 game_post_visibility/game_post_calc_text를 그대로
+            # 반영해야 한다 — DM 전투의 수동 [전투 종료]는 확인 답글 없이
+            # 종료 게시물만 내보내는데, 여기서 무시하면 전투 내내 고정해 온
+            # DM 가시성 대신 admin 메시지의 가시성을 따르고 종료 정산의
+            # 계산식이 통째로 사라진다.
             if result.game_post_text is not None:
-                post = self._reply(status_id, acct, visibility, result.game_post_text)
+                post = self._reply(
+                    status_id,
+                    acct,
+                    result.game_post_visibility or visibility,
+                    result.game_post_text,
+                )
                 _apply_game_post_side_effects(state, result, post["id"])
+                self._post_calc_followups(
+                    post["id"],
+                    result.game_post_visibility,
+                    result.game_post_calc_text,
+                    result.game_post_calc_prefix,
+                )
         else:
             # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
             # 이미지는 페이즈 게시물에만 첨부한다). post_as_new_status면

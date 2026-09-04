@@ -30,6 +30,7 @@ from bot.commands.admin import (  # noqa: E402
     _cmd_advance_phase,
     _cmd_battle_start,
     _cmd_continue_battle,
+    handle_admin_command,
 )
 from bot.main import BotState, MastodonBotListener, _handle_practice_command  # noqa: E402
 from bot.noncombat_state import InvestigationSession  # noqa: E402
@@ -91,6 +92,40 @@ def test_battle_starts_when_at_least_one_placement_succeeds():
     assert state.session.started is True
     assert len(state.session.context.characters) == 1
     assert "전투 시작" in result.reply_text
+
+
+def test_battle_end_before_battle_start_cancels_preparation():
+    """[전투 종료]는 페이즈와 무관하게 언제 입력해도 동작해야 한다 —
+    [전투 준비]만 하고 [전투 개시] 전인 상태에서도 준비를 취소해야
+    한다. 그렇지 않으면 잘못 연 준비 세션이 남아 다음 [전투 준비]가
+    "이미 진행 중인 전투가 있습니다"로 영영 막힌다."""
+    state = _make_state(
+        pending_participants=["user1"],
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ],
+    )
+    state.preparation_status_id = 1000
+
+    result = handle_admin_command("[전투 종료]", state)
+
+    assert "전투 종료" in result.reply_text
+    assert state.session is None
+    assert state.preparation_status_id is None
+    assert state.pending_participants == []
+    assert state.pending_placements == []
+
+
+def test_battle_end_without_any_session_reports_no_battle():
+    """세션 자체가 없으면 [전투 종료]는 그대로 "진행 중인 전투가 없습니다"여야
+    한다 — 준비 단계 취소를 허용한다고 해서 없는 전투까지 종료했다고
+    답하면 안 된다."""
+    state = _make_state()
+    state.session = None
+
+    result = handle_admin_command("[전투 종료]", state)
+
+    assert "진행 중인 전투가 없습니다" in result.reply_text
 
 
 def test_battle_start_marks_round_start_for_field_image():
@@ -2935,6 +2970,91 @@ def test_dm_battle_thread_visibility_and_wipe_ends_automatically(monkeypatch):
     assert end_call["in_reply_to_id"] == active_post_id
     assert "전투 종료" in end_call["status"]
     assert "아군" in end_call["status"]
+    assert state.dm_battles == {}
+
+
+def test_dm_battle_end_works_from_stale_thread_post(monkeypatch):
+    """DM 전투의 [진행]/[전투속행]은 스레드 tip 게시물에 달아야 인식되지만,
+    [전투 종료]만은 어느 시점에 입력해도 동작해야 한다 — 페이즈가 넘어가
+    tip이 바뀐 뒤 스레드 중간의 오래된 게시물에 답글을 달아도 그 DM 전투가
+    종료돼야 하고, 본 전투 분기로 새어 나가 엉뚱한 세션을 건드리면 안 된다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch
+    )
+
+    listener._process_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+    dm_state = next(iter(state.dm_battles.values()))
+    stale_post_id = dm_state.active_post_id
+
+    # [진행]으로 tip을 옮겨, stale_post_id가 더 이상 state.dm_battles의 키가
+    # 아니게 만든다.
+    listener._process_notification(
+        _make_notification("test-admin", 2, stale_post_id, "[진행]")
+    )
+    assert dm_state.active_post_id != stale_post_id
+    assert stale_post_id not in state.dm_battles
+
+    # 스레드 조상 조회로만 이 DM 전투를 찾아낼 수 있는 상황
+    mastodon.status_context_ancestors = [
+        {"id": stale_post_id, "account": {"acct": "bot"}, "mentions": []}
+    ]
+    listener._process_notification(
+        _make_notification(
+            "test-admin", 3, stale_post_id, "[전투 종료]", visibility="direct"
+        )
+    )
+
+    end_call = mastodon.status_post_calls[-1]
+    assert "전투 종료" in end_call["status"]
+    assert "@player_acct" in end_call["status"]
+    assert state.dm_battles == {}
+    # 본 전투 세션(준비 단계)은 이 커맨드에 휘말리지 않아야 한다.
+    assert state.session is not None
+
+
+def test_dm_battle_manual_end_keeps_dm_visibility(monkeypatch):
+    """DM 전투의 수동 [전투 종료]는 확인 답글 없이 종료 게시물만 내보내는
+    경로다 — 이때도 전투 내내 고정해 온 DM 가시성을 따라야 한다. admin
+    메시지의 가시성을 그대로 쓰면 참가자만 볼 수 있어야 할 종료 정산이
+    공개로 새어 나간다."""
+    mastodon, listener, state, char_dict, name_dict = _setup_dm_battle_state(
+        monkeypatch
+    )
+
+    listener._process_notification(
+        _make_notification(
+            "test-admin",
+            1,
+            0,
+            "[전투 발생][배치/고블린/1열]",
+            visibility="direct",
+            extra_mentions=["player_acct"],
+        )
+    )
+    dm_state = next(iter(state.dm_battles.values()))
+
+    listener._process_notification(
+        _make_notification(
+            "test-admin",
+            2,
+            dm_state.active_post_id,
+            "[전투 종료]",
+            visibility="public",
+        )
+    )
+
+    end_call = mastodon.status_post_calls[-1]
+    assert "전투 종료" in end_call["status"]
+    assert end_call["visibility"] == "direct"
     assert state.dm_battles == {}
 
 
