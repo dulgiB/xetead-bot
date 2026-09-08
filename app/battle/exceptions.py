@@ -45,6 +45,20 @@ def error_invalid_command_format() -> str:
     return "커맨드가 잘못되었습니다. 형식을 다시 확인해 주세요."
 
 
+def error_column_target_required() -> str:
+    return (
+        "이 스킬은 대상으로 열을 지정해야 합니다."
+        " 캐릭터 이름 대신 '3' 또는 '3열' 형식으로 입력해 주세요."
+    )
+
+
+def error_character_target_required() -> str:
+    return (
+        "이 스킬은 대상으로 캐릭터를 지정해야 합니다."
+        " 열 번호 대신 캐릭터 이름을 입력해 주세요."
+    )
+
+
 def error_item_does_not_exist(item_id: str) -> str:
     return f"지정한 아이템({item_id})이 등록되어 있지 않아 사용할 수 없습니다."
 
