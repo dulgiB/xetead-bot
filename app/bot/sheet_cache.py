@@ -23,12 +23,37 @@ gspread.Spreadsheet.worksheet(name)은 이름이 무엇이든 매번 스프레�
 읽기 중복만 제거한다. 같은 멘션 처리 중 어떤 시트에 쓰기를 수행했다면
 `invalidate()`로 그 시트의 캐시를 지워야 한다(그러지 않으면 같은 멘션의
 뒤쪽 코드가 쓰기 전 값을 다시 읽을 수 있다).
+
+읽기 호출은 5xx 응답에 한해 지수 백오프로 재시도한다 — Google Sheets가
+간헐적으로 502/503을 내려주는데, 재시도가 없으면 그 커맨드 하나가
+`_process_notification()`의 예외 처리로 흡수되어 답글 없이 사라진다.
 """
 
-from typing import Any, Mapping, Optional
+import logging
+import time
+from typing import Any, Callable, Mapping, Optional, TypeVar
 
 import gspread
 from gspread.utils import ValueRenderOption, numericise_all, to_records
+
+logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+# Google 쪽 일시 장애로 재시도하면 대개 다음 시도에 성공하는 응답들.
+# 4xx(권한 없음, 잘못된 범위 등)와 429(할당량 초과)는 재시도해도 같은 결과이므로
+# 제외한다.
+_RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
+_MAX_ATTEMPT_COUNT = 3
+_RETRY_BASE_DELAY_SEC = 1.0
+
+
+def _is_retryable(error: gspread.exceptions.APIError) -> bool:
+    """`APIError.code`는 응답 본문 JSON의 `error.code`에서 읽은 값이라,
+    Google이 5xx를 JSON이 아닌 HTML 에러 페이지로 돌려주면 파싱에 실패해
+    -1이 된다(실제 502가 이 형태로 온다). HTTP 상태 코드는 그런 경우에도
+    정확하므로 이쪽을 판정 기준으로 쓴다."""
+    return error.response.status_code in _RETRYABLE_STATUS_CODES
 
 
 class SheetCache:
@@ -36,8 +61,11 @@ class SheetCache:
         self,
         spreadsheet: gspread.Spreadsheet,
         *,
-        worksheet_factory=None,
-    ):
+        worksheet_factory: Optional[
+            Callable[[dict[str, Any]], gspread.Worksheet]
+        ] = None,
+        sleep: Optional[Callable[[float], None]] = None,
+    ) -> None:
         self._spreadsheet = spreadsheet
         self._sheet_metadata: Optional[Mapping[str, Any]] = None
         self._worksheets: dict[str, gspread.Worksheet] = {}
@@ -45,8 +73,37 @@ class SheetCache:
         # 테스트에서 실제 gspread.Worksheet(HTTP 클라이언트 필요) 없이도
         # worksheet() 캐싱/메타데이터 재사용 로직을 검증할 수 있도록 하는 seam.
         self._worksheet_factory = worksheet_factory or self._build_worksheet
+        # 재시도 백오프를 테스트에서 실제로 기다리지 않게 하기 위한 seam.
+        self._sleep = sleep or time.sleep
 
-    def _build_worksheet(self, properties: dict) -> gspread.Worksheet:
+    def _call_with_retry(self, description: str, call: Callable[[], _T]) -> _T:
+        """`call`이 재시도 가능한 5xx로 실패하면 지수 백오프 후 다시 부른다.
+        마지막 시도의 실패와 재시도 대상이 아닌 예외는 그대로 올려보낸다.
+
+        최악의 경우 호출 하나가 백오프로 `_RETRY_BASE_DELAY_SEC`의 합만큼
+        (기본값 기준 3초) 블로킹된다 — 멘션은 워커 스레드 하나가 순차
+        처리하므로, Sheets가 완전히 죽은 동안에는 뒤따르는 커맨드 처리도
+        그만큼 밀린다. 어차피 그 상황에서는 재시도 여부와 무관하게 전부
+        실패하므로, 간헐적 장애를 흡수하는 이득이 더 크다고 보고 감수한다."""
+        for attempt in range(1, _MAX_ATTEMPT_COUNT):
+            try:
+                return call()
+            except gspread.exceptions.APIError as error:
+                if not _is_retryable(error):
+                    raise
+                delay = _RETRY_BASE_DELAY_SEC * 2 ** (attempt - 1)
+                logger.warning(
+                    "스프레드시트 %s 실패 (%d/%d회), %.1f초 후 재시도: %s",
+                    description,
+                    attempt,
+                    _MAX_ATTEMPT_COUNT,
+                    delay,
+                    error,
+                )
+                self._sleep(delay)
+        return call()
+
+    def _build_worksheet(self, properties: dict[str, Any]) -> gspread.Worksheet:
         return gspread.Worksheet(
             self._spreadsheet,
             properties,
@@ -63,7 +120,9 @@ class SheetCache:
         재사용한다."""
         if name not in self._worksheets:
             if self._sheet_metadata is None:
-                self._sheet_metadata = self._spreadsheet.fetch_sheet_metadata()
+                self._sheet_metadata = self._call_with_retry(
+                    "메타데이터 조회", self._spreadsheet.fetch_sheet_metadata
+                )
             try:
                 item = next(
                     sheet
@@ -82,8 +141,12 @@ class SheetCache:
     ) -> list[list]:
         key = (name, value_render_option)
         if key not in self._raw_values:
-            self._raw_values[key] = self.worksheet(name).get_values(
-                value_render_option=value_render_option, pad_values=True
+            worksheet = self.worksheet(name)
+            self._raw_values[key] = self._call_with_retry(
+                f'"{name}" 시트 읽기',
+                lambda: worksheet.get_values(
+                    value_render_option=value_render_option, pad_values=True
+                ),
             )
         return self._raw_values[key]
 
