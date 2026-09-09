@@ -6,6 +6,7 @@ from battle.core.commands.models import (
     BattleLogEntry,
     BattleLogEntryKind,
     BuffRemoveCalculateData,
+    CommandPart,
     CommandPartData,
     DamageCalculateData,
     HealCalculateData,
@@ -13,6 +14,8 @@ from battle.core.commands.models import (
 from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffRemoveData
 from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.define import (
+    FATE_INTERVENTION_ATTACK_BONUS,
+    FATE_INTERVENTION_SKILL_BONUS,
     ActionType,
     BuffApplyTiming,
     BuffCountDeductCondition,
@@ -24,6 +27,7 @@ from battle.objects.models import (
     DamageData,
     FloatValueModifier,
     HealData,
+    IntValueModifier,
     MoveData,
     ValueWithModifiers,
 )
@@ -65,6 +69,40 @@ class CalculatorMutableData:
         # 별도 계산기로 확정 처리된 뒤, 그 결과 로그만 이 effect의 로그에
         # 얹어 넣기 위한 목록. BuffContainer.on_enemy_move()가 채운다.
         self.extra_log_entries: list[BattleLogEntry] = []
+
+
+def _apply_fate_boost_modifier(
+    original_part: Optional["CommandPart"],
+    data_by_effect: list[CalculatorMutableData],
+) -> None:
+    """운명간섭("+")으로 선언된 커맨드의 대미지에 고정 보정을 얹는다.
+
+    고정 대미지(FIXED)와 달리 굴림값에 더해지는 보정이라 뒤이은 주는/받는
+    대미지 배율의 영향을 함께 받아야 하므로, IntValueModifier로 넣어
+    ValueWithModifiers가 배율을 곱하기 *전에* 더해지게 한다.
+    `applies_to_fixed=True`는 대미지가 FIXED 값인 스킬에서도 보정이 조용히
+    사라지지 않게 하기 위함이다.
+
+    CommandPartCalculator 인스턴스 생성 시점의 대미지 목록에만 적용한다 —
+    이후 반격/반사 등 버프 이벤트가 추가하는 파생 대미지는 시전자의 선언
+    행동이 아니므로 보정 대상이 아니다.
+    """
+    if original_part is None or not original_part.fate_boost:
+        return
+    if original_part.type_ == ActionType.ATTACK:
+        bonus = FATE_INTERVENTION_ATTACK_BONUS
+    elif original_part.type_ == ActionType.SKILL:
+        bonus = FATE_INTERVENTION_SKILL_BONUS
+    else:
+        # 아이템 등은 try_expansion_if_valid()에서 이미 걸러진다.
+        return
+
+    modifier = IntValueModifier(
+        source_name="운명간섭", value=bonus, applies_to_fixed=True
+    )
+    for effect_data in data_by_effect:
+        for damage_calc in effect_data.damage_data_list:
+            damage_calc.given_modifiers.append(modifier)
 
 
 class CommandPartCalculator:
@@ -126,6 +164,8 @@ class CommandPartCalculator:
         # 새로 생성되므로(command_processors.py) 별도 리셋이 필요 없다.
         self._on_attack_fired: set[CharacterId] = set()
         self._on_hit_fired: set[CharacterId] = set()
+
+        _apply_fate_boost_modifier(data.original_part, self.data_by_effect)
 
     @classmethod
     def create_empty_for_buff(

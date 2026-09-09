@@ -19,6 +19,7 @@ class CombatCharacter:
         *,
         skills: list[Skill],
         hide_hp: bool = False,
+        fate_used: bool = False,
     ):
         self.field = context
         self.id = char_id
@@ -29,6 +30,10 @@ class CombatCharacter:
         # 공개 노출 지점(필드 시트/전투 답글)에서 체력을 "?/?"로 가릴지
         # 여부. "에너미" 시트의 hide_hp 체크박스에서 온다.
         self.hide_hp = hide_hp
+        # 오늘 운명간섭("+" 접미사)을 이미 썼는지 여부. "캐릭터" 시트의
+        # fate_date를 배치 시점 날짜와 비교한 결과를 받아오고, 실제 사용 시
+        # 여기서 먼저 True가 된 뒤 봇 계층이 시트에 날짜를 기록한다.
+        self.fate_used = fate_used
 
     def __str__(self):
         return f"{self.id} ({self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]})"

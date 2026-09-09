@@ -56,6 +56,10 @@ class PracticeBattlefieldContext(BattlefieldContext):
     def allow_item_usage(self) -> bool:
         return False
 
+    @property
+    def allow_fate_intervention(self) -> bool:
+        return False
+
     # ------------------------------------------------------------------
     # 공개 API (SideType 기반)
     # ------------------------------------------------------------------

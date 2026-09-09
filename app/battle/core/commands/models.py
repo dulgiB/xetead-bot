@@ -38,6 +38,10 @@ class CommandPart:
     # 섞일 수 있는 타입이다(list[A] | list[B]가 아니라 list[A | B]).
     targets: list[CharacterId | BattlefieldColumnIndex] = field(default_factory=list)
 
+    # 운명간섭: 커맨드 이름 뒤에 "+"를 붙여 선언했는지 여부
+    # (예: "[공격+/대상]", "[스킬_1+/대상]"). parser.py가 채운다.
+    fate_boost: bool = False
+
 
 @dataclass(frozen=True)
 class CommandPartDataPerEffect:

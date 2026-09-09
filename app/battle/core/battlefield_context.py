@@ -1,6 +1,7 @@
 import copy
 import math
 from dataclasses import replace
+from datetime import date
 from typing import Optional
 
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -278,6 +279,10 @@ class BattlefieldContext:
             ),
             skills=skills,
             hide_hp=data.hide_hp,
+            # 운명간섭은 "오늘 이미 썼는가"로 판정한다(일일 의뢰와 동일).
+            # 배치 시점의 날짜로 한 번 확정해 두면 전투가 자정을 넘겨도 한
+            # 전투 안에서 판정 기준이 바뀌지 않는다.
+            fate_used=data.has_used_fate_on(date.today().isoformat()),
         )
 
         if (
@@ -608,6 +613,17 @@ class BattlefieldContext:
     @property
     def allow_item_usage(self) -> bool:
         """이 전장에서 아이템 커맨드를 사용할 수 있는지 여부."""
+        return True
+
+    @property
+    def allow_fate_intervention(self) -> bool:
+        """이 전장에서 운명간섭("+" 접미사) 커맨드를 쓸 수 있는지 여부.
+
+        운명간섭은 체력 20을 실제로 소모하고 "이번 진행에 사용함"을 캐릭터
+        시트에 영구 기록하는, 되돌릴 수 없는 자원 소비다. 대련/상시전투는
+        체력이 절반인 임시 캐릭터로 진행하고 체력 변동을 시트에 반영하지도
+        않으므로(PracticeBattlefieldContext 참고) 그런 소비를 걸 수 없다.
+        """
         return True
 
     def has_item(self, item_id: str) -> bool:
