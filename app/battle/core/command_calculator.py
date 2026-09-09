@@ -481,6 +481,12 @@ class CommandPartCalculator:
             if is_magic_attack:
                 damage_calc.received_modifiers.append(target.status.m_res)
 
+            # 부활 횟수만큼 받는 대미지가 늘어나는 상시 페널티. m_res와 같은
+            # 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
+            revival_penalty = target.status.revival_penalty
+            if revival_penalty is not None:
+                damage_calc.received_modifiers.append(revival_penalty)
+
             damage_value = ValueWithModifiers(
                 damage_calc.base.value,
                 damage_calc.given_modifiers,

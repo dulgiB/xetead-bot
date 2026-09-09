@@ -5,6 +5,16 @@ MAX_SKILL_SLOT_COUNT = 3
 MAX_EFFECT_COUNT = 3
 MAX_PASSIVE_EFFECT_COUNT = 2
 
+# --- 부활 횟수 --------------------------------------------------------------
+# "캐릭터" 시트의 revival_count는 GM이 직접 관리한다 — 봇이 올리거나 내리지
+# 않고, 배치 시점에 읽어 아래 수치 효과에만 반영한다. 부활 횟수에 따른 스킬
+# 강화(코스트 2/3 스킬 교체)도 GM이 스킬 슬롯을 바꾸는 운영 처리다.
+#
+# 부활 1회마다 받는 대미지가 이만큼(퍼센트 포인트) 늘어난다.
+REVIVAL_RECEIVED_DAMAGE_PERCENT_PER_COUNT = 10
+# 이 횟수 이상이면 턴당 코스트가 +1 되고, 대신 모든 이동 커맨드의 코스트도 +1 된다.
+REVIVAL_COUNT_FOR_EXTRA_COST = 4
+
 
 class BattlefieldColumnIndex(Enum):
     NONE = 7

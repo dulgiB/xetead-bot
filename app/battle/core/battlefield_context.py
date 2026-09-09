@@ -274,6 +274,7 @@ class BattlefieldContext:
                 data.is_magic_attacker,
                 data.max_cost,
                 data.curr_hp,
+                data.revival_count,
             ),
             skills=skills,
             hide_hp=data.hide_hp,
