@@ -71,3 +71,10 @@ def error_skill_or_item_not_registered() -> str:
 
 def error_character_already_defeated(char_id: CharacterId) -> str:
     return f"'{char_id.name}'은(는) 이미 전투불능(체력 0) 상태이므로 전장에 배치할 수 없습니다."
+
+
+def error_character_is_defeated(char_id: CharacterId) -> str:
+    return (
+        f"'{char_id.name}'은(는) 체력이 0 이하라 행동할 수 없습니다."
+        " (회복하거나 부활한 뒤에 다시 시도해 주세요.)"
+    )

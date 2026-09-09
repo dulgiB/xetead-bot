@@ -17,6 +17,7 @@ from battle.core.taunt_redirect import assign_taunt_redirects
 from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
+    error_character_is_defeated,
     error_item_does_not_exist,
     error_item_has_no_effect,
     error_item_not_usable_here,
@@ -222,10 +223,11 @@ def try_expansion_if_valid(
     (None을 반환하는 경우는 없다 — 검증 실패는 항상 예외로 알린다.)
     검증 항목:
       1. 커맨드 사용자가 전장에 존재하는지
-      2. 코스트가 충분한지
-      3. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
-      4. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
-      5. 커맨드가 동료(소환수)를 명시적으로 대상 지정하지 않았는지 — 동료는
+      2. 커맨드 사용자의 체력이 0보다 큰지 (행동 주체 기준. 진영 무관)
+      3. 코스트가 충분한지
+      4. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
+      5. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
+      6. 커맨드가 동료(소환수)를 명시적으로 대상 지정하지 않았는지 — 동료는
          owner에게 종속된 실드 개념이라 직접 대상으로 선언할 수 없다. 코스트 3
          스킬처럼 스킬 효과가 내부적으로 동료를 대상으로 계산하는 것은
          플레이어의 "선언"이 아니므로 이 검증 대상이 아니다(그런 내부 target_id는
@@ -236,6 +238,14 @@ def try_expansion_if_valid(
         raise CommandValidationError(error_target_does_not_exist(command.user_id))
 
     user = context.characters[command.user_id]
+
+    # 체력이 0 이하인 캐릭터는 행동을 선언할 수 없다. 아군은 체력이 0이 되어도
+    # 부활 여지 때문에 필드에서 자동 제거되지 않으므로(_remove_eliminated_characters
+    # 참고) 이 검증이 없으면 전투불능 상태에서 그대로 커맨드가 통과한다.
+    # "대상으로 지정되는 것"은 여전히 허용된다 — 여기서 막는 건 행동 주체뿐이다.
+    if user.status.curr_hp <= 0:
+        raise CommandValidationError(error_character_is_defeated(command.user_id))
+
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
 
