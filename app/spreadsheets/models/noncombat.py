@@ -33,6 +33,10 @@ class NoncombatCharacterDataFromSpreadsheet:
     # 체력 (전투용 캐릭터 시트의 curr_hp/max_hp 컬럼을 그대로 공유)
     curr_hp: int = 0
     max_hp: int = 0
+    # 운명간섭용 (전투용 캐릭터 시트의 revival_count/fate_date 컬럼을 그대로
+    # 공유). [판정+/스탯]이 "부활 1회 이상 & 오늘 미사용"인지 확인한다.
+    revival_count: int = 0
+    fate_date: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict[str, str | int | bool]):
@@ -48,6 +52,8 @@ class NoncombatCharacterDataFromSpreadsheet:
             daily_quest_status_id=str(raw.get("daily_quest_status_id", "") or ""),
             curr_hp=int(raw.get("curr_hp", 0) or 0),
             max_hp=int(raw.get("max_hp", 0) or 0),
+            revival_count=int(raw.get("revival_count", 0) or 0),
+            fate_date=str(raw.get("fate_date", "") or ""),
         )
 
     def get_noncombat_stat(self, stat_type: NoncombatStatType) -> int:

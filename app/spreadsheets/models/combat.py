@@ -23,6 +23,20 @@ class CombatCharacterDataFromSpreadsheet:
     # 없어 기본값 False로 채워진다. 공개 노출 지점(필드 시트/전투 답글)에서
     # 체력을 "?/?"로 가리는 데 쓰인다.
     hide_hp: bool = False
+    # 부활 횟수. "캐릭터" 시트 전용 컬럼(revival_count)이며 GM이 직접 관리한다.
+    # 컬럼 자체가 없는 시트("에너미")는 0으로 채워져 부활 관련 수치 효과가
+    # 전혀 붙지 않는다.
+    revival_count: int = 0
+    # 마지막으로 운명간섭을 쓴 날짜("캐릭터" 시트 전용 컬럼 fate_date,
+    # YYYY-MM-DD). 한 번도 안 썼으면 "". 하루에 전투가 두 번 이상 열리지
+    # 않으므로, 일일 의뢰(daily_quest_date)와 같은 방식으로 "오늘 이미
+    # 썼는가"만 보면 스토리 진행 1회당 1번 제한이 성립한다 — 별도의 리셋
+    # 절차가 필요 없다는 것이 이 방식의 핵심 이점이다.
+    fate_date: str = ""
+
+    def has_used_fate_on(self, today: str) -> bool:
+        """`today`(YYYY-MM-DD)에 이미 운명간섭을 썼는지 여부."""
+        return bool(self.fate_date) and self.fate_date == today
 
     @classmethod
     def from_dict(cls, raw: SpreadsheetRow) -> "CombatCharacterDataFromSpreadsheet":
@@ -42,4 +56,6 @@ class CombatCharacterDataFromSpreadsheet:
                 for i in range(MAX_SKILL_SLOT_COUNT)
             ],
             hide_hp=parse_spreadsheet_bool(raw.get("hide_hp", False)),
+            revival_count=int(raw.get("revival_count", 0) or 0),
+            fate_date=str(raw.get("fate_date", "") or ""),
         )
