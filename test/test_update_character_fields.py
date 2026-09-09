@@ -16,6 +16,7 @@ from bot.load_data import (  # noqa: E402
     reveal_declared_enemy_skills,
     update_character_curr_hp,
     update_character_daily_quest_status_id,
+    update_character_fate_date,
     update_character_quest_date,
 )
 from bot.sheet_cache import SheetCache  # noqa: E402
@@ -398,3 +399,41 @@ def test_reveal_declared_enemy_skills_reads_sheet_once_for_multiple_skills():
     assert (3, 2, True) in ws.written
     assert ctx.get_skill_data_by_id("스킬_A").revealed is True
     assert ctx.get_skill_data_by_id("스킬_B").revealed is True
+
+
+# ── 운명간섭 / 부활 횟수 컬럼 ────────────────────────────────────────────────
+
+
+def test_update_character_fate_date_writes_raw_string():
+    """update_cell()의 USER_ENTERED로 쓰면 "YYYY-MM-DD"가 Sheets에서 날짜
+    타입(시리얼 넘버)으로 변환되어 "오늘 이미 씀" 비교가 영원히 거짓이 된다 —
+    daily_quest_date와 동일하게 RAW로 저장해야 한다."""
+    rows = [["name", "fate_date"], ["아군1", ""], ["아군2", ""]]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_fate_date(spreadsheet, "아군2", "2026-09-09")
+
+    ws = spreadsheet.worksheet("캐릭터")
+    assert (3, 2, "2026-09-09") in ws.written
+    call = next(c for c in ws.update_calls if c["col"] == 2)
+    assert call["raw"] is True
+
+
+def test_update_character_fate_date_skips_missing_column():
+    """컬럼이 아직 없는 시트에서도 크래시하지 않고 조용히 넘어간다."""
+    rows = [["name", "curr_hp"], ["아군1", "50"]]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
+
+    update_character_fate_date(spreadsheet, "아군1", "2026-09-09")
+
+    assert spreadsheet.worksheet("캐릭터").written == []
+
+
+def test_update_character_fate_date_raises_when_not_found():
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name", "fate_date"], ["아군1", ""]]})
+
+    try:
+        update_character_fate_date(spreadsheet, "없는캐릭터", "2026-09-09")
+        assert False, "예외가 발생해야 한다"
+    except RuntimeError:
+        pass

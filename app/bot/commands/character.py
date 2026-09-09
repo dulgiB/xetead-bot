@@ -1,5 +1,6 @@
 import logging
 import traceback
+from datetime import date
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
@@ -9,14 +10,40 @@ from battle.objects.models import CharacterId
 
 from bot.battle_reply_text import format_battle_reply
 from bot.field_sheet_renderer import render_public_field_sheet
-from bot.load_data import reveal_declared_enemy_skills
+from bot.load_data import reveal_declared_enemy_skills, update_character_fate_date
 from bot.log_sheets import BattleCommandLog, FieldBattleType, write_back_changed_hp
 
 if TYPE_CHECKING:
+    from battle.core.commands.models import CharacterCommand
+
     from bot.main import BotState
     from bot.session import BattleSession
 
 logger = logging.getLogger(__name__)
+
+
+def mark_fate_used_if_needed(
+    state: "BotState", char_id: CharacterId, command: "CharacterCommand"
+) -> None:
+    """방금 처리된 커맨드가 운명간섭("+")을 썼다면 캐릭터 시트에 오늘 날짜를
+    기록한다.
+
+    커맨드가 실제로 처리된 뒤에만 호출해야 한다. `write_back_changed_hp()`와
+    같은 이유로 실패는 흡수하고 로깅만 한다 — 라이브 세션의
+    `character.fate_used`는 이미 True라 이번 전투 안에서의 재사용은 시트 반영
+    여부와 무관하게 막힌다.
+    """
+    if not any(part.fate_boost for part in command.parts):
+        return
+    try:
+        update_character_fate_date(
+            state.spreadsheet,
+            char_id.name,
+            date.today().isoformat(),
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        logger.exception("운명간섭 사용 기록 반영 실패: %s", char_id.name)
 
 
 def handle_character_command(
@@ -104,6 +131,8 @@ def handle_character_command(
         write_back_changed_hp(
             state.spreadsheet, session.context, entries, cache=state.sheet_cache
         )
+
+        mark_fate_used_if_needed(state, char_id, command)
 
         if battle_type == FieldBattleType.MAIN:
             try:

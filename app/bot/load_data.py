@@ -597,6 +597,64 @@ def update_character_daily_quest_status_id(
             return
 
 
+def _load_character_sheet(
+    spreadsheet: gspread.Spreadsheet,
+    cache: Optional[SheetCache] = None,
+) -> tuple[gspread.Worksheet, list[str], list[list]]:
+    """'캐릭터' 시트의 (worksheet, header, rows)를 반환한다."""
+    ws = _worksheet(spreadsheet, "캐릭터", cache)
+    values = (
+        cache.get_all_values("캐릭터")
+        if cache is not None
+        else ws.get_values(pad_values=True)
+    )
+    if not values:
+        raise RuntimeError("캐릭터 시트에 필수 컬럼이 없습니다: 헤더가 비어 있습니다")
+    return ws, values[0], values[1:]
+
+
+def _find_character_row_number(
+    header: list[str], rows: list[list], char_name: str
+) -> int:
+    """캐릭터 이름으로 시트의 행 번호(헤더를 1행으로 세는 1-based)를 찾는다."""
+    name_col = header.index("name") if "name" in header else None
+    for idx, row in enumerate(rows, start=2):
+        name = row[name_col] if name_col is not None and name_col < len(row) else None
+        if name == char_name:
+            return idx
+    raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
+
+
+def update_character_fate_date(
+    spreadsheet: gspread.Spreadsheet,
+    char_name: str,
+    today: str,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """캐릭터 시트에서 해당 캐릭터 행의 fate_date를 오늘 날짜로 갱신한다.
+
+    "fate_date" 컬럼 자체가 없는 시트에서는 경고만 남기고 조용히 넘어간다 —
+    운명간섭은 컬럼이 없으면 항상 "미사용"으로 읽혀 제한이 걸리지 않으므로,
+    컬럼을 아직 추가하지 않은 시트에서도 봇이 죽지는 않아야 한다.
+    """
+    ws, header, rows = _load_character_sheet(spreadsheet, cache)
+    if "fate_date" not in header:
+        logger.warning(
+            "캐릭터 시트에 'fate_date' 컬럼이 없어 운명간섭 사용 기록을 건너뜁니다"
+        )
+        return
+    fate_col = header.index("fate_date") + 1
+    row_number = _find_character_row_number(header, rows, char_name)
+    # update()의 기본값 raw=True로 기록한다 — update_cell()의 고정
+    # USER_ENTERED로 쓰면 "YYYY-MM-DD" 문자열이 Sheets에 의해 날짜 타입(내부
+    # 시리얼 넘버)으로 자동 변환되고, 이후 UNFORMATTED_VALUE로 다시 읽으면
+    # 그 숫자가 돌아와 "오늘 이미 썼음" 비교가 영원히 거짓이 된다
+    # (update_character_quest_date()에서 이미 겪은 함정과 같다).
+    ws.update([[today]], gspread.utils.rowcol_to_a1(row_number, fate_col))
+    if cache is not None:
+        cache.invalidate("캐릭터")
+
+
 def update_character_curr_hp(
     spreadsheet: gspread.Spreadsheet,
     char_name: str,
