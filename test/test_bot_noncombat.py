@@ -5,7 +5,7 @@ os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
 import random  # noqa: E402
 import time  # noqa: E402
-from datetime import date  # noqa: E402
+from datetime import date, timedelta  # noqa: E402
 
 import pytest  # noqa: E402
 from battle.objects.define import ItemType, ValueSourceType, ValueType  # noqa: E402
@@ -28,6 +28,7 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_transfer_item,
     handle_use_item,
     parse_bare_item_command,
+    parse_roll_command,
     parse_transfer_item_args,
 )
 from bot.main import BotState  # noqa: E402
@@ -127,6 +128,135 @@ def test_handle_roll_reply_labels_dice_part_with_1d6(monkeypatch):
     result, _log_info = handle_roll(acct, "육체", state)
 
     assert "◊ 판정: 2[육체] + 6[1d6] → 「8」" in result
+
+
+# ── [판정+/스탯] 운명간섭 ───────────────────────────────────────────────────
+
+
+def _fate_state(
+    acct: str = "user1",
+    *,
+    revival_count: int = 1,
+    fate_date: str = "",
+    curr_hp: int = 100,
+) -> BotState:
+    state = _make_state(acct)
+    state.noncombat_char_dict[acct] = NoncombatCharacterDataFromSpreadsheet(
+        name="동료",
+        stat_physical=2,
+        gold=10,
+        daily_quest_date="",
+        curr_hp=curr_hp,
+        max_hp=100,
+        revival_count=revival_count,
+        fate_date=fate_date,
+    )
+    return state
+
+
+@pytest.fixture
+def _stub_fate_sheet_writes(monkeypatch):
+    """운명간섭 대가 반영은 실제 스프레드시트 쓰기라 무력화하고, 호출된
+    인자만 기록해 검증할 수 있게 한다."""
+    calls: dict[str, object] = {}
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_character_curr_hp",
+        lambda _sheet, name, hp, cache=None: calls.update(hp=(name, hp)),
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_character_fate_date",
+        lambda _sheet, name, today, cache=None: calls.update(fate=(name, today)),
+    )
+    return calls
+
+
+def test_parse_roll_command_detects_fate_suffix():
+    """[판정+/스탯]은 스탯명과 운명간섭 플래그로 갈라 파싱되어야 한다."""
+    assert parse_roll_command("[판정+/육체]") == ("육체", True)
+    assert parse_roll_command("[판정/육체]") == ("육체", False)
+    assert parse_roll_command("사담") is None
+
+
+def test_handle_roll_fate_adds_bonus_and_costs_hp(monkeypatch, _stub_fate_sheet_writes):
+    """운명간섭 판정은 굴림에 +3을 더하고 체력 20을 소모해야 한다."""
+    acct = "user1"
+    state = _fate_state(acct)
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)
+
+    result, log_info = handle_roll(acct, "육체", state, fate_boost=True)
+
+    # 2[육체] + 6[1d6] + 3[운명간섭] = 11
+    assert "→ 「11」" in result
+    assert "3[운명간섭]" in result
+    assert _stub_fate_sheet_writes["hp"] == ("동료", 80)
+    assert _stub_fate_sheet_writes["fate"] == ("동료", date.today().isoformat())
+    assert log_info is not None
+    assert log_info.command_text == "[판정+/육체]"
+
+
+def test_handle_roll_fate_updates_in_memory_character(_stub_fate_sheet_writes):
+    """같은 멘션 안에서 재조회해도 소모가 반영되도록 인메모리 값도 갱신한다."""
+    acct = "user1"
+    state = _fate_state(acct)
+
+    handle_roll(acct, "육체", state, fate_boost=True)
+
+    updated = state.noncombat_char_dict[acct]
+    assert updated.curr_hp == 80
+    assert updated.fate_date == date.today().isoformat()
+
+
+def test_handle_roll_fate_requires_revival(_stub_fate_sheet_writes):
+    """부활 경험이 없으면 판정 자체를 하지 않는다."""
+    state = _fate_state("user1", revival_count=0)
+
+    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+
+    assert "부활 횟수" in result
+    assert "「" not in result
+    assert not _stub_fate_sheet_writes
+
+
+def test_handle_roll_fate_blocked_when_used_today(_stub_fate_sheet_writes):
+    """오늘 이미 썼으면 거부한다."""
+    state = _fate_state("user1", fate_date=date.today().isoformat())
+
+    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+
+    assert "오늘 이미 사용" in result
+    assert not _stub_fate_sheet_writes
+
+
+def test_handle_roll_fate_allowed_when_used_on_another_day(_stub_fate_sheet_writes):
+    """어제 썼다면 오늘은 다시 쓸 수 있다 — 별도 리셋 절차가 필요 없다."""
+    yesterday = (date.today() - timedelta(days=1)).isoformat()
+    state = _fate_state("user1", fate_date=yesterday)
+
+    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+
+    assert "운명간섭" in result
+    assert _stub_fate_sheet_writes["fate"] == ("동료", date.today().isoformat())
+
+
+def test_handle_roll_fate_blocked_when_hp_too_low(_stub_fate_sheet_writes):
+    """체력이 소모량 이하면 거부한다."""
+    state = _fate_state("user1", curr_hp=20)
+
+    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+
+    assert "체력" in result
+    assert not _stub_fate_sheet_writes
+
+
+def test_handle_roll_without_fate_touches_nothing(_stub_fate_sheet_writes):
+    """일반 판정은 체력/사용 기록을 건드리지 않는다."""
+    state = _fate_state("user1")
+
+    handle_roll("user1", "육체", state)
+
+    assert not _stub_fate_sheet_writes
 
 
 def _quest_location(

@@ -36,6 +36,7 @@ from bot.battle_reply_text import (
     merge_damage_heal_lines,
     merge_stackable_buff_add_lines,
 )
+from bot.commands.character import mark_fate_used_if_needed
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import (
@@ -970,6 +971,7 @@ def _cmd_proxy(
         write_back_changed_hp(
             state.spreadsheet, state.session.context, entries, cache=state.sheet_cache
         )
+        mark_fate_used_if_needed(state, char_id, command)
 
         try:
             render_public_field_sheet(
@@ -1631,6 +1633,7 @@ def _cmd_dm_battle_proxy(
         write_back_changed_hp(
             state.spreadsheet, session.context, entries, cache=state.sheet_cache
         )
+        mark_fate_used_if_needed(state, char_id, command)
 
         battle_log = BattleCommandLog(
             field_id=field_id,

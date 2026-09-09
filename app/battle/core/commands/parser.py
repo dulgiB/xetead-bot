@@ -61,14 +61,17 @@ def count_bracket_groups(input_str: str) -> int:
 # 이동 :: 이동/1 또는 이동/1열
 command_format_move = regex.compile(rf"^\s*{_이동}\s*/\s*(?P<pos>[1-7]열?)\s*$")
 
-# 기본 공격 :: 공격/대상
+# 기본 공격 :: 공격/대상 (운명간섭이면 "공격+/대상")
 command_format_attack = regex.compile(
-    rf"^\s*{_공격}\s*/\s*(?P<target>[{name_charset} ]+)\s*$"
+    rf"^\s*{_공격}\s*(?P<fate>\+)?\s*/\s*(?P<target>[{name_charset} ]+)\s*$"
 )
 
 # 스킬/아이템 사용 :: 스킬명 또는 아이템명(/대상1/대상2...) — 키워드 없이 이름으로 바로 시작
+# (운명간섭이면 이름 뒤에 "+"를 붙인다: "스킬_1+/대상"). "+"는 name_charset에
+# 없으므로 탐욕적인 name 그룹이 삼키지 않고 fate 그룹으로 정확히 갈린다.
 command_format_skill_or_item = regex.compile(
-    rf"^\s*(?P<name>[{name_charset} ]+)\s*(/\s*(?P<targets>[{name_charset}/ ]+))?\s*$"
+    rf"^\s*(?P<name>[{name_charset} ]+)\s*(?P<fate>\+)?"
+    rf"\s*(/\s*(?P<targets>[{name_charset}/ ]+))?\s*$"
 )
 
 
@@ -100,12 +103,14 @@ def parse_character_command(
                         CommandPart(
                             type_=ActionType.ATTACK,
                             targets=[CharacterId(attack_target)],
+                            fate_boost=bool(d["fate"]),
                         )
                     )
 
                 elif match := command_format_skill_or_item.match(command):
                     d = match.capturesdict()
                     name = d["name"][0].strip()
+                    fate_boost = bool(d["fate"])
                     if d["targets"] and d["targets"][0]:
                         targets: list[CharacterId | BattlefieldColumnIndex] = []
                         for target in d["targets"][0].split("/"):
@@ -131,6 +136,7 @@ def parse_character_command(
                                 type_=ActionType.SKILL,
                                 skill_id=resolved_skill_id,
                                 targets=targets,
+                                fate_boost=fate_boost,
                             )
                         )
                     else:
@@ -142,6 +148,11 @@ def parse_character_command(
                                     item_id=resolved_item_id,
                                     # 대상을 명시하지 않으면 자신에게 사용한 것으로 간주
                                     targets=targets or [user_id],
+                                    # 아이템에는 운명간섭을 쓸 수 없지만, 플래그를
+                                    # 여기서 버리면 "+"가 조용히 무시된다 —
+                                    # 그대로 실어 보내 검증 단계에서 명시적으로
+                                    # 에러를 내게 한다.
+                                    fate_boost=fate_boost,
                                 )
                             )
                         else:

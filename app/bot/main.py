@@ -47,7 +47,7 @@ from bot.commands.noncombat import (
     handle_transfer_item,
     handle_use_item,
     parse_bare_item_command,
-    parse_stat_name,
+    parse_roll_command,
     parse_transfer_item_args,
 )
 from bot import field_restore, log_sheets
@@ -1125,8 +1125,20 @@ class MastodonBotListener(StreamListener):
             in_reply_to_id is not None
             and in_reply_to_id in nc.get_daily_quest_post_ids()
         ):
-            stat_name = parse_stat_name(text)
-            if stat_name:
+            roll_command = parse_roll_command(text)
+            if roll_command is not None:
+                stat_name, fate_boost = roll_command
+                if fate_boost:
+                    # 일일 의뢰 판정은 운명간섭 대상이 아니다. "+"를 조용히
+                    # 무시하면 플레이어는 보정이 적용된 줄 알게 되므로
+                    # 명시적으로 알리고 판정 자체를 진행하지 않는다.
+                    self._reply(
+                        status_id,
+                        acct,
+                        visibility,
+                        "◊ 일일 의뢰 판정에는 운명간섭(+)을 사용할 수 없습니다.",
+                    )
+                    return
                 response, log_info = handle_daily_quest_roll(acct, stat_name, state)
                 reply_status = self._reply(status_id, acct, visibility, response)
                 _persist_noncombat_log(state, log_info, str(reply_status["id"]))
@@ -1178,10 +1190,14 @@ class MastodonBotListener(StreamListener):
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
-        # 9. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능)
-        stat_name = parse_stat_name(text)
-        if stat_name:
-            response, log_info = handle_roll(acct, stat_name, state)
+        # 9. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능).
+        # [판정+/스탯]이면 운명간섭 보정이 붙는다.
+        roll_command = parse_roll_command(text)
+        if roll_command is not None:
+            stat_name, fate_boost = roll_command
+            response, log_info = handle_roll(
+                acct, stat_name, state, fate_boost=fate_boost
+            )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return

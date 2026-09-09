@@ -1,5 +1,5 @@
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from utils.battle_helpers import is_reachable
 
@@ -8,7 +8,10 @@ from battle.core.command_calculator import CommandPartCalculator, build_log_entr
 from battle.core.command_expanders import expand_character_command
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
+    BattleLogEntry,
+    BattleLogEntryKind,
     CharacterCommand,
+    CommandPart,
     CommandPartData,
     CommandPartProcessResult,
     CommandProcessResult,
@@ -17,6 +20,14 @@ from battle.core.taunt_redirect import assign_taunt_redirects
 from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
+    error_character_is_defeated,
+    error_fate_already_used,
+    error_fate_not_available_here,
+    error_fate_not_enough_hp,
+    error_fate_only_once_per_command,
+    error_fate_requires_revival,
+    error_fate_skill_without_damage,
+    error_fate_unsupported_command,
     error_item_does_not_exist,
     error_item_has_no_effect,
     error_item_not_usable_here,
@@ -30,6 +41,8 @@ from battle.exceptions import (
     error_too_many_targets,
 )
 from battle.objects.define import (
+    FATE_INTERVENTION_HP_COST,
+    FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT,
     ActionType,
     BattlefieldColumnIndex,
     CombatStatType,
@@ -40,6 +53,7 @@ from battle.objects.models import CharacterId, ValueWithModifiers
 
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager
+    from battle.objects.character.combat_character import CombatCharacter
 
 
 def process_admin_command(
@@ -117,6 +131,9 @@ def process_ally_command(
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
 
+    # 운명간섭 대가(체력 20) - 커맨드가 실제로 처리된 뒤에만 소모한다
+    _apply_fate_intervention_cost(user, command, results_per_part)
+
     # 아이템 소비 - 검증·처리 완료 후 보유 개수 차감 (시트에도 즉시 반영)
     for part in command.parts:
         if part.type_ == ActionType.USE_ITEM and part.item_id is not None:
@@ -166,6 +183,11 @@ def process_enemy_command_on_pre_action(
     # 적군은 아직 처리하지 않은 parts가 남아 있어도 선언 시점에 코스트 전부 차감
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
+
+    # 운명간섭 대가도 코스트와 같이 선언 시점에 소모한다 — 적군 진영에 배치된
+    # 캐릭터 시트 출신 캐릭터(`[배치/이름/적군 N열]`)가 여기로 오면, POST에서
+    # 소모하려 하면 재전개마다 중복 소모되거나 아예 누락된다.
+    _apply_fate_intervention_cost(user, command, results_per_part)
 
     return CommandProcessResult(original_command=command, part_results=results_per_part)
 
@@ -222,20 +244,30 @@ def try_expansion_if_valid(
     (None을 반환하는 경우는 없다 — 검증 실패는 항상 예외로 알린다.)
     검증 항목:
       1. 커맨드 사용자가 전장에 존재하는지
-      2. 코스트가 충분한지
-      3. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
-      4. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
-      5. 커맨드가 동료(소환수)를 명시적으로 대상 지정하지 않았는지 — 동료는
+      2. 커맨드 사용자의 체력이 0보다 큰지 (행동 주체 기준. 진영 무관)
+      3. 코스트가 충분한지
+      4. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
+      5. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
+      6. 커맨드가 동료(소환수)를 명시적으로 대상 지정하지 않았는지 — 동료는
          owner에게 종속된 실드 개념이라 직접 대상으로 선언할 수 없다. 코스트 3
          스킬처럼 스킬 효과가 내부적으로 동료를 대상으로 계산하는 것은
          플레이어의 "선언"이 아니므로 이 검증 대상이 아니다(그런 내부 target_id는
          원본 커맨드의 targets에 나타나지 않는다).
+      7. 운명간섭("+")을 붙였다면 그 사용 조건을 만족하는지
     """
 
     if command.user_id not in context.characters:
         raise CommandValidationError(error_target_does_not_exist(command.user_id))
 
     user = context.characters[command.user_id]
+
+    # 체력이 0 이하인 캐릭터는 행동을 선언할 수 없다. 아군은 체력이 0이 되어도
+    # 부활 여지 때문에 필드에서 자동 제거되지 않으므로(_remove_eliminated_characters
+    # 참고) 이 검증이 없으면 전투불능 상태에서 그대로 커맨드가 통과한다.
+    # "대상으로 지정되는 것"은 여전히 허용된다 — 여기서 막는 건 행동 주체뿐이다.
+    if user.status.curr_hp <= 0:
+        raise CommandValidationError(error_character_is_defeated(command.user_id))
+
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
 
@@ -262,6 +294,8 @@ def try_expansion_if_valid(
         )
         for part in command.parts
     ]
+
+    fate_part = _validate_fate_boost(context, user, command)
 
     for part in command.parts:
         if part.type_ == ActionType.SKILL and part.skill_id is not None:
@@ -349,7 +383,93 @@ def try_expansion_if_valid(
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
+    # 스킬 운명간섭은 "대미지 스킬"에만 적용된다. 실제로 대미지가 나오는지는
+    # 전개해 봐야 알 수 있으므로(효과 구현체마다 다름) 전개 후에 확인한다 —
+    # 여기서 걸리면 코스트도 체력도 아직 소모되지 않은 상태로 중단된다.
+    if fate_part is not None and fate_part.type_ == ActionType.SKILL:
+        assert fate_part.skill_id is not None
+        has_damage = any(
+            sub_data.damage_list
+            for command_data in expanded_command_data_list
+            if command_data.original_part is fate_part
+            for sub_data in command_data.data_per_effect
+            if sub_data is not None
+        )
+        if not has_damage:
+            raise CommandValidationError(
+                error_fate_skill_without_damage(fate_part.skill_id)
+            )
+
     return expanded_command_data_list, needed_cost
+
+
+def _apply_fate_intervention_cost(
+    user: "CombatCharacter",
+    command: CharacterCommand,
+    results_per_part: list[CommandPartProcessResult],
+) -> None:
+    """운명간섭을 쓴 커맨드라면 체력을 소모하고 "이번 진행에 사용함"을 표시한다.
+
+    소모량은 대미지 계산 파이프라인을 타지 않는 순수 자원 소비다 — 반사/방어
+    버프가 개입하거나 "피격" 반응형 버프가 발동해서는 안 되기 때문이다. 대신
+    답글·시트 반영이 기존 경로를 그대로 타도록 대미지 로그 엔트리 형태로
+    결과에 얹는다(로그 엔트리의 `result`를 보고 체력을 write-back하는
+    `bot/log_sheets.py`의 write_back_changed_hp() 참고).
+    """
+    if not any(part.fate_boost for part in command.parts):
+        return
+    if not results_per_part:
+        return
+
+    user.status.curr_hp -= FATE_INTERVENTION_HP_COST
+    user.fate_used = True
+    results_per_part[-1].log_entries.append(
+        BattleLogEntry(
+            target_name=user.id.name,
+            kind=BattleLogEntryKind.DAMAGE,
+            result=f"대미지 {FATE_INTERVENTION_HP_COST}",
+            value=FATE_INTERVENTION_HP_COST,
+            hp_after=user.status.curr_hp,
+            max_hp=user.status[CombatStatType.MAX_HP],
+            source_labels=("운명간섭",),
+        )
+    )
+
+
+def _validate_fate_boost(
+    context: BattlefieldContext, user: "CombatCharacter", command: CharacterCommand
+) -> Optional[CommandPart]:
+    """운명간섭("+") 선언의 사전 조건을 검증하고, 대상 파트를 반환한다.
+
+    "+"가 없으면 None을 반환한다. 대미지 스킬 여부는 커맨드를 전개해 봐야
+    알 수 있어 여기서 확인하지 않는다 (try_expansion_if_valid 후반부 참고).
+    """
+    fate_parts = [part for part in command.parts if part.fate_boost]
+    if not fate_parts:
+        return None
+
+    if not context.allow_fate_intervention:
+        raise CommandValidationError(error_fate_not_available_here())
+    # 1회 제한이 있는 자원이므로 한 커맨드에 두 번 붙이는 것 자체를 막는다.
+    if len(fate_parts) > 1:
+        raise CommandValidationError(error_fate_only_once_per_command())
+
+    fate_part = fate_parts[0]
+    if fate_part.type_ not in (ActionType.ATTACK, ActionType.SKILL):
+        raise CommandValidationError(error_fate_unsupported_command())
+
+    if user.status.revival_count < FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT:
+        raise CommandValidationError(
+            error_fate_requires_revival(FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT)
+        )
+    if user.fate_used:
+        raise CommandValidationError(error_fate_already_used())
+    # 체력 소모가 곧 전투불능을 뜻하지 않도록 "초과"를 요구한다.
+    if user.status.curr_hp <= FATE_INTERVENTION_HP_COST:
+        raise CommandValidationError(
+            error_fate_not_enough_hp(FATE_INTERVENTION_HP_COST, user.status.curr_hp)
+        )
+    return fate_part
 
 
 def _resolve_and_reject_companion_target(

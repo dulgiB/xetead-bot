@@ -265,6 +265,64 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 
 ---
 
+## 운명간섭 · 부활 횟수
+
+"캐릭터" 시트의 `revival_count`(정수)와 `fate_date`(YYYY-MM-DD) 두 컬럼이
+근간이다. 컬럼 스키마는 [README.md#캐릭터-시트](README.md#캐릭터-시트) 참고.
+
+### revival_count는 읽기 전용이다
+
+`revival_count`는 GM이 시트에서 직접 관리한다 — 봇은 배치 시점에 읽어 아래
+수치 효과에만 반영하고 값을 갱신하지 않는다. 부활 횟수별 강화 중 코스트 3
+스킬 해금(1회)과 코스트 2·3 스킬 강화(2·3회)도 GM이 스킬 슬롯을 조정하는
+운영 처리이므로 **코드에 게이트를 두지 않는다**. 자동화하고 싶어지더라도,
+"에너미" 시트에는 `revival_count` 컬럼이 없어 항상 0으로 읽힌다는 점을
+먼저 고려해야 한다(에너미 전체가 게이트에 걸린다).
+
+### 적용 지점
+
+| 효과                 | 위치                                                                 |
+|--------------------|--------------------------------------------------------------------|
+| 받는 대미지 +10%/회      | `CombatStats.revival_penalty` → `command_calculator._process_damage()`가 `m_res` 바로 옆에서 `received_modifiers`에 합류 |
+| 턴당 코스트 +1 (4회 이상)  | `CombatStats.__init__`이 `_max_cost`에 한 번 반영 (`on_start_round()`가 매 라운드 이 값으로 회복) |
+| 이동 코스트 +1 (4회 이상)  | `extensions.get_total_cost()`가 이동 파트마다 `extra_move_cost`를 얹는다     |
+
+### 운명간섭("+" 접미사)
+
+`parser.py`가 `[공격+/대상]`/`[스킬명+/대상]`을 `CommandPart.fate_boost=True`로
+파싱하고, 비전투 판정은 `bot/commands/noncombat.py`의 `parse_roll_command()`가
+`[판정+/스탯]`을 따로 다룬다(전투 시스템에는 판정 커맨드가 없다).
+
+- **보정치**: `command_calculator._apply_fate_boost_modifier()`가 계산기 생성
+  시점의 대미지에만 `IntValueModifier(applies_to_fixed=True)`로 얹는다. 정수
+  보정이므로 배율보다 먼저 더해져 배율 보정을 함께 받는다 — 스펙이 요구하는
+  "고정 대미지와 다른" 동작이 여기서 나온다. 이후 반격/반사가 만드는 파생
+  대미지는 시전자의 선언 행동이 아니므로 대상이 아니다.
+- **사용 조건**: `command_processors._validate_fate_boost()`가 전개 전에
+  검사하고, "대미지 스킬인지"만 전개 후에 확인한다(효과 구현체마다 달라
+  전개해 봐야 알 수 있다). 어느 쪽이든 실패하면 체력도 코스트도 소모되지 않는다.
+- **체력 20 소모**: `_apply_fate_intervention_cost()`가 대미지 파이프라인을
+  타지 않고 HP를 직접 깎는다(반사/방어 버프가 개입하면 안 되므로). 대신 결과를
+  `source_labels=("운명간섭",)`인 대미지 로그 엔트리로 남겨, 답글 표시와
+  `write_back_changed_hp()`의 시트 반영이 기존 경로를 그대로 타게 한다.
+- **하루 1번 제한**: 일일 의뢰(`daily_quest_date`)와 같은 날짜 비교 방식이다.
+  영속 상태는 시트의 `fate_date`이고, 라이브 상태
+  (`CombatCharacter.fate_used`)는 배치 시점에
+  `CombatCharacterDataFromSpreadsheet.has_used_fate_on(오늘)`으로 한 번
+  확정한다 — 전투가 자정을 넘겨도 한 전투 안에서 판정 기준이 바뀌지 않는다.
+  봇 계층(`bot/commands/character.py`의 `mark_fate_used_if_needed()`)이 커맨드
+  처리 성공 후 시트에 오늘 날짜를 적는다. 하루에 전투가 두 번 이상 열리지
+  않는다는 전제 덕에 리셋 절차 자체가 필요 없다는 것이 이 방식의 이점이다.
+  시트에 쓸 때는 `update_character_quest_date()`와 같은 이유로 반드시
+  RAW로 기록해야 한다 — USER_ENTERED로 쓰면 Sheets가 날짜 타입(시리얼
+  넘버)으로 바꿔 버려 이후 비교가 영원히 거짓이 된다.
+- **대련/상시전투 제외**: `BattlefieldContext.allow_fate_intervention`을
+  `PracticeBattlefieldContext`가 `False`로 덮는다 — 체력 절반인 임시 캐릭터로
+  진행하고 체력 변동을 시트에 반영하지 않아, 되돌릴 수 없는 자원 소비를 걸 수
+  없기 때문이다(`allow_item_usage`와 같은 패턴).
+
+---
+
 ## 주요 불변식
 
 - `CommandPart`, `CommandPartData`, `SkillData`, `BuffData` 등 핵심 데이터 클래스는 `frozen=True`.
@@ -272,6 +330,9 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
   라운드 종료 시 자동 제거(`_remove_eliminated_characters()`)는 **적군에만** 적용된다 —
   아군은 체력이 0이 되어도 자동으로 제거되지 않고, admin이 `[탈락/이름]`
   (`force_remove_character()`)으로 명시적으로 제거해야 필드에서 사라진다.
+  다만 체력이 0 이하인 캐릭터는 진영과 무관하게 **커맨드를 선언할 수 없다**
+  (`try_expansion_if_valid()`). 막는 건 행동 주체뿐이고, 대상으로 지정되는
+  것은 그대로 허용된다 — 필드에 남아 계속 피격되는 기존 설계가 유지되어야 한다.
 - `try_expansion_if_valid()`에서 검증 실패 시 `CommandValidationError`를 raise하며, 코스트 차감은 검증 통과 후에만 수행한다.
 - 스킬 효과 하나당 `CommandPartData` 하나가 생성된다. 즉 `parts_list`의 길이 ≥ 커맨드 파트 수.
 

@@ -18,6 +18,8 @@ def get_test_preset(
     skill_1_id: Optional[str] = None,
     skill_2_id: Optional[str] = None,
     skill_3_id: Optional[str] = None,
+    revival_count: int = 0,
+    fate_date: str = "",
 ) -> CombatCharacterDataFromSpreadsheet:
     return CombatCharacterDataFromSpreadsheet(
         name=character_name,
@@ -35,4 +37,6 @@ def get_test_preset(
             skill_2_id if skill_2_id else "",
             skill_3_id if skill_3_id else "",
         ],
+        revival_count=revival_count,
+        fate_date=fate_date,
     )
