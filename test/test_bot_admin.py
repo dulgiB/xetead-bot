@@ -1394,6 +1394,125 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     assert round_call["in_reply_to_id"] != active_post_id
 
 
+def _start_practice_pair(monkeypatch):
+    """검사(1팀)/궁수(2팀) 1대1 대련을 시작한 상태까지 만들고
+    (mastodon, listener, state)를 반환한다."""
+    state = _make_state()
+    char_dict = {
+        "swordsman_acct": get_test_preset("검사"),
+        "archer_acct": get_test_preset("궁수"),
+    }
+    name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (char_dict, name_dict, {}),
+    )
+    monkeypatch.setattr(
+        admin_module,
+        "load_battle_data",
+        lambda spreadsheet, cache=None: (
+            {},
+            {},
+            {},
+            {},
+            None,
+            char_dict,
+            name_dict,
+            {},
+        ),
+    )
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener._process_notification(
+        _make_notification(
+            "swordsman_acct", 1, 0, "[대련]", extra_mentions=["archer_acct"]
+        )
+    )
+    prep_post_id = _only_practice(state).prep_post_id
+    listener._process_notification(
+        _make_notification("swordsman_acct", 2, prep_post_id, "[1팀/3열]")
+    )
+    listener._process_notification(
+        _make_notification("archer_acct", 3, prep_post_id, "[2팀/5열]")
+    )
+    return mastodon, listener, state
+
+
+def test_practice_command_works_from_anywhere_in_the_thread(monkeypatch):
+    """대련 커맨드는 봇 공지에 대한 직속 답글이 아니어도, 같은 스레드
+    안이기만 하면 처리돼야 한다 — 캐릭터가 긴 선언을 여러 답글로 나눠
+    쓰면(봇 공지 ← 사담 ← 커맨드) 커맨드는 자기 사담 게시물에 달리게 되고,
+    직속 답글만 받으면 그 커맨드가 어느 분기에도 걸리지 않고 조용히
+    사라진다."""
+    mastodon, listener, state = _start_practice_pair(monkeypatch)
+
+    ps = _only_practice(state)
+    active_post_id = ps.active_post_id
+    first_acct, second_name = (
+        ("swordsman_acct", "궁수")
+        if ps.first_mover.value == "1팀"
+        else ("archer_acct", "검사")
+    )
+
+    # 1) 커맨드 없는 사담(직속 답글) — 조용히 무시되고 진행 게시물도 그대로다.
+    listener._process_notification(
+        _make_notification(first_acct, 10, active_post_id, "묘사만 길게 적는 답글")
+    )
+    assert _only_practice(state).active_post_id == active_post_id
+
+    # 2) 그 사담에 이어서 커맨드를 입력한다 — 직속 부모는 봇 공지가 아니라
+    #    자기 사담 게시물(10번)이고, 봇 공지는 스레드 조상으로만 남는다.
+    mastodon.status_context_ancestors = [
+        {"id": active_post_id, "account": {"acct": "bot"}, "mentions": []}
+    ]
+    listener._process_notification(
+        _make_notification(first_acct, 11, 10, f"[공격/{second_name}]")
+    )
+
+    # 커맨드가 실제로 반영되어 다음 페이즈 공지까지 나가야 한다.
+    assert "후공:" in mastodon.status_post_calls[-1]["status"]
+    assert _only_practice(state).active_post_id != active_post_id
+
+
+def test_practice_command_from_unrelated_thread_is_not_adopted(monkeypatch):
+    """스레드 조상 보정이 아무 답글이나 그 대련으로 끌어오면 안 된다 —
+    세션 게시물이 조상에 없으면 기존처럼 무시해야 한다."""
+    mastodon, listener, state = _start_practice_pair(monkeypatch)
+
+    ps = _only_practice(state)
+    active_post_id = ps.active_post_id
+    first_acct, second_name = (
+        ("swordsman_acct", "궁수")
+        if ps.first_mover.value == "1팀"
+        else ("archer_acct", "검사")
+    )
+    calls_before = len(mastodon.status_post_calls)
+
+    mastodon.status_context_ancestors = [
+        {"id": 777, "account": {"acct": "someone_else"}, "mentions": []}
+    ]
+    listener._process_notification(
+        _make_notification(first_acct, 20, 19, f"[공격/{second_name}]")
+    )
+
+    assert len(mastodon.status_post_calls) == calls_before
+    assert _only_practice(state).active_post_id == active_post_id
+
+
+def test_practice_turn_announcement_lists_acting_character_names(monkeypatch):
+    """선공/후공 안내에 팀 이름만 나오면 지금 누가 커맨드를 입력해야 하는지
+    헷갈린다 — "1팀 - 검사"처럼 명단을 함께 보여줘야 한다."""
+    mastodon, listener, state = _start_practice_pair(monkeypatch)
+
+    ps = _only_practice(state)
+    first_name = "검사" if ps.first_mover.value == "1팀" else "궁수"
+    start_post = mastodon.status_post_calls[-1]["status"]
+
+    assert f"선공: {ps.first_mover.value} - {first_name}" in start_post
+
+
 def test_practice_settlement_post_mentions_all_participants(monkeypatch):
     """정산(라운드 전환/종료) 게시물은 바로 위 답글(행동한 캐릭터의 커맨드
     응답)에 이어 붙는 별도 게시물이라, 명시적으로 멘션하지 않으면 방금

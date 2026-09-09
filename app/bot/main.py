@@ -736,6 +736,56 @@ class MastodonBotListener(StreamListener):
                 return tip_id
         return in_reply_to_id
 
+    def _resolve_practice(
+        self,
+        acct: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        state: "BotState",
+    ) -> Optional[PracticeBattleState]:
+        """이 답글이 어느 대련/상시전투 세션에 속하는지 찾는다.
+
+        state.practices는 "현재 진행 게시물"(준비 단계엔 prep_post_id, 시작
+        후엔 매 페이즈 바뀌는 active_post_id)을 키로 쓰므로, 직속 답글만
+        받으면 캐릭터가 긴 선언을 여러 답글로 나눠 쓰는 순간
+        (봇 공지 ← 사담 ← 커맨드) 커맨드가 어느 분기에도 걸리지 않고 조용히
+        사라진다. 직접 매칭이 실패하면 스레드 조상을 거슬러 올라가, 그 안에
+        이 세션의 게시물이 있으면 같은 스레드로 인정한다.
+
+        조상 조회는 마스토돈 API 호출이 한 번 더 드는 경로라, 진행 중인
+        세션이 있고 **발신자가 그 세션의 참여자로 등록돼 있을 때만** 한다 —
+        본 전투 커맨드나 사담처럼 대련과 무관한 고빈도 멘션까지 매번 스레드를
+        조회하지 않도록."""
+        if in_reply_to_id is None:
+            return None
+        direct = state.practices.get(in_reply_to_id)
+        if direct is not None:
+            return direct
+        if not any(acct in ps.expected_accts for ps in state.practices.values()):
+            return None
+
+        try:
+            context = self._mastodon.status_context(status_id)
+        except Exception:
+            logger.exception("스레드 대련 세션 조회 실패 (status_id=%s)", status_id)
+            return None
+        ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
+        if not ancestor_ids:
+            return None
+
+        for ps in state.practices.values():
+            if acct not in ps.expected_accts:
+                continue
+            # field_id(전투 개시 게시물)는 세션 내내 고정이라 스레드 어느
+            # 위치에서든 조상으로 잡힌다. 아직 시작 전(field_id 미확정)이거나
+            # 페이즈가 막 넘어간 직후를 위해 prep/active 게시물도 함께 본다.
+            candidates = {ps.active_post_id, ps.prep_post_id}
+            if ps.field_id.isdigit():
+                candidates.add(int(ps.field_id))
+            if candidates & ancestor_ids:
+                return ps
+        return None
+
     def _resolve_investigation_session(
         self,
         acct: str,
@@ -887,9 +937,7 @@ class MastodonBotListener(StreamListener):
             return
 
         # 2. 대련/상시전투 준비 게시물 답글 (포지션 선언)
-        practice = (
-            state.practices.get(in_reply_to_id) if in_reply_to_id is not None else None
-        )
+        practice = self._resolve_practice(acct, status_id, in_reply_to_id, state)
         if practice is not None and practice.prep_post_id != 0:
             ps = practice
             if ps.is_investigation:
@@ -1557,6 +1605,22 @@ def _winner_roster_text(ps: PracticeBattleState, winner: Optional[SideType]) -> 
     return f" ({', '.join(names)})"
 
 
+def _mover_label(ps: PracticeBattleState, side: Optional[SideType]) -> str:
+    """행동 차례 안내용 진영 라벨을 "1팀 - 이름1, 이름2" 형식으로 만든다.
+
+    팀 이름만 알리면 지금 누가 커맨드를 입력해야 하는지 각자 자기 팀을
+    다시 확인해야 한다 — 특히 팀당 인원이 여럿이면 헷갈리므로 명단을
+    함께 붙인다. 명단을 만들 수 없으면(전멸 직후 등) 기존처럼 팀 이름만
+    쓴다."""
+    label = ps.side_label(side)
+    if side is None:
+        return label
+    names = [char.id.name for char in ps.context.get_side_characters(side)]
+    if not names:
+        return label
+    return f"{label} - {', '.join(names)}"
+
+
 def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
     """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())을 처리하고,
     그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
@@ -1589,7 +1653,7 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
         state, ps, phase_value=ps.phase.value if ps.phase else ""
     )
 
-    mover_label = ps.side_label(ps.first_mover)
+    mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
         f"◊ 상시전투 시작\n"
         f"라운드 상한: {ps.round_limit}라운드\n\n"
@@ -1624,7 +1688,7 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
         state, ps, phase_value=ps.phase.value if ps.phase else ""
     )
 
-    mover_label = ps.side_label(ps.first_mover)
+    mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
         f"◊ 대련 시작\n"
         f"라운드 상한: {ps.round_limit}라운드\n\n"
@@ -1677,7 +1741,7 @@ def _finalize_practice_phase(
             return game_post, True
 
         ps.advance_to_second_mover()
-        second_label = ps.side_label(ps.second_mover)
+        second_label = _mover_label(ps, ps.second_mover)
         game_post = (
             f"◊ [{ps.round_n}라운드] 후공: {second_label}\n"
             f"후공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
@@ -1710,7 +1774,7 @@ def _finalize_practice_phase(
         return game_post, True
 
     ps.start_round()
-    mover_label = ps.side_label(ps.first_mover)
+    mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
         f"◊ [{ps.round_n}라운드] 선공: {mover_label}\n"
         f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
