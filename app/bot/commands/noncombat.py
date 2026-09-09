@@ -4,12 +4,23 @@ import random
 import re
 import time
 import traceback
+from dataclasses import replace
 from datetime import date
 from typing import TYPE_CHECKING, Callable, Optional
 
-from battle.objects.define import ItemType, ValueSourceType
+from battle.objects.define import (
+    FATE_INTERVENTION_HP_COST,
+    FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT,
+    FATE_INTERVENTION_ROLL_BONUS,
+    ItemType,
+    ValueSourceType,
+)
 from battle.objects.skill.effects import SkillEffectHeal
-from spreadsheets.models.noncombat import NON_COMBAT_STATS, NoncombatStatType
+from spreadsheets.models.noncombat import (
+    NON_COMBAT_STATS,
+    NoncombatCharacterDataFromSpreadsheet,
+    NoncombatStatType,
+)
 from spreadsheets.models.quest import DailyQuestSuccessType
 from utils.name_matching import (
     find_matching_key,
@@ -27,6 +38,7 @@ from bot.load_data import (
     load_mysterious_potion_effects,
     update_character_curr_hp,
     update_character_daily_quest_status_id,
+    update_character_fate_date,
     update_character_quest_date,
     update_quest_taken_by,
 )
@@ -42,7 +54,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_RE_ROLL = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*/\s*([^]]+)]")
+# 운명간섭이면 "판정" 뒤에 "+"가 붙는다: [판정+/육체]
+_RE_ROLL = re.compile(
+    rf"\[{whitespace_tolerant_literal('판정')}(?P<fate>\+)?\s*/\s*(?P<stat>[^]]+)]"
+)
 _RE_BARE_BRACKET = re.compile(r"\[([^\]]+)]")
 _RE_TRANSFER_ITEM = re.compile(
     rf"\[{whitespace_tolerant_literal('양도')}\s*/\s*([^\]]+)]"
@@ -98,10 +113,15 @@ FREE_EXPLORE_LABEL = "자율 탐사"
 WORLD_MASTODON_ID: str = os.environ["WORLD_MASTODON_ID"]
 
 
-def parse_stat_name(text: str) -> Optional[str]:
-    """텍스트에서 [판정/스탯] 패턴을 찾아 스탯 이름을 반환한다."""
+def parse_roll_command(text: str) -> Optional[tuple[str, bool]]:
+    """텍스트에서 [판정/스탯] 패턴을 찾아 (스탯 이름, 운명간섭 여부)를 반환한다.
+
+    운명간섭은 "판정" 뒤에 "+"를 붙여 선언한다([판정+/육체]).
+    """
     m = _RE_ROLL.search(text)
-    return m.group(1).strip() if m else None
+    if not m:
+        return None
+    return m.group("stat").strip(), bool(m.group("fate"))
 
 
 def get_cached_item_names(state: "BotState") -> frozenset[str]:
@@ -173,10 +193,16 @@ def _parse_item_args(raw: str) -> tuple[str, Optional[str], int]:
 
 
 def handle_roll(
-    acct: str, stat_name: str, state: "BotState"
+    acct: str, stat_name: str, state: "BotState", *, fate_boost: bool = False
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[판정/스탯] → 1d6 + 스탯값 계산 후 결과 텍스트 반환."""
-    command_text = f"[판정/{stat_name}]"
+    """[판정/스탯] → 1d6 + 스탯값 계산 후 결과 텍스트 반환.
+
+    `fate_boost`(=[판정+/스탯])면 굴림에 고정 보정을 더하고 체력을 소모한다.
+    조건(부활 횟수·이번 진행 미사용·체력)을 만족하지 못하면 판정 자체를 하지
+    않고 오류를 반환한다 — 체력만 깎이고 보정이 빠지는 상태를 만들지 않기
+    위함이다.
+    """
+    command_text = f"[판정{'+' if fate_boost else ''}/{stat_name}]"
     if stat_name not in NON_COMBAT_STATS:
         msg = f"◊ 알 수 없는 스탯입니다. 사용 가능한 스탯: {'·'.join(NON_COMBAT_STATS)}"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -185,15 +211,90 @@ def handle_roll(
     if char_data is None:
         return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
+    today = date.today().isoformat()
+    if fate_boost:
+        error = _check_noncombat_fate_available(char_data, today)
+        if error is not None:
+            return error, NoncombatLogInfo(command_text=command_text, result=error)
+
     stat_type = NoncombatStatType(stat_name)
     stat_val = char_data.get_noncombat_stat(stat_type)
     dice = random.randint(1, 6)
     total = dice + stat_val
-    reply = f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」"
+    reply = f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6]"
+    dice_roll = f"{dice}+{stat_val}"
+
+    if fate_boost:
+        total += FATE_INTERVENTION_ROLL_BONUS
+        reply += f" + {FATE_INTERVENTION_ROLL_BONUS}[운명간섭]"
+        dice_roll += f"+{FATE_INTERVENTION_ROLL_BONUS}"
+
+    reply += f" → 「{total}」"
+
+    if fate_boost:
+        reply += "\n" + _consume_noncombat_fate(acct, char_data, today, state)
+
     return reply, NoncombatLogInfo(
         command_text=command_text,
-        dice_roll=f"{dice}+{stat_val}",
+        dice_roll=dice_roll,
         result=f"「{total}」",
+    )
+
+
+def _check_noncombat_fate_available(
+    char_data: "NoncombatCharacterDataFromSpreadsheet", today: str
+) -> Optional[str]:
+    """비전투 운명간섭 사용 조건을 확인하고, 못 쓰면 오류 문구를 반환한다."""
+    if char_data.revival_count < FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT:
+        return (
+            f"◊ 운명간섭(+)은 부활 횟수가"
+            f" {FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT}회 이상인 캐릭터만"
+            " 사용할 수 있습니다."
+        )
+    if char_data.fate_date == today:
+        return "◊ 운명간섭(+)은 오늘 이미 사용했습니다."
+    if char_data.curr_hp <= FATE_INTERVENTION_HP_COST:
+        return (
+            f"◊ 운명간섭(+)은 체력 {FATE_INTERVENTION_HP_COST}을 소모하므로"
+            f" 체력이 그보다 많아야 합니다. (현재 체력: {char_data.curr_hp})"
+        )
+    return None
+
+
+def _consume_noncombat_fate(
+    acct: str,
+    char_data: "NoncombatCharacterDataFromSpreadsheet",
+    today: str,
+    state: "BotState",
+) -> str:
+    """비전투 운명간섭의 대가(체력 소모 + 사용 날짜)를 시트에 반영하고 안내
+    문구를 반환한다.
+
+    이미 굴림 결과를 만든 뒤라 여기서 예외를 위로 던지면 판정 답글 자체가
+    사라진다 — 실패는 흡수하고 로깅한 뒤, admin이 수동으로 맞출 수 있도록
+    답글에 실패 사실만 밝힌다.
+    """
+    new_hp = char_data.curr_hp - FATE_INTERVENTION_HP_COST
+    try:
+        update_character_curr_hp(
+            state.spreadsheet, char_data.name, new_hp, cache=state.sheet_cache
+        )
+        update_character_fate_date(
+            state.spreadsheet, char_data.name, today, cache=state.sheet_cache
+        )
+    except Exception:
+        logger.exception("비전투 운명간섭 대가 반영 실패: %s", char_data.name)
+        return (
+            "⚠️ 운명간섭 대가(체력 소모) 반영에 실패했습니다. 관리자에게 문의해 주세요."
+        )
+
+    # 같은 멘션 처리 중 다시 조회될 수 있으므로 인메모리 값도 맞춰 둔다.
+    state.noncombat_char_dict[acct] = replace(
+        char_data, curr_hp=new_hp, fate_date=today
+    )
+    return (
+        f"↳ 운명간섭 사용: 체력 {FATE_INTERVENTION_HP_COST} 소모"
+        f" (→ {new_hp}/{char_data.max_hp})"
     )
 
 
