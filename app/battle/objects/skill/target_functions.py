@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING, cast
 
 from battle.exceptions import (
     CommandValidationError,
+    error_character_target_required,
+    error_column_target_required,
     error_invalid_command_format,
     error_invalid_move_destination,
 )
@@ -64,7 +66,11 @@ class SkillTargetRuleColumn(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
-        assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
+        # 열 지정 스킬에 캐릭터 이름을 넣는 입력 실수(예: [열 광역 스킬/이름])는
+        # 흔하다 — assert로 두면 AssertionError가 그대로 터져 답글 없이
+        # 조용히 실패하므로, 입력 오류로 취급해 안내 문구를 돌려준다.
+        if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
+            raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
             target_id_list += self.context.position_map[target_faction][column].values()
@@ -97,7 +103,11 @@ class SkillTargetRuleColumnRange(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
-        assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
+        # 열 지정 스킬에 캐릭터 이름을 넣는 입력 실수(예: [열 광역 스킬/이름])는
+        # 흔하다 — assert로 두면 AssertionError가 그대로 터져 답글 없이
+        # 조용히 실패하므로, 입력 오류로 취급해 안내 문구를 돌려준다.
+        if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
+            raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
 
         expanded_column_values: set[int] = set()
@@ -132,7 +142,11 @@ class SkillTargetRuleAllyColumn(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].faction
 
-        assert all(isinstance(target, BattlefieldColumnIndex) for target in targets)
+        # 열 지정 스킬에 캐릭터 이름을 넣는 입력 실수(예: [열 광역 스킬/이름])는
+        # 흔하다 — assert로 두면 AssertionError가 그대로 터져 답글 없이
+        # 조용히 실패하므로, 입력 오류로 취급해 안내 문구를 돌려준다.
+        if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
+            raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
             target_id_list += self.context.position_map[target_faction][column].values()
@@ -180,7 +194,10 @@ class SkillTargetRuleNamed(SkillTargetRule):
     def get_targets(
         self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
-        assert all(isinstance(target, CharacterId) for target in targets)
+        # 위 열 지정 스킬과 반대 방향의 입력 실수(개체 지정 스킬에 열 번호를
+        # 넣는 경우)도 같은 이유로 안내 문구를 돌려준다.
+        if not all(isinstance(target, CharacterId) for target in targets):
+            raise CommandValidationError(error_character_target_required())
         return cast(list[CharacterId], targets)
 
 
