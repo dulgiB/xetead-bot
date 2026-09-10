@@ -102,8 +102,10 @@
 
 `buff_id`(버프 모디파이어 경로)와 `effect_N`(스킬 효과 경로)은 상호 배타적이지
 않다 — 둘 다 채우면 서로 다른 `BuffApplyTiming`이 필요할 수 있어 내부적으로
-역할별 버프 인스턴스 2개로 나뉘어 등록된다 (`PassiveSkillWrapperBuff.create()`,
-[CLAUDE.md#패시브-스킬-시스템](CLAUDE.md#패시브-스킬-시스템) 참고).
+역할별 버프 인스턴스로 나뉘어 등록된다 (`PassiveSkillWrapperBuff.create()`,
+[CLAUDE.md#패시브-스킬-시스템](CLAUDE.md#패시브-스킬-시스템) 참고). `effect_N`
+끼리도 평가 시점이 갈릴 수 있어(라운드 확정 전/후) 자동으로 한 번 더 나뉜다 —
+시트에 적는 값은 달라지지 않는다.
 
 ---
 

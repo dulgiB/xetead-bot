@@ -11,6 +11,7 @@ from battle.objects.passive_skill.models import (
     PassiveSkillTargetType,
     PassiveSkillTrigger,
 )
+from battle.objects.skill.models import SkillEffectBase
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -76,13 +77,41 @@ def _resolve_targets(
     return []
 
 
+PassiveSkillWrapperRole = Literal["buff_mod", "effects", "effects_resolved"]
+
+
+def _needs_round_resolved(effect: SkillEffectBase) -> bool:
+    """이 효과가 "이번 라운드의 피격이 모두 확정된 뒤"에만 올바른 값을 내는지.
+    효과 본체가 damaged_this_round를 직접 읽거나(requires_round_resolved),
+    그런 조건(RoundResolvedCondition)을 달고 있으면 True."""
+    if effect.requires_round_resolved:
+        return True
+    condition = effect.condition
+    return condition is not None and condition.requires_round_resolved
+
+
+def _indexed_effects_for_role(
+    passive_data: PassiveSkillData, role: PassiveSkillWrapperRole
+) -> list[tuple[int, SkillEffectBase]]:
+    """effects를 평가 시점별로 나눈다. 인덱스는 원본 effects 기준을 유지한다 —
+    apply()가 _fired_given_value_passives 키로 쓰기 때문에 역할별로 다시
+    매기면 서로 다른 효과가 같은 키를 공유하게 된다."""
+    want_resolved = role == "effects_resolved"
+    return [
+        (i, effect)
+        for i, effect in enumerate(passive_data.effects)
+        if _needs_round_resolved(effect) == want_resolved
+    ]
+
+
 @dataclass(frozen=True)
 class PassiveSkillWrapperEvent(BuffEvent):
     passive_data: PassiveSkillData
     # buff_mod_event와 effects는 실제 공격에 반영되려면 서로 다른
     # BuffApplyTiming(ON_ACTION vs trigger 기반)이 필요해, PassiveSkillWrapperBuff
-    # 하나가 아니라 역할별로 나뉜 버프 인스턴스 각각에 대응한다.
-    role: Literal["buff_mod", "effects"]
+    # 하나가 아니라 역할별로 나뉜 버프 인스턴스 각각에 대응한다. effects 안에서도
+    # 라운드 확정 전/후로 평가 시점이 갈리므로 effects/effects_resolved로 한 번 더 나뉜다.
+    role: PassiveSkillWrapperRole
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
@@ -106,7 +135,7 @@ class PassiveSkillWrapperEvent(BuffEvent):
             return
 
         effect_data = calculator.data_by_effect[effect_seq_number]
-        for i, effect in enumerate(self.passive_data.effects):
+        for i, effect in _indexed_effects_for_role(self.passive_data, self.role):
             condition = effect.condition
             if condition is not None and not condition.is_applied(
                 calculator.context, holder, attacker_or_target
@@ -169,10 +198,16 @@ class PassiveSkillWrapperBuff(BuffBase):
     충돌할 수 있으므로(예: trigger='적 후행 시'인데 buff_mod는 ON_ACTION이
     필요) 하나의 PassiveSkillData가 buff_mod_event와 effects를 모두 가지면
     `create()`가 역할별로 나뉜 버프 인스턴스 여러 개를 반환한다.
+
+    effects끼리도 같은 이유로 한 번 더 갈린다: damaged_this_round를 읽는 효과는
+    적의 공격이 모두 반영된 뒤(ON_ENEMY_POST_ACTION_RESOLVED)에 평가돼야 하지만,
+    그 라운드의 피격을 실제로 경감해 줄 버프를 부여하는 효과는 그 전
+    (ON_ENEMY_POST_ACTION)에 걸려야 한다. 그래서 effects/effects_resolved로
+    나눠 각각 등록한다 — 한쪽에 맞추면 다른 쪽이 한 라운드씩 밀린다.
     """
 
     _passive_data: PassiveSkillData
-    _role: Literal["buff_mod", "effects"]
+    _role: PassiveSkillWrapperRole
 
     @classmethod
     def create(
@@ -181,8 +216,9 @@ class PassiveSkillWrapperBuff(BuffBase):
         wrappers: list["PassiveSkillWrapperBuff"] = []
         if passive_data.buff_mod_event is not None:
             wrappers.append(cls._create_one(holder, passive_data, "buff_mod"))
-        if passive_data.effects:
-            wrappers.append(cls._create_one(holder, passive_data, "effects"))
+        for role in ("effects", "effects_resolved"):
+            if _indexed_effects_for_role(passive_data, role):
+                wrappers.append(cls._create_one(holder, passive_data, role))
         return wrappers
 
     @classmethod
@@ -190,7 +226,7 @@ class PassiveSkillWrapperBuff(BuffBase):
         cls,
         holder: CharacterId,
         passive_data: PassiveSkillData,
-        role: Literal["buff_mod", "effects"],
+        role: PassiveSkillWrapperRole,
     ) -> "PassiveSkillWrapperBuff":
         # "effects" 역할의 게이팅은 passive_data.effects 각각의 condition으로
         # 처리되므로 condition은 비워둔다. "buff_mod" 역할은 apply()가
@@ -239,11 +275,9 @@ class PassiveSkillWrapperBuff(BuffBase):
         if self._passive_data.trigger == PassiveSkillTrigger.ON_ENEMY_MOVE:
             return BuffApplyTiming.ON_ENEMY_MOVE
         if self._passive_data.trigger == PassiveSkillTrigger.ENEMY_POST_ACTION:
-            if any(
-                effect.condition is not None
-                and effect.condition.requires_round_resolved
-                for effect in self._passive_data.effects
-            ):
+            # 역할 분리(_indexed_effects_for_role)가 이미 "확정 후에 평가돼야
+            # 하는 효과"만 effects_resolved에 모아 뒀으므로 여기서는 역할만 본다.
+            if self._role == "effects_resolved":
                 return BuffApplyTiming.ON_ENEMY_POST_ACTION_RESOLVED
             return BuffApplyTiming.ON_ENEMY_POST_ACTION
         if self._passive_data.trigger == PassiveSkillTrigger.ALLY_DAMAGED:
