@@ -98,7 +98,7 @@
 | `target_type`                       | 효과 대상 범위 (`PassiveSkillTargetType`, [값 목록](#passiveskilltargettype))       |
 | `description`                       | 표시용 설명                                                                     |
 | `buff_id`                           | (선택) "버프_패시브" 시트의 `id` — 버프 모디파이어 경로. `effect_0`/`effect_1`과 동시에 채울 수 있다 |
-| `effect_0`~`effect_1` (및 부속 컬럼) | 효과 최대 2개(`MAX_PASSIVE_EFFECT_COUNT`), [`effect_N` 컬럼 패턴](#effect_n-컬럼-패턴-스킬아이템-공용) 참조 |
+| `effect_0`~`effect_2` (및 부속 컬럼) | 효과 최대 3개(`MAX_PASSIVE_EFFECT_COUNT`), [`effect_N` 컬럼 패턴](#effect_n-컬럼-패턴-스킬아이템-공용) 참조 |
 
 `buff_id`(버프 모디파이어 경로)와 `effect_N`(스킬 효과 경로)은 상호 배타적이지
 않다 — 둘 다 채우면 서로 다른 `BuffApplyTiming`이 필요할 수 있어 내부적으로

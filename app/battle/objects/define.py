@@ -3,7 +3,7 @@ from enum import Enum
 CHARACTER_PER_COLUMN = 3
 MAX_SKILL_SLOT_COUNT = 3
 MAX_EFFECT_COUNT = 3
-MAX_PASSIVE_EFFECT_COUNT = 2
+MAX_PASSIVE_EFFECT_COUNT = 3
 
 # --- 운명간섭(플레이어 표기: "키워드 보정") ---------------------------------
 # 부활 경험이 있는 캐릭터가 커맨드에 "+" 접미사를 붙여 굴림을 끌어올리는 기능.

@@ -221,7 +221,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 
 스킬 하나에 effect 최대 3개까지 정의 가능 (`effect_0`, `effect_1`, `effect_2` 컬럼).
 패시브 스킬(`PassiveSkillData.effects`)도 같은 `SkillEffectBase` 구현체를
-재사용하며, 최대 `MAX_PASSIVE_EFFECT_COUNT`(2)개까지 정의 가능하다.
+재사용하며, 최대 `MAX_PASSIVE_EFFECT_COUNT`(3)개까지 정의 가능하다.
 
 ### 에너미 스킬 예고 블라인드 (`SkillData.revealed`)
 
