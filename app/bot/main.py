@@ -1136,7 +1136,7 @@ class MastodonBotListener(StreamListener):
                         status_id,
                         acct,
                         visibility,
-                        "◊ 일일 의뢰 판정에는 운명간섭(+)을 사용할 수 없습니다.",
+                        "◊ 일일 의뢰 판정에는 키워드 보정을 사용할 수 없습니다.",
                     )
                     return
                 response, log_info = handle_daily_quest_roll(acct, stat_name, state)

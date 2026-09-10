@@ -226,7 +226,7 @@ def handle_roll(
 
     if fate_boost:
         total += FATE_INTERVENTION_ROLL_BONUS
-        reply += f" + {FATE_INTERVENTION_ROLL_BONUS}[운명간섭]"
+        reply += f" + {FATE_INTERVENTION_ROLL_BONUS}[키워드 보정]"
         dice_roll += f"+{FATE_INTERVENTION_ROLL_BONUS}"
 
     reply += f" → 「{total}」"
@@ -247,15 +247,15 @@ def _check_noncombat_fate_available(
     """비전투 운명간섭 사용 조건을 확인하고, 못 쓰면 오류 문구를 반환한다."""
     if char_data.revival_count < FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT:
         return (
-            f"◊ 운명간섭(+)은 부활 횟수가"
+            f"◊ 키워드 보정은 부활 횟수가"
             f" {FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT}회 이상인 캐릭터만"
             " 사용할 수 있습니다."
         )
     if char_data.fate_date == today:
-        return "◊ 운명간섭(+)은 오늘 이미 사용했습니다."
+        return "◊ 키워드 보정은 오늘 이미 사용했습니다."
     if char_data.curr_hp <= FATE_INTERVENTION_HP_COST:
         return (
-            f"◊ 운명간섭(+)은 체력 {FATE_INTERVENTION_HP_COST}을 소모하므로"
+            f"◊ 키워드 보정은 체력 {FATE_INTERVENTION_HP_COST}을 소모하므로"
             f" 체력이 그보다 많아야 합니다. (현재 체력: {char_data.curr_hp})"
         )
     return None
@@ -285,7 +285,8 @@ def _consume_noncombat_fate(
     except Exception:
         logger.exception("비전투 운명간섭 대가 반영 실패: %s", char_data.name)
         return (
-            "⚠️ 운명간섭 대가(체력 소모) 반영에 실패했습니다. 관리자에게 문의해 주세요."
+            "⚠️ 키워드 보정 대가(체력 소모) 반영에 실패했습니다."
+            " 관리자에게 문의해 주세요."
         )
 
     # 같은 멘션 처리 중 다시 조회될 수 있으므로 인메모리 값도 맞춰 둔다.
@@ -293,7 +294,7 @@ def _consume_noncombat_fate(
         char_data, curr_hp=new_hp, fate_date=today
     )
     return (
-        f"↳ 운명간섭 사용: 체력 {FATE_INTERVENTION_HP_COST} 소모"
+        f"↳ 키워드 보정 사용: 체력 {FATE_INTERVENTION_HP_COST} 소모"
         f" (→ {new_hp}/{char_data.max_hp})"
     )
 

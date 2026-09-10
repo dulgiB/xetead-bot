@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from battle.exceptions import (
     CommandValidationError,
@@ -21,9 +21,10 @@ class SkillTargetRule(abc.ABC):
     context: "BattlefieldContext"
     skill_holder_id: CharacterId
 
-    @property
-    def ignores_input_targets(self) -> bool:
-        return False
+    # 커맨드에 적힌 대상(열/이름) 입력을 무시하고 규칙이 대상을 스스로
+    # 정하는지. ClassVar이라 인스턴스 없이 클래스만 보고도 판정할 수 있다 —
+    # 전투 개시 시점의 시트 설정 검증(fate_config_error)이 이를 쓴다.
+    ignores_input_targets: ClassVar[bool] = False
 
     @abc.abstractmethod
     def get_targets(
@@ -40,9 +41,7 @@ class SkillTargetRuleSelf(SkillTargetRule):
     ex. 자신에게 버프 부여, 자신의 체력을 회복, 자신의 체력을 10 소모
     """
 
-    @property
-    def ignores_input_targets(self) -> bool:
-        return True
+    ignores_input_targets: ClassVar[bool] = True
 
     def get_targets(
         self, targets: list[BattlefieldColumnIndex | CharacterId]
@@ -165,9 +164,7 @@ class SkillTargetRuleAllAllies(SkillTargetRule):
     ex. 자신을 희생해 자신을 제외한 아군 전체를 회복
     """
 
-    @property
-    def ignores_input_targets(self) -> bool:
-        return True
+    ignores_input_targets: ClassVar[bool] = True
 
     def get_targets(
         self, targets: list[BattlefieldColumnIndex | CharacterId]

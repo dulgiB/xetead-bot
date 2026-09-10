@@ -46,6 +46,7 @@ from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
     CombatStatType,
+    FateBoostMode,
     ItemType,
 )
 from battle.objects.extensions import get_total_cost
@@ -54,6 +55,7 @@ from battle.objects.models import CharacterId, ValueWithModifiers
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager
     from battle.objects.character.combat_character import CombatCharacter
+    from battle.objects.skill.models import SkillData
 
 
 def process_admin_command(
@@ -266,7 +268,7 @@ def try_expansion_if_valid(
     # 참고) 이 검증이 없으면 전투불능 상태에서 그대로 커맨드가 통과한다.
     # "대상으로 지정되는 것"은 여전히 허용된다 — 여기서 막는 건 행동 주체뿐이다.
     if user.status.curr_hp <= 0:
-        raise CommandValidationError(error_character_is_defeated(command.user_id))
+        raise CommandValidationError(error_character_is_defeated())
 
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
@@ -302,10 +304,17 @@ def try_expansion_if_valid(
             skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
             if skill is None:
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
-            if len(part.targets) > skill.data.target_count:
+            # "대상 추가" 모드는 "+"를 붙였을 때만 대상을 더 지정할 수 있게 한다.
+            allowed_target_count = skill.data.target_count + (
+                skill.data.fate_boost_value
+                if part is fate_part
+                and skill.data.fate_mode is FateBoostMode.EXTRA_TARGET
+                else 0
+            )
+            if len(part.targets) > allowed_target_count:
                 raise CommandValidationError(
                     error_too_many_targets(
-                        part.skill_id, skill.data.target_count, len(part.targets)
+                        part.skill_id, allowed_target_count, len(part.targets)
                     )
                 )
 
@@ -383,10 +392,15 @@ def try_expansion_if_valid(
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
-    # 스킬 운명간섭은 "대미지 스킬"에만 적용된다. 실제로 대미지가 나오는지는
-    # 전개해 봐야 알 수 있으므로(효과 구현체마다 다름) 전개 후에 확인한다 —
-    # 여기서 걸리면 코스트도 체력도 아직 소모되지 않은 상태로 중단된다.
-    if fate_part is not None and fate_part.type_ == ActionType.SKILL:
+    # fate_mode를 지정하지 않은 스킬은 예전처럼 "대미지 스킬"에만 운명간섭을
+    # 허용한다(굴림 보정). 실제로 대미지가 나오는지는 전개해 봐야 알 수
+    # 있으므로(효과 구현체마다 다름) 전개 후에 확인한다 — 여기서 걸리면
+    # 코스트도 체력도 아직 소모되지 않은 상태로 중단된다.
+    if (
+        fate_part is not None
+        and fate_part.type_ == ActionType.SKILL
+        and _fate_skill_data(user, fate_part).fate_mode is None
+    ):
         assert fate_part.skill_id is not None
         has_damage = any(
             sub_data.damage_list
@@ -431,9 +445,17 @@ def _apply_fate_intervention_cost(
             value=FATE_INTERVENTION_HP_COST,
             hp_after=user.status.curr_hp,
             max_hp=user.status[CombatStatType.MAX_HP],
-            source_labels=("운명간섭",),
+            source_labels=("키워드 보정",),
         )
     )
+
+
+def _fate_skill_data(user: "CombatCharacter", part: CommandPart) -> "SkillData":
+    """운명간섭이 붙은 스킬 파트의 SkillData. 스킬 등록 여부는 이 함수를 부르기
+    전에 이미 검증돼 있다(error_skill_not_registered)."""
+    skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
+    assert skill is not None
+    return skill.data
 
 
 def _validate_fate_boost(

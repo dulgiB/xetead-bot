@@ -87,45 +87,42 @@ def error_character_already_defeated(char_id: CharacterId) -> str:
     return f"'{char_id.name}'은(는) 이미 전투불능(체력 0) 상태이므로 전장에 배치할 수 없습니다."
 
 
-def error_character_is_defeated(char_id: CharacterId) -> str:
-    return (
-        f"'{char_id.name}'은(는) 체력이 0 이하라 행동할 수 없습니다."
-        " (회복하거나 부활한 뒤에 다시 시도해 주세요.)"
-    )
+def error_character_is_defeated() -> str:
+    return "체력이 0인 캐릭터는 행동할 수 없습니다."
 
 
 def error_fate_not_available_here() -> str:
-    return "이 전투에서는 운명간섭(+)을 사용할 수 없습니다."
+    return "이 전투에서는 키워드 보정을 사용할 수 없습니다."
 
 
 def error_fate_requires_revival(required_count: int) -> str:
     return (
-        f"운명간섭(+)은 부활 횟수가 {required_count}회 이상인 캐릭터만"
+        f"키워드 보정은 부활 횟수가 {required_count}회 이상인 캐릭터만"
         " 사용할 수 있습니다."
     )
 
 
 def error_fate_already_used() -> str:
-    return "운명간섭(+)은 오늘 이미 사용했습니다."
+    return "키워드 보정은 오늘 이미 사용했습니다."
 
 
 def error_fate_only_once_per_command() -> str:
-    return "운명간섭(+)은 한 커맨드에 하나의 행동에만 붙일 수 있습니다."
+    return "키워드 보정은 한 커맨드에 하나의 행동에만 붙일 수 있습니다."
 
 
 def error_fate_unsupported_command() -> str:
-    return "운명간섭(+)은 공격 또는 스킬 커맨드에만 붙일 수 있습니다."
+    return "키워드 보정은 공격 또는 스킬 커맨드에만 붙일 수 있습니다."
 
 
 def error_fate_skill_without_damage(skill_id: str) -> str:
     return (
-        f"지정한 스킬({skill_id})은 대미지를 주지 않아 운명간섭(+)을"
-        " 적용할 수 없습니다."
+        f"지정한 스킬({skill_id})은 대미지를 주지 않고 키워드 보정 효과도"
+        " 설정되어 있지 않아 적용할 수 없습니다."
     )
 
 
 def error_fate_not_enough_hp(hp_cost: int, curr_hp: int) -> str:
     return (
-        f"운명간섭(+)은 체력 {hp_cost}을 소모하므로 체력이 그보다 많아야"
+        f"키워드 보정은 체력 {hp_cost}을 소모하므로 체력이 그보다 많아야"
         f" 합니다. (현재 체력: {curr_hp})"
     )

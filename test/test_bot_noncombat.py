@@ -187,9 +187,9 @@ def test_handle_roll_fate_adds_bonus_and_costs_hp(monkeypatch, _stub_fate_sheet_
 
     result, log_info = handle_roll(acct, "육체", state, fate_boost=True)
 
-    # 2[육체] + 6[1d6] + 3[운명간섭] = 11
+    # 2[육체] + 6[1d6] + 3[키워드 보정] = 11
     assert "→ 「11」" in result
-    assert "3[운명간섭]" in result
+    assert "3[키워드 보정]" in result
     assert _stub_fate_sheet_writes["hp"] == ("동료", 80)
     assert _stub_fate_sheet_writes["fate"] == ("동료", date.today().isoformat())
     assert log_info is not None
@@ -236,7 +236,7 @@ def test_handle_roll_fate_allowed_when_used_on_another_day(_stub_fate_sheet_writ
 
     result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
 
-    assert "운명간섭" in result
+    assert "키워드 보정" in result
     assert _stub_fate_sheet_writes["fate"] == ("동료", date.today().isoformat())
 
 
