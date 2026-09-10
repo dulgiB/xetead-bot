@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Literal, Optional, Type, cast
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import (
+    FATE_INTERVENTION_SKILL_BONUS,
     MAX_EFFECT_COUNT,
     BattlefieldColumnIndex,
+    FateBoostMode,
     SkillTargetOverrideType,
     ValueSourceType,
 )
@@ -265,6 +267,17 @@ class SkillData:
     # 반복할 실익이 없다. "스킬_캐릭터"/"스킬_에너미" 시트의
     # hide_result_lines 체크박스 컬럼에서 온다.
     hide_result_lines: bool = False
+    # 운명간섭("+")이 이 스킬에 무엇을 더해주는지. "스킬_캐릭터" 시트의
+    # fate_mode/fate_value/fate_effect_index 컬럼에서 온다. fate_mode가 None이면
+    # 기존 동작(대미지 스킬은 굴림 보정, 비대미지 스킬은 거부)을 그대로 쓴다.
+    fate_mode: Optional[FateBoostMode] = None
+    # 모드별 보정치. 단위는 모드가 정한다 — VALUE_BOOST는 대상 효과의
+    # value_type을 그대로 따르고(퍼센트면 계수 %p, 정수면 정수), BUFF_*는
+    # 버프 수치/스택, EXTRA_TARGET은 추가 대상 수다. ROLL_BONUS에서만
+    # 생략 가능하며 그때는 FATE_INTERVENTION_SKILL_BONUS를 쓴다.
+    fate_value: Optional[int] = None
+    # VALUE_BOOST/BUFF_* 모드가 어느 효과(effect_N)를 강화하는지. 비우면 0.
+    fate_effect_index: int = 0
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "SkillData":
@@ -286,6 +299,23 @@ class SkillData:
             hide_result_lines=parse_spreadsheet_bool(
                 data.get("hide_result_lines", False)
             ),
+            # 컬럼 자체가 없는 시트("스킬_에너미")에서는 전부 기본값으로 남는다 —
+            # 에너미는 부활 횟수가 0이라 애초에 운명간섭을 쓸 수 없다.
+            fate_mode=(
+                FateBoostMode(str(data["fate_mode"]).strip())
+                if str(data.get("fate_mode", "") or "").strip()
+                else None
+            ),
+            fate_value=(
+                int(data["fate_value"])
+                if str(data.get("fate_value", "") or "").strip()
+                else None
+            ),
+            fate_effect_index=(
+                int(data["fate_effect_index"])
+                if str(data.get("fate_effect_index", "") or "").strip()
+                else 0
+            ),
         )
 
     def to_skill_instance(
@@ -296,3 +326,72 @@ class SkillData:
         )
         rule: Type[SkillTargetRule] = getattr(target_rule_module, self.target_rule)
         return Skill(target_rule=rule(context, holder), data=self)
+
+    @property
+    def fate_effect(self) -> Optional[SkillEffectBase]:
+        """fate_effect_index가 가리키는 효과. 범위를 벗어나면 None."""
+        if 0 <= self.fate_effect_index < len(self.effects):
+            return self.effects[self.fate_effect_index]
+        return None
+
+    @property
+    def fate_boost_value(self) -> int:
+        """모드별 보정치. ROLL_BONUS에서만 생략을 허용하고 기본값으로 채운다."""
+        if self.fate_value is not None:
+            return self.fate_value
+        return FATE_INTERVENTION_SKILL_BONUS
+
+
+def fate_config_error(data: SkillData) -> Optional[str]:
+    """스킬의 운명간섭 설정이 실제로 동작할 수 있는 조합인지 확인하고, 문제가
+    있으면 사람이 읽을 설명을 반환한다(없으면 None).
+
+    조용히 무시되는 시트 설정을 만들지 않기 위한 것으로, 전투 개시 시점에
+    admin에게 미리 알리는 용도다 — 실제 커맨드 처리 중에 발견하면 그때는
+    플레이어가 이미 "+"를 붙여 선언한 뒤라 되돌리기가 번거롭다. 그래서
+    BattlefieldContext(전장)가 아직 없는 시점에도 부를 수 있도록 SkillData만
+    받는다.
+    """
+    mode = data.fate_mode
+    if mode is None:
+        return None
+
+    if mode is not FateBoostMode.ROLL_BONUS and data.fate_value is None:
+        return (
+            f"'{data.id}': fate_mode가 '{mode.value}'인데 fate_value가 비어 있습니다."
+        )
+    if data.fate_value is not None and data.fate_value <= 0:
+        return f"'{data.id}': fate_value는 1 이상이어야 합니다."
+
+    if mode is FateBoostMode.EXTRA_TARGET:
+        target_rule_module = importlib.import_module(
+            "battle.objects.skill.target_functions"
+        )
+        rule: Type[SkillTargetRule] = getattr(target_rule_module, data.target_rule)
+        if rule.ignores_input_targets:
+            return (
+                f"'{data.id}': target_rule({data.target_rule})은 대상을 입력받지 않아"
+                " '대상 추가'를 적용할 수 없습니다."
+            )
+        return None
+
+    if mode in (
+        FateBoostMode.VALUE_BOOST,
+        FateBoostMode.BUFF_VALUE_BOOST,
+        FateBoostMode.BUFF_STACK_BOOST,
+    ):
+        effect = data.fate_effect
+        if effect is None:
+            return (
+                f"'{data.id}': fate_effect_index({data.fate_effect_index})에 해당하는"
+                f" effect_{data.fate_effect_index}가 비어 있습니다."
+            )
+        if (
+            mode in (FateBoostMode.BUFF_VALUE_BOOST, FateBoostMode.BUFF_STACK_BOOST)
+            and effect.buff_id is None
+        ):
+            return (
+                f"'{data.id}': effect_{data.fate_effect_index}가 버프를 부여하지 않아"
+                f" '{mode.value}'를 적용할 수 없습니다."
+            )
+    return None
