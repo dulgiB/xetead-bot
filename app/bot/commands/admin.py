@@ -20,6 +20,7 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId
+from battle.objects.skill.models import fate_config_error
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
 from battle.practice.round_manager import PracticeRoundManager
@@ -42,6 +43,7 @@ from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import (
     find_unreachable_enemy_buffs,
     load_battle_data,
+    load_character_skill_dict,
     load_enemy_skill_dict,
     reveal_declared_enemy_skills,
 )
@@ -521,6 +523,37 @@ def _check_enemy_skill_timing_config(state: "BotState") -> Optional[str]:
     )
 
 
+def _check_fate_boost_config(state: "BotState") -> Optional[str]:
+    """'스킬_캐릭터' 시트의 운명간섭 설정(fate_mode/fate_value/fate_effect_index)
+    중 조용히 무시될 조합이 있으면 admin에게만 보낼 경고 문구를 만든다.
+
+    _check_enemy_skill_timing_config()와 같은 이유로 전투 개시 전에 확인하지만,
+    이쪽은 전투 시작을 막지는 않는다 — 잘못 설정된 스킬은 "+"를 붙였을 때
+    보정만 빠질 뿐 스킬 자체는 정상 동작하므로, 전투 전체를 세우는 것보다
+    admin에게 알리고 진행하는 편이 손해가 적다."""
+    try:
+        skill_dict = load_character_skill_dict(
+            state.spreadsheet, cache=state.sheet_cache
+        )
+    except Exception:
+        _log_system_error("스킬 운명간섭 설정 검증")
+        return None
+
+    problems = [
+        error
+        for skill_data in skill_dict.values()
+        if (error := fate_config_error(skill_data)) is not None
+    ]
+    if not problems:
+        return None
+
+    lines = "\n".join(f"- {problem}" for problem in problems)
+    return (
+        "◊ '스킬_캐릭터' 시트의 키워드 보정(fate_mode) 설정에 문제가 있어 해당 "
+        f"스킬에는 보정이 적용되지 않습니다.\n{lines}"
+    )
+
+
 def _cmd_battle_start(
     state: "BotState", battle_name: Optional[str] = None
 ) -> AdminCommandResult:
@@ -547,6 +580,10 @@ def _cmd_battle_start(
     admin_dm_text = _check_enemy_skill_timing_config(state)
     if admin_dm_text is not None:
         return AdminCommandResult("", admin_dm_text=admin_dm_text)
+
+    # 키워드 보정 설정 오류는 전투를 세우지 않고 경고만 모아 두었다가, 아래에서
+    # 전투 개시 결과와 함께 admin DM으로 보낸다(_check_fate_boost_config 참고).
+    fate_config_warning = _check_fate_boost_config(state)
 
     # 1. 수동 배치 처리 (pending_placements)
     errors: list[str] = []
@@ -641,6 +678,7 @@ def _cmd_battle_start(
         game_post,
         attach_field_image=True,
         game_post_calc_text=game_post_calc,
+        admin_dm_text=fate_config_warning,
     )
 
 

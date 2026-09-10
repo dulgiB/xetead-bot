@@ -147,6 +147,21 @@ def load_enemy_skill_dict(
     }
 
 
+def load_character_skill_dict(
+    spreadsheet: gspread.Spreadsheet,
+    cache: Optional[SheetCache] = None,
+) -> dict[str, SkillData]:
+    """'스킬_캐릭터' 시트만 읽어 스킬 id → SkillData dict를 반환한다.
+
+    load_enemy_skill_dict()와 같은 이유로 존재한다 — 캐릭터 스킬에만 있는
+    설정(운명간섭 fate_mode 등)을 따로 검사해야 하는 곳에서 쓴다.
+    """
+    char_skill_raw = _worksheet(spreadsheet, "스킬_캐릭터", cache).get_all_records(
+        value_render_option=_UNFORMATTED
+    )
+    return {str(r["id"]): SkillData.from_dict(r) for r in char_skill_raw if r.get("id")}
+
+
 def find_unreachable_enemy_buffs(
     enemy_skill_dict: dict[str, SkillData],
 ) -> list[tuple[str, str]]:
