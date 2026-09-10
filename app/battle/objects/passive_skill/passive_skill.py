@@ -55,6 +55,16 @@ def _resolve_targets(
             and context.find_character_position(char_id) == holder_pos
         ]
 
+    if target_type == PassiveSkillTargetType.SELF_AND_ADJACENT_COLUMN_ALLIES:
+        holder_column = context.find_character_position(holder).value
+        return [
+            char_id
+            for char_id, char in context.characters.items()
+            if char_id not in context.companion_owners
+            and char.faction == holder_char.faction
+            and abs(context.find_character_position(char_id).value - holder_column) <= 1
+        ]
+
     if target_type == PassiveSkillTargetType.ALL_ALLIES:
         return [
             char_id

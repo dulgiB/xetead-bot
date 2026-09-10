@@ -266,9 +266,16 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
   (그 라운드의 피격을 경감할 버프는 `ON_ENEMY_POST_ACTION`에, 그 라운드의
   피격 결과를 읽는 효과는 `ON_ENEMY_POST_ACTION_RESOLVED`에 걸려야 한다).
 - **`PassiveSkillTargetType`**: `SELF`/`SAME_COLUMN_ALLIES`/
-  `SELF_AND_SAME_COLUMN_ALLIES`/`ALL_ALLIES`/`ATTACKER_OR_TARGET`/
-  `LOWEST_HP_ALLY`. `_resolve_targets()`가 실제 대상 목록으로 변환하며,
-  동료(소환수, `context.companion_owners`)는 아군 범위 대상에서 제외된다.
+  `SELF_AND_SAME_COLUMN_ALLIES`/`SELF_AND_ADJACENT_COLUMN_ALLIES`/
+  `ALL_ALLIES`/`ATTACKER_OR_TARGET`/`LOWEST_HP_ALLY`. `_resolve_targets()`가
+  실제 대상 목록으로 변환하며, 동료(소환수, `context.companion_owners`)는
+  아군 범위 대상에서 제외된다.
+
+아군 전체/열 범위에 **받는 대미지 경감**을 주는 패시브는 `buff_id`(버프
+모디파이어) 경로로는 구현할 수 없다 — `_apply_buff_events()`는 피격 당사자에게
+`applied_to`된 버프만 조회하는데 래퍼는 홀더에게만 등록되므로, 그 경로는
+홀더 본인에게만 적용된다(`target_type`이 무시된다). 범위 경감은 `effect_N`으로
+"버프" 시트의 실제 경감 버프를 매 라운드 대상들에게 부여하는 방식으로 만든다.
 
 ---
 
