@@ -266,7 +266,7 @@ def try_expansion_if_valid(
     # 참고) 이 검증이 없으면 전투불능 상태에서 그대로 커맨드가 통과한다.
     # "대상으로 지정되는 것"은 여전히 허용된다 — 여기서 막는 건 행동 주체뿐이다.
     if user.status.curr_hp <= 0:
-        raise CommandValidationError(error_character_is_defeated(command.user_id))
+        raise CommandValidationError(error_character_is_defeated())
 
     user_pos = context.find_character_position(command.user_id)
     attack_range = user.status[CombatStatType.RANGE]
@@ -431,7 +431,7 @@ def _apply_fate_intervention_cost(
             value=FATE_INTERVENTION_HP_COST,
             hp_after=user.status.curr_hp,
             max_hp=user.status[CombatStatType.MAX_HP],
-            source_labels=("운명간섭",),
+            source_labels=("키워드 보정",),
         )
     )
 

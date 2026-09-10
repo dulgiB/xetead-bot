@@ -98,7 +98,7 @@ def _apply_fate_boost_modifier(
         return
 
     modifier = IntValueModifier(
-        source_name="운명간섭", value=bonus, applies_to_fixed=True
+        source_name="키워드 보정", value=bonus, applies_to_fixed=True
     )
     for effect_data in data_by_effect:
         for damage_calc in effect_data.damage_data_list:

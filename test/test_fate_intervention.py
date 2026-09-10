@@ -236,7 +236,7 @@ def test_fate_hp_cost_is_logged_for_sheet_write_back():
     result = _run(context, f"[공격+/{_TARGET.name}]")
 
     entries = [e for part in result.part_results for e in part.log_entries]
-    fate_entries = [e for e in entries if "운명간섭" in e.source_labels]
+    fate_entries = [e for e in entries if "키워드 보정" in e.source_labels]
     assert len(fate_entries) == 1
     entry = fate_entries[0]
     assert entry.kind == BattleLogEntryKind.DAMAGE
@@ -267,7 +267,7 @@ def test_fate_attack_bonus_is_added_before_multipliers():
         if e.kind == BattleLogEntryKind.DAMAGE and e.target_name == _TARGET.name
     ]
     assert len(damage_entries) == 1
-    assert f"+{FATE_INTERVENTION_ATTACK_BONUS}[운명간섭]" in (
+    assert f"+{FATE_INTERVENTION_ATTACK_BONUS}[키워드 보정]" in (
         damage_entries[0].roll_display or ""
     )
 
