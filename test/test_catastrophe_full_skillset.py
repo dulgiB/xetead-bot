@@ -16,7 +16,7 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
-from battle.objects.buff.models import BuffData, PassiveBuffData
+from battle.objects.buff.models import BuffData
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
@@ -25,7 +25,7 @@ from helpers import get_test_preset
 
 
 def _buff_dict() -> dict[str, BuffData]:
-    """'버프' 시트의 재앙/도발 행."""
+    """'버프' 시트의 재앙/도발/PassiveBuff 행."""
     return {
         "재앙": BuffData.from_dict(
             {
@@ -34,14 +34,32 @@ def _buff_dict() -> dict[str, BuffData]:
                 "duration_turn_value": "",
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
-                "value_0": "",
-                "value_type_0": "",
+                "value_0": 5,
+                "value_type_0": "정수",
                 "condition": "",
                 "condition_value": "",
                 "description": "패시브로 축적되는 저주. 해제할 수 없다. "
-                "전투 종료 시 남은 스택×3만큼 자신의 체력이 감소한다.",
+                "전투 종료 시 남은 스택×5만큼 자신의 체력이 감소한다.",
                 "is_debuff": False,
                 "max_stack": 10,
+            }
+        ),
+        # 패시브가 매 라운드 좌우 1열 아군에게 새로 부여하는 경감 버프.
+        # 부여 시점이 적의 대미지 정산 직전(ON_ENEMY_POST_ACTION)이라
+        # 그 라운드의 피격부터 곧바로 적용된다.
+        "PassiveBuff": BuffData.from_dict(
+            {
+                "id": "PassiveBuff",
+                "buff_name": "BuffReceivedDamage",
+                "duration_turn_value": 1,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value_0": -5,
+                "value_type_0": "퍼센트",
+                "condition": "",
+                "condition_value": "",
+                "description": "받는 대미지 -5%",
+                "is_debuff": False,
             }
         ),
         "도발": BuffData.from_dict(
@@ -57,20 +75,6 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition_value": "",
                 "description": "적의 공격과 부가 효과를 자신에게 유도 (도발 공격)",
                 "is_debuff": False,
-            }
-        ),
-    }
-
-
-def _passive_buff_dict() -> dict[str, PassiveBuffData]:
-    """'버프_패시브' 시트의 행 하나(받는 대미지 감소 모디파이어)."""
-    return {
-        "PassiveBuff": PassiveBuffData.from_dict(
-            {
-                "id": "PassiveBuff",
-                "buff_name": "BuffReceivedDamage",
-                "value_0": -5,
-                "value_type_0": "퍼센트",
             }
         ),
     }
@@ -98,7 +102,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "condition_1": "",
                 "condition_value_1": "",
                 "value_source_1": "해당 행동으로 소모한 버프 스택 수",
-                "value_1": 300,
+                "value_1": 500,
                 "value_type_1": "퍼센트",
                 "buff_id_1": "재앙",
                 "buff_stack_cap_1": 5,
@@ -114,7 +118,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "target_override_2": "",
                 "description": (
                     "대상에게 공격 굴림 100%만큼 대미지를 입힌다. [재앙]을 최대 "
-                    "5스택까지 자동으로 소모하고, 소모한 스택 수×3만큼 최종 "
+                    "5스택까지 자동으로 소모하고, 소모한 스택 수×5만큼 최종 "
                     "대미지가 증가한다. 3스택 이상 소모했다면 대상에게 1턴간 "
                     "[도발]을 부여한다."
                 ),
@@ -130,7 +134,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "condition_0": "",
                 "condition_value_0": "",
                 "value_source_0": "해당 행동으로 증가한 버프 스택 수",
-                "value_0": 500,
+                "value_0": 300,
                 "value_type_0": "퍼센트",
                 "buff_id_0": "재앙",
                 "buff_stack_cap_0": 10,
@@ -154,7 +158,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "buff_stack_cap_2": "",
                 "target_override_2": "",
                 "description": (
-                    "대상의 체력을 (앞으로 더 쌓을 수 있는 [재앙]의 수)×5만큼 "
+                    "대상의 체력을 (앞으로 더 쌓을 수 있는 [재앙]의 수)×3만큼 "
                     "회복시키고 즉시 자신의 [재앙] 스택을 최대치만큼 쌓는다. "
                     "전체 회복량이 대상에게 필요한 회복량을 초과하면 남는 양만큼 "
                     "자신의 체력을 회복한다."
@@ -164,24 +168,28 @@ def _skill_dict() -> dict[str, SkillData]:
     }
 
 
-def _passive_skill_dict(
-    passive_buff_dict: dict[str, PassiveBuffData],
-) -> dict[str, PassiveSkillData]:
-    """'스킬_패시브' 시트의 패시브 스킬 행."""
+def _passive_skill_dict() -> dict[str, PassiveSkillData]:
+    """'스킬_패시브' 시트의 패시브 스킬 행.
+
+    effect_0/1(스택 누적)은 damaged_this_round에 의존해 적 후행이 확정된 뒤에,
+    effect_2(경감 버프 부여)는 그 라운드의 피격을 실제로 경감해야 하므로 확정
+    전에 평가된다 — PassiveSkillWrapperBuff가 역할을 나눠 각각 등록한다.
+    """
     return {
         "PassiveSkill": PassiveSkillData.from_dict(
             {
                 "id": "PassiveSkill",
                 "trigger": "적 후행 시",
-                "target_type": "자신을 포함한 같은 열 아군",
-                "buff_id": "PassiveBuff",
-                "effect_0": "SkillEffectAddBuff",
+                "target_type": "자신을 포함한 좌우 1열 아군",
+                "buff_id": "",
+                # value_0은 수치가 아니라 "좌우 몇 열까지 볼지"(반경)다.
+                "effect_0": "SkillEffectAddBuffPerDamagedColumn",
                 "value_source_0": "",
-                "value_0": "",
+                "value_0": 1,
                 "value_type_0": "",
                 "buff_id_0": "재앙",
                 "target_override_0": "자신",
-                "condition_0": "AllyInSameColumnWasAttackedCondition",
+                "condition_0": "",
                 "condition_value_0": "",
                 "effect_1": "SkillEffectAddBuff",
                 "value_source_1": "",
@@ -191,23 +199,31 @@ def _passive_skill_dict(
                 "target_override_1": "자신",
                 "condition_1": "HolderWasAttackedCondition",
                 "condition_value_1": "",
+                "effect_2": "SkillEffectAddBuff",
+                "value_source_2": "",
+                "value_2": "",
+                "value_type_2": "",
+                "buff_id_2": "PassiveBuff",
+                "target_override_2": "",
+                "condition_2": "",
+                "condition_value_2": "",
                 "description": (
-                    "라운드의 최종 위치를 기준으로 자신을 포함한 같은 열의 "
-                    "아군이 받는 대미지 -5%\n같은 열의 아군이 피격 시 [재앙] "
-                    "1스택 누적, 만약 피격당한 것이 자신이라면 1스택 추가 누적."
+                    "라운드의 최종 위치를 기준으로 자신을 포함한 같은 열 및 "
+                    "좌우 1열의 아군이 받는 대미지 -5%\n해당 범위의 열에서 "
+                    "누군가 피격되면 1열당 [재앙] 1스택 누적, 만약 피격당한 "
+                    "것이 자신이라면 1스택 추가 누적."
                 ),
             },
-            passive_buff_dict,
+            {},
         ),
     }
 
 
 def _make_context(*, milestone_n: int = 1) -> BattlefieldContext:
-    passive_buff_dict = _passive_buff_dict()
     return BattlefieldContext(
         buff_dict=_buff_dict(),
         skill_dict=_skill_dict(),
-        passive_skill_dict=_passive_skill_dict(passive_buff_dict),
+        passive_skill_dict=_passive_skill_dict(),
         milestone_n=milestone_n,
     )
 
@@ -233,7 +249,9 @@ def _setup_ally_phase(context: BattlefieldContext) -> RoundManager:
 
 
 class TestPassiveSkill:
-    """패시브 스킬: 같은 열(자신 포함) 피격 시 [재앙] 누적."""
+    """패시브 스킬: 자신을 포함한 좌우 1열 범위에서 피격이 일어난 열 수만큼
+    [재앙]을 누적하고(자신이 맞았다면 1스택 추가), 같은 범위의 아군에게
+    받는 대미지 경감 버프를 부여한다."""
 
     def test_stack_gained_when_same_column_ally_is_hit(self):
         ctx = _make_context()
@@ -284,6 +302,190 @@ class TestPassiveSkill:
 
         # 같은 열 피격(효과 0) + 자신 피격(효과 1) 둘 다 조건을 만족해 2스택.
         assert ctx.get_buff_stack(catastrophe_id, "재앙") == 2
+
+    def test_one_stack_per_damaged_adjacent_column(self):
+        """좌우 1열에서 피격이 일어나면 열 하나당 1스택. 자신이 맞지 않았으므로
+        추가 스택은 없다."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        catastrophe_id = CharacterId("Catastrophe")
+        ctx.add_character(
+            get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(1),
+        )
+        ctx.add_character(
+            get_test_preset("아군_좌"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("아군_우"), FactionType.ALLY, BattlefieldColumnIndex(2)
+        )
+        ctx.add_character(
+            get_test_preset("적군_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군_2"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군_1"), "[공격/아군_좌]", ctx)
+        )
+        manager.process_command(
+            parse_character_command(CharacterId("적군_2"), "[공격/아군_우]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 2
+
+    def test_stacks_cap_at_four_per_round(self):
+        """3개 열 전부 피격 + 자신도 피격 = 라운드당 최대치인 4스택."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        catastrophe_id = CharacterId("Catastrophe")
+        ctx.add_character(
+            get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(1),
+        )
+        ctx.add_character(
+            get_test_preset("아군_좌"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("아군_우"), FactionType.ALLY, BattlefieldColumnIndex(2)
+        )
+        for i, column in enumerate((0, 1, 2)):
+            ctx.add_character(
+                get_test_preset(f"적군_{i}"),
+                FactionType.ENEMY,
+                BattlefieldColumnIndex(column),
+            )
+
+        for name, target in (
+            ("적군_0", "아군_좌"),
+            ("적군_1", "Catastrophe"),
+            ("적군_2", "아군_우"),
+        ):
+            manager.process_command(
+                parse_character_command(CharacterId(name), f"[공격/{target}]", ctx)
+            )
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 4
+
+    def test_multiple_allies_hit_in_one_column_count_once(self):
+        """같은 열에서 두 명이 맞아도 그 열 몫은 1스택이다 — "피격당한 아군 수"가
+        아니라 "피격당한 열 수"로 세기 때문."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        catastrophe_id = CharacterId("Catastrophe")
+        ctx.add_character(
+            get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(1),
+        )
+        ctx.add_character(
+            get_test_preset("아군_1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("아군_2"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군_1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군_2"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군_1"), "[공격/아군_1]", ctx)
+        )
+        manager.process_command(
+            parse_character_command(CharacterId("적군_2"), "[공격/아군_2]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 1
+
+    def test_column_beyond_adjacent_range_is_ignored(self):
+        """2열 이상 떨어진 아군의 피격은 스택을 주지 않는다."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        catastrophe_id = CharacterId("Catastrophe")
+        ctx.add_character(
+            get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("먼 아군"), FactionType.ALLY, BattlefieldColumnIndex(2)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+        )
+
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[공격/먼 아군]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
+
+    def test_received_damage_reduction_applies_to_adjacent_column_ally(self):
+        """경감 버프가 인접 열 아군에게도 그 라운드의 피격부터 적용된다.
+        (버프 모디파이어 경로였을 때는 홀더 본인에게만 적용됐다.)
+        ATK_ROLL을 결정론적으로 만들기 위해 milestone_n=0, 공격자 atk=100으로
+        고정한다(대미지 = 100, -5% 적용 시 95)."""
+
+        def _run(passive_skill_id):
+            ctx = _make_context(milestone_n=0)
+            manager = _setup_enemy_pre_phase(ctx)
+            ally_id = CharacterId("아군")
+            ctx.add_character(
+                get_test_preset("Catastrophe", passive_skill_id=passive_skill_id),
+                FactionType.ALLY,
+                BattlefieldColumnIndex(0),
+            )
+            ctx.add_character(
+                get_test_preset("아군", max_hp=300),
+                FactionType.ALLY,
+                BattlefieldColumnIndex(1),
+            )
+            ctx.add_character(
+                get_test_preset("적군", atk=100),
+                FactionType.ENEMY,
+                BattlefieldColumnIndex(1),
+            )
+            manager.process_command(
+                parse_character_command(CharacterId("적군"), "[공격/아군]", ctx)
+            )
+            manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+            return ctx.characters[ally_id].status.curr_hp
+
+        assert _run(passive_skill_id=None) == 300 - 100
+        assert _run(passive_skill_id="PassiveSkill") == 300 - 95
+
+    def test_battle_end_damage_uses_sheet_value_per_stack(self):
+        """전투 종료 시 남은 스택 × ("버프" 시트 value_0)만큼 체력이 깎인다."""
+        ctx = _make_context()
+        _setup_ally_phase(ctx)
+        catastrophe_id = CharacterId("Catastrophe")
+        ctx.add_character(
+            get_test_preset("Catastrophe", max_hp=100),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=catastrophe_id,
+                applied_to=catastrophe_id,
+                buff_id="재앙",
+                stack_value=3,
+            )
+        )
+
+        ctx.on_battle_end()
+
+        assert ctx.characters[catastrophe_id].status.curr_hp == 100 - 15
 
     def test_received_damage_reduction_applies_to_holder(self):
         """받는 대미지 -5% 모디파이어가 실제 공격에도 적용되는지 확인한다.
@@ -360,8 +562,8 @@ class TestCost2Skill:
         )
         hp_after = ctx.characters[target].status.curr_hp
 
-        # 기본 대미지 0(atk=0) + 소모 4스택×300% = 12.
-        assert hp_before - hp_after == 12
+        # 기본 대미지 0(atk=0) + 소모 4스택×500% = 20.
+        assert hp_before - hp_after == 20
         assert ctx.get_buff_stack(caster, "재앙") == 0
         assert any(
             b.id == "도발" for b in ctx.buff_container.get_buffs_by(target, None)
@@ -381,7 +583,7 @@ class TestCost2Skill:
         )
         hp_after = ctx.characters[target].status.curr_hp
 
-        assert hp_before - hp_after == 6
+        assert hp_before - hp_after == 10
         assert not any(
             b.id == "도발" for b in ctx.buff_container.get_buffs_by(target, None)
         )
@@ -437,7 +639,7 @@ class TestCost3Skill:
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("아군", initial_hp=84, max_hp=100),
+            get_test_preset("아군", initial_hp=94, max_hp=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(1),
         )
@@ -447,12 +649,12 @@ class TestCost3Skill:
             )
         )
 
-        # 남은 여유 = 10-6=4 -> 회복량 = 4*5=20. 아군은 84->100(16 흡수),
-        # 초과 4는 시전자 자신에게: 90+4=94. 자신의 재앙 스택은 최대치(10)로 충전.
+        # 남은 여유 = 10-6=4 -> 회복량 = 4*3=12. 아군은 94->100(6 흡수),
+        # 초과 6은 시전자 자신에게: 90+6=96. 자신의 재앙 스택은 최대치(10)로 충전.
         manager.process_command(
             parse_character_command(caster, "[Cost3Skill/아군]", ctx)
         )
 
         assert ctx.characters[ally].status.curr_hp == 100
-        assert ctx.characters[caster].status.curr_hp == 94
+        assert ctx.characters[caster].status.curr_hp == 96
         assert ctx.get_buff_stack(caster, "재앙") == 10
