@@ -141,10 +141,13 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 | `ALLY_IN_RANGE_ATTACKED`          | `buff_container.on_ally_in_range_attacked()` (사거리 내·자신 포함)        |
 
 `ON_ENEMY_POST_ACTION_RESOLVED`는 `ON_ENEMY_POST_ACTION`과 스프레드시트 트리거
-값("적 후행 시")이 같지만, 패시브의 조건 중 하나라도
-`Condition.requires_round_resolved = True`(예: `HolderWasAttackedCondition`)이면
-`damaged_this_round`가 확정된 뒤 평가되도록 `PassiveSkillWrapperBuff.timing`이
-자동으로 골라준다 — 버프 시트에 직접 등록하는 값이 아니다.
+값("적 후행 시")이 같지만, `damaged_this_round`가 확정된 뒤에 평가돼야 하는
+패시브 효과(조건이 `Condition.requires_round_resolved = True`이거나 — 예:
+`HolderWasAttackedCondition` — 효과 자체가
+`SkillEffectBase.requires_round_resolved = True`인 경우)를 위해
+`PassiveSkillWrapperBuff.timing`이 자동으로 골라준다 — 버프 시트에 직접
+등록하는 값이 아니다. 한 패시브 안에서 효과마다 갈릴 수 있으며, 그때는
+`create()`가 `"effects"`/`"effects_resolved"` 인스턴스로 나눠 등록한다.
 
 ### 버프 이벤트 vs 대상 오버라이드
 
@@ -218,7 +221,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 
 스킬 하나에 effect 최대 3개까지 정의 가능 (`effect_0`, `effect_1`, `effect_2` 컬럼).
 패시브 스킬(`PassiveSkillData.effects`)도 같은 `SkillEffectBase` 구현체를
-재사용하며, 최대 `MAX_PASSIVE_EFFECT_COUNT`(2)개까지 정의 가능하다.
+재사용하며, 최대 `MAX_PASSIVE_EFFECT_COUNT`(3)개까지 정의 가능하다.
 
 ### 에너미 스킬 예고 블라인드 (`SkillData.revealed`)
 
@@ -256,12 +259,23 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
   `BuffBase` 인터페이스로 감싸 `BuffContainer`에 그대로 등록한다.
   `buff_mod_event`와 `effects`는 서로 다른 `BuffApplyTiming`이 필요할 수 있어
   (전자는 실제 공격 처리 중이어야 하는 `ON_ACTION` 고정, 후자는 `trigger`가
-  선언한 타이밍), `create()`가 역할(`"buff_mod"` / `"effects"`)별로 버프
-  인스턴스를 최대 2개까지 만들어 등록한다.
+  선언한 타이밍), `create()`가 역할별로 버프 인스턴스를 나눠 만들어 등록한다.
+  역할은 `"buff_mod"` / `"effects"` / `"effects_resolved"` 세 가지이며, 뒤의
+  둘은 `_indexed_effects_for_role()`이 효과별 `requires_round_resolved`를 보고
+  가른다 — 한쪽 타이밍에 몰아넣으면 다른 쪽이 한 라운드씩 밀리기 때문이다
+  (그 라운드의 피격을 경감할 버프는 `ON_ENEMY_POST_ACTION`에, 그 라운드의
+  피격 결과를 읽는 효과는 `ON_ENEMY_POST_ACTION_RESOLVED`에 걸려야 한다).
 - **`PassiveSkillTargetType`**: `SELF`/`SAME_COLUMN_ALLIES`/
-  `SELF_AND_SAME_COLUMN_ALLIES`/`ALL_ALLIES`/`ATTACKER_OR_TARGET`/
-  `LOWEST_HP_ALLY`. `_resolve_targets()`가 실제 대상 목록으로 변환하며,
-  동료(소환수, `context.companion_owners`)는 아군 범위 대상에서 제외된다.
+  `SELF_AND_SAME_COLUMN_ALLIES`/`SELF_AND_ADJACENT_COLUMN_ALLIES`/
+  `ALL_ALLIES`/`ATTACKER_OR_TARGET`/`LOWEST_HP_ALLY`. `_resolve_targets()`가
+  실제 대상 목록으로 변환하며, 동료(소환수, `context.companion_owners`)는
+  아군 범위 대상에서 제외된다.
+
+아군 전체/열 범위에 **받는 대미지 경감**을 주는 패시브는 `buff_id`(버프
+모디파이어) 경로로는 구현할 수 없다 — `_apply_buff_events()`는 피격 당사자에게
+`applied_to`된 버프만 조회하는데 래퍼는 홀더에게만 등록되므로, 그 경로는
+홀더 본인에게만 적용된다(`target_type`이 무시된다). 범위 경감은 `effect_N`으로
+"버프" 시트의 실제 경감 버프를 매 라운드 대상들에게 부여하는 방식으로 만든다.
 
 ---
 

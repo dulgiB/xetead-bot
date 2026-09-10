@@ -98,12 +98,14 @@
 | `target_type`                       | 효과 대상 범위 (`PassiveSkillTargetType`, [값 목록](#passiveskilltargettype))       |
 | `description`                       | 표시용 설명                                                                     |
 | `buff_id`                           | (선택) "버프_패시브" 시트의 `id` — 버프 모디파이어 경로. `effect_0`/`effect_1`과 동시에 채울 수 있다 |
-| `effect_0`~`effect_1` (및 부속 컬럼) | 효과 최대 2개(`MAX_PASSIVE_EFFECT_COUNT`), [`effect_N` 컬럼 패턴](#effect_n-컬럼-패턴-스킬아이템-공용) 참조 |
+| `effect_0`~`effect_2` (및 부속 컬럼) | 효과 최대 3개(`MAX_PASSIVE_EFFECT_COUNT`), [`effect_N` 컬럼 패턴](#effect_n-컬럼-패턴-스킬아이템-공용) 참조 |
 
 `buff_id`(버프 모디파이어 경로)와 `effect_N`(스킬 효과 경로)은 상호 배타적이지
 않다 — 둘 다 채우면 서로 다른 `BuffApplyTiming`이 필요할 수 있어 내부적으로
-역할별 버프 인스턴스 2개로 나뉘어 등록된다 (`PassiveSkillWrapperBuff.create()`,
-[CLAUDE.md#패시브-스킬-시스템](CLAUDE.md#패시브-스킬-시스템) 참고).
+역할별 버프 인스턴스로 나뉘어 등록된다 (`PassiveSkillWrapperBuff.create()`,
+[CLAUDE.md#패시브-스킬-시스템](CLAUDE.md#패시브-스킬-시스템) 참고). `effect_N`
+끼리도 평가 시점이 갈릴 수 있어(라운드 확정 전/후) 자동으로 한 번 더 나뉜다 —
+시트에 적는 값은 달라지지 않는다.
 
 ---
 
@@ -188,6 +190,7 @@
 | `SkillEffectAddBuffIfTargetHasReferencedBuff`    | 대상이 reference_buff_id 버프를 이미 보유하고 있을 때만 buff_id 버프 부여(선행 디버프 요구 콤보) |
 | `SkillEffectAddBuffWithReferencedStackValue`     | holder의 reference_buff_id 버프 스택 수 × value%를 스냅샷한 수치로 buff_id 버프 부여. required_target_buff_id가 있으면 그 버프를 보유하고 아직 buff_id가 없는 대상에게만 |
 | `SkillEffectAddBuffAtTargetColumn`               | 대상의 현재 위치(열)를 스냅샷한 수치로 buff_id 버프 부여(부여 이후 대상이 이동해도 이미 부여된 버프의 수치는 갱신되지 않음) |
+| `SkillEffectAddBuffPerDamagedColumn`             | holder 기준 좌우 value열(자신의 열 포함) 중 이번 라운드에 아군이 피격된 **열의 개수**만큼 buff_id 스택 부여(한 열에서 여러 명이 맞아도 1스택). value는 수치가 아니라 반경. 패시브 전용 — 라운드 확정 후에 평가된다 |
 | `SkillEffectRemoveDebuffs`                       | 대상의 패시브가 아닌 디버프를 전부 제거                                         |
 | `SkillEffectAddBuffIfHolderHasFormationBuff`     | 시전자가 [Formation] 버프를 보유한 상태일 때만 대상에게 버프 부여                     |
 | `SkillEffectShieldOrReflectIfTargetHasFormationBuff` | 대상이 [Formation] 보유 시 대체 버프(보통 [반사]), 아니면 기본 버프(보통 [방어막]) 부여 |
@@ -279,5 +282,6 @@
 ### PassiveSkillTargetType
 
 "스킬_패시브" 시트의 `target_type` 컬럼: `자신` / `같은 열 아군` /
-`자신을 포함한 같은 열 아군` / `전체 아군` / `공격자 또는 대상` /
-`체력 최저 아군`. 동료(소환수)는 아군 범위 대상에서 항상 제외된다.
+`자신을 포함한 같은 열 아군` / `자신을 포함한 좌우 1열 아군` / `전체 아군` /
+`공격자 또는 대상` / `체력 최저 아군`. 동료(소환수)는 아군 범위 대상에서 항상
+제외된다.

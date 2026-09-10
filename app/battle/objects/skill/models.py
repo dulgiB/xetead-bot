@@ -1,7 +1,7 @@
 import abc
 import importlib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Optional, Type, cast
+from typing import TYPE_CHECKING, ClassVar, Literal, Optional, Type, cast
 
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
@@ -68,6 +68,13 @@ class SkillEffectBase(abc.ABC):
     # 수치가 나오지 않는 문제를 막는 용도 — 공격자==대상인 자기 대미지에서
     # 주로 쓴다. `DamageData.triggers_holder_action_buffs`로 전달된다.
     ignores_defensive_buffs: bool = False
+
+    # 이 효과가 damaged_this_round처럼 "라운드의 피격이 모두 확정된 뒤"에만
+    # 올바른 값을 내는지. 조건(Condition.requires_round_resolved)이 아니라
+    # 효과 본체가 그런 데이터를 직접 읽는 경우에 켠다. 패시브 스킬에서
+    # 평가 시점(적 후행 시 vs 적 후행 확정 후)을 고르는 데 쓰인다
+    # (PassiveSkillWrapperBuff 참고).
+    requires_round_resolved: ClassVar[bool] = False
 
     @property
     def condition(self) -> Optional["Condition"]:
