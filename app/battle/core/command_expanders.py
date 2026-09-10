@@ -1,5 +1,5 @@
 from dataclasses import replace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import (
@@ -28,6 +28,7 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    FateBoostMode,
     ValueSourceType,
 )
 from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
@@ -37,6 +38,9 @@ from battle.objects.skill.target_functions import (
     SkillTargetRuleColumn,
     SkillTargetRuleColumnRange,
 )
+
+if TYPE_CHECKING:
+    from battle.objects.skill.models import SkillData
 
 
 def _mark_ignores_taunt_if_column_target(
@@ -53,6 +57,43 @@ def _mark_ignores_taunt_if_column_target(
     ):
         return damage_list
     return [replace(damage, ignores_taunt=True) for damage in damage_list]
+
+
+def _apply_fate_buff_boost(
+    skill_data: "SkillData",
+    data_per_effect_list: list[CommandPartDataPerEffect],
+    context: BattlefieldContext,
+) -> None:
+    """운명간섭("+")의 버프 강화 모드를 부여 예정인 버프에 반영한다.
+
+    대미지/회복 보정(굴림 보정·수치 강화)과 달리 버프는 계산 단계에 수치가
+    없으므로, 부여 데이터를 만드는 이 시점에 얹어야 한다. 설정 오류(모드에
+    맞지 않는 효과 등)는 전투 개시 시점 검증(fate_config_error)이 admin에게
+    미리 알리므로, 여기서는 조용히 원래 버프를 그대로 둔다.
+    """
+    mode = skill_data.fate_mode
+    if mode not in (FateBoostMode.BUFF_VALUE_BOOST, FateBoostMode.BUFF_STACK_BOOST):
+        return
+    index = skill_data.fate_effect_index
+    if not (0 <= index < len(data_per_effect_list)):
+        return
+
+    bonus = skill_data.fate_boost_value
+    buff_add_list = data_per_effect_list[index].buff_add_list
+    for i, buff_add in enumerate(buff_add_list):
+        if mode is FateBoostMode.BUFF_STACK_BOOST:
+            buff_add_list[i] = replace(
+                buff_add, stack_value=buff_add.stack_value + bonus
+            )
+            continue
+        # 버프 수치 강화: 이미 다른 효과가 수치를 스냅샷해 둔 경우(value_override)
+        # 그 값을, 아니면 버프 시트의 기본 수치를 기준으로 더한다.
+        base_value = (
+            buff_add.value_override
+            if buff_add.value_override is not None
+            else context.get_buff_data_by_id(buff_add.buff_id).value
+        )
+        buff_add_list[i] = replace(buff_add, value_override=base_value + bonus)
 
 
 def expand_admin_command(
@@ -247,6 +288,9 @@ def expand_character_command(
                         apply_timing=skill_effect.apply_timing,
                     )
                 )
+
+            if part.fate_boost:
+                _apply_fate_buff_boost(skill_used.data, data_per_effect_list, context)
 
             parts_list.append(
                 CommandPartData(

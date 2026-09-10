@@ -180,9 +180,13 @@ def test_fate_blocked_when_hp_not_above_cost():
 
 
 def test_fate_blocked_on_non_damage_skill():
-    """비대미지 스킬에는 붙일 수 없다 (초기 구현 범위 밖)."""
+    """fate_mode를 지정하지 않은 비대미지 스킬에는 붙일 수 없다.
+
+    시트에 fate_mode를 채운 비대미지 스킬은 반대로 허용된다 —
+    test_fate_boost_modes.py 참고.
+    """
     context = _make_context(attacker_revival=1)
-    with pytest.raises(CommandValidationError, match="대미지를 주지 않아"):
+    with pytest.raises(CommandValidationError, match="대미지를 주지 않고"):
         _run(context, f"[HealSkill+/{_ATTACKER.name}]")
 
 
