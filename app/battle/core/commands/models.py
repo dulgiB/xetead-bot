@@ -14,9 +14,6 @@ from battle.objects.models import (
     ValueModifierBase,
 )
 
-# user input -> parse() -> list[CommandBase] -> expand_xxx_command() ->
-# list[CommandData] -> process_xxx_command() -> list[CommandProcessResult]
-
 
 @dataclass(frozen=True)
 class CharacterCommand:
@@ -33,13 +30,11 @@ class CommandPart:
     skill_id: Optional[str] = None
     item_id: Optional[str] = None
 
-    # 대부분의 커맨드는 한 종류만 담지만, SkillTargetRuleNamedWithColumn처럼
-    # 캐릭터 이름과 열을 한 커맨드에 함께 지정하는 경우가 있어 원소별로
-    # 섞일 수 있는 타입이다(list[A] | list[B]가 아니라 list[A | B]).
+    # SkillTargetRuleNamedWithColumn처럼 이름과 열을 함께 지정하는 커맨드가
+    # 있어 list[A] | list[B]가 아니라 원소별로 섞이는 list[A | B]다.
     targets: list[CharacterId | BattlefieldColumnIndex] = field(default_factory=list)
 
-    # 운명간섭: 커맨드 이름 뒤에 "+"를 붙여 선언했는지 여부
-    # (예: "[공격+/대상]", "[스킬_1+/대상]"). parser.py가 채운다.
+    # 커맨드 이름 뒤에 "+"를 붙여 선언했는지("[공격+/대상]"). parser.py가 채운다.
     fate_boost: bool = False
 
 
@@ -87,7 +82,8 @@ class CommandPartData:
                 continue
 
             if data.apply_timing is not None:
-                # 에너미 스킬: apply_timing이 명시된 effect는 process()가 페이즈를 보고 처리 여부를 결정하므로 그대로 보존
+                # apply_timing이 명시된 effect는 process()가 페이즈를 보고
+                # 처리 여부를 정하므로 그대로 보존한다.
                 new_data_per_effect_list.append(data)
             else:
                 new_data_per_effect_list.append(
@@ -109,16 +105,15 @@ class CommandPartData:
 @dataclass
 class DamageCalculateData:
     base: DamageData
-    # 공격자(holder)가 주는 대미지에 적용되는 modifier (BuffGivenDamage 등)
+    # BuffGivenDamage 등 공격자 쪽 modifier.
     given_modifiers: list[ValueModifierBase] = field(default_factory=list)
-    # 대상(holder)이 받는 대미지에 적용되는 modifier (BuffReceivedDamage, m_res, 희생 방어 등)
+    # BuffReceivedDamage·m_res·희생 방어 등 대상 쪽 modifier.
     received_modifiers: list[ValueModifierBase] = field(default_factory=list)
     result_value: Optional[int] = None
-    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.format_calculation()). 로그 기록용.
+    # 굴림을 포함한 계산식 표기. 로그 기록용.
     roll_display: Optional[str] = None
-    # 대미지 적용 직후의 대상 HP/최대 HP 스냅샷. 같은 커맨드에서 같은 대상이
-    # 여러 번 맞을 수 있어(예: 스킬 효과 2개), 답글 포매터가 나중에
-    # context를 다시 조회하면 최종 HP만 보이게 되므로 그 시점 값을 남겨둔다.
+    # 적용 직후의 HP 스냅샷. 같은 대상이 한 커맨드에서 여러 번 맞을 수 있어,
+    # 나중에 context를 다시 조회하면 최종 HP만 보이므로 그 시점 값을 남긴다.
     hp_after: Optional[int] = None
     max_hp: Optional[int] = None
 
@@ -126,13 +121,12 @@ class DamageCalculateData:
 @dataclass
 class HealCalculateData:
     base: HealData
-    # 회복 시전자(holder)가 주는 회복에 적용되는 modifier (BuffGivenHeal 등).
     # "받는 회복" 버프는 아직 없어 받는 쪽 그룹은 두지 않는다.
     given_modifiers: list[ValueModifierBase] = field(default_factory=list)
     result_value: Optional[int] = None
-    # 주사위 굴림을 포함한 계산식 표기 (ValueWithModifiers.format_calculation()). 로그 기록용.
+    # 굴림을 포함한 계산식 표기. 로그 기록용.
     roll_display: Optional[str] = None
-    # 회복 적용 직후의 대상 HP/최대 HP 스냅샷 (DamageCalculateData.hp_after 참고).
+    # DamageCalculateData.hp_after 참고.
     hp_after: Optional[int] = None
     max_hp: Optional[int] = None
 
@@ -150,9 +144,8 @@ class BattleLogEntryKind(str, Enum):
     BUFF_ADD = "buff_add"
     BUFF_REMOVE = "buff_remove"
     DEBUFF_CLEAR = "debuff_clear"
-    # 방어막/반사 등 BuffNoDataBase 계열이 대미지/회복을 완전히 무효화해
-    # damage_data_list/heal_data_list에서 항목 자체가 사라졌을 때, "왜 대미지가
-    # 안 보이는지"를 답글에 남기기 위한 종류.
+    # 방어막/반사 등이 항목 자체를 없앴을 때 "왜 대미지가 안 보이는지"를
+    # 답글에 남기기 위한 종류.
     NO_EFFECT = "no_effect"
 
 
@@ -175,20 +168,15 @@ class BattleLogEntry:
     stack_delta: Optional[int] = (
         None  # buff_add: 이번에 추가된 스택 / buff_remove: 이번에 소모된 스택
     )
-    # buff_add(적층형 버프 한정): 답글 포매터가 같은 (대상, buff_id) 조합의
-    # 여러 부여를 "[라벨]×합계 부여 → 최종 M" 한 줄로 합칠 때 쓴다.
-    # entry.result를 다시 파싱하지 않도록 라벨/최종 스택을 구조화 필드로 둔다.
+    # 적층형 buff_add 한정. 답글 포매터가 여러 부여를 한 줄로 합칠 때
+    # entry.result를 다시 파싱하지 않아도 되도록 구조화해 둔 필드다.
     buff_label: Optional[str] = None
     final_stack: Optional[int] = None
-    # damage/heal 적용 직후의 대상 HP/최대 HP 스냅샷. 같은 커맨드에서 같은
-    # 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상), 답글 포매터가
-    # 나중에 context를 다시 조회하면 최종 HP만 보이게 되므로 이 시점 값을
-    # 그대로 들고 있는다.
+    # DamageCalculateData.hp_after 참고.
     hp_after: Optional[int] = None
     max_hp: Optional[int] = None
-    # 반격/반사/코모이디아류처럼 제3자(버프 보유자)가 대신 가한 대미지의
-    # 발생 원인 라벨들(DamageData.source_label을 모아 중복 제거한 것). 답글
-    # 요약 줄에 "[라벨]"로 덧붙인다 — 캐릭터 본인의 직접 행동이면 비어 있다.
+    # 반격/반사류처럼 제3자가 대신 가한 대미지의 발생 원인 라벨.
+    # 캐릭터 본인의 직접 행동이면 비어 있다.
     source_labels: tuple[str, ...] = ()
 
 
@@ -196,10 +184,7 @@ class BattleLogEntry:
 class CommandPartProcessResult:
     expanded_part: CommandPartData
     log_entries: list[BattleLogEntry] = field(default_factory=list)
-    # 도발 등으로 대미지 대상이 치환된 (원래 대상 → 실제 대상) 매핑
-    # (CommandPartCalculator._prepare_redirects()가 계산). 답글 포매터
-    # (app/bot/battle_reply_text.py)가 헤더에 "원래 대상 ▸ 실제 대상"을
-    # 보여주는 데 쓴다.
+    # 도발 등으로 치환된 (원래 대상 → 실제 대상). 답글 헤더에 쓰인다.
     redirect_map: dict[CharacterId, CharacterId] = field(default_factory=dict)
 
 

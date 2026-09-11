@@ -91,7 +91,7 @@ def test_heal_does_not_exceed_max_hp(heal_skill_setup):
     ctx, manager = heal_skill_setup
     target_id = CharacterId("아군 2")
     max_hp = ctx.characters[target_id].status._max_hp
-    ctx.characters[target_id].status.curr_hp = max_hp  # HP를 최대치로 설정
+    ctx.characters[target_id].status.curr_hp = max_hp
 
     cmd = parse_character_command(CharacterId("아군 1"), "[회복/아군 2]", ctx)
     manager.process_command(cmd)

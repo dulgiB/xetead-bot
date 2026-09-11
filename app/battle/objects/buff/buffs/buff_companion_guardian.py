@@ -30,24 +30,17 @@ class CompanionGuardianEvent(BuffEvent):
     두 비율은 "버프" 시트의 value(분담 비율)/value_2(반격 비율) 컬럼(둘 다
     퍼센트로 해석)에서 온다."""
 
-    # "버프" 시트의 value(value_type=퍼센트)에서 온다.
     split_percent: int
-    # "버프" 시트의 value_2(항상 퍼센트로 해석)에서 온다.
     counter_percent: int
 
-    # 계산식 modifier의 source_name으로 쓸 표시 라벨. "버프" 시트에 등록된
-    # 실제 버프 이름을 그대로 보여줘야 하므로, BuffCompanionGuardian.create_event()가
-    # self.display_id_label()을 담아 넘긴다 — 코드에 이름을 하드코딩하면
-    # 데이터를 시트에서 바꿔도 계산식엔 옛 이름이 그대로 남는다.
+    # 표시용 라벨. 여러 캐릭터가 공유하는 클래스라 이름을 하드코딩하지 않고
+    # 이 버프를 등록한 시트 행의 id를 그대로 쓴다.
     label: str
 
     @property
     def priority(self) -> BuffEventCalculatePriority:
-        # POST여야 한다 — holder에게 걸린 다른 ON_ACTION 버프(예: "받는
-        # 대미지" 경감류)가 먼저 received_modifiers에 반영된 뒤에, 그 모든
-        # 증감이 반영된 최종 대미지를 기준으로 동료와 나눠야 한다. NORMAL로
-        # 두면 이 버프가 먼저 실행되어 다른 경감 버프가 holder 몫에만 적용되고
-        # 동료 몫에는 누락되는 비대칭이 생긴다.
+        # POST여야 다른 받는 대미지 버프가 모두 반영된 최종 수치를 기준으로
+        # 나눈다. NORMAL이면 경감이 holder 몫에만 적용되는 비대칭이 생긴다.
         return BuffEventCalculatePriority.POST
 
     def apply(
@@ -67,11 +60,8 @@ class CompanionGuardianEvent(BuffEvent):
             dc.base.target_id == holder for dc in effect_data.damage_data_list
         )
 
-        # SkillTargetRuleColumn은 동료를 열 대상에 독립적으로 포함시키지
-        # 않으므로(항상 holder만 맞은 것으로 취급) 보통은 해당 없지만, 스킬이
-        # holder와 동료를 각각 명시적으로 지정하는 등 동료가 같은 effect의
-        # 독자적인 대상으로 이미 포함된 예외적인 경우까지 대비해 방어적으로
-        # 분담을 건너뛴다 — 그렇지 않으면 동료가 이중으로 얻어맞는다.
+        # 스킬이 holder와 동료를 각각 명시적으로 지정하는 등, 동료가 이미
+        # 같은 effect의 독자적인 대상이면 분담까지 하면 이중으로 맞는다.
         companion_already_targeted = any(
             dc.base.target_id == companion_id for dc in effect_data.damage_data_list
         )
@@ -80,13 +70,9 @@ class CompanionGuardianEvent(BuffEvent):
             for damage_calc in effect_data.damage_data_list:
                 if damage_calc.base.target_id != holder:
                     continue
-                # holder와 동료가 "같은 대미지"를 나눠 받아야 한다. POST
-                # 우선순위 덕분에 이 시점엔 holder에게 걸린 다른 받는 대미지
-                # 증감 버프가 이미 received_modifiers에 반영돼 있다 — 그
-                # 모든 증감을 포함한 최종 수치를 한 번만 확정한 뒤,
-                # 그 수치를 split_percent 비율로 나눠 holder/동료 각자
-                # FIXED 대미지로 만든다(각자 다시 modifier를 적용하면 위
-                # 증감이 어느 한쪽에만 반영되는 비대칭이 재발한다).
+                # 최종 수치를 한 번만 확정한 뒤 비율로 갈라 각자 FIXED
+                # 대미지로 만든다 — 각자 다시 modifier를 적용하면 증감이
+                # 한쪽에만 반영되는 비대칭이 재발한다.
                 final_calc = ValueWithModifiers(
                     damage_calc.base.value,
                     damage_calc.given_modifiers,
@@ -125,10 +111,8 @@ class CompanionGuardianEvent(BuffEvent):
                 )
             effect_data.damage_data_list.extend(shared_calcs)
 
-        # holder_was_hit이 False면 이번 발동은 holder가 공격자 쪽(ON_ATTACK)이라
-        # _apply_buff_events가 호출한 것이지 실제로 피격당한 게 아니다 — 이 경우
-        # attacker_or_target은 holder가 공격한 대상이지 holder를 공격한 대상이
-        # 아니므로 반격을 발동하면 안 된다.
+        # holder_was_hit이 False면 holder는 공격자 쪽이라 attacker_or_target이
+        # "holder를 공격한 자"가 아니다 — 반격을 발동하면 안 된다.
         attacker_alive = (
             holder_was_hit
             and attacker_or_target is not None

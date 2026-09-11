@@ -1,5 +1,5 @@
 from dataclasses import replace
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import (
@@ -28,6 +28,7 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    FateBoostMode,
     ValueSourceType,
 )
 from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
@@ -37,6 +38,9 @@ from battle.objects.skill.target_functions import (
     SkillTargetRuleColumn,
     SkillTargetRuleColumnRange,
 )
+
+if TYPE_CHECKING:
+    from battle.objects.skill.models import SkillData
 
 
 def _mark_ignores_taunt_if_column_target(
@@ -55,6 +59,42 @@ def _mark_ignores_taunt_if_column_target(
     return [replace(damage, ignores_taunt=True) for damage in damage_list]
 
 
+def _apply_fate_buff_boost(
+    skill_data: "SkillData",
+    data_per_effect_list: list[CommandPartDataPerEffect],
+    context: BattlefieldContext,
+) -> None:
+    """운명간섭("+")의 버프 강화 모드를 부여 예정인 버프에 반영한다.
+
+    대미지/회복 보정(굴림 보정·수치 강화)과 달리 버프는 계산 단계에 수치가
+    없으므로, 부여 데이터를 만드는 이 시점에 얹어야 한다. 설정 오류(모드에
+    맞지 않는 효과 등)는 전투 개시 시점 검증(fate_config_error)이 admin에게
+    미리 알리므로, 여기서는 조용히 원래 버프를 그대로 둔다.
+    """
+    mode = skill_data.fate_mode
+    if mode not in (FateBoostMode.BUFF_VALUE_BOOST, FateBoostMode.BUFF_STACK_BOOST):
+        return
+    index = skill_data.fate_effect_index
+    if not (0 <= index < len(data_per_effect_list)):
+        return
+
+    bonus = skill_data.fate_boost_value
+    buff_add_list = data_per_effect_list[index].buff_add_list
+    for i, buff_add in enumerate(buff_add_list):
+        if mode is FateBoostMode.BUFF_STACK_BOOST:
+            buff_add_list[i] = replace(
+                buff_add, stack_value=buff_add.stack_value + bonus
+            )
+            continue
+        # 다른 효과가 이미 스냅샷해 둔 수치가 있으면 그쪽을 기준으로 삼는다.
+        base_value = (
+            buff_add.value_override
+            if buff_add.value_override is not None
+            else context.get_buff_data_by_id(buff_add.buff_id).value
+        )
+        buff_add_list[i] = replace(buff_add, value_override=base_value + bonus)
+
+
 def expand_admin_command(
     command: AdminCommand, context: BattlefieldContext
 ) -> CommandPartData:
@@ -64,9 +104,7 @@ def expand_admin_command(
             admin_target_phase=command.target_phase,
         )
     elif isinstance(command, ForceMoveCommand):
-        # Admin의 Force* 커맨드는 항상 캐릭터 이름만 대상으로 받는다(열
-        # 지정은 to_position 필드가 별도로 담당) — command_expanders.py 상단
-        # 주석 참고.
+        # Force* 커맨드의 targets는 항상 캐릭터 이름뿐이다(열은 to_position 담당).
         move_targets = cast(list[CharacterId], command.targets)
         return CommandPartData(
             original_part=command,
@@ -159,14 +197,13 @@ def expand_character_command(
     command: CharacterCommand,
     context: BattlefieldContext,
 ) -> list[CommandPartData]:
-    # 도발/희생 방어에 의한 대상 치환은 대미지 처리 시점(CommandPartCalculator)에서
-    # 일괄 수행한다. 여기서는 원래 지정 대상으로 전개만 한다.
+    # 도발/희생 방어 치환은 CommandPartCalculator가 일괄 처리한다 —
+    # 여기서는 원래 지정 대상 그대로 전개한다.
     parts_list: list[CommandPartData] = []
 
     for part in command.parts:
         if part.type_ == ActionType.MOVE and part.targets is not None:
-            # parser.py의 command_format_move가 이동 커맨드에는 항상 열
-            # 하나만 targets[0]에 채워 넣는다.
+            # parser.py가 이동 커맨드에는 항상 열 하나만 채워 넣는다.
             move_pos = cast(BattlefieldColumnIndex, part.targets[0])
             parts_list.append(
                 CommandPartData(
@@ -183,8 +220,7 @@ def expand_character_command(
             is_magic_attack = context.characters[
                 command.user_id
             ].status.is_magic_attacker
-            # parser.py의 command_format_attack이 공격 커맨드에는 항상 캐릭터
-            # 이름 하나만 targets[0]에 채워 넣는다.
+            # parser.py가 공격 커맨드에는 항상 캐릭터 이름 하나만 채워 넣는다.
             attack_target = cast(CharacterId, part.targets[0])
             parts_list.append(
                 CommandPartData(
@@ -223,8 +259,7 @@ def expand_character_command(
             data_per_effect_list: list[CommandPartDataPerEffect] = []
 
             for skill_effect in skill_used.data.effects:
-                # expand()가 즉시 부수효과(디버프 일괄 제거 등)를 일으킬 수 있으므로,
-                # "무엇이 지워질지"는 expand() 호출 전에 먼저 확정해야 한다.
+                # expand()가 즉시 부수효과를 일으키므로 그 전에 확정해야 한다.
                 debuff_clear_list = skill_effect.get_debuff_clear_targets(
                     context, target_characters
                 )
@@ -248,6 +283,9 @@ def expand_character_command(
                     )
                 )
 
+            if part.fate_boost:
+                _apply_fate_buff_boost(skill_used.data, data_per_effect_list, context)
+
             parts_list.append(
                 CommandPartData(
                     original_part=part, data_per_effect=tuple(data_per_effect_list)
@@ -261,9 +299,7 @@ def expand_character_command(
 
             target_characters = item_used.target_rule.get_targets(part.targets)
 
-            # 효과 없는 소지용 아이템(effect=None)은 try_expansion_if_valid()의
-            # 사전 검증(error_item_has_no_effect)에서 이미 걸러져 여기까지
-            # 오지 않는다.
+            # 효과 없는 아이템은 try_expansion_if_valid()가 이미 걸러냈다.
             assert item_used.data.effect is not None
             debuff_clear_list = item_used.data.effect.get_debuff_clear_targets(
                 context, target_characters

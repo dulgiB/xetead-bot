@@ -63,20 +63,17 @@ _RE_TRANSFER_ITEM = re.compile(
     rf"\[{whitespace_tolerant_literal('양도')}\s*/\s*([^\]]+)]"
 )
 
-# 아이템 목록은 전투 중 [아이템명/...] 형식과 통일하기 위해 비전투 상황에서도
-# "사용/" 접두어 없이 인식한다 — 브래킷이 있는 모든 멘션(사담 등 포함)마다
-# 아이템 시트를 읽으면 낭비이므로, 등록이 자주 바뀌지 않는 아이템 목록은
-# 멘션 단위 SheetCache와 별개로 TTL 캐싱한다(BotState.item_name_cache*).
+# 아이템명은 "사용/" 접두어 없이 인식하므로, 브래킷이 있는 모든 멘션마다
+# 아이템 시트를 읽게 된다 — 등록이 자주 바뀌지 않으니 멘션 단위
+# SheetCache와 별개로 TTL 캐싱한다.
 _ITEM_NAME_CACHE_TTL_SEC = 300
 
-# "수상한 물약"이 뽑은 효과 텍스트 중 체력 회복을 뜻하는 것만 캐릭터
-# 스프레드시트에 반영한다 (예: "체력이 1 회복된다.", "체력이 100 회복된다.").
+# 뽑은 효과 텍스트 중 체력 회복을 뜻하는 것만 시트에 반영한다.
 _RE_MYSTERIOUS_POTION_HEAL_EFFECT = re.compile(r"^체력이 (\d+) 회복된다\.$")
 MYSTERIOUS_POTION_ITEM_NAME = "수상한 물약"
 
-# [가방] 목록에서 item_type별로 설명 뒤에 덧붙일 안내 문구. "비전투 소모품"은
-# 설명 자체로 비전투 전용임이 자명하므로 별도 문구를 붙이지 않는다. "부적"은
-# 뒤가 아니라 설명 앞에 붙는 라벨이라 여기 대신 _BAG_DESCRIPTION_PREFIX에 있다.
+# [가방] 목록에서 설명 뒤에 덧붙일 안내 문구. "비전투 소모품"은 설명 자체로
+# 자명해 생략하고, "부적"은 앞에 붙는 라벨이라 _BAG_DESCRIPTION_PREFIX에 있다.
 _BAG_ITEM_TYPE_SUFFIX: dict[ItemType, str] = {
     ItemType.CONSUMABLE: " 비전투 상황에서도 사용 가능.",
 }
@@ -86,8 +83,7 @@ _BAG_DESCRIPTION_PREFIX: dict[ItemType, str] = {
     ItemType.CHARM: "부적. ",
 }
 
-# "기타"/"비전투 소모품"/"부적"은 코스트·사거리가 항상 0이므로 [가방]에서
-# 생략한다.
+# 코스트·사거리가 항상 0이라 [가방]에서 생략한다.
 _BAG_ITEM_TYPES_WITHOUT_COST_RANGE = (
     ItemType.ETC,
     ItemType.NONCOMBAT_CONSUMABLE,
@@ -106,10 +102,8 @@ _ITEM_TARGET_RULE_LABELS: dict[str, str] = {
 
 FREE_EXPLORE_LABEL = "자율 탐사"
 
-# main.py와 별개로 읽는다 — bot.main이 이 모듈을 import하므로(순환 import),
-# 여기서 bot.main.ADMIN_MASTODON_ID를 직접 가져올 수 없다.
-# 상시조사에서 수동 진행으로 인계할 때는 admin이 아니라 세계관 서술을
-# 담당하는 별도 계정(WORLD_MASTODON_ID)을 태그한다.
+# bot.main이 이 모듈을 import하므로 거기서 가져오지 못하고 따로 읽는다.
+# 상시조사를 수동 진행으로 인계할 때 admin이 아니라 이 계정을 태그한다.
 WORLD_MASTODON_ID: str = os.environ["WORLD_MASTODON_ID"]
 
 
@@ -226,7 +220,7 @@ def handle_roll(
 
     if fate_boost:
         total += FATE_INTERVENTION_ROLL_BONUS
-        reply += f" + {FATE_INTERVENTION_ROLL_BONUS}[운명간섭]"
+        reply += f" + {FATE_INTERVENTION_ROLL_BONUS}[키워드 보정]"
         dice_roll += f"+{FATE_INTERVENTION_ROLL_BONUS}"
 
     reply += f" → 「{total}」"
@@ -247,15 +241,15 @@ def _check_noncombat_fate_available(
     """비전투 운명간섭 사용 조건을 확인하고, 못 쓰면 오류 문구를 반환한다."""
     if char_data.revival_count < FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT:
         return (
-            f"◊ 운명간섭(+)은 부활 횟수가"
+            f"◊ 키워드 보정은 부활 횟수가"
             f" {FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT}회 이상인 캐릭터만"
             " 사용할 수 있습니다."
         )
     if char_data.fate_date == today:
-        return "◊ 운명간섭(+)은 오늘 이미 사용했습니다."
+        return "◊ 키워드 보정은 오늘 이미 사용했습니다."
     if char_data.curr_hp <= FATE_INTERVENTION_HP_COST:
         return (
-            f"◊ 운명간섭(+)은 체력 {FATE_INTERVENTION_HP_COST}을 소모하므로"
+            f"◊ 키워드 보정은 체력 {FATE_INTERVENTION_HP_COST}을 소모하므로"
             f" 체력이 그보다 많아야 합니다. (현재 체력: {char_data.curr_hp})"
         )
     return None
@@ -285,7 +279,8 @@ def _consume_noncombat_fate(
     except Exception:
         logger.exception("비전투 운명간섭 대가 반영 실패: %s", char_data.name)
         return (
-            "⚠️ 운명간섭 대가(체력 소모) 반영에 실패했습니다. 관리자에게 문의해 주세요."
+            "⚠️ 키워드 보정 대가(체력 소모) 반영에 실패했습니다."
+            " 관리자에게 문의해 주세요."
         )
 
     # 같은 멘션 처리 중 다시 조회될 수 있으므로 인메모리 값도 맞춰 둔다.
@@ -293,7 +288,7 @@ def _consume_noncombat_fate(
         char_data, curr_hp=new_hp, fate_date=today
     )
     return (
-        f"↳ 운명간섭 사용: 체력 {FATE_INTERVENTION_HP_COST} 소모"
+        f"↳ 키워드 보정 사용: 체력 {FATE_INTERVENTION_HP_COST} 소모"
         f" (→ {new_hp}/{char_data.max_hp})"
     )
 
@@ -388,10 +383,8 @@ def handle_use_item(
         if resolved_target != user_name:
             msg = "◊ 자신에게만 사용할 수 있는 아이템입니다."
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-        # 아직 전용 로직이 구현되지 않은 비전투 소모품은, 플레이어 입장에서는
-        # 등록되지 않은 아이템과 다를 바 없다 — "구현 예정" 같은 내부 사정을
-        # 노출하지 않고 동일한 메시지로 거절한다. 소비 전에 확인해야
-        # 존재하지 않는 효과를 위해 아이템이 조용히 사라지는 일이 없다.
+        # 플레이어에게 미구현은 미등록과 다를 바 없으므로 같은 메시지로
+        # 거절한다. 소비 전에 확인해야 아이템이 헛되이 사라지지 않는다.
         if item_name not in _NONCOMBAT_ITEM_HANDLERS:
             msg = "◊ 등록되지 않은 아이템입니다."
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -514,10 +507,8 @@ def _handle_mysterious_potion(
     return reply, NoncombatLogInfo(command_text=command_text, result=combined_effects)
 
 
-# item_type="비전투 소모품"인 아이템명 → 전용 처리 함수. handle_use_item이
-# 아이템명이 이 dict에 없으면 소비 전에 "등록되지 않은 아이템입니다."로
-# 거절한다 — 플레이어 입장에서는 미구현도 미등록과 다를 바 없어야 하고,
-# 어차피 처리할 방법이 없는 아이템을 소비해 버리면 안 되기 때문이다.
+# "비전투 소모품" 아이템명 → 전용 처리 함수. 여기 없는 아이템은
+# handle_use_item()이 소비 전에 "등록되지 않은 아이템"으로 거절한다.
 _NONCOMBAT_ITEM_HANDLERS: dict[
     str, Callable[[str, int, "BotState", str], tuple[str, Optional[NoncombatLogInfo]]]
 ] = {
@@ -746,11 +737,9 @@ def handle_daily_quest_roll(
         f"{success_type.value}! {message}" if message else f"{success_type.value}!"
     )
 
-    # 캐릭터 시트의 gold는 더 이상 봇이 직접 갱신하지 않는다 — 소지금 변동은
-    # "가계부" 시트 기록만으로 관리하고, gold는 그 내역을 근거로 한 스프레드
-    # 시트 수식이 계산한다. new_gold는 가계부 기록/재조회가 실패했을 때만
-    # 쓰이는 예상치(로컬 계산)로, 정상 경로에서는 아래에서 실제 값으로
-    # 덮어써진다.
+    # gold 컬럼은 봇이 직접 갱신하지 않는다 — "가계부" 시트 기록을 근거로
+    # 시트 수식이 계산한다. 이 값은 가계부 기록·재조회가 실패했을 때만 쓰이는
+    # 예상치이고, 정상 경로에서는 아래에서 실제 값으로 덮어써진다.
     new_gold = char_data.gold + 1
     today = date.today().isoformat()
 
@@ -784,9 +773,8 @@ def handle_daily_quest_roll(
             logger.exception("가계부 기록 실패")
 
         if ledger_appended:
-            # gold 수식이 방금 추가한 가계부 행을 반영한 값을 다시 읽는다 —
-            # char_data.gold + 1로 로컬 계산하면 가계부에 이미 있던 다른
-            # 변동(수동 지급 등)을 놓친다.
+            # 로컬 계산으로 대신하면 가계부에 이미 있던 다른 변동(수동 지급
+            # 등)을 놓치므로, 수식이 반영된 값을 다시 읽는다.
             try:
                 if state.sheet_cache is not None:
                     state.sheet_cache.invalidate("캐릭터")
@@ -905,10 +893,8 @@ def handle_investigation_venue_choice(
                 f"정보를 수집할 수 있다. @{WORLD_MASTODON_ID}"
             )
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
-        # 이 답글은 유효한 의뢰 개요가 아니다 — 이전에 선택했던 quest_id가
-        # 남아 있으면, 뒤이어 finalize_investigation_overview_post가 이
-        # (틀린) 답글을 그 옛 의뢰의 개요인 것처럼 등록해 [수락] 시 엉뚱한
-        # 의뢰가 수주되는 것을 방지하기 위해 지운다.
+        # 남아 있는 quest_id를 지우지 않으면, 이 답글이 옛 의뢰의 개요로
+        # 등록되어 [수락] 시 엉뚱한 의뢰가 수주된다.
         session.quest_id = None
         msg = "◊ 등록되지 않은 장소입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)

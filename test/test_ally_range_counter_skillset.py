@@ -335,9 +335,8 @@ class TestPassiveSkill:
         manager = _setup_enemy_pre_phase(ctx)
         self._add_holder_and_ally(ctx)
         enemy = CharacterId("적군")
-        # 조건 충족용으로 [버프_1](주는 대미지 수정자)가 아니라 [버프_3](수치를
-        # 건드리지 않는 반응형 버프)를 부여한다 — 이 테스트는 반격의 "기본
-        # 비율"만 확인하고, 다른 버프와의 중첩은 별도 테스트에서 확인한다.
+        # 수치를 건드리지 않는 [버프_3]을 쓴다 — 이 테스트는 반격의 기본
+        # 비율만 확인한다.
         ctx.buff_container.add(
             _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
         )
@@ -457,7 +456,7 @@ class TestPassiveSkill:
     def test_no_counter_when_ally_damage_is_fully_reflected(self):
         """[반사](BuffReflect)가 아군2의 피해를 완전히 무효화하고 공격자에게
         되돌리는 형태로 대체하면, 그 무효화된 원래 피격 이벤트를 근거로
-        코모이디아류(ALLY_IN_RANGE_DAMAGED) 버프가 추가로 발동하면 안 된다 —
+        ALLY_IN_RANGE_DAMAGED 버프가 추가로 발동하면 안 된다 —
         아군2는 실제로는 전혀 대미지를 받지 않았기 때문이다."""
         ctx = _make_context()
         manager = _setup_enemy_pre_phase(ctx)
@@ -476,8 +475,8 @@ class TestPassiveSkill:
         enemy_hp_after = ctx.characters[enemy].status.curr_hp
 
         # 아군2의 피해가 [반사_테스트]로 전액 무효화되고 공격 굴림 10 ×
-        # 40%[반사 계수] = 4만큼만 공격자에게 되돌아간다. 코모이디아
-        # (PassiveSkill)의 추가 반격(공격 굴림 50 × 50% = 25)이 더해지면 안 된다.
+        # 40%[반사 계수] = 4만큼만 공격자에게 되돌아간다. PassiveSkill의
+        # 추가 반격(공격 굴림 50 × 50% = 25)이 더해지면 안 된다.
         assert enemy_hp_before - enemy_hp_after == 4
 
     def test_no_counter_when_ally_out_of_holders_range(self):
@@ -497,8 +496,8 @@ class TestPassiveSkill:
         assert enemy_hp_before == enemy_hp_after
 
     def test_no_counter_from_round_end_dot_tick(self):
-        """그을음/거화류 라운드 종료 DoT(BuffDamageOverTimePerReferencedBuffStack)는
-        코모이디아류(ALLY_IN_RANGE_DAMAGED) 반격 패시브를 재유발하면 안
+        """라운드 종료 DoT(BuffDamageOverTimePerReferencedBuffStack)는
+        ALLY_IN_RANGE_DAMAGED 반격 패시브를 재유발하면 안
         된다 — DoT를 건 캐릭터가 반격까지 이중으로 맞으면 안 된다."""
         buffs = _buff_dict()
         buffs["스택_테스트"] = BuffData.from_dict(
@@ -566,7 +565,7 @@ class TestPassiveSkill:
 
         # DoT 자체(3스택 × 5)는 정상적으로 들어가야 한다.
         assert ally2_hp_before - ally2_hp_after == 15
-        # 하지만 그 DoT가 코모이디아(PassiveSkill)의 반격까지 재유발해
+        # 하지만 그 DoT가 PassiveSkill의 반격까지 재유발해
         # DoT를 건 적군이 추가로 대미지를 받으면 안 된다.
         assert enemy_hp_before == enemy_hp_after
 

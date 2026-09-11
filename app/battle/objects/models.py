@@ -38,13 +38,10 @@ class BuffUid:
 @dataclass(frozen=True)
 class ValueModifierBase:
     source_name: str
-    # True면 FIXED(고정값) 대미지/힐에도 적용된다. 마력 적응(m_res)·희생 방어
-    # 경감처럼 버프가 아닌 게임 메커니즘용. BuffGivenDamage/BuffReceivedDamage/
-    # BuffGivenHeal 등 버프 유래 modifier는 기본값(False)을 그대로 써서
-    # FIXED 값에는 영향을 주지 않는다.
-    # kw_only: 서브클래스(IntValueModifier/FloatValueModifier)가 추가하는
-    # 필수 필드 value가 기본값 있는 필드보다 뒤에 오게 되는 dataclass 순서
-    # 제약을 피하기 위함.
+    # True면 FIXED 값에도 적용된다 — m_res·희생 방어 경감처럼 버프가 아닌
+    # 게임 메커니즘용이고, 버프 유래 modifier는 기본값 False를 그대로 쓴다.
+    # kw_only는 서브클래스가 추가하는 필수 필드 value가 기본값 있는 필드
+    # 뒤에 오게 되는 dataclass 순서 제약을 피하기 위함이다.
     applies_to_fixed: bool = field(default=False, kw_only=True)
 
 
@@ -56,9 +53,8 @@ class IntValueModifier(ValueModifierBase):
 @dataclass(frozen=True)
 class FloatValueModifier(ValueModifierBase):
     value: float
-    # "× (a × b)"처럼 여러 배율의 곱으로 분해해서 보여주고 싶을 때만 채운다.
-    # (라벨, 퍼센트값) 쌍의 튜플. value는 이미 그 곱셈 결과이므로 실제 계산에는
-    # 영향을 주지 않고 format_calculation()의 표시 방식만 바꾼다.
+    # "× (a × b)"처럼 배율을 분해해 보여주고 싶을 때만 채우는 (라벨, 퍼센트)
+    # 쌍. value가 이미 곱셈 결과라 계산에는 영향이 없고 표시만 바뀐다.
     display_factors: Optional[tuple[tuple[str, float], ...]] = None
 
 
@@ -67,10 +63,8 @@ class BaseValueIndicator:
     value_source: ValueSourceType
     value: Optional[int | DiceRollResult] = None
     coefficient: Optional[FloatValueModifier] = None
-    # CONSUMED_BUFF_STACK/REFERENCED_BUFF_STACK 전용: 대상 버프 id.
-    # format_calculation()이 수치를 "{값}[{buff_id}]"로 라벨링하는 데 쓰인다
-    # (계산식에서 어느 버프에서 온 수치인지 보여주기 위함). 다른 value_source에서는
-    # 쓰이지 않는다.
+    # CONSUMED_BUFF_STACK/REFERENCED_BUFF_STACK 전용. 계산식에서 수치를
+    # "{값}[{buff_id}]"로 라벨링해 어느 버프에서 왔는지 보여주는 데 쓴다.
     consumed_buff_id: Optional[str] = None
 
     def get_value(
@@ -80,11 +74,9 @@ class BaseValueIndicator:
         calculator: Optional["CommandPartCalculator"],
         effect_seq_number: int,
     ) -> int | DiceRollResult:
-        # FIXED 외의 소스도 value가 이미 채워져 있으면(예: CompanionBuff1이
-        # 홀더/동료 분담 몫을 같은 굴림 값으로 고정하려고 미리 채워둔 경우)
-        # 그대로 반환한다 — value_source를 FIXED로 바꾸면 base_coefficient가
-        # 적용되지 않아(ValueWithModifiers.__init__ 참고) 계수가 있는 소스에는
-        # 쓸 수 없기 때문에, 원래 value_source를 유지한 채로 캐싱한다.
+        # 굴림 값을 미리 고정해 둔 경우(분담 대미지 등)는 그대로 반환한다.
+        # value_source를 FIXED로 바꿔 캐싱하면 base_coefficient가 적용되지
+        # 않으므로, 원래 value_source를 유지한 채 value만 채워 둔다.
         if self.value is not None:
             return self.value
 
@@ -124,10 +116,8 @@ class BaseValueIndicator:
             return calculator.context.find_character_position(target_id).value
 
         elif self.value_source == ValueSourceType.GIVEN_DAMAGE:
-            # 현재 effect 포함, 이미 result_value가 설정된 damage 합산.
-            # coefficient는 ValueWithModifiers.base_coefficient가 다른 값
-            # 소스와 동일하게 적용한다 (계산식 표시를 위해 여기서 미리
-            # 곱해두지 않는다).
+            # 현재 effect까지의 합산. 계수는 계산식에 드러나도록 여기서
+            # 곱하지 않고 base_coefficient에 맡긴다.
             return sum(
                 data.result_value
                 for effect in calculator.data_by_effect[: effect_seq_number + 1]
@@ -136,8 +126,7 @@ class BaseValueIndicator:
             )
 
         elif self.value_source == ValueSourceType.GIVEN_HEAL:
-            # 현재 effect 포함, 이미 result_value가 설정된 heal 합산.
-            # coefficient 처리는 GIVEN_DAMAGE와 동일.
+            # GIVEN_DAMAGE와 동일한 방식.
             return sum(
                 data.result_value
                 for effect in calculator.data_by_effect[: effect_seq_number + 1]
@@ -146,8 +135,7 @@ class BaseValueIndicator:
             )
 
         elif self.value_source == ValueSourceType.CONSUMED_BUFF_STACK:
-            # 현재 effect 포함, 이미 result_value가 설정된 버프 제거량 합산.
-            # coefficient 처리는 GIVEN_DAMAGE와 동일.
+            # GIVEN_DAMAGE와 동일한 방식.
             return sum(
                 data.result_value
                 for effect in calculator.data_by_effect[: effect_seq_number + 1]
@@ -156,8 +144,6 @@ class BaseValueIndicator:
             )
 
         elif self.value_source == ValueSourceType.REFERENCED_BUFF_STACK:
-            # CONSUMED_BUFF_STACK과 달리 스택을 소모하지 않고, target_id에게
-            # 걸린 consumed_buff_id 버프의 "현재" 스택 수를 그대로 읽는다.
             assert self.consumed_buff_id is not None
             return calculator.context.get_buff_stack(target_id, self.consumed_buff_id)
 
@@ -186,9 +172,8 @@ def _bucket_modifiers(
 
 @dataclass
 class ValueWithModifiers:
-    # int는 실제 커맨드 파이프라인에서는 쓰이지 않고, calculator 없이 계수/
-    # 그룹 계산만 검증하는 테스트에서 raw 값을 바로 넘기는 용도다(get_value()가
-    # calculator를 참조하지 않고 그대로 반환하는 지름길을 탄다).
+    # int는 실제 파이프라인에서는 쓰이지 않고, calculator 없이 계산만
+    # 검증하는 테스트가 raw 값을 바로 넘기는 용도다.
     base_value: int | BaseValueIndicator
     given_int_modifiers: list[IntValueModifier]
     given_float_modifiers: list[FloatValueModifier]
@@ -214,12 +199,9 @@ class ValueWithModifiers:
             and self.base_value.value_source == ValueSourceType.FIXED
         )
 
-        # 스킬 자체의 계수(백분율). 예: 230 → ×2.3. FIXED 값에는 적용하지 않는다
-        # (버프성 배율과 동일 취급 — 실제로 FIXED와 coefficient가 같이 쓰이는
-        # 곳은 현재 없다). GIVEN_DAMAGE/GIVEN_HEAL/CONSUMED_BUFF_STACK도 다른
-        # 값 소스와 동일하게 여기서 계수를 적용해야 계산식에 표시된다
-        # (예전에는 BaseValueIndicator.get_value() 안에서 미리 곱해 계산식에
-        # 드러나지 않았다).
+        # 스킬 자체의 계수(백분율, 230 → ×2.3). 버프성 배율과 동일 취급이라
+        # FIXED 값에는 적용하지 않는다. 모든 값 소스의 계수를 여기 한곳에서
+        # 적용해야 계산식에 드러난다.
         self.base_coefficient = None
         if (
             not is_fixed
@@ -270,8 +252,7 @@ class ValueWithModifiers:
         if self.base_coefficient is not None:
             value = math.floor(value * self.base_coefficient.value / 100)
 
-        # 주는 쪽/받는 쪽 퍼센트 그룹은 각각 독립적인 배율 (1 + Σ퍼센트/100)을
-        # 이루고, 두 배율을 곱한다 (그룹 내부는 합연산, 그룹끼리는 곱연산).
+        # 그룹 내부는 합연산, 그룹끼리는 곱연산.
         given_factor = max(
             0.0, 1 + sum(m.value for m in self.given_float_modifiers) / 100
         )
@@ -297,8 +278,8 @@ class ValueWithModifiers:
         if not has_content:
             return None
 
-        # CONSUMED_BUFF_STACK은 소모한 버프 이름을 숫자에 직접 라벨링해서 보여준다
-        # (예: "5[유예된 재앙]") — 이 경우 배율에 다시 "[계수]"를 붙이면 중복이라 생략한다.
+        # CONSUMED_BUFF_STACK은 숫자에 이미 버프 이름을 라벨링하므로("5[재앙]"),
+        # 배율에 다시 "[계수]"를 붙이면 중복이라 생략한다.
         consumed_buff_id = (
             self.base_value.consumed_buff_id
             if isinstance(self.base_value, BaseValueIndicator)
@@ -368,35 +349,24 @@ class DamageData:
     target_id: CharacterId
     value: BaseValueIndicator
     is_magic_attack: Optional[bool] = None
-    # False면 "공격자가 대미지를 줄 때마다" 트리거되는 패시브(예:
-    # BuffApplyDebuffOnDealingDamage)를 발동시키지 않는다. 버프 반격 등
-    # 파생 대미지가 원래 패시브를 재귀적으로 유발하지 않도록 하는 용도.
+    # False면 "대미지를 줄 때" 트리거되는 패시브를 발동시키지 않는다 —
+    # 파생 대미지가 원래 패시브를 재귀적으로 유발하지 않게 하는 용도.
     triggers_given_damage_passives: bool = True
-    # False면 "이 대미지를 맞았을 때" 발동하는 반응형 버프(코모이디아 등
-    # ALLY_DAMAGED/ALLY_IN_RANGE_DAMAGED/ALLY_IN_RANGE_ATTACKED 계열)를
-    # 발동시키지 않는다. DoT(그을음/거화 등)나 반격/반사류가 만들어내는
-    # 파생 대미지에 쓴다 — 그러지 않으면 DoT 틱이나 반격 자체가 다른(또는
-    # 같은) 반응형 버프를 연쇄로 재유발해, 원래 커맨드 한 번이 아니라
-    # 반응이 반응을 낳는 게임 밸런스상 의도하지 않은 연쇄가 생긴다.
+    # False면 ALLY_DAMAGED 계열 반응형 버프를 발동시키지 않는다. DoT나
+    # 반격/반사가 만든 파생 대미지에 쓴다 — 그러지 않으면 반응이 반응을
+    # 낳는 연쇄가 생긴다.
     triggers_received_damage_passives: bool = True
-    # True면 도발(BuffTaunt 등 get_target_override) 리다이렉트를 적용하지
-    # 않는다. 열 광역기는 "이동에 코스트를 써서 열을 벗어날지, 대미지를
-    # 맞고 버틸지"가 각 대상별 판단이어야 하는데, 도발을 적용하면 열 전체
-    # 대미지가 도발자 한 명에게 몰려 그 설계가 무너지므로 열 광역
-    # target rule(SkillTargetRuleColumn/SkillTargetRuleAllyColumn)에서
-    # 생성된 항목은 command_expanders.py에서 이 값을 True로 표시한다.
+    # True면 도발 리다이렉트를 적용하지 않는다. 열 광역기는 "열을 벗어날지
+    # 맞고 버틸지"가 대상별 판단이어야 하는데, 도발을 적용하면 열 전체
+    # 대미지가 도발자 하나에게 몰려 그 설계가 무너진다.
     ignores_taunt: bool = False
-    # False면 대상 본인이 보유한 ON_ACTION 버프(BuffGuardReflect 등 방어/반격/
-    # 반사류 포함)를 이 대미지에 한해 전혀 발동시키지 않는다. 자멸형 자기
-    # 대미지(공격자==대상)가 시전자 본인의 방어 패시브에 막혀 의도한 수치가
-    # 나오지 않는 문제를 막는 용도. `command_calculator.py`의 ON_HIT
-    # `_apply_buff_events()` 호출 여부를 결정한다 — 같은 대상을 향한 다른
-    # 대미지 중 하나라도 True면 정상적으로 발동한다(OR로 합쳐짐).
+    # False면 대상 본인의 ON_ACTION 버프(방어/반격/반사류)를 이 대미지에
+    # 한해 발동시키지 않는다. 자멸형 자기 대미지가 시전자 본인의 방어
+    # 패시브에 막히는 것을 막는 용도. 같은 대상을 향한 다른 대미지 중
+    # 하나라도 True면 정상 발동한다(OR로 합쳐짐).
     triggers_holder_action_buffs: bool = True
-    # 반격/반사/코모이디아류처럼 이 대미지를 실제로 가한 쪽이 공격자 본인이
-    # 아니라 제3자(버프 보유자)일 때, 답글 요약에 "[라벨]"로 그 발생 원인을
-    # 밝히기 위한 표시용 문자열. None이면 캐릭터 본인의 직접 행동으로 간주해
-    # 요약에 아무것도 덧붙이지 않는다.
+    # 반격/반사류처럼 실제로 대미지를 가한 쪽이 제3자(버프 보유자)일 때
+    # 답글에 "[라벨]"로 밝히기 위한 문자열. None이면 본인의 직접 행동이다.
     source_label: Optional[str] = None
 
 

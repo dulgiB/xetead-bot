@@ -177,12 +177,9 @@ def _build_faction_block(
 
     for col_idx, column in enumerate(_BATTLEFIELD_COLUMNS):
         slots = context.position_map[faction][column]
-        # position_map은 슬롯 인덱스(0~2)를 키로 갖는데, 캐릭터가 전장에서
-        # 빠지면 그 슬롯 키만 pop되고 나머지 슬롯은 그대로 남는다(예: 슬롯0이
-        # 빠지면 {1: b, 2: c}). 그 인덱스를 그대로 행에 매핑하면 필드
-        # 시트에서 헤더와 가장 가까운 "앞" 칸이 빈칸으로 보이게 된다 —
-        # 실제 슬롯 번호와 무관하게 남아 있는 순서대로 앞(main_row_start)부터
-        # 채워 빈칸이 생기지 않게 한다.
+        # 캐릭터가 빠지면 그 슬롯 키만 pop되므로(슬롯0이 빠지면 {1: b, 2: c}),
+        # 인덱스를 그대로 행에 매핑하면 앞 칸이 빈칸으로 보인다 — 슬롯 번호와
+        # 무관하게 남은 순서대로 앞부터 채운다.
         occupants = [slots[i] for i in sorted(slots.keys())]
         sheet_col = col_idx + 2  # B=2
 
@@ -258,12 +255,9 @@ def _m_res_icon(char: "CombatCharacter") -> str:
     return "⚬"
 
 
-# 패시브 스킬 등의 description은 "▸ [버프id]: 설명" 형태로 자신이 부여하는
-# 다른 버프를 미리 문서화해 둔 줄을 포함할 수 있다(예: "...부여한다.\n▸
-# [우월감]: 버프. 적에게 주는 대미지가 10% 증가한다."). 그 버프가 아직
-# 부여되지 않은 상태에서는 유용한 미리보기지만, 실제로 부여되고 나면 그
-# 버프가 필드 시트에 자기 자신의 note 줄을 따로 갖게 되어 같은 설명이
-# 두 번 보인다.
+# description은 자신이 부여하는 다른 버프를 "▸ [버프id]: 설명" 줄로 미리
+# 문서화해 둘 수 있다. 부여 전에는 유용한 미리보기지만, 부여되고 나면 그
+# 버프가 자기 note 줄을 따로 갖게 되어 같은 설명이 두 번 보인다.
 _REFERENCED_BUFF_LINE = re.compile(r"^▸\s*\[([^\]]+)]")
 
 
@@ -297,13 +291,9 @@ def _format_buff_cell(
     seen_passive_labels: set[str] = set()
     for buff in buffs:
         label = buff.display_id_label()
-        # 패시브 스킬 하나가 buff_mod_event(즉시 적용 수치 보정)와 effects(트리거
-        # 발동 효과)를 동시에 가지면 PassiveSkillWrapperBuff.create()가 역할별로
-        # 나뉜 버프 인스턴스를 여러 개 등록한다(passive_skill.py 참고) — 게임
-        # 로직상으로는 각자 다른 타이밍에 독립적으로 발동해야 해서 반드시
-        # 그렇게 나뉘어 있어야 하지만, 사람이 보는 필드 시트에는 같은 패시브
-        # 스킬 하나로만 보여야 하므로 같은 라벨의 두 번째 이후 인스턴스는
-        # 건너뛴다.
+        # 패시브 하나가 역할별로 여러 버프 인스턴스로 나뉘어 등록될 수 있다
+        # (passive_skill.py 참고) — 시트에는 패시브 하나로만 보여야 하므로
+        # 같은 라벨의 두 번째 이후는 건너뛴다.
         if isinstance(buff, PassiveSkillWrapperBuff):
             if label in seen_passive_labels:
                 continue

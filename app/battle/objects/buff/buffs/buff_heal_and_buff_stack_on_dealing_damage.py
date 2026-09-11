@@ -74,12 +74,9 @@ class HealAndBuffStackOnDealingDamageEvent(BuffEvent):
         if target_id is None:
             return
 
-        # _process_heal()이 방금 부여한 회복 항목의 healer/target(둘 다
-        # holder 자신)에 대해 ON_ACTION 버프를 다시 조회하면서 이 이벤트를
-        # 재호출하기 때문에(회복 모디파이어 버프를 위한 정상 훅), 아무런
-        # 가드 없이 매번 새 항목을 append하면 같은 행동 안에서 무한 증식한다
-        # (PassiveSkillWrapperEvent의 GIVEN_DAMAGE/GIVEN_HEAL 이중 발동 방지와
-        # 동일한 문제). effect당 1회만 발동하도록 계산기 수명 동안 기록한다.
+        # _process_heal()이 방금 부여한 회복 항목을 두고 ON_ACTION 버프를 다시
+        # 조회하며 이 이벤트를 재호출하므로, 가드가 없으면 같은 행동 안에서
+        # 무한 증식한다 — effect당 1회만 발동하도록 기록해 둔다.
         fire_key = (effect_seq_number, holder, "heal_and_buff_stack_on_dealing_damage")
         if fire_key in calculator._fired_given_value_passives:
             return

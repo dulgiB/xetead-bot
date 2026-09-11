@@ -133,7 +133,7 @@ def merge_damage_heal_lines(
     합산해 "▹ 대상 | ±합계 → hp/max [라벨...]" 한 줄로 미리 조립해 둔다.
     최종 hp_after/max_hp는 등장 순서상 마지막 항목의 값을 쓴다(그 시점이
     실제로 가장 최신 상태이므로). 라벨(entry.source_labels)은 등장 순서를
-    유지한 채 파트 전체에 걸쳐 중복 제거해 모은다 — 반격/반사/코모이디아류처럼
+    유지한 채 파트 전체에 걸쳐 중복 제거해 모은다 — 반격/반사류처럼
     같은 대상이 여러 반응형 버프의 대상이 됐을 때도 라벨이 하나씩만 남는다."""
     totals: dict[tuple[BattleLogEntryKind, str], int] = {}
     last_hp_after: dict[tuple[BattleLogEntryKind, str], Optional[int]] = {}
@@ -358,10 +358,8 @@ def _format_part(
         assert part.skill_id is not None
         skill_data = context.get_skill_data_by_id(part.skill_id)
         hide_result_lines = skill_data.hide_result_lines
-        # 예고 미리보기는 원래 적 PRE 선언 전용이지만, reveal_effect=True인
-        # 캐릭터 스킬은 아군이 선언할 때도 동일하게 표시한다. 이 시점엔
-        # 대미지/힐 등 실제 결과가 아직 없는 경우(적 PRE 선언 등)가 많아
-        # 무엇을 선언했는지(대상)는 알아야 하므로 헤더를 항상 함께 보여준다.
+        # 예고를 붙이는 시점엔 실제 결과가 아직 없는 경우가 많아, 무엇을
+        # 선언했는지 알 수 있도록 헤더를 항상 함께 보여준다.
         if show_skill_preview or skill_data.reveal_effect:
             body_lines.append(header)
             body_lines.append(_format_skill_preview(skill_data))
@@ -373,16 +371,12 @@ def _format_part(
             entry.kind == BattleLogEntryKind.BUFF_ADD and entry.buff_label is not None
         )
         if hide_result_lines:
-            # 본문 줄만 생략하고 계산식은 아래에서 그대로 쌓는다. emitted에는
-            # 일부러 등록하지 않는다 — 같은 대상의 대미지/회복이 같은 커맨드의
-            # 다른 파트에도 있으면 그쪽 합산 줄로는 계속 보여야 하므로,
-            # 여기서 키를 선점해 그 줄까지 지워 버리면 안 된다.
+            # emitted에 일부러 등록하지 않는다 — 여기서 키를 선점하면 같은
+            # 대상이 다른 파트에서 내야 할 합산 줄까지 지워진다.
             pass
         elif entry.kind in _MERGEABLE_KINDS or is_mergeable_buff_add:
-            # 같은 대상의 대미지/회복(또는 같은 적층형 버프 부여)이 다른
-            # 파트(예: 공격을 여러 번 나눠 선언)에 이미 합산 줄로 나갔으면
-            # 본문에는 또 넣지 않는다 — 계산식(calc_lines)은 이 파트 고유의
-            # 굴림이므로 그대로 남긴다.
+            # 다른 파트가 이미 합산 줄로 냈으면 본문에는 또 넣지 않는다 —
+            # 계산식은 이 파트 고유의 굴림이므로 그대로 남긴다.
             key = (
                 _buff_add_merge_key(entry)
                 if is_mergeable_buff_add
@@ -398,18 +392,14 @@ def _format_part(
                 f"▹ {escape_markdown(entry.target_name)} | {calc} → {final_value}"
             )
 
-    # 적 후행 정산으로 미뤄지는 공격 등, 이 시점엔 아직 아무 결과도 없는
-    # 파트(예: PRE 선언)는 보여줄 결과 줄이 없다 — 그래도 커맨드가
-    # 접수됐다는 확인 자체는 필요하므로 이때만 예외적으로 헤더로 대체한다.
-    # (대미지/회복이 전부 다른 파트의 합산 줄로 흡수돼 body_lines가 비는
-    # 경우는 log_entries 자체는 있었으므로 구분해서, 헤더를 또 보여주지
-    # 않고 빈 문자열을 반환한다 — 호출측이 그대로 건너뛴다.)
+    # 아직 아무 결과도 없는 파트(PRE 선언 등)는 접수 확인이 필요하므로 헤더로
+    # 대체한다. 결과가 있었는데 전부 다른 파트의 합산 줄로 흡수된 경우는
+    # 빈 문자열을 돌려 호출측이 건너뛰게 한다.
     if body_lines:
         body = "\n".join(body_lines)
     elif not log_entries or hide_result_lines:
-        # hide_result_lines 스킬이 reveal_effect도 아니라 예고 줄조차 없으면
-        # 위 루프가 본문을 통째로 비운다 — 그래도 무엇을 선언했는지는 남겨야
-        # 하므로 결과 없는 파트와 동일하게 헤더로 대체한다.
+        # 예고 줄조차 없는 hide_result_lines 스킬은 본문이 통째로 비므로,
+        # 결과 없는 파트와 동일하게 헤더로 대체한다.
         body = header
     else:
         body = ""
@@ -455,8 +445,7 @@ def _skill_target_label(
     targets: list,
     redirect_map: dict[CharacterId, CharacterId],
 ) -> str:
-    # 자가 대상 스킬(SkillTargetRuleSelf)은 사용자가 대상을 입력하지 않아
-    # targets가 비어 있다 — 이 경우 시전자 자신의 이름을 보여준다.
+    # 자가 대상 스킬은 입력 대상이 없으므로 시전자 이름을 보여준다.
     if not targets:
         return escape_markdown(caster_id.name)
     return _target_label(targets, redirect_map)
@@ -469,8 +458,8 @@ def _target_label(targets: list, redirect_map: dict[CharacterId, CharacterId]) -
 def _target_name(target: object, redirect_map: dict[CharacterId, CharacterId]) -> str:
     if not isinstance(target, CharacterId):
         return f"{target}열"  # BattlefieldColumnIndex
-    # 도발/희생 방어로 실제 대상이 치환됐으면(예: 도발) 원래 대상과 실제
-    # 대상을 함께 보여준다 — 답글만 봐도 왜 이 대상이 맞았는지 알 수 있게.
+    # 대상이 치환됐으면 원래 대상과 함께 보여준다 — 답글만 보고도
+    # 왜 이 대상이 맞았는지 알 수 있도록.
     redirected_to = redirect_map.get(target)
     if redirected_to is not None and redirected_to != target:
         return f"{escape_markdown(target.name)} ▸ {escape_markdown(redirected_to.name)}"
@@ -488,20 +477,15 @@ def _format_entry(
     if entry.kind == BattleLogEntryKind.HEAL:
         return _format_damage_or_heal(context, entry, sign="+")
     if entry.kind == BattleLogEntryKind.MOVE:
-        # entry.result는 build_log_entries()가 그 이동이 적용된 시점의
-        # move_data.to_position으로 이미 만들어 둔 값이다 — 여기서
-        # context.find_character_position()으로 다시 조회하면, 한 커맨드
-        # 안에서 이동이 여러 번 나뉘어 있을 때(예: 이동/2열-이동/3열-이동/4열)
-        # 모든 이동이 이미 끝난 뒤(최종 위치 기준)에 포매팅이 일어나므로
-        # 각 파트가 실제로 어디로 이동했는지와 무관하게 전부 최종 위치로
-        # 보이는 문제가 있었다.
+        # entry.result는 그 이동 시점의 위치로 이미 만들어져 있다 — 여기서
+        # context를 다시 조회하면 한 커맨드에 이동이 여러 번 나뉘었을 때
+        # 모든 파트가 최종 위치로만 보인다.
         return (
             f"▹ {escape_markdown(entry.target_name)} | {escape_markdown(entry.result)}",
             None,
             None,
         )
-    # BUFF_ADD/BUFF_REMOVE/DEBUFF_CLEAR는 이미 build_log_entries()가 만들어 둔
-    # result 문자열을 그대로 쓴다.
+    # 나머지 종류는 build_log_entries()가 만들어 둔 result를 그대로 쓴다.
     return (
         f"▹ {escape_markdown(entry.target_name)} | {escape_markdown(entry.result)}",
         None,
@@ -512,11 +496,9 @@ def _format_entry(
 def _format_damage_or_heal(
     context: "BattlefieldContext", entry: BattleLogEntry, *, sign: str
 ) -> tuple[str, Optional[str], Optional[str]]:
-    # entry.hp_after/max_hp는 이 대미지/회복이 적용된 "그 시점"의 스냅샷이다.
-    # 같은 커맨드에서 같은 대상이 여러 번 맞을/회복될 수 있어(효과 2개 이상),
-    # context를 여기서 다시 조회하면 전부 최종 HP로 보이게 되므로 쓰면 안 된다.
-    # (hide_hp 확인용 조회는 살아있는 캐릭터 존재 여부만 보므로 이 문제와
-    # 무관하다 — 실제 HP 값은 여전히 entry의 스냅샷을 그대로 쓴다.)
+    # HP는 반드시 entry의 스냅샷을 쓴다 — 같은 대상이 한 커맨드에서 여러 번
+    # 맞을 수 있어 context를 다시 조회하면 전부 최종 HP로 보인다.
+    # (아래 hide_hp 조회는 캐릭터 존재 여부만 보므로 무관하다.)
     final_value = f"{sign}{entry.value}"
     target_name = escape_markdown(entry.target_name)
     label_suffix = "".join(

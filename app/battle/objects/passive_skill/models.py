@@ -10,9 +10,8 @@ from battle.objects.models import BuffUid, CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
 from utils.spreadsheet_row import SpreadsheetRow
 
-# buff_mod_event 추출용 임시 인스턴스는 create_event()만 호출되고 버려지므로
-# given_by/applied_to/uid는 실제로 쓰이지 않는다 — 전투 참가자가 아직 없는
-# 데이터 로드 시점에 생성되기도 하고, 애초에 식별할 대상이 없다.
+# buff_mod_event 추출용 임시 인스턴스는 create_event()만 호출하고 버려지므로
+# 실제 캐릭터가 필요 없다 — 데이터 로드 시점엔 전투 참가자도 아직 없다.
 _TEMPLATE_CHARACTER_ID = CharacterId("__buff_mod_template__")
 
 
@@ -31,6 +30,7 @@ class PassiveSkillTargetType(str, Enum):
     SELF = "자신"
     SAME_COLUMN_ALLIES = "같은 열 아군"
     SELF_AND_SAME_COLUMN_ALLIES = "자신을 포함한 같은 열 아군"
+    SELF_AND_ADJACENT_COLUMN_ALLIES = "자신을 포함한 좌우 1열 아군"
     ALL_ALLIES = "전체 아군"
     ATTACKER_OR_TARGET = "공격자 또는 대상"
     LOWEST_HP_ALLY = "체력 최저 아군"

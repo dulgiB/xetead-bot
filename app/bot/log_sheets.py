@@ -81,10 +81,8 @@ class NoncombatLogInfo:
     error_trace: Optional[str] = None
 
 
-# DB_SPREADSHEET_KEY는 bot_test와 bot(운영)이 완전히 같은 스프레드시트를
-# 공유한다 — 이름을 고정하면 테스트 본전투가 크래시 복구 대상 행을 실제
-# 운영 전투 행과 같은 자리에 upsert해 덮어쓴다. FIELD_LOG_SHEET_NAME으로
-# 환경별 워크시트를 분리한다(없으면 기존과 동일하게 "필드").
+# 테스트와 운영이 같은 스프레드시트를 공유하므로, 시트 이름을 고정하면
+# 테스트 전투가 운영 전투 행을 같은 자리에 덮어쓴다.
 _FIELD_SHEET = os.environ.get("FIELD_LOG_SHEET_NAME", "필드")
 _FIELD_HEADERS = [
     "id",
@@ -143,9 +141,8 @@ _LEDGER_HEADERS = ["날짜", "캐릭터", "변동 사유", "금액"]
 
 
 def _now() -> str:
-    # Google Sheets의 USER_ENTERED는 ISO 8601의 "T" 구분자·타임존 접미사가
-    # 있으면 날짜/시간으로 파싱하지 못하고 텍스트로 남는다 — 공백으로 구분된
-    # 이 포맷만 자동 인식한다. UTC 기준 시각인 점은 기존과 동일하다.
+    # USER_ENTERED는 ISO 8601의 "T"·타임존 접미사가 있으면 날짜로 인식하지
+    # 못하고 텍스트로 남긴다 — 공백으로 구분된 이 포맷만 자동 인식한다.
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -271,16 +268,12 @@ def write_back_changed_hp(
     for name in changed_names:
         char_id = CharacterId(name)
         char = context.characters.get(char_id)
-        # 라운드 종료 시점에 체력 0으로 필드에서 이미 제거된 대상이면(예:
-        # 라운드 종료 DoT로 인한 탈락) context.characters에 더 이상 없다 —
-        # 이 시점에 존재하지 않는다는 것 자체가 탈락을 의미하므로 0으로 기록한다.
+        # 여기서 찾을 수 없다는 것 자체가 탈락(체력 0)을 의미한다.
         curr_hp = char.status.curr_hp if char is not None else 0
         target = targets.get(name)
         if target is None:
             if char_id in context.companion_owners:
-                # 소환된 동료는 애초에 "캐릭터"/"에너미" 시트에 자기 행이
-                # 없다 — 못 찾는 게 정상이므로 에러가 아니라 디버그 로그만
-                # 남긴다.
+                # 소환된 동료는 시트에 자기 행이 없는 게 정상이다.
                 logger.debug(
                     "'%s'은(는) 소환된 동료라 시트에 반영할 행이 없어 건너뜁니다 (체력 %s)",
                     name,
@@ -300,12 +293,9 @@ def write_back_changed_hp(
             logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
 
 
-# 동시에 최대 1개 슬롯만 진행되는 배틀타입 — field_id로 기존 행을 못 찾으면
-# 같은 battle_type의 가장 최근 미종료 행을 대신 찾아 갱신한다. DM
-# 전투/대련/상시전투는 여러 개가 동시에 진행될 수 있어 이 fallback을
-# 적용하면 안 된다(field_id 정확히 일치할 때만 갱신) — 적용하면 동시
-# 진행 중인 다른 세션의 행을 엉뚱하게 덮어써 그 세션이 "필드" 시트에서
-# 통째로 사라진다(재기동 복원 대상에서도 빠짐).
+# 동시에 최대 1개 슬롯만 진행되는 배틀타입 — field_id로 행을 못 찾으면 같은
+# battle_type의 가장 최근 미종료 행을 대신 갱신한다. 여러 개가 동시에 진행될
+# 수 있는 타입에 이 fallback을 쓰면 다른 세션의 행을 덮어써 지워 버린다.
 _SINGLE_SLOT_BATTLE_TYPES = frozenset({FieldBattleType.MAIN})
 
 
@@ -370,12 +360,8 @@ def upsert_field_row(
             started_at = existing[2] or _now()
             ended_at = _now() if ended else existing[3]
         else:
-            # field_id가 아니라 battle_type만 일치해 재사용하는 행 — 이전
-            # (다른) 전투가 쓰던 슬롯이므로 그 전투의 started_at/ended_at을
-            # 그대로 물려받으면 안 된다. 특히 ended_at을 물려받으면 이제 막
-            # 시작한 전투가 시작하자마자 "이미 종료됨"으로 보여
-            # load_open_battle_rows()의 재기동 복원 대상에서 빠지는 버그가
-            # 된다.
+            # 이전 전투가 쓰던 슬롯을 재사용하는 경우다. ended_at을 물려받으면
+            # 막 시작한 전투가 "이미 종료됨"으로 보여 재기동 복원에서 빠진다.
             started_at = _now()
             ended_at = _now() if ended else ""
         new_row: list[str | int | float] = [

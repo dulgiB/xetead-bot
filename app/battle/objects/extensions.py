@@ -17,9 +17,8 @@ def get_total_cost(
 ) -> int:
     user_pos = context.find_character_position(user)
     assert user_pos is not None
-    # 부활 4회 이상이면 모든 이동 커맨드의 코스트가 +1 된다. 한 커맨드 안에서
-    # 이동을 여러 번 나눠 선언하면 이동 파트마다 중복 적용된다 — 그래서 총합에
-    # 한 번 더하는 게 아니라 파트 단위로 얹는다.
+    # 총합이 아니라 파트 단위로 얹는다 — 한 커맨드에서 이동을 여러 번 나눠
+    # 선언하면 이동 파트마다 중복 적용되는 것이 의도다.
     extra_move_cost = (
         1
         if context.characters[user].status.revival_count >= REVIVAL_COUNT_FOR_EXTRA_COST
@@ -28,10 +27,8 @@ def get_total_cost(
     total = 0
     for part in parts:
         total += _get_part_cost(part, user_pos, context, extra_move_cost)
-        # 같은 커맨드 안에 이동이 여러 번 나뉘어 있으면, 그다음 파트(이동 포함)의
-        # 코스트는 원래 위치가 아니라 이 이동이 적용된 뒤의 위치를 기준으로
-        # 계산해야 한다 — 실제 적용(command_calculator._process_move)과 사거리
-        # 검증(command_processors.py)이 이미 순차 갱신 방식이므로 코스트도 맞춰야 한다.
+        # 뒤따르는 파트의 코스트는 이 이동이 적용된 뒤의 위치를 기준으로 삼는다 —
+        # 실제 적용과 사거리 검증도 같은 순차 갱신 방식이다.
         if part.type_ == ActionType.MOVE and part.targets is not None:
             user_pos = cast(BattlefieldColumnIndex, part.targets[0])
     return total

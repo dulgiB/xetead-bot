@@ -797,10 +797,8 @@ class _FakeMastodon:
         self.media_post_calls: list[str] = []
         self.status_post_calls: list[dict] = []
         self.last_media_id: int = 0
-        # _thread_participants()가 조회하는 스레드 조상 목록 — 기본값(빈
-        # 목록)은 "스레드 히스토리 없음"과 동일해 기존 테스트 동작을
-        # 그대로 보존한다. 스레드 참여자 수집을 검증하는 테스트만 채워
-        # 넣으면 된다.
+        # _thread_participants()가 조회하는 스레드 조상 목록. 빈 목록은
+        # "스레드 히스토리 없음"과 같아, 필요한 테스트만 채워 넣으면 된다.
         self.status_context_ancestors: list[dict] = ancestors or []
 
     def status_post(self, *args, **kwargs):
@@ -2238,10 +2236,8 @@ def test_world_proxy_cannot_control_duel_participants(monkeypatch):
         _make_notification("test-world", 1, 6000, "◊ 검사 [공격/궁수]")
     )
 
-    # world는 대련 참가자가 아니므로 프록시로 대신 행동시킬 수 없다 — 라운드/
-    # 페이즈가 그대로고, 궁수도 대미지를 입지 않아야 한다. (in_reply_to_id가
-    # 활성 대련 게시물과 일치해 "등록된 캐릭터를 찾을 수 없습니다" 같은 에러
-    # 답글 자체는 갈 수 있지만, 실제 공격은 전혀 적용되지 않는다.)
+    # world는 대련 참가자가 아니므로 프록시로 대신 행동시킬 수 없다 —
+    # 에러 답글은 갈 수 있어도 실제 공격은 전혀 적용되지 않는다.
     assert ps.round_n == 1
     assert ps.phase == PracticeRoundPhase.FIRST_MOVER_ACTION
     archer_hp_after = ps.context.characters[CharacterId("궁수")].status.curr_hp

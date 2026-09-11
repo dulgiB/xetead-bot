@@ -29,9 +29,8 @@ class CombatStats:
         self._is_magic_attacker = is_magic_attacker
         self._revival_count = revival_count
 
-        # 부활 4회 이상이면 턴당 코스트가 영구적으로 +1 된다. on_start_round()가
-        # COST_PER_TURN을 그대로 remaining_cost에 채우므로 여기서 한 번만
-        # 반영해 두면 매 라운드 자동으로 유지된다.
+        # on_start_round()가 COST_PER_TURN을 그대로 채우므로, 부활 보너스는
+        # 여기서 한 번만 반영해 두면 매 라운드 자동으로 유지된다.
         self._max_cost = max_cost + (
             1 if revival_count >= REVIVAL_COUNT_FOR_EXTRA_COST else 0
         )
@@ -68,8 +67,7 @@ class CombatStats:
     @property
     def m_res(self) -> FloatValueModifier:
         # 버프가 아니라 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
-        # value는 다른 FloatValueModifier와 동일하게 퍼센트 포인트 단위다
-        # (15 → ±15%, ValueWithModifiers가 value/100으로 나눠 배율을 만든다).
+        # value는 퍼센트 포인트 단위다(15 → ±15%).
         if self._m_res == MagicResistanceType.WEAK:
             return FloatValueModifier(
                 source_name="마법 저항", value=15, applies_to_fixed=True

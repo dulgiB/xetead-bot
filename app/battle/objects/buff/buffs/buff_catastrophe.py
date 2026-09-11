@@ -32,11 +32,16 @@ class CatastropheNoopEvent(BuffEvent):
         pass
 
 
+# "버프" 시트의 value_0(스택당 전투 종료 대미지)이 비어 있을 때 쓰는 폴백.
+_DEFAULT_DAMAGE_PER_STACK = 3
+
+
 class BuffCatastrophe(BuffBase):
     """[재앙]: 버프도 디버프도 아닌 순수 적층형 마커. 해제할 수 없고(패시브
     지속시간이라 라운드 종료 시 자동 제거되지 않으며, is_debuff=False라
-    디버프 해제 효과의 대상이 되지 않는다), 전투가 끝나면 남은 스택 × 3만큼
-    시전자의 체력을 깎는다."""
+    디버프 해제 효과의 대상이 되지 않는다), 전투가 끝나면 남은 스택 ×
+    (스택당 대미지)만큼 시전자의 체력을 깎는다. 스택당 대미지는 "버프" 시트의
+    value_0에서 온다."""
 
     @property
     def timing(self) -> BuffApplyTiming:
@@ -51,13 +56,14 @@ class BuffCatastrophe(BuffBase):
         character = context.characters.get(self.applied_to)
         if character is None:
             return None
-        damage = self.stack_count * 3
+        damage_per_stack = self.value or _DEFAULT_DAMAGE_PER_STACK
+        damage = self.stack_count * damage_per_stack
         character.status.curr_hp = max(0, character.status.curr_hp - damage)
         return BattleLogEntry(
             target_name=self.applied_to.name,
             kind=BattleLogEntryKind.DAMAGE,
             result=f"대미지 {damage}",
-            roll_display=f"({self.stack_count}스택 × 3[{self.id}])",
+            roll_display=f"({self.stack_count}스택 × {damage_per_stack}[{self.id}])",
             value=damage,
             hp_after=character.status.curr_hp,
             max_hp=character.status[CombatStatType.MAX_HP],

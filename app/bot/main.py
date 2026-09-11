@@ -65,16 +65,14 @@ logger = logging.getLogger(__name__)
 
 # admin의 mastodon acct 값 (로컬 계정: "username", 리모트: "username@domain")
 ADMIN_MASTODON_ID: str = os.environ["ADMIN_MASTODON_ID"]
-# 상시전투에서 에너미 등을 대신 조작하는 세계관 서술 담당 계정. [상시전투]
-# 개시와 상시전투 참가자 대상 프록시 커맨드에 한해 admin과 동등하게
-# 허용된다(그 외 admin 커맨드 권한은 없다).
+# 세계관 서술 담당 계정. [상시전투] 개시와 그 참가자 대상 프록시 커맨드에
+# 한해 admin과 동등하게 허용된다(그 외 admin 권한은 없다).
 WORLD_MASTODON_ID: str = os.environ["WORLD_MASTODON_ID"]
 
 _RE_MENTION = re.compile(r"@\S+")
-# 팀/열 번호를 [12]/[1-7]로 제한하지 않고 느슨하게 캡처한다 — 범위를 벗어난
-# 입력(예: [3팀/9열])도 일단 매칭시켜야 아래에서 명시적으로 검증하고 오류
-# 답글을 보낼 수 있다. 엄격하게 제한하면 형식이 살짝 어긋난 입력은 매칭
-# 자체가 안 돼 완전히 무시되어(무응답) 사용자가 재시도할 방법을 알 수 없다.
+# 팀/열 번호를 느슨하게 캡처한다 — 범위를 벗어난 입력([3팀/9열] 등)도 일단
+# 매칭시켜야 오류 답글을 보낼 수 있다. 엄격하게 제한하면 무응답이 되어
+# 사용자가 무엇이 잘못됐는지 알 수 없다.
 _RE_DECLARATION = re.compile(
     rf"\[([^\[\]/]+){whitespace_tolerant_literal('팀')}\s*/\s*([^\[\]]+)]"
 )
@@ -304,10 +302,8 @@ def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) 
     dm.active_post_id = new_post_id
     state.dm_battles[new_post_id] = dm
 
-    # DM 전투는 여러 개가 동시에 진행될 수 있어 field_id별로 "필드" 행을
-    # 따로 관리한다 — 최초 등록(전투 발생) 시 행을 만들고, 이후 페이즈
-    # 전환마다(advance_phase/continue) 다시 호출되어 라운드/페이즈/캐릭터/
-    # active_post_id를 최신 상태로 갱신한다.
+    # DM 전투는 여러 개가 동시에 진행될 수 있어 field_id별로 행을 따로
+    # 관리한다. 페이즈 전환마다 다시 호출되어 최신 상태로 갱신된다.
     try:
         log_sheets.upsert_field_row(
             state.spreadsheet,
@@ -449,29 +445,22 @@ class BotState:
     pending_placements: list[tuple] = field(
         default_factory=list
     )  # (name, faction, column)
-    # key = 현재 진행 게시물 id (prep 단계엔 prep_post_id, 시작 후엔
-    # active_post_id) — dm_battles와 동일한 패턴으로, 여러 대련/상시전투가
-    # 동시에 진행될 수 있다.
+    # key = 현재 진행 게시물 id(prep 단계엔 prep_post_id, 시작 후엔
+    # active_post_id). 여러 대련/상시전투가 동시에 진행될 수 있다.
     practices: dict[int, PracticeBattleState] = field(default_factory=dict)
     noncombat: NonCombatState = field(default_factory=NonCombatState)
     dm_battles: dict[int, DmBattleState] = field(
         default_factory=dict
     )  # key = 현재 스레드 tip 게시물 id
-    # 멘션 하나(on_notification 한 번) 처리 범위에서만 유효한 읽기 캐시.
-    # sheet_cache는 state.spreadsheet(캐릭터/에너미/필드 시트), field_sheet_cache는
-    # state.field_spreadsheet(공개용 "필드" 시트, 별도 스프레드시트), log_sheet_cache는
-    # state.log_spreadsheet("로그_전투"/"로그_비전투", 별도 스프레드시트) 대상이다 —
-    # 셋 다 render/upsert/캡처가 매번 spreadsheet.worksheet(name)을 직접 부르면
-    # 그때마다 전체 시트 메타데이터를 새로 읽어오므로(gspread에 이름별 캐싱이 없다)
-    # 분리해서 캐싱한다. on_notification 시작마다 셋 다 새로 만들어 교체하므로,
-    # 이전 멘션에서 읽은 값이 다음 멘션까지 새어나가지 않는다.
+    # 멘션 하나를 처리하는 동안에만 유효한 읽기 캐시. 스프레드시트마다 따로
+    # 두는 이유는 gspread에 worksheet 이름별 캐싱이 없어, 부를 때마다 시트
+    # 메타데이터를 통째로 다시 읽기 때문이다. on_notification 시작마다 새로
+    # 교체되므로 이전 멘션의 값이 다음 멘션으로 새지 않는다.
     sheet_cache: Optional[SheetCache] = None
     field_sheet_cache: Optional[SheetCache] = None
     log_sheet_cache: Optional[SheetCache] = None
-    # 비전투 [아이템명/...] 인식용 아이템 id 캐시 — sheet_cache와 달리 멘션마다
-    # 교체되지 않고 TTL(noncombat.get_cached_item_names)이 만료될 때까지 여러
-    # 멘션에 걸쳐 재사용된다(브래킷이 있는 멘션마다 아이템 시트를 새로 읽지
-    # 않기 위함).
+    # 아이템명 인식용 캐시 — sheet_cache와 달리 멘션마다 교체되지 않고
+    # TTL이 만료될 때까지 여러 멘션에 걸쳐 재사용된다.
     item_name_cache: Optional[frozenset[str]] = None
     item_name_cache_loaded_at: float = 0.0
 
@@ -501,9 +490,8 @@ class MastodonBotListener(StreamListener):
         self._state = state
         self._bot_acct = bot_acct
         self._last_event_at = time.monotonic()
-        # on_notification()은 이 큐에 넣기만 하고 즉시 반환한다 — 실제 처리는
-        # _notification_worker()가 도는 별도 스레드가 순서대로 꺼내 수행한다.
-        # (자세한 이유는 on_notification()/_notification_worker() 참고)
+        # on_notification()은 여기 넣기만 하고 즉시 반환한다 — 실제 처리는
+        # _notification_worker() 스레드가 순서대로 꺼내 수행한다.
         self._notification_queue: "queue.Queue[dict]" = queue.Queue()
 
     def on_abort(self, err: Exception) -> None:
@@ -618,9 +606,8 @@ class MastodonBotListener(StreamListener):
             if not command_text:
                 return
 
-            # 이 멘션 하나를 처리하는 동안에만 유효한 읽기 캐시로 교체한다 —
-            # 커맨드 간에는 공유하지 않아, 전투 중 스프레드시트를 실시간으로
-            # 고쳐도 다음 멘션부터는 다시 최신 값을 읽는다.
+            # 멘션마다 캐시를 새로 교체해, 전투 중 시트를 실시간으로 고쳐도
+            # 다음 멘션부터는 최신 값을 읽게 한다.
             self._state.sheet_cache = SheetCache(self._state.spreadsheet)
             self._state.field_sheet_cache = SheetCache(self._state.field_spreadsheet)
             self._state.log_sheet_cache = SheetCache(self._state.log_spreadsheet)
@@ -632,10 +619,8 @@ class MastodonBotListener(StreamListener):
                 for m in status.get("mentions", [])
                 if m["acct"] != self._bot_acct
             ]
-            # acct/status_id는 위에서 이미 무조건 대입됐다 — 선언 시점의
-            # Optional은 이 지점 이전에 예외가 나 except로 빠졌을 때 로그에
-            # None을 안전하게 쓰기 위한 것일 뿐, 여기 도달했다면 항상 채워져
-            # 있다.
+            # 선언 시점의 Optional은 아래 except가 로그에 None을 안전하게
+            # 쓰기 위한 것일 뿐, 여기 도달했다면 항상 채워져 있다.
             assert acct is not None
             assert status_id is not None
             self.__dispatch(
@@ -849,13 +834,10 @@ class MastodonBotListener(StreamListener):
         is_admin = acct == ADMIN_MASTODON_ID
         is_world = acct == WORLD_MASTODON_ID
 
-        # 0. 대련/상시전투 중 프록시 커맨드 (계정이 없는 캐릭터, 주로
-        # 에너미를 admin/world가 대신 입력) — 대상이 활성 대련/상시전투
-        # 참가자면 아래 admin 커맨드 라우팅보다 먼저 처리해, 캐릭터 본인
-        # 답글과 동일하게 처리 직후 자동으로 다음 페이즈/라운드로 넘어가게
-        # 한다. world는 상시전투 참가자만 대상으로 허용한다
-        # (require_investigation=True) — 대련은 참가자 전원이 실제
-        # 계정이라 world가 대신 입력할 이유가 없다.
+        # 0. 대련/상시전투 중 프록시 커맨드 (계정 없는 캐릭터를 admin/world가
+        # 대신 입력) — admin 라우팅보다 먼저 처리해야 캐릭터 본인 답글과
+        # 똑같이 처리 직후 자동으로 다음 페이즈로 넘어간다. 대련은 참가자
+        # 전원이 실제 계정이라 world에게는 상시전투만 허용한다.
         if is_admin or is_world:
             (
                 proxy_reply,
@@ -886,8 +868,8 @@ class MastodonBotListener(StreamListener):
                         _register_practice(state, proxy_ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, proxy_ps)
                 return
-            # proxy_ps가 None이면(world라면 상시전투 포함) 어떤 활성 대련/
-            # 상시전투 참가자도 대상이 아니라는 뜻 — 아래 기존 라우팅으로 넘어간다.
+            # proxy_ps가 None이면 활성 세션의 참가자가 대상이 아니라는 뜻이라,
+            # 아래 기존 라우팅으로 넘어간다.
 
         # 1. admin 직접 멘션 또는 [상시전투] self-mention bypass → admin 커맨드
         is_investigation_self_mention = acct == self._bot_acct and bool(
@@ -923,9 +905,8 @@ class MastodonBotListener(StreamListener):
             self._post_admin_result(result, status_id, acct, visibility, state)
             return
 
-        # 1.5. 캐릭터 계정이 직접 [대련]을 시작 — 대련은 (상시전투와 달리)
-        # Admin 커맨드가 아니라 캐릭터 전용 커맨드다. 발신 캐릭터 자신과
-        # 함께 멘션된 상대(스레드에 이미 등장한 인원 포함)가 참여 대상이 된다.
+        # 1.5. 캐릭터 계정이 직접 [대련]을 시작 — 상시전투와 달리 대련은
+        # admin 커맨드가 아니다. 발신자와 함께 멘션된 상대가 참여 대상이 된다.
         if acct in state.char_dict and admin_commands._RE_PRACTICE_PREP.search(text):
             expected_accts = [acct] + self._thread_participants(
                 status_id, in_reply_to_id, mentions or [], acct
@@ -1027,23 +1008,18 @@ class MastodonBotListener(StreamListener):
                 acct, text, state, ps
             )
             if reply is None:
-                # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
-                # 스레드는 active_post_id에 그대로 남아, 이후 정상 커맨드가
-                # 오면 문제없이 이어진다.
+                # 대괄호 커맨드가 없는 답글(사담 등) — 조용히 무시한다.
+                # 스레드는 그대로 남아 이후 정상 커맨드가 오면 이어진다.
                 return
             reply_status = self._reply_with_calc(
                 status_id, acct, visibility, reply, calc_text
             )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
-                # 캐릭터의 커맨드 답글(reply_status) 바로 다음에 이어 붙여야
-                # 스레드가 갈라지지 않는다 — 예전 라운드 공지(active_post_id,
-                # 이 캐릭터 커맨드의 in_reply_to_id였던 게시물)에 다시 답글로
-                # 달면, 캐릭터의 커맨드 답글과 다음 라운드 공지가 같은 부모의
-                # 형제 게시물이 되어 스레드가 두 갈래로 갈라진다.
-                # 정산(라운드 전환/종료) 게시물은 바로 위 답글 작성자만
-                # 자동으로 알림을 받으므로, 대련/상시전투 참여자 전원이
-                # 알림을 받도록 멘션을 명시적으로 붙인다.
+                # 커맨드 답글 바로 뒤에 이어 붙여야 스레드가 갈라지지 않는다 —
+                # 예전 라운드 공지에 다시 답글로 달면 커맨드 답글과 형제가 된다.
+                # 알림은 바로 위 답글 작성자에게만 가므로, 참여자 전원이 받도록
+                # 멘션을 명시적으로 붙인다.
                 mention_prefix = _practice_mention_prefix(practice_participants)
                 new_post = self._mastodon.status_post(
                     _truncate(f"{mention_prefix}{game_post}"),
@@ -1070,8 +1046,7 @@ class MastodonBotListener(StreamListener):
             state.active_phase_post_id is not None
             and in_reply_to_id == state.active_phase_post_id
         ):
-            # active_phase_post_id는 session이 있을 때만 설정되고 전투 종료 시
-            # session과 함께 None으로 리셋된다(admin.py 참고) — 항상 같이 산다.
+            # active_phase_post_id와 session은 항상 같이 산다(admin.py 참고).
             assert state.session is not None
             response, calc_text, battle_log = handle_character_command(
                 acct,
@@ -1081,9 +1056,8 @@ class MastodonBotListener(StreamListener):
                 str(state.preparation_status_id),
                 log_sheets.FieldBattleType.MAIN,
             )
-            # silent_on_unrecognized를 안 넘겼으므로(기본값 False) response는
-            # 항상 str이다 — 본 전투는 페이즈마다 게시물이 바뀌는 구조라
-            # 사담을 조용히 무시하는 대상이 아니다.
+            # 본 전투는 페이즈마다 게시물이 바뀌어 사담을 조용히 무시할
+            # 대상이 아니므로, silent_on_unrecognized 없이 항상 답한다.
             assert response is not None
             reply_status = self._reply_with_calc(
                 status_id, acct, visibility, response, calc_text
@@ -1129,14 +1103,12 @@ class MastodonBotListener(StreamListener):
             if roll_command is not None:
                 stat_name, fate_boost = roll_command
                 if fate_boost:
-                    # 일일 의뢰 판정은 운명간섭 대상이 아니다. "+"를 조용히
-                    # 무시하면 플레이어는 보정이 적용된 줄 알게 되므로
-                    # 명시적으로 알리고 판정 자체를 진행하지 않는다.
+                    # "+"를 조용히 무시하면 플레이어는 보정이 적용된 줄 안다.
                     self._reply(
                         status_id,
                         acct,
                         visibility,
-                        "◊ 일일 의뢰 판정에는 운명간섭(+)을 사용할 수 없습니다.",
+                        "◊ 일일 의뢰 판정에는 키워드 보정을 사용할 수 없습니다.",
                     )
                     return
                 response, log_info = handle_daily_quest_roll(acct, stat_name, state)
@@ -1144,18 +1116,15 @@ class MastodonBotListener(StreamListener):
                 _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
-        # 7/8. 상시조사 진행 중 답글 — 메뉴/의뢰 개요 게시물에 대한 직속
-        # 답글이거나, 그 사이에 사담이 섞여도 스레드 조상을 거슬러 올라가면
-        # 여전히 같은(아직 world가 태그되지 않은) 세션으로 인식된다.
+        # 7/8. 상시조사 진행 중 답글 — 사이에 사담이 섞여도 스레드 조상을
+        # 거슬러 올라가 같은 세션으로 인식한다.
         investigation_session, investigation_stage, investigation_is_direct = (
             self._resolve_investigation_session(acct, status_id, in_reply_to_id, state)
         )
         if investigation_session is not None and investigation_stage == "menu":
             bracket_match = noncombat_commands._RE_BARE_BRACKET.search(text)
             if bracket_match:
-                # [자율 탐사]도 handle_investigation_venue_choice가 그대로
-                # 처리한다(등록된 장소가 아니면서 이 라벨과 일치하는 경우를
-                # 내부에서 분기).
+                # [자율 탐사]도 같은 핸들러가 내부에서 분기해 처리한다.
                 venue_name = bracket_match.group(1).strip()
                 response, log_info = handle_investigation_venue_choice(
                     investigation_session, venue_name, state
@@ -1166,11 +1135,8 @@ class MastodonBotListener(StreamListener):
                     investigation_session, post["id"], state
                 )
                 return
-            # 장소 커맨드(장소명 또는 [자율 탐사]) 자체가 없는 답글(사담
-            # 등)은 직속 답글이든 스레드 조상으로만 연결된 것이든 세션을
-            # 그대로 유지한 채 아무 것도 하지 않고 다른 커맨드 인식을
-            # 계속 시도한다 — [자율 탐사]를 명시적으로 입력해야만 world로
-            # 인계된다.
+            # 장소 커맨드가 없는 답글(사담 등)은 세션을 유지한 채 아래 다른
+            # 커맨드 인식을 계속 시도한다 — world 인계는 [자율 탐사]로만 한다.
 
         if (
             investigation_session is not None
@@ -1218,11 +1184,9 @@ class MastodonBotListener(StreamListener):
             finalize_investigation_menu_post(acct, post["id"], state)
             return
 
-        # 12. [아이템명(/대상)(/개수)] — 비전투 아이템 사용. 전투 중과 동일하게
-        # "사용/" 같은 접두어 없이 아이템명으로 바로 시작하며, 등록된
-        # 아이템명과 일치할 때만 인식한다(위의 다른 커맨드 키워드와 아이템명이
-        # 겹치지 않는다는 전제) — 그래서 다른 키워드 커맨드를 모두 확인한
-        # 뒤, 최후순위로 검사한다.
+        # 12. [아이템명(/대상)(/개수)] — 비전투 아이템 사용. 접두어 없이
+        # 아이템명으로 바로 시작하므로 다른 키워드 커맨드와 겹치지 않도록
+        # 전부 확인한 뒤 최후순위로 검사한다.
         bare_item_args = parse_bare_item_command(text, state)
         if bare_item_args:
             item_name, target_name, count = bare_item_args
@@ -1288,12 +1252,10 @@ class MastodonBotListener(StreamListener):
         [대련]처럼 같은 AdminCommandResult 셰이프를 반환하는 다른 진입점에서도
         재사용한다."""
         if not result.reply_text:
-            # reply_text가 비어 있으면 game_post_text를 단일 답글로 전송.
-            # 이 경로에도 game_post_visibility/game_post_calc_text를 그대로
-            # 반영해야 한다 — DM 전투의 수동 [전투 종료]는 확인 답글 없이
-            # 종료 게시물만 내보내는데, 여기서 무시하면 전투 내내 고정해 온
-            # DM 가시성 대신 admin 메시지의 가시성을 따르고 종료 정산의
-            # 계산식이 통째로 사라진다.
+            # reply_text가 비면 game_post_text를 단일 답글로 보낸다. 이 경로도
+            # game_post_visibility/calc_text를 반영해야 한다 — DM 전투의 수동
+            # [전투 종료]가 여기로 오는데, 무시하면 고정해 온 DM 가시성이
+            # 풀리고 종료 정산의 계산식이 통째로 사라진다.
             if result.game_post_text is not None:
                 post = self._reply(
                     status_id,
@@ -1309,9 +1271,7 @@ class MastodonBotListener(StreamListener):
                     result.game_post_calc_prefix,
                 )
         else:
-            # reply_text가 있는 경우: 답글 전송 (텍스트만 — 필드 시트
-            # 이미지는 페이즈 게시물에만 첨부한다). post_as_new_status면
-            # 답글이 아니라 타임라인의 새 게시물로 올린다(전투 준비 공지 등).
+            # 필드 시트 이미지는 아래 페이즈 게시물에만 첨부한다.
             if result.post_as_new_status:
                 reply_status = self._mastodon.status_post(
                     _truncate(result.reply_text), visibility="public"
@@ -1331,9 +1291,8 @@ class MastodonBotListener(StreamListener):
             if result.set_preparation_post:
                 state.preparation_status_id = reply_status["id"]
 
-            # 퍼블릭 게시물 게시 (페이즈 게시물) — 필드 시트 이미지를
-            # 첨부한다 (render_public_field_sheet는 admin.py의 각
-            # 핸들러에서 이미 호출됐으므로 여기서는 캡처만).
+            # 페이즈 게시물. 시트 렌더링은 admin.py의 각 핸들러가 이미 했으므로
+            # 여기서는 캡처만 한다.
             if result.game_post_text is not None:
                 game_media_ids = (
                     self._capture_field_media_ids(state)
@@ -1341,9 +1300,7 @@ class MastodonBotListener(StreamListener):
                     else []
                 )
                 post_text = result.game_post_text
-                # 이미지 캡처가 실패하면(빈 media_ids) 필드 현황을 텍스트로
-                # 대체 표시한다 — 성공 시에는 이미지만으로 충분하므로
-                # str(context) 보드를 중복으로 붙이지 않는다.
+                # 캡처가 실패했을 때만 필드 현황을 텍스트로 대체한다.
                 if (
                     result.attach_field_image
                     and not game_media_ids
@@ -1353,19 +1310,14 @@ class MastodonBotListener(StreamListener):
                 base_kwargs: dict = {}
                 if result.game_post_visibility is not None:
                     base_kwargs["visibility"] = result.game_post_visibility
-                # 적군 행동 정산처럼 캐릭터 수가 많아지면 post_text 자체가
-                # 500자를 넘을 수 있다 — truncate로 뒷부분을 잘라내지 않고,
-                # 계산식(_post_calc_followups)과 동일하게 줄 단위로 나눈
-                # 여러 게시물을 스레드로 이어 보낸다.
+                # 캐릭터가 많으면 500자를 넘을 수 있다 — 뒷부분을 잘라내지 않고
+                # 계산식과 동일하게 줄 단위로 나눠 스레드로 이어 보낸다.
                 chunks = _split_for_post(post_text, 0)
                 first_kwargs = dict(base_kwargs, media_ids=game_media_ids or None)
                 if result.game_post_reply_to_confirmation:
-                    # 이전 페이즈 공지(admin의 [진행] 요청이 답글로 달렸던
-                    # 그 게시물)에 다시 답글로 달면, 방금 위에서 보낸
-                    # 확인 답글(reply_status)과 이 게시물이 같은 부모의
-                    # 형제가 되어 스레드가 갈라진다 — 확인 답글 뒤에
-                    # 이어야 [이전 공지] ← [admin 요청] ← [확인 답글] ←
-                    # [이 공지] 순으로 선형으로 이어진다.
+                    # 이전 페이즈 공지에 다시 답글로 달면 방금 보낸 확인
+                    # 답글과 형제가 되어 스레드가 갈라진다 — 확인 답글
+                    # 뒤에 이어야 선형으로 이어진다.
                     first_kwargs["in_reply_to_id"] = reply_status["id"]
                 new_post = self._mastodon.status_post(chunks[0], **first_kwargs)
                 for chunk in chunks[1:]:
@@ -1381,10 +1333,8 @@ class MastodonBotListener(StreamListener):
                 )
 
         if result.admin_dm_text:
-            # 플레이어에게 공개되는 reply_text/game_post_text와는 완전히
-            # 별개로, admin에게만 조용히 알려야 하는 내용(스프레드시트 설정
-            # 오류 등)을 DM으로 보낸다 — 재기동 복원 안내(main() 하단)와
-            # 동일한 스타일.
+            # 공개 게시물과 별개로, admin에게만 알려야 하는 내용(시트 설정
+            # 오류 등)을 DM으로 보낸다.
             try:
                 self._mastodon.status_post(
                     f"@{ADMIN_MASTODON_ID} {result.admin_dm_text}",
@@ -1464,20 +1414,16 @@ class MastodonBotListener(StreamListener):
             return self._reply(in_reply_to_id, acct, visibility, text, media_ids)
 
         mention_prefix = f"@{acct} "
-        # spoiler_text에 번호 접미사(" (N/N)")가 붙을 수 있으므로, 먼저
-        # 접미사 없이 나눠 조각 수를 가늠한 뒤 필요하면 그 접미사 길이만큼
-        # 예산을 줄여 다시 나눈다.
+        # spoiler_text에 " (N/N)" 접미사가 붙을 수 있어, 먼저 접미사 없이
+        # 나눠 조각 수를 가늠한 뒤 그 길이만큼 예산을 줄여 다시 나눈다.
         provisional_chunks = _split_for_post(calc_text, len(mention_prefix) + len(text))
         suffix_len = (
             len(f" ({len(provisional_chunks)}/{len(provisional_chunks)})")
             if len(provisional_chunks) > 1
             else 0
         )
-        # spoiler_text(=text, 여러 조각이면 위 접미사까지 포함)가 그
-        # 자체로 500자 한도를 넘으면 이 CW 합본 경로로는 표현할 수 없다 —
-        # text만 보고 넘기던 예전 체크는 text가 495자 안팎처럼 한도에
-        # 근접했을 때 접미사(예: " (2/5)")가 더해지며 500자를 살짝
-        # 넘기는 경우를 놓쳐, status_post()가 422로 실패한 적이 있다.
+        # spoiler_text가 접미사까지 합쳐 한도를 넘으면 CW 합본으로는 표현할
+        # 수 없다. 접미사를 빼고 재면 한도에 근접한 text에서 422가 난다.
         if len(text) + suffix_len > _MAX_POST_LENGTH:
             return self._reply_then_calc_followup(
                 in_reply_to_id, acct, visibility, text, calc_text, media_ids
@@ -1767,9 +1713,8 @@ def _finalize_practice_phase(
 
     # SECOND_MOVER_ACTION
     ps.end_round()
-    # end_round()에서 ON_ROUND_END 버프(DoT/HoT)나 탈락 처리가 방금 일어날 수
-    # 있으므로, hp1/hp2는 end_round() 이후에 다시 계산해야 한다 — 그 전에
-    # 계산한 값을 그대로 쓰면 라운드 종료 시점에 발생한 전멸을 놓친다.
+    # end_round()에서 DoT나 탈락이 일어날 수 있어 HP를 다시 계산한다 —
+    # 그 전 값을 쓰면 라운드 종료 시점의 전멸을 놓친다.
     hp1 = ps.total_hp_by_side(SideType.SIDE_1)
     hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
@@ -2100,11 +2045,9 @@ class _MarkdownMastodon(Mastodon):
 
 
 def main() -> None:
-    # 버프/스킬/패시브/아이템/인벤토리는 평상시엔 여기서 로드해도 바로
-    # stale해지므로 쓰지 않고, 전투 세션(본 전투/DM 전투/대련/상시전투) 시작
-    # 시점에 load_battle_data()로 다시 로드한다. 다만 재기동 직후 딱 한 번,
-    # 아래 field_restore.restore_all()이 "필드" 시트에 남아 있던 미종료
-    # 전투를 재구성할 때는 이 시점의 값이 곧 최신값이라 그대로 재사용한다.
+    # 전투 데이터는 여기서 로드해도 금세 stale해지므로 세션 시작 시점에
+    # load_battle_data()로 다시 읽는다. 다만 바로 아래 restore_all()이
+    # 미종료 전투를 재구성할 때는 이 값이 곧 최신값이라 그대로 쓴다.
     (
         buff_dict,
         skill_dict,
@@ -2131,13 +2074,9 @@ def main() -> None:
     mastodon = _MarkdownMastodon(
         access_token=os.environ["MASTODON_ACCESS_TOKEN"],
         api_base_url=os.environ["MASTODON_API_BASE_URL"],
-        # 기본값(300초)은 status_post/media_post 등 알림 워커 스레드
-        # (_notification_worker)가 호출하는 일반 API 요청에도 그대로
-        # 적용된다. 이 요청들이 오래 걸리면(네트워크 지연 등) 그만큼 워커가
-        # 막혀 뒤에 쌓인 다른 알림 처리가 지연되므로, 30초면 실패를 훨씬
-        # 빨리 감지해 그 지연을 줄인다. 스트리밍 연결 자체의 read timeout은
-        # 이 값과 무관한 별도 상수(mastodon.py의 _DEFAULT_STREAM_TIMEOUT)를
-        # 쓰므로 영향받지 않는다.
+        # 기본값 300초는 알림 워커가 부르는 일반 API 요청에도 적용돼, 요청
+        # 하나가 느리면 뒤에 쌓인 알림 처리가 그만큼 밀린다. 스트리밍 연결의
+        # read timeout은 별도 상수라 이 값에 영향받지 않는다.
         request_timeout=30,
     )
 
@@ -2166,13 +2105,10 @@ def main() -> None:
         except Exception:
             logger.exception("재기동 복원 안내 DM 전송 실패")
 
-    # run_async=True + reconnect_async=True: 스트리밍 연결이 끊어져도(네트워크
-    # 순단 등) 라이브러리가 백그라운드 스레드 안에서 재연결만 재시도하고
-    # 프로세스 자체는 죽지 않는다. 기본값(run_async=False)은 재연결 로직이
-    # 전혀 없어 연결이 끊기는 즉시 예외가 여기까지 전파되어 프로세스가
-    # 죽고 Docker의 restart:always로만 복구되는데, 그때마다 스프레드시트
-    # 전체 재로드 + 미종료 전투 복원(field_restore.restore_all())을 다시
-    # 거쳐야 해서 단순 네트워크 순단에도 매번 콜드 재시작이 발생했다.
+    # run_async + reconnect_async를 켜면 연결이 끊겨도 백그라운드 스레드가
+    # 재연결만 재시도하고 프로세스는 살아 있다. 기본값에는 재연결 로직이
+    # 없어, 네트워크 순단 한 번에 프로세스가 죽고 시트 전체 재로드와
+    # 미종료 전투 복원을 거치는 콜드 재시작이 매번 일어났다.
     listener = MastodonBotListener(mastodon, state, me["acct"])
     handle = mastodon.stream_user(
         listener,
@@ -2183,8 +2119,7 @@ def main() -> None:
         target=listener.watchdog, args=(handle,), daemon=True
     )
     watchdog_thread.start()
-    # 알림 처리를 스트리밍 읽기 스레드에서 분리하는 워커(on_notification/
-    # _notification_worker 참고) — 데몬 스레드라 프로세스 종료 시 함께 죽는다.
+    # 알림 처리를 스트리밍 읽기 스레드에서 분리하는 워커.
     notification_worker_thread = threading.Thread(
         target=listener._notification_worker, daemon=True
     )

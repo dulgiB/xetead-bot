@@ -14,42 +14,28 @@ from utils.name_matching import whitespace_tolerant_literal
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
 
-# 커맨드 작성 예시
 # ex. [이동/1 - 회복포션/대상A - 공격/대상A]
 #
-# "스킬"/"아이템"은 별도 키워드 없이 이름 자체로 구분한다: 시전자가 보유한
-# 스킬 목록에서 먼저 찾고, 없으면 등록된 아이템에서 찾는다(둘 다 없으면
-# 오류). "이동"/"공격"은 이름만으로는 종류를 알 수 없으므로 키워드를
-# 그대로 유지한다.
+# 스킬·아이템은 키워드 없이 이름만으로 구분한다(스킬 우선, 없으면 아이템).
+# "이동"/"공격"은 이름만으로는 종류를 알 수 없어 키워드를 유지한다.
 
 kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{HangulJamoExtendedA}\p{HangulJamoExtendedB}"
-# 캐릭터/스킬/아이템 id에 언더스코어가 포함되는 경우(예: "스킬_1")가 있어
-# 이름·대상에 쓰이는 문자 집합에도 언더스코어를 포함한다. 마찬가지로
-# "!"가 들어간 스킬명(예: "스킬_1!")과 "^"/"~"가 들어간 스킬명
-# (예: "스킬_1^^", "스킬~1")도 있어 함께 포함한다. "^"는 문자 클래스([...])
-# 맨 앞에 오면 부정(negation)으로 해석되므로 반드시 클래스 끝에 둔다.
-# "()"도 포함한다 — 답글을 마크다운 모드로 보내면서(_MarkdownMastodon)
-# 언더스코어가 포함된 이름(예: "이름_테스트")이 렌더러에 의해 의도치 않게
-# 강조/밑줄로 잘못 파싱되는 문제가 있어, 구분자를 언더스코어 대신 괄호로
-# 쓰는 표기("이름(테스트)")로 옮겨가기 위함이다.
+# 실제 id에 "_", "!", "^", "~"가 들어가는 스킬·아이템이 있어 모두 허용한다.
+# "^"는 문자 클래스 맨 앞에 오면 부정으로 해석되므로 반드시 끝에 둔다.
+# "()"는 마크다운 답글에서 언더스코어가 강조로 잘못 파싱되는 문제 때문에
+# 구분자 표기를 "이름(테스트)"로 옮겨가는 중이라 함께 허용한다.
 name_charset = rf"{kr_charset}0-9A-Za-z_!^~()"
 
 _이동 = whitespace_tolerant_literal("이동")
 _공격 = whitespace_tolerant_literal("공격")
 
 command_base_format = regex.compile(r".*\[\s*(?P<command>.+)\s*].*", regex.DOTALL)
-# DOTALL: 나레이션과 대괄호 커맨드가 서로 다른 문단에 있으면(Mastodon 답글에서
-# 줄바꿈 입력 시 <p>로 분리되어 평문에도 개행이 남는다 — _TextExtractor 참고)
-# 두 `.*`가 기본 설정(개행 미매칭)으로는 문단 경계를 건너뛰지 못해 매치
-# 자체가 실패했다. 그 결과 parse_character_command()가 None을 반환해
-# 실제로는 유효한 커맨드가 "대괄호 없는 사담"으로 조용히 무시되는 문제가
-# 있었다(에러 메시지도 없어 플레이어가 원인을 알기 어렵다).
+# DOTALL이 없으면 나레이션과 커맨드가 다른 문단에 있을 때 두 `.*`가 개행을
+# 넘지 못해, 유효한 커맨드가 에러도 없이 사담으로 무시된다.
 
-# command_base_format의 두 .* 가 모두 탐욕적이라, 대괄호 그룹이 여러 개인
-# 입력("[A] [B]")은 마지막 그룹만 command로 캡처되고 앞쪽은 조용히 버려진다
-# (에러도 없이). 캐릭터 계정 멘션에서는 이 상태로 파서에 넘기지 말고
-# count_bracket_groups()로 미리 걸러 명시적 에러를 내야 한다 — 여러 파트는
-# "[A - B]"처럼 하이픈으로 이어 한 대괄호 안에 작성하는 것이 올바른 문법이다.
+# command_base_format은 탐욕적이라 "[A] [B]" 입력에서 앞 그룹을 조용히 버린다.
+# 파서에 넘기기 전에 이걸로 걸러 명시적 에러를 내야 한다 — 여러 파트는
+# "[A - B]"처럼 한 대괄호 안에 이어 쓰는 것이 올바른 문법이다.
 _bracket_group = regex.compile(r"\[[^\[\]]*]")
 
 
@@ -66,9 +52,8 @@ command_format_attack = regex.compile(
     rf"^\s*{_공격}\s*(?P<fate>\+)?\s*/\s*(?P<target>[{name_charset} ]+)\s*$"
 )
 
-# 스킬/아이템 사용 :: 스킬명 또는 아이템명(/대상1/대상2...) — 키워드 없이 이름으로 바로 시작
-# (운명간섭이면 이름 뒤에 "+"를 붙인다: "스킬_1+/대상"). "+"는 name_charset에
-# 없으므로 탐욕적인 name 그룹이 삼키지 않고 fate 그룹으로 정확히 갈린다.
+# 스킬/아이템 사용 :: 스킬명 또는 아이템명(/대상1/대상2...), 운명간섭이면 "스킬_1+/대상"
+# "+"는 name_charset에 없어 탐욕적인 name 그룹이 삼키지 않고 fate로 갈린다.
 command_format_skill_or_item = regex.compile(
     rf"^\s*(?P<name>[{name_charset} ]+)\s*(?P<fate>\+)?"
     rf"\s*(/\s*(?P<targets>[{name_charset}/ ]+))?\s*$"
@@ -123,9 +108,7 @@ def parse_character_command(
                     else:
                         targets = []
 
-                    # 시전자가 보유한 스킬 목록에서 먼저 찾고, 없으면 등록된
-                    # 아이템에서 찾는다. 스킬명/아이템명이 우연히 같더라도
-                    # 스킬을 우선한다.
+                    # 스킬명과 아이템명이 우연히 같으면 스킬을 우선한다.
                     user = context.characters.get(user_id)
                     resolved_skill_id = context.resolve_skill_id(user_id, name)
                     if user is not None and any(
@@ -148,10 +131,9 @@ def parse_character_command(
                                     item_id=resolved_item_id,
                                     # 대상을 명시하지 않으면 자신에게 사용한 것으로 간주
                                     targets=targets or [user_id],
-                                    # 아이템에는 운명간섭을 쓸 수 없지만, 플래그를
-                                    # 여기서 버리면 "+"가 조용히 무시된다 —
-                                    # 그대로 실어 보내 검증 단계에서 명시적으로
-                                    # 에러를 내게 한다.
+                                    # 아이템에는 운명간섭을 쓸 수 없지만, 여기서
+                                    # 버리면 "+"가 조용히 무시된다 — 검증 단계가
+                                    # 명시적으로 에러를 내도록 그대로 넘긴다.
                                     fate_boost=fate_boost,
                                 )
                             )

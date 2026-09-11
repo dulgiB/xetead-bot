@@ -35,27 +35,27 @@ from utils.name_matching import (  # noqa: E402
 
 
 def test_normalize_name_removes_all_whitespace():
-    assert normalize_name("변칙 공격") == "변칙공격"
+    assert normalize_name("특수 공격") == "특수공격"
     assert normalize_name("적  군   1") == "적군1"
     assert normalize_name("강타") == "강타"
 
 
 def test_resolve_matching_key_prefers_exact_match():
-    assert resolve_matching_key("변칙 공격", ["변칙 공격", "변칙공격"]) == "변칙 공격"
+    assert resolve_matching_key("특수 공격", ["특수 공격", "특수공격"]) == "특수 공격"
 
 
 def test_resolve_matching_key_falls_back_to_normalized_match():
-    assert resolve_matching_key("변칙공격", ["강타", "변칙 공격"]) == "변칙 공격"
+    assert resolve_matching_key("특수공격", ["강타", "특수 공격"]) == "특수 공격"
     assert resolve_matching_key("적군1", ["적군 1", "적군 2"]) == "적군 1"
 
 
 def test_resolve_matching_key_returns_raw_when_no_match():
-    assert resolve_matching_key("존재하지않음", ["강타", "변칙 공격"]) == "존재하지않음"
+    assert resolve_matching_key("존재하지않음", ["강타", "특수 공격"]) == "존재하지않음"
 
 
 def test_find_matching_key_returns_none_when_no_match():
     assert find_matching_key("존재하지않음", ["강타"]) is None
-    assert find_matching_key("변칙공격", ["변칙 공격"]) == "변칙 공격"
+    assert find_matching_key("특수공격", ["특수 공격"]) == "특수 공격"
 
 
 def test_whitespace_tolerant_literal_matches_any_internal_spacing():
@@ -83,7 +83,7 @@ def _ally_action_manager(ctx) -> RoundManager:
 def test_skill_and_target_name_ignore_whitespace_differences():
     """스킬명과 대상명에 등록된 표기와 다른 공백을 넣어도 정상 처리되어야 한다."""
     skill = SkillData(
-        id="변칙 공격",
+        id="특수 공격",
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=2,
@@ -92,10 +92,10 @@ def test_skill_and_target_name_ignore_whitespace_differences():
         ],
         description="",
     )
-    ctx = BattlefieldContext(buff_dict={}, skill_dict={"변칙 공격": skill})
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"특수 공격": skill})
     manager = _ally_action_manager(ctx)
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="변칙 공격"),
+        get_test_preset("아군 1", skill_1_id="특수 공격"),
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
@@ -104,7 +104,7 @@ def test_skill_and_target_name_ignore_whitespace_differences():
     )
 
     # 스킬명·대상명 모두 공백을 빼고 입력
-    cmd = parse_character_command(CharacterId("아군 1"), "[변칙공격/적군1]", ctx)
+    cmd = parse_character_command(CharacterId("아군 1"), "[특수공격/적군1]", ctx)
     manager.process_command(cmd)
 
     assert ctx.characters[CharacterId("적군 1")].status.curr_hp == 90

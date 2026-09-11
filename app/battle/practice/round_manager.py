@@ -93,8 +93,7 @@ class PracticeRoundManager:
 
         char_side = self._context.get_side(command.user_id)
 
-        # _phase가 None이 아니면 FIRST_MOVER_ACTION 전환(to_phase)이 이미
-        # 일어난 뒤이므로 _first_mover/_second_mover도 함께 채워져 있다.
+        # _phase가 None이 아니면 선공/후공도 함께 정해진 뒤다.
         assert self._first_mover is not None and self._second_mover is not None
         expected_side = (
             self._first_mover
@@ -107,7 +106,7 @@ class PracticeRoundManager:
                 f"{phase_label} 타이밍에는 {expected_side.value} 캐릭터만 행동할 수 있습니다."
             )
 
-        # 대련은 PRE/POST 구분 없이 즉시 전체 처리 (process_ally_command 재사용)
+        # 대련은 PRE/POST 구분 없이 즉시 전체를 처리한다.
         result = process_ally_command(self._context, command)
         self._context.results.extend(result.part_results)
         return result
