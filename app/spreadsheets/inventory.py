@@ -4,8 +4,7 @@ from typing import TYPE_CHECKING, Optional
 import gspread
 
 if TYPE_CHECKING:
-    # bot.sheet_cache는 spreadsheets.inventory를 가져오므로(bot/load_data.py 경유),
-    # 런타임 임포트는 순환 참조가 된다 — 타입 힌트 목적으로만 참조한다.
+    # bot.sheet_cache가 이 모듈을 가져오므로 런타임 임포트는 순환 참조가 된다.
     from bot.sheet_cache import SheetCache
 
 logger = logging.getLogger(__name__)

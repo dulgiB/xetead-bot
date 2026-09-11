@@ -22,11 +22,8 @@ class BuffContainer:
     def __init__(self, field: "BattlefieldContext"):
         self._context: "BattlefieldContext" = field
         self._buffs: set[BuffBase] = set()
-        # 도발처럼 같은 대상이 서로 다른 부여자로부터 동시에 여러 인스턴스를
-        # 받을 수 있는 버프에서 "가장 최근에 걸린 것"을 가려내기 위한
-        # 단조 증가 일련번호. add()가 새로 추가하거나 기존 인스턴스를
-        # 재부여(갱신)할 때마다 부여한다 — 재부여도 "다시 최근이 됨"으로
-        # 취급한다.
+        # 도발처럼 한 대상이 여러 인스턴스를 동시에 받는 버프에서 "가장 최근에
+        # 걸린 것"을 가려내기 위한 일련번호. 재부여도 "다시 최근"으로 친다.
         self._apply_seq = 0
 
     def _next_apply_seq(self) -> int:
@@ -36,9 +33,7 @@ class BuffContainer:
     def add(self, add_event: "BuffAddData"):
         buff_data = self._context.get_buff_data_by_id(add_event.buff_id)
         buff_class = buff_data.get_buff_class()
-        # PARTITION_UID_BY_VALUE인 버프는 이번에 부여될 값(재정의 우선)이
-        # 기존 인스턴스와 달라야 별개로 유지된다 — build_uid()가 uid 계산을
-        # BuffBase.__init__과 동일한 규칙으로 공유한다.
+        # PARTITION_UID_BY_VALUE인 버프는 값이 달라야 별개 인스턴스로 유지된다.
         uid_value = (
             add_event.value_override
             if add_event.value_override is not None

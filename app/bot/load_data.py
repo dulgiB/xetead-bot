@@ -519,12 +519,9 @@ def update_character_quest_date(
     for idx, row in enumerate(rows, start=2):
         name = row[name_col] if name_col is not None and name_col < len(row) else None
         if name == char_name:
-            # update_cell()은 항상 USER_ENTERED로 기록해 "YYYY-MM-DD" 형식의
-            # today 값이 Sheets에 의해 날짜 타입(내부 시리얼 넘버)으로 자동
-            # 변환된다. daily_quest_date는 handle_daily_quest_start()에서
-            # 문자열 그대로 재비교하므로, 그 값이 날짜로 변환되면 "오늘 이미
-            # 했음" 판정이 다시는 참이 되지 않아 1일 1회 제한이 무력화된다.
-            # update()의 기본값 raw=True(ValueInputOption.raw)로 그대로 저장한다.
+            # update_cell()은 USER_ENTERED 고정이라 "YYYY-MM-DD"가 날짜
+            # 시리얼로 변환되고, 그러면 문자열 재비교가 영원히 거짓이 되어
+            # 1일 1회 제한이 무력화된다 — raw로 기록하는 update()를 쓴다.
             ws.update([[today]], gspread.utils.rowcol_to_a1(idx, date_col))
             if status_col is not None:
                 ws.update([[""]], gspread.utils.rowcol_to_a1(idx, status_col))
@@ -660,11 +657,8 @@ def update_character_fate_date(
         return
     fate_col = header.index("fate_date") + 1
     row_number = _find_character_row_number(header, rows, char_name)
-    # update()의 기본값 raw=True로 기록한다 — update_cell()의 고정
-    # USER_ENTERED로 쓰면 "YYYY-MM-DD" 문자열이 Sheets에 의해 날짜 타입(내부
-    # 시리얼 넘버)으로 자동 변환되고, 이후 UNFORMATTED_VALUE로 다시 읽으면
-    # 그 숫자가 돌아와 "오늘 이미 썼음" 비교가 영원히 거짓이 된다
-    # (update_character_quest_date()에서 이미 겪은 함정과 같다).
+    # update_character_quest_date()와 같은 이유로 raw 기록이어야 한다 —
+    # USER_ENTERED로 쓰면 날짜 시리얼로 변환돼 문자열 비교가 깨진다.
     ws.update([[today]], gspread.utils.rowcol_to_a1(row_number, fate_col))
     if cache is not None:
         cache.invalidate("캐릭터")

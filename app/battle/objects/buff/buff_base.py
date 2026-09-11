@@ -38,9 +38,8 @@ class BuffAddData:
     gate_value_source: Optional[ValueSourceType] = None
     gate_value: Optional[int] = None
 
-    # 버프 시트의 고정 value 대신 이 값을 쓴다. 부여 시점에 계산한 수치를
-    # 그 버프의 수치에 그대로 스냅샷해야 하는 경우 전용(예: 다른 버프의
-    # 현재 스택 수 × 계수). None이면 버프 시트의 value를 그대로 쓴다.
+    # 부여 시점에 계산한 수치를 버프 수치로 스냅샷해야 하는 경우 전용
+    # (예: 다른 버프의 현재 스택 수 × 계수). None이면 시트의 value를 쓴다.
     value_override: Optional[int] = None
 
 
@@ -110,12 +109,9 @@ class BuffDurationCounter:
 
 
 class BuffBase(abc.ABC):
-    # True로 오버라이드하면 uid 계산에 value가 포함되어, 같은 given_by/
-    # applied_to/buff_class_name 조합이라도 value(예: 부여 시점에 스냅샷한
-    # 열 번호)가 다르면 별개의 버프 인스턴스로 동시에 유지된다(재부여 시
-    # 하나로 병합되지 않음). 같은 value로 재부여하면 기존과 동일하게
-    # 지속시간만 갱신된다. 기본값 False는 기존 "재부여 시 지속시간만 갱신,
-    # 값은 덮어쓰기" 동작을 그대로 유지한다.
+    # True면 uid에 value가 포함되어, 같은 부여자·대상이라도 값(예: 스냅샷한
+    # 열 번호)이 다르면 별개 인스턴스로 동시에 유지된다. False면 값이 달라도
+    # 하나로 병합돼 지속시간만 갱신되고 값은 덮어쓰인다.
     PARTITION_UID_BY_VALUE: ClassVar[bool] = False
 
     def __init__(
@@ -129,10 +125,9 @@ class BuffBase(abc.ABC):
         self.id = data.id
         self.given_by = given_by
         self.applied_to = applied_to
-        # BuffContainer.add()가 실제로 등록/갱신할 때 일련번호로 덮어쓴다 —
-        # "가장 최근에 걸린 [도발]이 우선한다" 같은 동시 다중 인스턴스 우선순위
-        # 판정에 쓰인다(get_target_override() 참고). 기본값 0은 add()를
-        # 거치지 않는 경로(패시브 래퍼 등)의 안전한 최하위 우선순위다.
+        # BuffContainer.add()가 일련번호로 덮어쓴다 — "가장 최근에 걸린 [도발]이
+        # 우선" 같은 판정용. 기본값 0은 add()를 거치지 않는 경로(패시브 래퍼
+        # 등)의 최하위 우선순위다.
         self.applied_at: int = 0
 
         # 값은 버프 생성 시점에 정해져서 이후 변동되지 않는다.
@@ -152,11 +147,11 @@ class BuffBase(abc.ABC):
         self.condition = data.condition
         self.is_debuff = data.is_debuff
 
-        # 적층(스택) 지원. max_stack이 None이면 적층 불가 버프(기존 동작과 동일).
+        # None이면 적층 불가 버프.
         self.max_stack = data.max_stack
         self.stack_count = initial_stack
 
-        # 다른 버프의 id를 참조해야 하는 효과 전용(대부분의 버프는 쓰지 않음).
+        # 다른 버프의 id를 참조하는 효과 전용.
         self.reference_buff_id = data.reference_buff_id
 
     @classmethod

@@ -34,14 +34,11 @@ class CounterDamageOnAllyInRangeDamagedEvent(BuffEvent):
     두 비율은 "버프_패시브" 시트의 value(자신이 맞았을 때 비율)/value_2
     (아군이 맞았을 때 비율) 컬럼(둘 다 퍼센트로 해석)에서 온다."""
 
-    # "버프_패시브" 시트의 value(value_type=퍼센트)에서 온다.
     self_percent: int
-    # "버프_패시브" 시트의 value_2(항상 퍼센트로 해석)에서 온다.
     ally_percent: int
 
-    # 표시용 라벨. 여러 캐릭터가 이 클래스를 재사용할 수 있으므로 특정
-    # 캐릭터의 스킬명을 하드코딩하지 않고, 이 버프를 등록한 스프레드시트
-    # 행의 id를 그대로 쓴다(BuffGivenDamage 등과 동일한 관례).
+    # 표시용 라벨. 여러 캐릭터가 공유하는 클래스라 이름을 하드코딩하지 않고
+    # 이 버프를 등록한 시트 행의 id를 그대로 쓴다.
     label: str
 
     @property

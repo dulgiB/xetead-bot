@@ -64,12 +64,10 @@ class CalculatorMutableData:
         ]
         self.apply_timing: Optional[RoundPhaseType] = apply_timing
         self.debuff_clear_list: list[CharacterId] = debuff_clear_list or []
-        # 방어막/반사 등이 대미지·회복 항목 자체를 제거(무효화)했을 때
-        # (대상, 표시 메시지) 쌍을 기록한다. NoDataEvent/ReflectEvent가 채운다.
+        # 무효화된 대미지·회복의 (대상, 표시 메시지). NoDataEvent/ReflectEvent가 채운다.
         self.nullified_effect_list: list[tuple[CharacterId, str]] = []
-        # 이 effect(주로 이동)가 유발한 반응(예: ON_ENEMY_MOVE 반격)이 이미
-        # 별도 계산기로 확정 처리된 뒤, 그 결과 로그만 이 effect의 로그에
-        # 얹어 넣기 위한 목록. BuffContainer.on_enemy_move()가 채운다.
+        # 별도 계산기에서 이미 확정된 반응(ON_ENEMY_MOVE 반격 등)의 로그만
+        # 이 effect에 얹기 위한 목록. BuffContainer.on_enemy_move()가 채운다.
         self.extra_log_entries: list[BattleLogEntry] = []
 
 
@@ -111,7 +109,6 @@ def _apply_fate_boost_modifier(
     mode = skill_data.fate_mode
 
     if mode is None or mode is FateBoostMode.ROLL_BONUS:
-        # fate_mode를 비워 둔 스킬은 예전과 동일하게 대미지 굴림만 끌어올린다.
         _add_flat_bonus(data_by_effect, skill_data.fate_boost_value)
         return
 
@@ -121,14 +118,12 @@ def _apply_fate_boost_modifier(
     index = skill_data.fate_effect_index
     effect = skill_data.fate_effect
     if effect is None or not (0 <= index < len(data_by_effect)):
-        # 설정 오류는 전투 개시 시점 검증(fate_config_error)에서 admin에게 이미
-        # 알린 상태다. 여기서 커맨드를 통째로 실패시키면 플레이어만 손해이므로
-        # 보정 없이 원래 스킬대로 진행한다.
+        # 설정 오류는 fate_config_error가 이미 admin에게 알렸다. 커맨드를 통째로
+        # 실패시키면 플레이어만 손해이므로 보정 없이 원래 스킬대로 진행한다.
         return
 
-    # `is`가 아니라 `==`로 비교한다 — SkillValueType과 ValueType은 값("퍼센트")이
-    # 같은 별개의 str Enum이고, 스킬 효과의 value_type에 둘 중 무엇이 들어와도
-    # 같은 의미이기 때문이다(`is`로 두면 한쪽에서만 조용히 어긋난다).
+    # SkillValueType과 ValueType은 값("퍼센트")이 같은 별개의 str Enum이라,
+    # 둘 중 무엇이 들어와도 같은 의미로 받으려면 `is`가 아니라 `==`여야 한다.
     if effect.value_type == SkillValueType.PERCENT:
         _boost_coefficient(data_by_effect[index], skill_data.fate_boost_value)
     else:
@@ -178,10 +173,8 @@ def _boost_coefficient(effect_data: CalculatorMutableData, bonus: int) -> None:
 class CommandPartCalculator:
     def __init__(self, data: CommandPartData, context: "BattlefieldContext"):
         self.context = context
-        # "본인/아군이 대미지를 주었을 때"를 트리거로 쓰는 ON_ACTION 패시브가
-        # ActionType.USE_ITEM(대미지를 주는 아이템 사용)까지 발동시키지 않도록
-        # 구분하는 용도. CommandPartCalculator 인스턴스는 CommandPartData
-        # 하나(=커맨드 파트 하나)당 1:1로 생성되므로 여기서 한 번만 읽으면 된다.
+        # "대미지를 주었을 때" 트리거 패시브가 ActionType.USE_ITEM까지
+        # 발동시키지 않도록 구분하는 용도.
         self.action_type: Optional[ActionType] = (
             data.original_part.type_ if data.original_part is not None else None
         )
@@ -205,11 +198,9 @@ class CommandPartCalculator:
             for data_per_effect in data.data_per_effect
             if data_per_effect is not None
         ]
-        # command_processors.py의 assign_taunt_redirects()가 이 계산기를
-        # process() 호출 전에 사전 배치했다면 여기 채워진다. None이면 사전
-        # 배치 대상이 아니라는 뜻(예: create_empty_for_buff의 반응형 계산기)이며,
-        # 이 경우 _resolve_redirect()는 기존처럼 _get_target_override()를
-        # 즉석 조회하는 폴백 경로를 쓴다.
+        # assign_taunt_redirects()가 process() 전에 사전 배치했다면 채워진다.
+        # None이면 사전 배치 대상이 아니라는 뜻(create_empty_for_buff의 반응형
+        # 계산기 등)이라 _resolve_redirect()가 즉석 조회 폴백을 탄다.
         self.precomputed_taunt_redirects: Optional[dict[CharacterId, CharacterId]] = (
             None
         )
@@ -218,20 +209,15 @@ class CommandPartCalculator:
         # 같은 커맨드(스킬)의 buff_add 등 부가 효과도 이 매핑을 따라 함께 이동한다.
         self._redirect_map: dict[CharacterId, CharacterId] = {}
 
-        # (effect_seq_number, holder) 조합당 1회만 발동해야 하는 패시브
-        # 스킬(GIVEN_DAMAGE/GIVEN_HEAL 기반)의 발동 여부 기록. 세 번째 원소는
-        # 발동원 구분자로, 패시브 스킬 효과 인덱스(int)나 버프 모디파이어
-        # 식별 문자열(str) 등 호출측이 각자 고유하게 정하는 값이다.
+        # GIVEN_DAMAGE/GIVEN_HEAL 기반 패시브의 (effect_seq_number, holder,
+        # 발동원) 1회 발동 기록. 발동원은 호출측이 고유하게 정하는 값이다.
         self._fired_given_value_passives: set[tuple[int, CharacterId, int | str]] = (
             set()
         )
 
-        # 스킬 하나(커맨드 파트 하나)가 effect를 여러 개 써서 같은 대상에게 여러 번
-        # 대미지를 입혀도 실제로는 "한 번의 타격"이다. ON_ATTACK/ON_HIT count형
-        # 버프(공격 시/피격 시 차감)가 effect마다 중복 발동하지 않도록, 이
-        # CommandPartCalculator 인스턴스(=한 번의 process() 호출) 생애 동안
-        # 공격자/대상별로 한 번만 발동시킨다. 인스턴스는 process() 호출마다
-        # 새로 생성되므로(command_processors.py) 별도 리셋이 필요 없다.
+        # 한 커맨드 파트가 effect를 여러 개 써서 같은 대상을 여러 번 때려도
+        # 실제로는 "한 번의 타격"이라, ON_ATTACK/ON_HIT 버프는 인스턴스 생애
+        # 동안 공격자/대상별로 한 번만 발동시킨다.
         self._on_attack_fired: set[CharacterId] = set()
         self._on_hit_fired: set[CharacterId] = set()
 
@@ -262,25 +248,20 @@ class CommandPartCalculator:
         self,
         phase: Optional[RoundPhaseType],
     ):
-        # 이 페이즈에서 실제로 대미지가 적용되는 effect만 대상으로 해야
-        # 희생 방어 횟수 차감이 PRE/POST 이중 처리에서도 1회만 일어난다.
         self._prepare_redirects(phase)
 
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
             for i in range(len(self.data_by_effect)):
                 timing = self.data_by_effect[i].apply_timing
-                if timing is None:
-                    # 아군 스킬 동작: 이동과 PRE 타이밍 버프만 처리
+                if timing is None:  # 아군 스킬
                     self._process_move(i)
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_PRE_ACTION:
-                    # 에너미 스킬 PRE effect: 전체 처리
                     self._process_move(i)
                     self._process_buff_remove(i)
                     self._process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
-                # ENEMY_POST_ACTION effect는 이 페이즈에서 처리하지 않음
 
         elif phase == RoundPhaseType.ALLY_ACTION:
             for i in range(len(self.data_by_effect)):
@@ -293,20 +274,17 @@ class CommandPartCalculator:
         elif phase == RoundPhaseType.ENEMY_POST_ACTION:
             for i in range(len(self.data_by_effect)):
                 timing = self.data_by_effect[i].apply_timing
-                if timing is None:
-                    # 아군 스킬 동작: 대미지/힐과 POST 타이밍 버프만 처리 (이동은 PRE에서 완료)
+                if timing is None:  # 아군 스킬 — 이동은 PRE에서 이미 처리했다
                     self._process_buff_remove(i)
                     self._process_damage(i)
                     self._process_heal(i)
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_POST_ACTION:
-                    # 에너미 스킬 POST effect: 전체 처리
                     self._process_move(i)
                     self._process_buff_remove(i)
                     self._process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
-                # ENEMY_PRE_ACTION effect는 이미 PRE에서 처리했으므로 건너뜀
 
         elif phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
             pass
@@ -384,7 +362,6 @@ class CommandPartCalculator:
                 if final != original:
                     damage_calc.base = replace(damage_calc.base, target_id=final)
                     self._redirect_map[original] = final
-                # 희생 방어 경감: 보호자가 받는 대미지를 reduction%만큼 감소시킨다.
                 # 버프가 아니라 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
                 if reduction:
                     damage_calc.received_modifiers.append(
@@ -409,8 +386,7 @@ class CommandPartCalculator:
         """
         final = original_target
         reduction: float = 0
-        # 도발: 공격자가 도발 상태면 도발자를 노린다. 단, 열 광역기 등
-        # ignores_taunt 항목은 대상별 개별 판단이 설계 의도이므로 건너뛴다.
+        # 열 광역기 등 ignores_taunt 항목은 대상별 개별 판단이 설계 의도다.
         if not ignores_taunt:
             if self.precomputed_taunt_redirects is not None:
                 taunt_target = self.precomputed_taunt_redirects.get(original_target)
@@ -418,7 +394,6 @@ class CommandPartCalculator:
                 taunt_target = self._get_target_override(attacker_id)
             if taunt_target is not None and taunt_target in self.context.characters:
                 final = taunt_target
-        # 희생 방어: 현재 대상이 보호 중이면 보호자가 대신 맞는다.
         sacrifice = self._consume_sacrifice_protector(final)
         if sacrifice is not None:
             final, reduction = sacrifice
@@ -466,7 +441,7 @@ class CommandPartCalculator:
             if protector is None:
                 continue
             if protector not in self.context.characters:
-                continue  # 보호자가 전장에 없으면 무효
+                continue
             if buff.duration.remaining_count is not None:
                 buff.duration.remaining_count -= 1
                 if buff.duration.finished:
@@ -484,9 +459,8 @@ class CommandPartCalculator:
         )
 
     def _process_damage(self: "CommandPartCalculator", effect_seq_number: int) -> None:
-        # 대상 치환(도발/희생 방어)은 process() 시작 시 _prepare_redirects에서 일괄 수행됨.
-        # 리다이렉트로도 구제되지 않은, 이미 사망한 공격자/대상에 대한 항목은 건너뛴다.
-        # apply()가 무효화(BuffNoDamage 등)로 리스트 자체를 변경할 수 있으므로
+        # 리다이렉트로도 구제되지 않은, 이미 사망한 공격자/대상 항목은 건너뛴다.
+        # apply()가 무효화(BuffNoDamage 등)로 리스트 자체를 바꿀 수 있어
         # 두 번째 순회는 최신 리스트를 다시 읽는다.
         live_damage_calcs = [
             damage_calc
@@ -494,24 +468,17 @@ class CommandPartCalculator:
             if self._is_live_damage_calc(self.context, damage_calc)
         ]
 
-        # 공격자 측 ON_ATTACK 버프, 대상 측 ON_HIT 버프는 같은 스킬(커맨드 파트)
-        # 안에서 effect가 여러 개라도, 그리고 하나의 effect가 광역이라도 행동
-        # 1회당(공격자/대상 조합이 아니라 공격자 1명/대상 1명당) 한 번만
-        # 적용/차감한다 — 여러 effect가 같은 대상에게 대미지를 더하는 것은 여러 번의
-        # 타격이 아니라 한 번의 타격을 구성하는 요소들이기 때문이다. 이 dedup은
-        # 인스턴스 전체(=이 커맨드 파트의 process() 호출 전체)에 걸쳐 유지된다
-        # (self._on_attack_fired/_on_hit_fired, __init__ 참고).
+        # 여러 effect가 같은 대상에게 대미지를 더하는 것은 여러 번의 타격이
+        # 아니라 한 번의 타격을 구성하는 요소들이므로, ON_ATTACK/ON_HIT는
+        # 공격자 1명/대상 1명당 한 번만 적용·차감한다.
         for damage_calc in live_damage_calcs:
             attacker_id = damage_calc.base.attacker_id
             if attacker_id in self._on_attack_fired:
                 continue
             self._on_attack_fired.add(attacker_id)
-            # 공격자==대상인 자멸형 자기 대미지(triggers_holder_action_buffs=
-            # False)는, 이 ON_ATTACK 디스패치가 char_id=attacker_id로
-            # buff_container를 조회하기 때문에 대상 본인의 ON_ACTION 버프
-            # (GuardReflect 등, 역할과 무관하게 target_id==holder만으로
-            # 필터링함)가 여기서 먼저 발동해버릴 수 있다 — ON_HIT 쪽 가드만으로는
-            # 막을 수 없으므로 동일하게 건너뛴다.
+            # ON_ACTION 버프는 역할과 무관하게 target_id==holder로만 필터링하므로,
+            # 공격자==대상인 자멸형 자기 대미지는 이 ON_ATTACK 디스패치에서도
+            # 대상 본인의 방어 버프를 깨울 수 있다 — ON_HIT 쪽과 동일하게 막는다.
             if (
                 attacker_id == damage_calc.base.target_id
                 and not damage_calc.base.triggers_holder_action_buffs
@@ -528,10 +495,7 @@ class CommandPartCalculator:
             target_id = damage_calc.base.target_id
             if target_id not in self._on_hit_fired:
                 self._on_hit_fired.add(target_id)
-                # 같은 대상을 향한 이 효과의 대미지 중 하나라도
-                # triggers_holder_action_buffs=True면 정상적으로 대상 본인의
-                # ON_ACTION 버프(방어/반격/반사류)를 발동시킨다 — 전부
-                # False(예: 자멸형 자기 대미지)일 때만 건너뛴다.
+                # 같은 대상을 향한 대미지가 전부 자멸형일 때만 건너뛴다.
                 if any(
                     dc.base.target_id == target_id
                     and dc.base.triggers_holder_action_buffs
@@ -543,15 +507,10 @@ class CommandPartCalculator:
                         BuffCountDeductCondition.ON_HIT,  # noqa: F821
                         damage_calc.base.attacker_id,
                     )
-            # 방금 적용한 ON_HIT 버프(반사 등)가 이 damage_calc를 무효화하며
-            # damage_data_list에서 완전히 제거했을 수 있다(BuffReflect 등 —
-            # to_nullify 항목을 remove하고 공격자를 대상으로 한 새 항목으로
-            # 대체한다). 그 경우 대상은 실제로 대미지를 전혀 받지 않았으므로,
-            # "대미지를 받았을 때" 반응하는 버프(코모이디아 등 ALLY_DAMAGED/
-            # ALLY_IN_RANGE_DAMAGED 계열)가 이 무효화된 항목을 근거로 발동하면
-            # 안 된다 — live_damage_calcs는 루프 시작 시점의 스냅샷이라 target_id
-            # 등 필드 값 자체는 여전히 남아 있지만, 실제 리스트에서 사라졌는지는
-            # 매번 다시 확인해야 한다.
+            # 방금 적용한 ON_HIT 버프(반사 등)가 이 항목을 리스트에서 통째로
+            # 제거했을 수 있다. 그러면 대상은 대미지를 전혀 받지 않은 것이므로
+            # ALLY_DAMAGED 계열이 발동하면 안 된다 — live_damage_calcs는 루프
+            # 시작 시점의 스냅샷이라 매번 실제 리스트를 다시 확인해야 한다.
             still_live = any(
                 dc is damage_calc
                 for dc in self.data_by_effect[effect_seq_number].damage_data_list
@@ -591,8 +550,7 @@ class CommandPartCalculator:
             if is_magic_attack:
                 damage_calc.received_modifiers.append(target.status.m_res)
 
-            # 부활 횟수만큼 받는 대미지가 늘어나는 상시 페널티. m_res와 같은
-            # 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
+            # m_res와 같은 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
             revival_penalty = target.status.revival_penalty
             if revival_penalty is not None:
                 damage_calc.received_modifiers.append(revival_penalty)
@@ -609,9 +567,8 @@ class CommandPartCalculator:
                 self,
                 effect_seq_number,
             )
-            # roll_display가 이미 설정돼 있으면 덮어쓰지 않는다 — 반사(BuffReflect)처럼
-            # 이 damage_calc 자체가 FIXED 고정값이라 여기서 다시 계산하면 표시할 게
-            # 없어지는(None) 대신, 이벤트가 미리 만들어 둔 계산식 문자열을 그대로 쓴다.
+            # 반사처럼 FIXED 고정값인 항목은 여기서 다시 계산하면 표시할 게
+            # 없어지므로, 이벤트가 미리 만들어 둔 계산식을 그대로 남긴다.
             if damage_calc.roll_display is None:
                 damage_calc.roll_display = damage_value.format_calculation()
             damage_calc.hp_after = target.status.curr_hp
@@ -627,8 +584,8 @@ class CommandPartCalculator:
         )
 
     def _process_heal(self: "CommandPartCalculator", effect_seq_number: int) -> None:
-        # 이미 사망한 시전자/대상에 대한 항목은 건너뛴다. apply()가 무효화(BuffNoHeal 등)로
-        # 리스트 자체를 변경할 수 있으므로 두 번째 순회는 최신 리스트를 다시 읽는다.
+        # apply()가 무효화(BuffNoHeal 등)로 리스트 자체를 바꿀 수 있어
+        # 두 번째 순회는 최신 리스트를 다시 읽는다.
         for heal_calc in [
             heal_calc
             for heal_calc in self.data_by_effect[effect_seq_number].heal_data_list
@@ -780,8 +737,7 @@ def _build_damage_entry(
             c.roll_display if c.roll_display is not None else str(c.result_value)
             for c in calcs
         )
-    # dict.fromkeys로 등장 순서를 유지한 채 중복 라벨을 제거한다(같은
-    # 반응형 버프가 이 대상에게 두 구성요소를 냈다면 라벨이 겹칠 수 있음).
+    # 같은 반응형 버프가 두 구성요소를 냈다면 라벨이 겹치므로 중복을 제거한다.
     source_labels = tuple(
         dict.fromkeys(c.base.source_label for c in calcs if c.base.source_label)
     )
@@ -849,10 +805,8 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
 
     emitted_damage_targets: set[CharacterId] = set()
     for idx, effect_data in enumerate(calculator.data_by_effect):
-        # 같은 effect 안에서 스택 변화(소모/부여)와 수치 변화(대미지/회복)가
-        # 함께 일어나는 경우(SkillEffectConsumeStackForDamage,
-        # SkillEffectHealAndFillBuffStack) 스택 변화를 먼저 보여준다 —
-        # 실제 계산도 스택 소모/부여 결과를 대미지/회복 값이 참조하는 순서다.
+        # 스택 변화를 대미지/회복보다 먼저 내보낸다 — 실제 계산도 스택
+        # 소모/부여 결과를 대미지/회복 값이 참조하는 순서다.
         for remove_calc in effect_data.buff_remove_data_list:
             if not remove_calc.result_value:
                 continue
@@ -872,9 +826,8 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                 )
             )
         for buff_add in effect_data.buff_add_data_list:
-            # _process_buff_add()와 동일한 게이트를 다시 통과시킨다 — 그러지
-            # 않으면 조건부 버프(예: ConsumedBuffStackCountCondition)가 게이트에
-            # 막혀 실제로는 부여되지 않았는데도 "[버프] 부여" 로그가 남는다.
+            # 게이트에 막혀 실제로는 부여되지 않은 버프의 로그가 남지 않도록
+            # _process_buff_add()와 동일한 게이트를 다시 통과시킨다.
             if not calculator._buff_add_gate_passes(buff_add, idx):
                 continue
             entries.append(build_buff_add_log_entry(context, buff_add))
@@ -886,10 +839,9 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     result=message,
                 )
             )
-        # result_value가 None이면 이번 페이즈에서 아직 적용되지 않았거나(예: PRE 단계의
-        # POST용 대미지/힐) 대상이 이미 사망해 건너뛴 항목이므로 로그에 남기지 않는다.
-        # 같은 대상에게 이 파트의 다른(뒤쪽) effect가 아직 대미지를 더 줄 예정이면
-        # 여기서는 내보내지 않고, 마지막으로 대미지를 준 effect 위치에서 합쳐서 낸다.
+        # result_value가 None이면 아직 적용되지 않았거나(PRE 단계의 POST용
+        # 대미지 등) 대상 사망으로 건너뛴 항목이라 로그에 남기지 않는다.
+        # 뒤쪽 effect가 같은 대상을 더 때릴 예정이면 마지막 effect에서 합쳐 낸다.
         for damage_calc in effect_data.damage_data_list:
             if damage_calc.result_value is None:
                 continue

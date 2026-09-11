@@ -62,9 +62,8 @@ class _FakeResponse:
         self.text = body or f"error {status_code}"
 
     def json(self):
-        # HTML 에러 페이지를 돌려주는 실제 502 응답을 재현한다 — 이 경우
-        # APIError.code는 본문 파싱에 실패해 -1이 되고, 재시도 판정은
-        # status_code로만 가능하다.
+        # HTML 에러 페이지를 돌려주는 실제 502를 재현한다 — APIError.code는
+        # 본문 파싱에 실패해 -1이 되므로 status_code로만 판정할 수 있다.
         raise ValueError("not JSON")
 
 

@@ -34,46 +34,35 @@ class SkillEffectBase(abc.ABC):
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
     ]
     target_override: Optional[SkillTargetOverrideType] = None
-    # 에너미 스킬 전용: 이 effect가 어느 페이즈에 적용되는지 명시. None이면 아군 스킬 동작(페이즈별 기본값 사용).
+    # 에너미 스킬 전용. None이면 페이즈별 기본값을 쓰는 아군 스킬 동작.
     apply_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
     ] = None
     # 적층형 버프 부여/제거 시 한 번에 적용할 스택 상한
     buff_stack_cap: Optional[int] = None
-    # 일반(버프) 조건: eager하게 즉시 평가 가능한 Condition. "ConsumedBuffStackCountCondition"
-    # (스킬 조건)은 파싱 시점에 gate_value_source/gate_value로 변환되므로 여기 남지 않는다.
+    # 즉시 평가 가능한 Condition만 여기 남는다 — ConsumedBuffStackCountCondition은
+    # 파싱 시점에 아래 gate_value_source/gate_value로 변환된다.
     condition_class_name: Optional[str] = None
     condition_value: Optional[int] = None
-    # 스킬 조건(ConsumedBuffStackCountCondition) 전용 지연 게이트. 커맨드 처리
-    # 중간값(같은 커맨드에서 지금까지 소모된 스택 합 등)에 의존해 expand() 시점엔
-    # 평가할 수 없으므로 BuffAddData에 실어 CommandPartCalculator._buff_add_gate_passes()에서 판정한다.
+    # 커맨드 처리 중간값(지금까지 소모된 스택 합 등)에 의존해 expand() 시점엔
+    # 평가할 수 없는 조건을 위한 지연 게이트.
     gate_value_source: Optional[ValueSourceType] = None
     gate_value: Optional[int] = None
-    # 다른 버프의 id를 참조해야 하는 효과 전용(예: holder가 보유한 다른 버프의
-    # 스택 수를 새 버프의 수치로 스냅샷). BuffData.reference_buff_id와 동일한 목적.
+    # 다른 버프의 스택 수를 새 버프의 수치로 스냅샷하는 등, 다른 버프 id를
+    # 참조하는 효과 전용.
     reference_buff_id: Optional[str] = None
     # 대상이 이미 보유하고 있어야 하는 버프 id(선행 디버프 존재를 요구하는
     # 콤보용 게이트). buff_id(이 효과가 부여/조회하는 버프)와는 별개다.
     required_target_buff_id: Optional[str] = None
-    # 이 효과가 만드는 대미지가 도발 리다이렉트를 무시하는지. 열 광역
-    # target_rule이면 command_expanders.py의
-    # _mark_ignores_taunt_if_column_target()가 별도로 True를 강제하므로,
-    # 이 필드는 개체 지정 효과에서 도발을 무시해야 할 때만 켠다(둘은 OR로
-    # 합쳐진다 — 아래에서 True로 강제되는 경로가 이 필드를 False로 되돌리지
-    # 않는다).
+    # 열 광역 target_rule은 command_expanders.py가 따로 True를 강제하므로,
+    # 이 필드는 개체 지정 효과에서 도발을 무시해야 할 때만 켠다(둘은 OR).
     ignores_taunt: bool = False
-    # 이 효과가 만드는 대미지가 대상 본인이 보유한 ON_ACTION 버프(방어/반격/
-    # 반사류 포함)를 전혀 발동시키지 않는지. 자멸형 자기 대미지(target_override=
-    # 자신)가 시전자 본인의 방어 패시브(마법 무효화/반사 등)에 막혀 의도한
-    # 수치가 나오지 않는 문제를 막는 용도 — 공격자==대상인 자기 대미지에서
-    # 주로 쓴다. `DamageData.triggers_holder_action_buffs`로 전달된다.
+    # 자멸형 자기 대미지가 시전자 본인의 방어 패시브에 막히지 않게 하는 용도.
+    # DamageData.triggers_holder_action_buffs로 전달된다.
     ignores_defensive_buffs: bool = False
 
-    # 이 효과가 damaged_this_round처럼 "라운드의 피격이 모두 확정된 뒤"에만
-    # 올바른 값을 내는지. 조건(Condition.requires_round_resolved)이 아니라
-    # 효과 본체가 그런 데이터를 직접 읽는 경우에 켠다. 패시브 스킬에서
-    # 평가 시점(적 후행 시 vs 적 후행 확정 후)을 고르는 데 쓰인다
-    # (PassiveSkillWrapperBuff 참고).
+    # 조건이 아니라 효과 본체가 damaged_this_round 같은 데이터를 직접 읽을 때
+    # 켠다 — PassiveSkillWrapperBuff가 평가 시점을 고르는 데 쓴다.
     requires_round_resolved: ClassVar[bool] = False
 
     @property
@@ -202,8 +191,8 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
     gate_value_source: Optional[ValueSourceType] = None
     gate_value: Optional[int] = None
     if condition_class_name == "ConsumedBuffStackCountCondition":
-        # 스킬 조건: 커맨드 처리 중간값에만 의존하므로 일반 Condition으로 두지
-        # 않고 기존 게이트 파이프라인(BuffAddData.gate_value_source/gate_value)으로 변환한다.
+        # 커맨드 처리 중간값에만 의존하므로 일반 Condition이 아니라
+        # 게이트 파이프라인으로 넘긴다.
         gate_value_source = ValueSourceType.CONSUMED_BUFF_STACK
         gate_value = condition_value
         condition_class_name = None
@@ -258,30 +247,21 @@ class SkillData:
     cost: int
     effects: list[SkillEffectBase]
     description: str
-    # 에너미 스킬 전용: 아직 한 번도 선언된 적 없는 스킬의 설명을 답글에서
-    # 블라인드 처리할지 여부. "스킬_에너미" 시트의 is_revealed 체크박스
-    # 컬럼에서 온다. 컬럼이 없는 시트(스킬_캐릭터 등)는 항상 True(공개).
+    # False면 답글에서 설명을 블라인드 처리한다. 컬럼이 없는 시트
+    # ("스킬_캐릭터" 등)는 항상 True(공개).
     revealed: bool = True
-    # 캐릭터 스킬 전용: 원래는 아군 선언에 예고 줄이 붙지 않지만(에너미
-    # 전용 기능), 이 값이 True인 스킬은 아군이 선언해도 예고 줄이 표시된다.
-    # "스킬_캐릭터" 시트의 reveal_effect 체크박스 컬럼에서 온다.
+    # 예고 줄은 원래 에너미 전용이지만, True인 스킬은 아군이 선언해도 붙는다.
     reveal_effect: bool = False
-    # True이면 답글 본문에서 이 스킬이 만든 "▹ 대상 | 결과" 줄을 전부
-    # 생략하고 헤더(+예고 줄)만 남긴다. 수치는 계산식 쪽에 그대로 남으므로
-    # 정보가 사라지지는 않는다. 아군 전체를 한꺼번에 회복/부활시키는
-    # 스킬처럼 대상 수만큼 줄이 불어나 본문이 통째로 잘려 나가는 경우에
-    # 쓴다 — 그런 스킬은 description에 효과가 이미 다 적혀 있어 줄마다
-    # 반복할 실익이 없다. "스킬_캐릭터"/"스킬_에너미" 시트의
-    # hide_result_lines 체크박스 컬럼에서 온다.
+    # True면 본문의 "▹ 대상 | 결과" 줄을 생략하고 헤더만 남긴다. 아군 전체를
+    # 대상으로 하는 스킬처럼 줄 수가 불어나 본문이 통째로 잘려 나가는 경우에
+    # 쓴다 — 수치는 계산식 쪽에 그대로 남는다.
     hide_result_lines: bool = False
-    # 운명간섭("+")이 이 스킬에 무엇을 더해주는지. "스킬_캐릭터" 시트의
-    # fate_mode/fate_value/fate_effect_index 컬럼에서 온다. fate_mode가 None이면
-    # 기존 동작(대미지 스킬은 굴림 보정, 비대미지 스킬은 거부)을 그대로 쓴다.
+    # 운명간섭("+")이 이 스킬에 무엇을 더해주는지. None이면 대미지 스킬은
+    # 굴림 보정, 비대미지 스킬은 거부라는 기본 동작을 쓴다.
     fate_mode: Optional[FateBoostMode] = None
     # 모드별 보정치. 단위는 모드가 정한다 — VALUE_BOOST는 대상 효과의
-    # value_type을 그대로 따르고(퍼센트면 계수 %p, 정수면 정수), BUFF_*는
-    # 버프 수치/스택, EXTRA_TARGET은 추가 대상 수다. ROLL_BONUS에서만
-    # 생략 가능하며 그때는 FATE_INTERVENTION_SKILL_BONUS를 쓴다.
+    # value_type(퍼센트면 계수 %p), BUFF_*는 버프 수치/스택, EXTRA_TARGET은
+    # 추가 대상 수. ROLL_BONUS에서만 생략 가능하다.
     fate_value: Optional[int] = None
     # VALUE_BOOST/BUFF_* 모드가 어느 효과(effect_N)를 강화하는지. 비우면 0.
     fate_effect_index: int = 0
@@ -306,8 +286,8 @@ class SkillData:
             hide_result_lines=parse_spreadsheet_bool(
                 data.get("hide_result_lines", False)
             ),
-            # 컬럼 자체가 없는 시트("스킬_에너미")에서는 전부 기본값으로 남는다 —
-            # 에너미는 부활 횟수가 0이라 애초에 운명간섭을 쓸 수 없다.
+            # 컬럼이 없는 "스킬_에너미"는 기본값으로 남는다 — 에너미는
+            # 부활 횟수가 0이라 애초에 운명간섭을 쓸 수 없다.
             fate_mode=(
                 FateBoostMode(str(data["fate_mode"]).strip())
                 if str(data.get("fate_mode", "") or "").strip()

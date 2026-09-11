@@ -31,9 +31,8 @@ class CounterDamageOnMarkedAllyAttackEvent(BuffEvent):
     # "버프" 시트의 value(value_type=퍼센트)에서 온다.
     percent: int
     reference_buff_id: str
-    # 표시용 라벨. 여러 캐릭터가 이 클래스를 재사용할 수 있으므로 특정
-    # 캐릭터의 스킬명을 하드코딩하지 않고, 이 버프를 등록한 스프레드시트
-    # 행의 id를 그대로 쓴다.
+    # 표시용 라벨. 여러 캐릭터가 공유하는 클래스라 이름을 하드코딩하지 않고
+    # 이 버프를 등록한 시트 행의 id를 그대로 쓴다.
     label: str
 
     @property

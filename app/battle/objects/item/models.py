@@ -35,10 +35,9 @@ class ItemData:
     target_rule: str
     cost: int
     attack_range: int
-    # 소지 자체가 목적인 아이템(item_type="기타")은 전투/비전투 효과가 없어
-    # effect_0이 비어 있을 수 있다 — None이면 사용(전투 내 [아이템] 커맨드,
-    # 비전투 [사용])이 모두 명시적으로 거부된다. "비전투 소모품"도 effect가
-    # 항상 None이지만, 그쪽은 item_type 자체로 비전투 전용 로직을 탄다.
+    # "기타"처럼 효과가 없는 아이템은 None이며, 이때는 전투·비전투 사용이
+    # 모두 명시적으로 거부된다. "비전투 소모품"도 항상 None이지만 그쪽은
+    # item_type 자체로 비전투 전용 로직을 탄다.
     effect: Optional[SkillEffectBase]
     description: str = ""
     item_type: ItemType = ItemType.BATTLE_CONSUMABLE
@@ -48,12 +47,9 @@ class ItemData:
         effect = parse_skill_effect(data, 0)
         item_type = ItemType(str(data["item_type"]))
 
-        # "기타"(사용 불가)/"부적"(미구현 패시브 슬롯)/"비전투 소모품"(자신
-        # 전용, 아이템별 전용 로직으로 처리)은 전투 슬롯(대상 규칙·코스트·
-        # 사거리)이 의미가 없으므로 비워 둘 수 있다 — 그 외 item_type은
-        # 기존과 동일하게 필수로 요구한다. 시트에는 빈 셀 대신 "해당 없음"
-        # 표시로 "-"가 들어있는 경우도 있어(빈 문자열이 아니라 int() 파싱이
-        # 실패하는 값), 숫자가 아니면 0으로 취급한다.
+        # 전투에 쓰이지 않는 item_type은 대상 규칙·코스트·사거리가 의미가 없어
+        # 비워 둘 수 있다. 시트에는 빈 셀 대신 "해당 없음" 표시로 "-"가 들어
+        # 있기도 해서, 숫자가 아니면 0으로 취급한다.
         if item_type in (ItemType.ETC, ItemType.CHARM, ItemType.NONCOMBAT_CONSUMABLE):
             target_rule = str(data.get("target_rule", "") or "")
             cost = _int_or_zero(data.get("cost"))

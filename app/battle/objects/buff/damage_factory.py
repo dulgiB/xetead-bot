@@ -38,8 +38,8 @@ def make_coefficient_damage_calc(
     표시된다(계산식 전용인 source_name과 별개) — attacker_id가 원래 커맨드의
     행위자가 아니라 반응형 버프 보유자인 경우(반격류)에만 넘긴다.
 
-    triggers_received_damage_passives=False로 넘기면 이 대미지가 코모이디아
-    등 "대미지를 맞았을 때" 반응하는 버프를 재유발하지 않는다 — DoT/반격류
+    triggers_received_damage_passives=False로 넘기면 이 대미지가
+    "대미지를 맞았을 때" 반응하는 버프를 재유발하지 않는다 — DoT/반격류
     자신이 만들어내는 파생 대미지처럼, 이미 어떤 반응의 결과물인 대미지에
     쓴다(연쇄 반응 방지)."""
     return DamageCalculateData(
