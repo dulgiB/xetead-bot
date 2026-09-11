@@ -444,6 +444,5 @@ def test_inventory_write_back_uses_cache_when_set():
     assert ws._rows[0] == ["아군 1", "포션", 2]
     assert ws._rows[1] == ["아군 2", "포션", 1]
 
-    # consume이 쓴 뒤 캐시가 무효화되지 않았다면 grant가 낡은(변경 전) 값을
-    # 읽어 "아군 2" 행을 못 찾거나 잘못된 행을 갱신했을 것이다 — 실제로는
-    # 정확한 행(두 번째)이 갱신됐으므로 무효화가 정상 동작한 것이다.
+    # consume 뒤 캐시가 무효화되지 않았다면 grant가 낡은 값을 읽어 엉뚱한
+    # 행을 갱신했을 것이다.

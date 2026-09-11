@@ -1383,7 +1383,7 @@ class TestBuffTaunt:
         taunt_buff = make_buff_data("도발", "BuffTaunt")
         taunt_skill = make_buff_skill("도발 스킬", "도발")
         double_hit_skill = SkillData(
-            id="양손 가르기",
+            id="이중 타격",
             target_rule="SkillTargetRuleNamed",
             target_count=2,
             cost=2,
@@ -1400,7 +1400,7 @@ class TestBuffTaunt:
         )
         ctx = make_context(
             taunt_buff,
-            skill_dict={"도발 스킬": taunt_skill, "양손 가르기": double_hit_skill},
+            skill_dict={"도발 스킬": taunt_skill, "이중 타격": double_hit_skill},
         )
         manager = setup_enemy_pre_phase(ctx)
 
@@ -1413,14 +1413,14 @@ class TestBuffTaunt:
             get_test_preset("공격수"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
         ctx.add_character(
-            get_test_preset("적군", skill_1_id="양손 가르기"),
+            get_test_preset("적군", skill_1_id="이중 타격"),
             FactionType.ENEMY,
             BattlefieldColumnIndex(1),
         )
 
         manager.process_command(
             parse_character_command(
-                CharacterId("적군"), "[양손 가르기/도발자/공격수]", ctx
+                CharacterId("적군"), "[이중 타격/도발자/공격수]", ctx
             )
         )
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
@@ -1445,7 +1445,7 @@ class TestBuffTaunt:
         taunt_buff = make_buff_data("도발", "BuffTaunt")
         taunt_skill = make_buff_skill("도발 스킬", "도발")
         double_hit_skill = SkillData(
-            id="양손 가르기",
+            id="이중 타격",
             target_rule="SkillTargetRuleNamed",
             target_count=2,
             cost=2,
@@ -1462,7 +1462,7 @@ class TestBuffTaunt:
         )
         ctx = make_context(
             taunt_buff,
-            skill_dict={"도발 스킬": taunt_skill, "양손 가르기": double_hit_skill},
+            skill_dict={"도발 스킬": taunt_skill, "이중 타격": double_hit_skill},
         )
         manager = setup_enemy_pre_phase(ctx)
 
@@ -1478,14 +1478,14 @@ class TestBuffTaunt:
             get_test_preset("공격수2"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
         ctx.add_character(
-            get_test_preset("적군", skill_1_id="양손 가르기"),
+            get_test_preset("적군", skill_1_id="이중 타격"),
             FactionType.ENEMY,
             BattlefieldColumnIndex(1),
         )
 
         manager.process_command(
             parse_character_command(
-                CharacterId("적군"), "[양손 가르기/공격수1/공격수2]", ctx
+                CharacterId("적군"), "[이중 타격/공격수1/공격수2]", ctx
             )
         )
         manager.to_phase(RoundPhaseType.ALLY_ACTION)

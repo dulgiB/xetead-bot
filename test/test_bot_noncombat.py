@@ -260,7 +260,7 @@ def test_handle_roll_without_fate_touches_nothing(_stub_fate_sheet_writes):
 
 
 def _quest_location(
-    location_id: str = "아도스",
+    location_id: str = "항구 마을",
     active: bool = True,
     description_quest: str = "항구 마을이다.",
 ) -> QuestLocationData:
@@ -270,7 +270,7 @@ def _quest_location(
 
 
 def _quest(
-    location_id: str = "아도스",
+    location_id: str = "항구 마을",
     quest_type: str = "운반",
     venue: str = "광장",
     name: str = "광장 의뢰",
@@ -299,7 +299,7 @@ def _quest(
 def test_handle_investigation_accept_returns_log_info(monkeypatch):
     """[수락]도 마찬가지로 NoncombatLogInfo를 반환해 로그에 남아야 한다."""
     state = _make_state("user1")
-    session = _investigation_session(acct="user1", quest_id="아도스_운반")
+    session = _investigation_session(acct="user1", quest_id="항구 마을_운반")
     monkeypatch.setattr(
         noncombat_module,
         "load_general_quest_sheet",
@@ -319,7 +319,7 @@ def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch
     """[수락] 답글에 멘션된 인원 전원(+ 발신자)이 참여자로 등록되고, '일반 의뢰'
     시트의 taken_by에 쉼표로 이어붙여 기록되어야 한다."""
     state = _make_state("user1")
-    session = _investigation_session(acct="user1", quest_id="아도스_운반")
+    session = _investigation_session(acct="user1", quest_id="항구 마을_운반")
     monkeypatch.setattr(
         noncombat_module,
         "load_general_quest_sheet",
@@ -343,7 +343,7 @@ def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch
         "「광장 의뢰」 의뢰를 받았다!\n\n"
         "◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @test-world"
     )
-    assert calls == [("아도스_운반", "user1,user2,user3")]
+    assert calls == [("항구 마을_운반", "user1,user2,user3")]
     assert log_info is not None
     assert log_info.result == "의뢰 수주: 광장 의뢰 (user1, user2, user3)"
 
@@ -353,20 +353,22 @@ def test_investigation_accept_allows_different_quests_in_same_location(monkeypat
     수주할 수 있어야 한다 — 한 명이 하나를 수주해도 다른 의뢰는 막히지 않는다."""
     state = _make_state("user1")
     session1 = _investigation_session(
-        acct="user1", menu_post_id=100, quest_id="아도스_운반"
+        acct="user1", menu_post_id=100, quest_id="항구 마을_운반"
     )
     session2 = _investigation_session(
-        acct="user2", menu_post_id=101, quest_id="아도스_탐사"
+        acct="user2", menu_post_id=101, quest_id="항구 마을_탐사"
     )
     taken_by_store: dict[str, str] = {}
 
     def fake_load(spreadsheet, cache=None):
         return _quest_location(), [
-            _quest(quest_type="운반", taken_by=taken_by_store.get("아도스_운반", "")),
+            _quest(
+                quest_type="운반", taken_by=taken_by_store.get("항구 마을_운반", "")
+            ),
             _quest(
                 quest_type="탐사",
                 venue="상점가",
-                taken_by=taken_by_store.get("아도스_탐사", ""),
+                taken_by=taken_by_store.get("항구 마을_탐사", ""),
             ),
         ]
 
@@ -381,13 +383,13 @@ def test_investigation_accept_allows_different_quests_in_same_location(monkeypat
 
     assert "의뢰를 받았다" in result1
     assert "의뢰를 받았다" in result2
-    assert taken_by_store == {"아도스_운반": "user1", "아도스_탐사": "user2"}
+    assert taken_by_store == {"항구 마을_운반": "user1", "항구 마을_탐사": "user2"}
 
 
 def test_investigation_accept_rejects_already_taken_quest(monkeypatch):
     """taken_by가 이미 채워진 의뢰는 다시 [수락]할 수 없다."""
     state = _make_state("user1")
-    session = _investigation_session(acct="user1", quest_id="아도스_운반")
+    session = _investigation_session(acct="user1", quest_id="항구 마을_운반")
     monkeypatch.setattr(
         noncombat_module,
         "load_general_quest_sheet",
@@ -409,7 +411,7 @@ def test_investigation_accept_rejects_character_already_busy_in_same_location(
     수주할 수 없다 (taken_by 기준 판정)."""
     state = _make_state("user1")
     session = _investigation_session(
-        acct="user1", menu_post_id=101, quest_id="아도스_탐사"
+        acct="user1", menu_post_id=101, quest_id="항구 마을_탐사"
     )
     monkeypatch.setattr(
         noncombat_module,
@@ -433,7 +435,7 @@ def test_investigation_decline_reports_location_and_tags_admin(monkeypatch):
     """의뢰 개요 게시물에 [수락]도 다른 커맨드도 아닌 답글이 오면, 그 의뢰의
     location을 채운 안내 문구 + admin 태그로 응답해야 한다."""
     state = _make_state("user1")
-    session = _investigation_session(acct="user1", quest_id="아도스_운반")
+    session = _investigation_session(acct="user1", quest_id="항구 마을_운반")
     monkeypatch.setattr(
         noncombat_module,
         "load_general_quest_sheet",
@@ -512,7 +514,7 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "입력해 주세요. 의뢰를 받는 대신 이 장소에서 자율 탐사를 진행하려면 "
         "키워드가 없는 답글을 보내 주세요."
     )
-    assert session.quest_id == "아도스_운반"
+    assert session.quest_id == "항구 마을_운반"
 
 
 def test_investigation_venue_choice_hides_accept_prompt_when_taken(monkeypatch):
@@ -552,7 +554,7 @@ def test_investigation_venue_choice_hides_accept_prompt_when_taken(monkeypatch):
     assert "어쩌구" not in result
     assert "이 의뢰를 수락할까?" not in result
     assert "[일반 의뢰]" not in result
-    assert session.quest_id == "아도스_운반"
+    assert session.quest_id == "항구 마을_운반"
 
 
 def test_investigation_venue_choice_free_explore_tags_admin(monkeypatch):
@@ -996,7 +998,7 @@ def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
 
     # 1. 유효한 장소를 선택 → quest_id가 저장된다
     handle_investigation_venue_choice(session, "장소A", state)
-    assert session.quest_id == "아도스_운반"
+    assert session.quest_id == "항구 마을_운반"
 
     # 2. 같은 메뉴에 존재하지 않는 장소를 다시 입력 → 실패 응답이지만
     #    이전에 저장된 quest_id는 지워져야 한다
@@ -1121,7 +1123,7 @@ def bomb_item() -> ItemData:
 def key_item() -> ItemData:
     """전투/비전투 효과 없이 소지 자체가 목적인 스토리 키 아이템."""
     return ItemData(
-        id="수상한 양탄자",
+        id="키 아이템",
         target_rule="SkillTargetRuleSelf",
         cost=0,
         attack_range=0,
@@ -1199,15 +1201,15 @@ def test_use_item_rejects_key_item_without_effect(monkeypatch, key_item):
     monkeypatch.setattr(
         noncombat_module,
         "load_item_data",
-        lambda spreadsheet, cache=None: {"수상한 양탄자": key_item},
+        lambda spreadsheet, cache=None: {"키 아이템": key_item},
     )
     monkeypatch.setattr(
         noncombat_module,
         "load_inventory",
-        lambda spreadsheet, cache=None: Inventory({("동료", "수상한 양탄자"): 1}),
+        lambda spreadsheet, cache=None: Inventory({("동료", "키 아이템"): 1}),
     )
 
-    reply, log_info = handle_use_item(acct, "수상한 양탄자", None, 1, state)
+    reply, log_info = handle_use_item(acct, "키 아이템", None, 1, state)
 
     assert "지원하지 않는 효과" in reply
     assert log_info is not None
@@ -1296,27 +1298,27 @@ def test_use_item_rejects_unimplemented_noncombat_only_item_without_consuming(
     acct = "user1"
     state = _make_state_with_name_dict(acct, "동료", curr_hp=50)
     charm = ItemData(
-        id="정체불명의 씨앗",
+        id="비전투 소모품 아이템",
         target_rule="SkillTargetRuleSelf",
         cost=0,
         attack_range=0,
         effect=None,
         item_type=ItemType.NONCOMBAT_CONSUMABLE,
     )
-    inventory = Inventory({("동료", "정체불명의 씨앗"): 1})
+    inventory = Inventory({("동료", "비전투 소모품 아이템"): 1})
     monkeypatch.setattr(
         noncombat_module,
         "load_item_data",
-        lambda spreadsheet, cache=None: {"정체불명의 씨앗": charm},
+        lambda spreadsheet, cache=None: {"비전투 소모품 아이템": charm},
     )
     monkeypatch.setattr(
         noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
     )
 
-    reply, log_info = handle_use_item(acct, "정체불명의 씨앗", None, 1, state)
+    reply, log_info = handle_use_item(acct, "비전투 소모품 아이템", None, 1, state)
 
     assert reply == "◊ 등록되지 않은 아이템입니다."
-    assert inventory.get_count("동료", "정체불명의 씨앗") == 1
+    assert inventory.get_count("동료", "비전투 소모품 아이템") == 1
 
 
 def test_use_mysterious_potion_reports_random_effect(monkeypatch):
@@ -1628,7 +1630,7 @@ def test_bag_omits_cost_range_for_types_without_battle_slot(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
     key_item = ItemData(
-        id="수상한 양탄자",
+        id="키 아이템",
         target_rule="",
         cost=0,
         attack_range=0,
@@ -1656,7 +1658,7 @@ def test_bag_omits_cost_range_for_types_without_battle_slot(monkeypatch):
     )
     inventory = Inventory(
         {
-            ("동료", "수상한 양탄자"): 1,
+            ("동료", "키 아이템"): 1,
             ("동료", "수상한 물약"): 1,
             ("동료", "행운의 부적"): 1,
         }
@@ -1665,7 +1667,7 @@ def test_bag_omits_cost_range_for_types_without_battle_slot(monkeypatch):
         noncombat_module,
         "load_item_data",
         lambda spreadsheet, cache=None: {
-            "수상한 양탄자": key_item,
+            "키 아이템": key_item,
             "수상한 물약": potion,
             "행운의 부적": charm,
         },
@@ -1678,7 +1680,7 @@ def test_bag_omits_cost_range_for_types_without_battle_slot(monkeypatch):
 
     assert "코스트" not in reply
     assert "사거리" not in reply
-    assert "▹ 수상한 양탄자×1: 용도 불명의 양탄자." in reply
+    assert "▹ 키 아이템×1: 용도 불명의 양탄자." in reply
     assert "▹ 수상한 물약×1: 마셔 봐야 아는 물약." in reply
     assert "비전투 전용" not in reply
     assert "▹ 행운의 부적×1: 부적. 지니고 있으면 운이 좋아진다." in reply

@@ -40,9 +40,8 @@ logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
-# Google 쪽 일시 장애로 재시도하면 대개 다음 시도에 성공하는 응답들.
-# 4xx(권한 없음, 잘못된 범위 등)와 429(할당량 초과)는 재시도해도 같은 결과이므로
-# 제외한다.
+# 재시도하면 대개 다음 시도에 성공하는 일시 장애. 4xx와 429는 재시도해도
+# 같은 결과이므로 제외한다.
 _RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
 _MAX_ATTEMPT_COUNT = 3
 _RETRY_BASE_DELAY_SEC = 1.0
@@ -70,8 +69,7 @@ class SheetCache:
         self._sheet_metadata: Optional[Mapping[str, Any]] = None
         self._worksheets: dict[str, gspread.Worksheet] = {}
         self._raw_values: dict[tuple[str, Optional[ValueRenderOption]], list[list]] = {}
-        # 테스트에서 실제 gspread.Worksheet(HTTP 클라이언트 필요) 없이도
-        # worksheet() 캐싱/메타데이터 재사용 로직을 검증할 수 있도록 하는 seam.
+        # HTTP 클라이언트 없이 캐싱 로직만 검증하기 위한 테스트 seam.
         self._worksheet_factory = worksheet_factory or self._build_worksheet
         # 재시도 백오프를 테스트에서 실제로 기다리지 않게 하기 위한 seam.
         self._sleep = sleep or time.sleep

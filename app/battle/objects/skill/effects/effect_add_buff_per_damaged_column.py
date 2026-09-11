@@ -45,9 +45,8 @@ class SkillEffectAddBuffPerDamagedColumn(SkillEffectBase):
             return [], [], [], [], []
         holder_column = context.find_character_position(holder).value
 
-        # 동료(소환수)를 제외하지 않는 것은 의도된 동작이다 — 같은 범위 판정을
-        # 하는 기존 조건들(_characters_in_holder_scope 계열)도 동료를 세므로
-        # "누군가 맞았다"의 기준을 둘 사이에서 일치시킨다.
+        # 동료를 제외하지 않는 것은 의도된 동작이다 — 같은 범위 판정을 하는
+        # _characters_in_holder_scope 계열과 기준을 맞춘다.
         damaged_columns = {
             context.find_character_position(char_id).value
             for char_id in context.damaged_this_round

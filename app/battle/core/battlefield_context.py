@@ -77,8 +77,7 @@ class BattlefieldContext:
         self.buff_container: BuffContainer = BuffContainer(self)
 
         # 슬롯(position_map)을 차지하지 않는 동료 캐릭터: companion_id -> owner_id.
-        # 이런 캐릭터는 self.characters에는 있지만 position_map에는 등록되지
-        # 않으며, find_character_position()이 owner의 위치를 그대로 반환한다.
+        # characters에는 있지만 position_map에는 없고, 위치는 owner를 따른다.
         self.companion_owners: dict[CharacterId, CharacterId] = {}
 
         self.results: list[CommandPartProcessResult] = []
@@ -279,9 +278,8 @@ class BattlefieldContext:
             ),
             skills=skills,
             hide_hp=data.hide_hp,
-            # 운명간섭은 "오늘 이미 썼는가"로 판정한다(일일 의뢰와 동일).
-            # 배치 시점의 날짜로 한 번 확정해 두면 전투가 자정을 넘겨도 한
-            # 전투 안에서 판정 기준이 바뀌지 않는다.
+            # 배치 시점의 날짜로 한 번 확정해 두면 전투가 자정을 넘겨도
+            # 한 전투 안에서 판정 기준이 바뀌지 않는다.
             fate_used=data.has_used_fate_on(date.today().isoformat()),
         )
 
@@ -319,8 +317,7 @@ class BattlefieldContext:
         for buff in self.buff_container.get_buffs_by(char_id, None):
             self.buff_container.remove(buff.uid)
 
-        # 슬롯을 차지하지 않는 동료는 애초에 position_map에 없으므로 제거 시도를
-        # 건너뛴다.
+        # 슬롯을 차지하지 않는 동료는 애초에 position_map에 없다.
         if char_id not in self.companion_owners:
             self._remove_from_position_map(char_id)
         self.companion_owners.pop(char_id, None)
@@ -368,9 +365,8 @@ class BattlefieldContext:
         if char_id not in self.characters.keys():
             raise CommandValidationError(error_target_does_not_exist(char_id))
 
-        # 슬롯을 차지하지 않는 동료는 position_map을 뒤지지 않고 owner의 위치를
-        # 그대로 따른다 — owner가 이동하면 동료도 자동으로 같이 이동한 것으로
-        # 취급된다.
+        # 동료는 owner의 위치를 그대로 따른다 — owner가 이동하면 동료도
+        # 같이 이동한 것으로 취급된다.
         owner_id = self.companion_owners.get(char_id)
         if owner_id is not None:
             return self.find_character_position(owner_id)
@@ -388,9 +384,7 @@ class BattlefieldContext:
         char = self.characters[char_id]
         empty_slot = self.try_find_empty_slot(char.faction, to_position)
 
-        # is_valid에서 사전 검증되었으므로 None 케이스는 발생하지 않는다.
-        # 단, 버프에 의한 강제 이동(스킬 효과 등)은 is_valid를 거치지 않으므로
-        # 방어적으로 체크를 유지한다.
+        # 강제 이동(스킬 효과 등)은 is_valid를 거치지 않으므로 체크를 유지한다.
         if empty_slot is None:
             raise CommandValidationError(error_too_many_characters(to_position))
 
@@ -435,10 +429,8 @@ class BattlefieldContext:
     def on_start_round(self):
         self.moved_this_round = set()
         self.damaged_this_round = set()
-        # 코스트 전액 회복을 ON_ROUND_START 버프보다 먼저 처리해야, "다음
-        # 라운드 코스트 감소" 같은 ON_ROUND_START 버프가 회복 직후의
-        # remaining_cost를 실제로 깎을 수 있다(먼저 버프를 처리하면 뒤이은
-        # 전액 회복이 그 감소를 그대로 덮어써 버린다).
+        # 코스트 회복이 ON_ROUND_START 버프보다 먼저여야 "다음 라운드 코스트
+        # 감소" 버프가 덮어써지지 않는다.
         for character in self.characters.values():
             character.status.remaining_cost = character.status[
                 CombatStatType.COST_PER_TURN

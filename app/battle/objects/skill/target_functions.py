@@ -21,9 +21,8 @@ class SkillTargetRule(abc.ABC):
     context: "BattlefieldContext"
     skill_holder_id: CharacterId
 
-    # 커맨드에 적힌 대상(열/이름) 입력을 무시하고 규칙이 대상을 스스로
-    # 정하는지. ClassVar이라 인스턴스 없이 클래스만 보고도 판정할 수 있다 —
-    # 전투 개시 시점의 시트 설정 검증(fate_config_error)이 이를 쓴다.
+    # 커맨드에 적힌 대상 입력을 무시하고 규칙이 스스로 대상을 정하는지.
+    # ClassVar이라 인스턴스 없이도 판정할 수 있다 — fate_config_error가 쓴다.
     ignores_input_targets: ClassVar[bool] = False
 
     @abc.abstractmethod
@@ -65,20 +64,17 @@ class SkillTargetRuleColumn(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
-        # 열 지정 스킬에 캐릭터 이름을 넣는 입력 실수(예: [열 광역 스킬/이름])는
-        # 흔하다 — assert로 두면 AssertionError가 그대로 터져 답글 없이
-        # 조용히 실패하므로, 입력 오류로 취급해 안내 문구를 돌려준다.
+        # 흔한 입력 실수다 — assert로 두면 답글 없이 조용히 실패하므로
+        # 입력 오류로 취급해 안내 문구를 돌려준다.
         if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
             target_id_list += self.context.position_map[target_faction][column].values()
 
-        # position_map 슬롯을 차지하지 않는 동료(예: 소환수)는 열 대상에
-        # 독립적으로 포함시키지 않는다 — owner만 맞은 것으로 취급하고, 가디언
-        # 버프가 있다면 그 1회분 대미지를 owner/동료가 나눠 받는다(단일 대상
-        # 공격과 동일한 분담 경로). 동료를 여기서 함께 넣으면 owner와 동료가
-        # 각자 전체 대미지를 따로 맞는 셈이 되어 실질 피해량이 2배가 된다.
+        # 슬롯을 차지하지 않는 동료는 열 대상에 따로 넣지 않는다 — owner만
+        # 맞은 것으로 치고 가디언 버프가 그 1회분을 나눈다. 여기서 함께
+        # 넣으면 둘이 각자 전체 대미지를 맞아 실질 피해량이 2배가 된다.
         return target_id_list
 
 
@@ -102,9 +98,8 @@ class SkillTargetRuleColumnRange(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
-        # 열 지정 스킬에 캐릭터 이름을 넣는 입력 실수(예: [열 광역 스킬/이름])는
-        # 흔하다 — assert로 두면 AssertionError가 그대로 터져 답글 없이
-        # 조용히 실패하므로, 입력 오류로 취급해 안내 문구를 돌려준다.
+        # 흔한 입력 실수다 — assert로 두면 답글 없이 조용히 실패하므로
+        # 입력 오류로 취급해 안내 문구를 돌려준다.
         if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
@@ -141,9 +136,8 @@ class SkillTargetRuleAllyColumn(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].faction
 
-        # 열 지정 스킬에 캐릭터 이름을 넣는 입력 실수(예: [열 광역 스킬/이름])는
-        # 흔하다 — assert로 두면 AssertionError가 그대로 터져 답글 없이
-        # 조용히 실패하므로, 입력 오류로 취급해 안내 문구를 돌려준다.
+        # 흔한 입력 실수다 — assert로 두면 답글 없이 조용히 실패하므로
+        # 입력 오류로 취급해 안내 문구를 돌려준다.
         if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
@@ -191,8 +185,7 @@ class SkillTargetRuleNamed(SkillTargetRule):
     def get_targets(
         self, targets: list[BattlefieldColumnIndex | CharacterId]
     ) -> list[CharacterId]:
-        # 위 열 지정 스킬과 반대 방향의 입력 실수(개체 지정 스킬에 열 번호를
-        # 넣는 경우)도 같은 이유로 안내 문구를 돌려준다.
+        # 반대 방향의 입력 실수(개체 지정 스킬에 열 번호)도 같은 이유로 안내한다.
         if not all(isinstance(target, CharacterId) for target in targets):
             raise CommandValidationError(error_character_target_required())
         return cast(list[CharacterId], targets)

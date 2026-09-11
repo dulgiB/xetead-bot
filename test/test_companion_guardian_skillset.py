@@ -529,10 +529,8 @@ class TestCost3Skill:
 
     def test_resummons_companion_at_10_percent_when_dead(self):
         ctx = self._make_ready_context()
-        # 패시브가 전투 시작 시 이미 동료를 소환해 이름을 확정해 둔 상태에서,
-        # 동료가 대미지로 죽어 부재가 된 경우를 재현한다(코스트 3의 재소환
-        # 분기는 이 등록을 그대로 재사용하므로, 최초 소환 자체가 없었던
-        # 상태는 실제 플레이에서 발생하지 않는다).
+        # 소환된 동료가 대미지로 죽어 부재가 된 경우를 재현한다 — 최초 소환
+        # 자체가 없었던 상태는 실제 플레이에서 발생하지 않는다.
         ctx.on_battle_start()
         companion_id = _companion_id(ctx)
         ctx.characters[companion_id].status.curr_hp = 0
@@ -702,9 +700,8 @@ class TestCompanionGuardianSplitAndCounter:
         manager = _setup_ally_phase(ctx)
         enemy = CharacterId("적군")
 
-        # 굴림이 공유되지 않으면 첫 번째 호출(6+6=12)과 두 번째 호출(1+1=2)이
-        # 서로 다른 대미지를 만들어낸다. 공유되면 분담용으로는 처음 두 값(6, 6)만
-        # 쓰이고, 이후 반격 굴림 등 다른 호출은 순환된 나머지 값을 그대로 쓴다.
+        # 굴림이 공유되지 않으면 첫 호출(6+6=12)과 두 번째 호출(1+1=2)이 서로
+        # 다른 대미지를 낸다. 공유되면 분담에는 처음 두 값(6, 6)만 쓰인다.
         rolls = itertools.cycle([6, 6, 1, 1])
         monkeypatch.setattr("random.randint", lambda a, b: next(rolls))
 

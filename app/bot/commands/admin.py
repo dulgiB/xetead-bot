@@ -64,9 +64,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# 스프레드시트 저장/렌더링 등 내부 구현 detail을 담은 예외 메시지는
-# 플레이어/관리자에게 그대로 노출하지 않는다 — 대신 이 문구로 통일해
-# 보여주고, 전체 트레이스는 _log_system_error()로 서버 로그에만 남긴다.
+# 내부 구현 detail이 담긴 예외 메시지는 그대로 노출하지 않고 이 문구로
+# 통일한다. 전체 트레이스는 _log_system_error()가 서버 로그에만 남긴다.
 _SYSTEM_ERROR_MESSAGE = "◊ 시스템 오류입니다."
 
 
@@ -94,10 +93,8 @@ _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생
 _RE_PROXY = re.compile(
     r"^\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[[^\[\]\n]+])\s*$", re.MULTILINE
 )
-# "[판정: 선착 1인, 55분까지]"처럼 콜론을 쓰는 안내문 표기 — 캐릭터용
-# "[판정/스탯]" 커맨드(슬래시)와는 형식이 달라 실제 판정 커맨드로 오인되지
-# 않는다. admin이 플레이어 안내문에 이 표기를 쓰면서 봇을 실수로 멘션해도
-# "알 수 없는 관리자 커맨드입니다" 오류를 내지 않고 조용히 무시한다.
+# "[판정: 선착 1인, 55분까지]"처럼 콜론을 쓰는 안내문 표기. admin이 이 표기를
+# 쓰면서 봇을 실수로 멘션해도 오류를 내지 않고 조용히 무시하기 위한 것이다.
 _RE_JUDGE_ANNOUNCE = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*:[^\]]*]")
 
 
@@ -129,53 +126,37 @@ class AdminCommandResult:
     set_preparation_post: bool = False
     # True이면 game_post_text의 post_id를 practice.prep_post_id로 저장한다
     set_practice_prep_from_game_post: bool = False
-    # 프록시 커맨드(_cmd_proxy)로 캐릭터 커맨드가 정산된 경우 로그_전투 기록용 자료
+    # 프록시 커맨드로 캐릭터 커맨드가 정산된 경우의 로그_전투 기록용 자료.
     battle_log: Optional[BattleCommandLog] = None
-    # 한 메시지에 줄바꿈으로 여러 프록시 커맨드가 실려 각각 별도의
-    # BattleCommandLog가 나온 경우 battle_log(단일) 대신 여기에 담는다.
-    # 두 필드 모두 _persist_battle_log가 순서대로 처리한다.
+    # 한 메시지에 여러 프록시 커맨드가 실린 경우 battle_log 대신 여기에 담는다.
     battle_logs: list[BattleCommandLog] = field(default_factory=list)
-    # reply_text에서 분리된 계산식. 비어 있지 않으면 reply_text 게시 후
-    # spoiler_text="계산식"을 붙인 접힌(CW) 후속 게시물로 이어 보낸다.
+    # reply_text에서 분리된 계산식. 비어 있지 않으면 접힌(CW) 후속 게시물로
+    # 이어 보낸다.
     calc_text: str = ""
-    # True이면 game_post_text 게시 시 공개 필드 시트 이미지를 첨부한다 (라운드 시작/종료)
+    # game_post_text에 공개 필드 시트 이미지를 첨부한다(라운드 시작/종료).
     attach_field_image: bool = False
-    # True이면 reply_text를 답글이 아니라 타임라인의 새 게시물로 올린다 (전투 준비 공지 등)
+    # reply_text를 답글이 아니라 타임라인의 새 게시물로 올린다(전투 준비 공지 등).
     post_as_new_status: bool = False
-    # game_post_text가 게시된 후 그 post_id를 이 DmBattleState의 active_post_id로
-    # 쓰고 state.dm_battles에 등록한다 (DM 전투 전용)
+    # game_post_text의 post_id를 이 세션의 active_post_id로 쓰고 등록한다.
     dm_battle_to_register: Optional["DmBattleState"] = None
-    # set_practice_prep_from_game_post와 함께 쓰인다 — game_post_text 게시 후
-    # 그 post_id를 이 PracticeBattleState의 prep_post_id로 쓰고
-    # state.practices에 등록한다. 새로 만든 세션을 곧바로 state에 꽂지 않고
-    # 이 필드로 넘기는 이유는, 등록 키(게시물 id)가 게시 완료 시점에야
-    # 정해지기 때문이다.
+    # 새 세션을 곧바로 state에 꽂지 않고 이 필드로 넘기는 이유는, 등록 키인
+    # 게시물 id가 게시 완료 시점에야 정해지기 때문이다.
     practice_to_register: Optional["PracticeBattleState"] = None
-    # True이면 game_post_text를 admin에게 보낸 확인 답글(reply_text가 게시된
-    # 바로 그 게시물) 뒤에 이어 붙인다 — 스레드가 [이전 라운드 공지] ←
-    # [admin의 진행 요청] ← [확인 답글] ← [다음 라운드 공지]처럼 선형으로
-    # 이어지게 하기 위함이다. 이전 라운드 공지(dm_state.active_post_id)에
-    # 다시 답글로 달면 확인 답글과 다음 라운드 공지가 같은 부모의 형제
-    # 게시물이 되어 스레드가 두 갈래로 갈라진다. False면 기존처럼 독립
-    # 게시물로 게시한다 — 본 전투는 건드리지 않고 DM 전투만 사용.
+    # game_post_text를 확인 답글 뒤에 이어 붙여 스레드를 선형으로 유지한다.
+    # 이전 라운드 공지에 다시 답글로 달면 확인 답글과 형제가 되어 스레드가
+    # 두 갈래로 갈라진다. DM 전투만 쓴다.
     game_post_reply_to_confirmation: bool = False
-    # game_post_text 게시 시 강제할 visibility. None이면 계정 기본값을 따른다
-    # (DM 전투는 세션 내내 최초 개시 멘션의 visibility로 고정)
+    # None이면 계정 기본값을 따른다.
     game_post_visibility: Optional[str] = None
-    # game_post_text에서 분리된 계산식. 비어 있지 않으면 game_post_text(+필드
-    # 시트 이미지) 게시 후 spoiler_text="계산식"을 붙인 접힌(CW) 후속
-    # 게시물로 이어 보낸다 — game_post_text 자체는 이미지와 함께 항상
-    # 바로 보이는 본문으로 남겨야 하므로(개별 답글과 달리 CW로 숨기지
-    # 않는다), calc_text처럼 spoiler_text에 합치지 않고 별도 게시물로 뗀다.
+    # game_post_text에서 분리된 계산식. game_post_text 자체는 이미지와 함께
+    # 바로 보이는 본문으로 남아야 해서, calc_text처럼 같은 게시물의
+    # spoiler_text에 합치지 않고 별도 CW 게시물로 뗀다.
     game_post_calc_text: str = ""
-    # game_post_calc_text를 CW 후속 게시물로 보낼 때 매 조각 앞에 붙일
-    # 접두어. DM 전투(visibility="direct")는 멘션되지 않은 게시물이 참가자에게
-    # 보이지 않으므로, 본문과 마찬가지로 계산식 후속 게시물에도 참가자 멘션을
-    # 반복해야 한다 — 본 전투는 빈 문자열(접두어 없음)로 둔다.
+    # CW 후속 게시물 매 조각 앞에 붙일 접두어. "direct" 전투는 멘션되지 않은
+    # 게시물이 참가자에게 보이지 않아 계산식에도 멘션을 반복해야 한다.
     game_post_calc_prefix: str = ""
-    # 비어 있지 않으면 reply_text/game_post_text와 별개로 admin에게만
-    # visibility="direct" DM으로 조용히 보낸다 — 스프레드시트 설정 오류처럼
-    # 플레이어에게 노출하면 안 되지만 admin은 알아야 하는 내용용.
+    # admin에게만 DM으로 조용히 보낸다 — 시트 설정 오류처럼 플레이어에게
+    # 노출하면 안 되지만 admin은 알아야 하는 내용용.
     admin_dm_text: Optional[str] = None
 
 
@@ -250,13 +231,9 @@ def handle_admin_command(
     if _RE_DM_BATTLE_START.search(text):
         return _cmd_dm_battle_start(text, mentions or [], state, visibility)
 
-    # [상시전투]는 README에 문서화된 대로 같은 메시지에 [배치/이름/진영 열]을
-    # 함께 실어 적을 즉시 배치할 수 있다(_cmd_investigation_battle이 내부에서
-    # 그 [배치/...] 토큰을 직접 파싱한다) — 그래서 이 분기가 아래의 본 전투용
-    # _RE_MANUAL_PLACE보다 먼저 와야 한다. 순서가 바뀌면 "[상시전투]
-    # [배치/.../적군 4열]" 같은 정상 사용법이 본 전투용 수동 배치로 잘못
-    # 라우팅되어 "진행 중인 전투가 없습니다" 오류로 실패한다(session이 아직
-    # 없으므로).
+    # [상시전투]는 같은 메시지에 [배치/...]를 함께 실을 수 있고 그 토큰을
+    # 스스로 파싱하므로, 아래 _RE_MANUAL_PLACE보다 먼저 와야 한다. 순서가
+    # 바뀌면 정상 사용법이 본 전투용 수동 배치로 잘못 라우팅된다.
     if _RE_INVESTIGATION_BATTLE.search(text):
         return _cmd_investigation_battle(text, mentions or [], state, visibility)
 
@@ -352,8 +329,7 @@ def _cmd_manual_place(
         return _ManualPlaceOutcome(
             False, "◊ 진행 중인 전투가 없습니다. 먼저 [전투 준비]를 입력하세요."
         )
-    # 전투 중에는 라운드 종료(다음 라운드 대기) 페이즈에서만, [전투 속행] 입력
-    # 전에 증원 배치를 허용한다 — 그 외 페이즈에서는 여전히 막는다.
+    # 증원 배치는 라운드 종료 페이즈에서 [전투 속행] 전에만 허용한다.
     mid_battle_allowed = (
         state.session.started
         and state.session.current_phase
@@ -568,21 +544,15 @@ def _cmd_battle_start(
             "◊ 배치된 캐릭터가 없습니다. 참전 신청이나 [배치/...] 커맨드를 먼저 입력하세요."
         )
 
-    # 0. 스프레드시트 설정 검증 — 배치/전투 시작을 실제로 진행하기 전에
-    # 먼저 확인해야 한다. pending_placements/pending_participants를 비우거나
-    # state.session.start()를 호출한 뒤에 문제를 발견하면 그 상태를 되돌릴
-    # 수 없어(캐릭터가 이미 배치되고 전투가 시작된 채로) admin이 시트를
-    # 고친 뒤 [전투개시]를 다시 입력해도 재시도가 되지 않는다. 여기서
-    # 막으면 pending_* 값이 그대로 남아 있어 그대로 재시도할 수 있다.
-    # reply_text=""(+ game_post_text 없음)면 _post_admin_result()가 공개
-    # 게시물을 아예 남기지 않는다 — DM 알림만으로 충분하고, 플레이어에게는
-    # "왜 전투가 시작 안 됐는지" 자체를 노출할 필요가 없다.
+    # 시트 설정 검증은 pending_*을 비우기 전에 끝내야 한다 — 배치와 start()를
+    # 마친 뒤에 막으면 되돌릴 수 없어 시트를 고쳐도 재시도가 안 된다.
+    # reply_text=""면 공개 게시물을 아예 남기지 않는다(admin DM만으로 충분).
     admin_dm_text = _check_enemy_skill_timing_config(state)
     if admin_dm_text is not None:
         return AdminCommandResult("", admin_dm_text=admin_dm_text)
 
-    # 키워드 보정 설정 오류는 전투를 세우지 않고 경고만 모아 두었다가, 아래에서
-    # 전투 개시 결과와 함께 admin DM으로 보낸다(_check_fate_boost_config 참고).
+    # 키워드 보정 설정 오류는 전투를 세우지 않고, 아래에서 개시 결과와 함께
+    # admin DM으로만 보낸다.
     fate_config_warning = _check_fate_boost_config(state)
 
     # 1. 수동 배치 처리 (pending_placements)
@@ -598,12 +568,9 @@ def _cmd_battle_start(
             errors.append(str(e))
 
     # 2. 아군 랜덤 배치 (pending_participants)
-    # 참전 신청(pending_participants)과 수동 배치(pending_placements)는 서로
-    # 독립적인 목록이라, 같은 캐릭터가 참전 신청도 하고 admin이 수동으로도
-    # 배치했다면 위 1번에서 이미 배치된 캐릭터를 여기서 또 add_character()해
-    # 같은 캐릭터가 두 칸을 동시에 차지하게 된다(add_character()는 기존
-    # char_id 존재 여부를 확인하지 않고 새 슬롯에 추가한다) — 위 1번에서
-    # 이미 배치를 마친 캐릭터는 제외한다.
+    # 참전 신청과 수동 배치는 독립적인 목록이라 같은 캐릭터가 양쪽에 있을 수
+    # 있다. add_character()는 중복을 확인하지 않고 새 슬롯에 넣으므로, 위에서
+    # 이미 배치한 캐릭터를 빼지 않으면 한 캐릭터가 두 칸을 차지한다.
     already_placed = set(state.session.context.characters.keys())
     ally_data_list = [
         state.char_dict[acct]
@@ -725,8 +692,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
         else None
     )
     if post_action_results is not None:
-        # 적의 POST_ACTION 정산으로 발생한 대미지/힐도 "캐릭터" 시트에 반영한다
-        # (개별 캐릭터 커맨드/프록시 경로에서만 write-back하던 기존 갭을 메움).
+        # 적의 POST_ACTION 정산으로 발생한 대미지/힐도 시트에 반영한다.
         post_action_entries = [
             entry
             for part_results in post_action_results.values()
@@ -773,12 +739,8 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     error_suffix = f"\n{_SYSTEM_ERROR_MESSAGE}" if system_error else ""
     reply = f"◊ 페이즈 전환: {new_phase.value}{error_suffix}"
 
-    # 커맨드 수신 없는 페이즈는 active_phase_post_id를 None으로 만들어야 함
-    # → 호출측에서 game_post_text가 None인지 여부로 판단하므로
-    #   POST_ACTION과 STANDBY는 게시물을 올리되 active_phase_post_id를 None으로 처리
-    #   (game_post_text가 있더라도 None 처리하는 건 main.py에서)
-    # 필드 상태가 str 대신 이미지로만 표시되므로, 모든 페이즈 전환 게시물에
-    # 필드 시트 이미지를 첨부한다.
+    # 커맨드를 받지 않는 POST_ACTION·STANDBY도 게시물은 올리되
+    # active_phase_post_id는 None이어야 한다 — 그 처리는 main.py에서 한다.
     return AdminCommandResult(
         reply,
         game_post,
@@ -1212,9 +1174,8 @@ def _prefix_named_block(
         return block
     escaped_name = escape_markdown(char_id.name)
     if header_line.startswith(f"▹ {escaped_name} |"):
-        # 이동처럼 첫 줄이 이미 "▹ {이름} | ..." 형태로 시전자 자신의
-        # 이름을 보여주고 있으면, 앞에 또 이름을 붙이는 순간
-        # "이름 ▹ 이름 | ..."처럼 중복된다 — 이때는 접두어를 생략한다.
+        # 첫 줄이 이미 시전자 이름을 보여주고 있으면 접두어를 붙이는 순간
+        # "이름 ▹ 이름 | ..."처럼 중복된다.
         return block
     return f"{escaped_name} {block}"
 
@@ -1307,10 +1268,8 @@ def _format_enemy_post_action_results(
         if calc:
             calc_blocks.append(calc)
 
-    # caster_id는 헤더 조립에만 쓰이는데, 헤더는 이 병합 경로(본문)에서
-    # 쓰이지 않으므로(각 파트가 SKILL 예고 없이 실제 결과를 이미 갖고
-    # 있어 log_entries가 항상 채워져 있다) 어떤 값이어도 결과에 영향이
-    # 없다 — 여기서는 실제 값을 구할 필요가 없어 빈 id를 그대로 쓴다.
+    # caster_id는 헤더 조립에만 쓰이는데 이 경로에는 헤더가 나오지 않으므로
+    # (log_entries가 항상 채워져 있다) 빈 id로 충분하다.
     body_text, _ = format_battle_reply(context, CharacterId(""), all_non_move_results)
     if not body_text:
         body_text = "변동 없음"

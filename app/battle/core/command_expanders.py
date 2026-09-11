@@ -86,8 +86,7 @@ def _apply_fate_buff_boost(
                 buff_add, stack_value=buff_add.stack_value + bonus
             )
             continue
-        # 버프 수치 강화: 이미 다른 효과가 수치를 스냅샷해 둔 경우(value_override)
-        # 그 값을, 아니면 버프 시트의 기본 수치를 기준으로 더한다.
+        # 다른 효과가 이미 스냅샷해 둔 수치가 있으면 그쪽을 기준으로 삼는다.
         base_value = (
             buff_add.value_override
             if buff_add.value_override is not None
@@ -105,9 +104,7 @@ def expand_admin_command(
             admin_target_phase=command.target_phase,
         )
     elif isinstance(command, ForceMoveCommand):
-        # Admin의 Force* 커맨드는 항상 캐릭터 이름만 대상으로 받는다(열
-        # 지정은 to_position 필드가 별도로 담당) — command_expanders.py 상단
-        # 주석 참고.
+        # Force* 커맨드의 targets는 항상 캐릭터 이름뿐이다(열은 to_position 담당).
         move_targets = cast(list[CharacterId], command.targets)
         return CommandPartData(
             original_part=command,
@@ -200,14 +197,13 @@ def expand_character_command(
     command: CharacterCommand,
     context: BattlefieldContext,
 ) -> list[CommandPartData]:
-    # 도발/희생 방어에 의한 대상 치환은 대미지 처리 시점(CommandPartCalculator)에서
-    # 일괄 수행한다. 여기서는 원래 지정 대상으로 전개만 한다.
+    # 도발/희생 방어 치환은 CommandPartCalculator가 일괄 처리한다 —
+    # 여기서는 원래 지정 대상 그대로 전개한다.
     parts_list: list[CommandPartData] = []
 
     for part in command.parts:
         if part.type_ == ActionType.MOVE and part.targets is not None:
-            # parser.py의 command_format_move가 이동 커맨드에는 항상 열
-            # 하나만 targets[0]에 채워 넣는다.
+            # parser.py가 이동 커맨드에는 항상 열 하나만 채워 넣는다.
             move_pos = cast(BattlefieldColumnIndex, part.targets[0])
             parts_list.append(
                 CommandPartData(
@@ -224,8 +220,7 @@ def expand_character_command(
             is_magic_attack = context.characters[
                 command.user_id
             ].status.is_magic_attacker
-            # parser.py의 command_format_attack이 공격 커맨드에는 항상 캐릭터
-            # 이름 하나만 targets[0]에 채워 넣는다.
+            # parser.py가 공격 커맨드에는 항상 캐릭터 이름 하나만 채워 넣는다.
             attack_target = cast(CharacterId, part.targets[0])
             parts_list.append(
                 CommandPartData(
@@ -264,8 +259,7 @@ def expand_character_command(
             data_per_effect_list: list[CommandPartDataPerEffect] = []
 
             for skill_effect in skill_used.data.effects:
-                # expand()가 즉시 부수효과(디버프 일괄 제거 등)를 일으킬 수 있으므로,
-                # "무엇이 지워질지"는 expand() 호출 전에 먼저 확정해야 한다.
+                # expand()가 즉시 부수효과를 일으키므로 그 전에 확정해야 한다.
                 debuff_clear_list = skill_effect.get_debuff_clear_targets(
                     context, target_characters
                 )
@@ -305,9 +299,7 @@ def expand_character_command(
 
             target_characters = item_used.target_rule.get_targets(part.targets)
 
-            # 효과 없는 소지용 아이템(effect=None)은 try_expansion_if_valid()의
-            # 사전 검증(error_item_has_no_effect)에서 이미 걸러져 여기까지
-            # 오지 않는다.
+            # 효과 없는 아이템은 try_expansion_if_valid()가 이미 걸러냈다.
             assert item_used.data.effect is not None
             debuff_clear_list = item_used.data.effect.get_debuff_clear_targets(
                 context, target_characters

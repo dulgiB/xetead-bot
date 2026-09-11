@@ -32,8 +32,7 @@ class CatastropheNoopEvent(BuffEvent):
         pass
 
 
-# "버프" 시트의 value_0(스택당 전투 종료 대미지)이 비어 있을 때 쓰는 값.
-# 컬럼이 채워지기 전 배포에서도 기존 동작이 그대로 유지되게 하기 위한 폴백이다.
+# "버프" 시트의 value_0(스택당 전투 종료 대미지)이 비어 있을 때 쓰는 폴백.
 _DEFAULT_DAMAGE_PER_STACK = 3
 
 

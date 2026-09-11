@@ -31,11 +31,9 @@ class InvestigationSession:
 
 @dataclass
 class NonCombatState:
-    # acct → 진행 중(또는 방금 종료된) 상시조사 세션. 한 acct당 최대 1개만
-    # 유지한다 — 새 [상시조사]가 시작되면 이전 세션은 ended=True로 정리된다.
+    # acct당 최대 1개. 새 [상시조사]가 시작되면 이전 세션은 ended=True가 된다.
     investigations: dict[str, InvestigationSession] = field(default_factory=dict)
 
-    # 일일 의뢰 중간 상태 (acct → DailyQuestMidState)
     daily_quest_mid: dict[str, DailyQuestMidState] = field(default_factory=dict)
 
     def get_daily_quest_post_ids(self) -> set[int]:

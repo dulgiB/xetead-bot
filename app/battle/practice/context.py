@@ -12,9 +12,8 @@ from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
 from battle.practice.define import SideType
 
-# SideType ↔ FactionType 내부 매핑
-# BattlefieldContext의 position_map·CombatCharacter.faction은 FactionType을 사용하므로
-# 내부적으로는 FactionType으로 동작하고, 외부 API에서만 SideType을 노출한다.
+# 내부는 상위 클래스와 같은 FactionType으로 동작하고, 외부 API에서만
+# SideType을 노출한다.
 _SIDE_TO_FACTION: dict[SideType, FactionType] = {
     SideType.SIDE_1: FactionType.ALLY,
     SideType.SIDE_2: FactionType.ENEMY,
@@ -39,11 +38,9 @@ class PracticeBattlefieldContext(BattlefieldContext):
         passive_skill_dict: "dict[str, PassiveSkillData] | None" = None,
         item_dict: "dict[str, ItemData] | None" = None,
     ):
-        # 대련에는 milestone_n이 의미 없으므로 고정. 인벤토리(보유/소비)는
-        # 미지원이지만, item_dict는 넘겨받아 이름 조회에는 쓴다 — 그래야
-        # 파서가 "이건 실존하는 아이템인데 여기선 못 쓴다"와 "이건 애초에
-        # 등록된 스킬도 아이템도 아니다"를 구분해 정확한 에러를 낼 수 있다
-        # (allow_item_usage=False가 실제 사용 자체는 여전히 막는다).
+        # 인벤토리는 미지원이지만 item_dict는 이름 조회용으로 받아 둔다 —
+        # 파서가 "여기선 못 쓰는 아이템"과 "등록되지 않은 이름"을 구분해
+        # 정확한 에러를 낼 수 있어야 하기 때문이다.
         super().__init__(
             buff_dict,
             skill_dict,

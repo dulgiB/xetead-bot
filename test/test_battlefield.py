@@ -125,7 +125,7 @@ def test_hp_does_not_go_below_zero(battle_setup):
     """HP는 0 미만으로 내려가지 않아야 한다."""
     context, manager = battle_setup
     enemy_id = CharacterId("적군 1")
-    context.characters[enemy_id].status.curr_hp = 1  # HP를 1로 강제 설정
+    context.characters[enemy_id].status.curr_hp = 1
 
     cmd = parse_character_command(CharacterId("아군 1"), "[공격/적군 1]", context)
     manager.process_command(cmd)
@@ -263,7 +263,7 @@ def test_insufficient_cost_raises(battle_setup):
     """코스트가 부족하면 CommandValidationError가 발생해야 한다."""
     context, manager = battle_setup
     user_id = CharacterId("아군 1")
-    context.characters[user_id].status.remaining_cost = 0  # 코스트 고갈
+    context.characters[user_id].status.remaining_cost = 0
 
     cmd = parse_character_command(user_id, "[공격/적군 1]", context)
     with pytest.raises(CommandValidationError):

@@ -62,13 +62,8 @@ class GuardReflectEvent(BuffEvent):
                 else (attacker.status.is_magic_attacker if attacker else False)
             )
 
-            # 반사량은 이 버프의 경감/무효화를 적용하기 전 원래 대미지 기준이어야
-            # 한다. STAT_ATK_ROLL처럼 매 get_value() 호출마다 다시 굴리는 값
-            # 소스를 그대로 두면, 이후 실제 적용 시점(_process_damage 세 번째
-            # 순회)에 다시 굴려 반사량과 실제 받는 대미지가 서로 다른 굴림
-            # 결과를 쓰게 된다. 여기서 한 번만 굴려 damage_calc.base에
-            # 캐싱해 이후 재계산에도 같은 값을 공유하게 한다
-            # (buff_companion_guardian.py와 동일한 패턴).
+            # STAT_ATK_ROLL은 get_value()마다 다시 굴리므로, 여기서 한 번만
+            # 굴려 캐싱해야 반사량과 실제 받는 대미지가 같은 굴림을 쓴다.
             resolved_value = replace(
                 damage_calc.base.value,
                 value=damage_calc.base.value.get_value(

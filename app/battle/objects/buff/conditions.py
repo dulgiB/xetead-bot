@@ -50,10 +50,8 @@ def _characters_in_holder_scope(
 class Condition(abc.ABC):
     value: Optional[int] = None
 
-    # True면 ENEMY_POST_ACTION 트리거 패시브가 적의 지연 공격이 모두 적용된
-    # 뒤에 평가되도록 PassiveSkillWrapperBuff.timing이 골라준다. 직접
-    # 오버라이드하지 말고 damaged_this_round를 읽는 조건은 아래
-    # RoundResolvedCondition을 상속한다.
+    # True면 PassiveSkillWrapperBuff.timing이 적의 지연 공격이 모두 적용된 뒤로
+    # 평가를 미룬다. 직접 오버라이드하지 말고 RoundResolvedCondition을 상속한다.
     requires_round_resolved: ClassVar[bool] = False
 
     @abc.abstractmethod

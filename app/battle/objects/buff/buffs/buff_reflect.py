@@ -40,10 +40,8 @@ class ReflectEvent(BuffEvent):
         if not to_nullify:
             return
 
-        # 반사 대미지는 공격자의 공격 굴림 + 주는 대미지 버프/디버프만 반영한
-        # 고정값이다. 피격자(자신)가 받는 대미지 버프/디버프와, 되돌려받을 때
-        # 공격자가 받는 대미지 버프/디버프는 모두 반영하지 않는다 — 그래서
-        # received_modifiers는 참조도, 새로 부여하지도 않는다.
+        # 반사량은 공격자의 굴림 + 주는 대미지 버프만 반영한 고정값이다 —
+        # 양쪽의 "받는 대미지" 버프는 어느 쪽도 반영하지 않는다.
         reflected: list[DamageCalculateData] = []
         for damage_calc in to_nullify:
             attacker_id = damage_calc.base.attacker_id
@@ -56,10 +54,8 @@ class ReflectEvent(BuffEvent):
                 calculator, attacker_id, holder, effect_seq_number
             )
             reflect_value = math.floor(base_value * self.reflect_percent / 100)
-            # 원래 대미지 계산식(공격 굴림 + 주는 대미지 버프)에 "× 반사 계수"를
-            # 덧붙여 답글에 어떻게 반사량이 나왔는지 그대로 보여준다. 계산할 게
-            # 전혀 없어(고정 대미지 등) format_calculation()이 None을 반환하면
-            # 최종 수치만이라도 보여준다.
+            # 원래 계산식에 "× 반사 계수"를 덧붙여 반사량의 유래를 보여준다.
+            # 고정 대미지 등으로 계산식이 없으면 최종 수치만 남긴다.
             given_calc_display = value_with_modifiers.format_calculation() or str(
                 base_value
             )

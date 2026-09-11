@@ -53,11 +53,8 @@ class ApplyDebuffOnDealingDamageEvent(BuffEvent):
                 buff_id=self.reference_buff_id,
             )
             calculator.context.buff_container.add(buff_add)
-            # _process_buff_add()의 일반 경로(buff_add_data_list)는 PRE/POST
-            # 페이즈에 따라 add_timing이 일치해야만 처리되므로, 여기서 직접
-            # buff_container.add()를 호출한 부여는 그 경로로 로그가 남는다는
-            # 보장이 없다 — extra_log_entries에 직접 얹어 이 대미지와 같은
-            # 답글 블록에 확실히 포함시킨다.
+            # 일반 경로(buff_add_data_list)는 페이즈가 맞아야만 로그를 남기므로,
+            # 직접 add()한 이 부여는 로그가 빠질 수 있다 — 직접 얹는다.
             effect_data.extra_log_entries.append(
                 build_buff_add_log_entry(calculator.context, buff_add)
             )

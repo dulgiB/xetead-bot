@@ -234,8 +234,8 @@ def test_repeated_stackable_buff_add_on_same_target_merges_into_one_summary_line
     적층형 버프를 같은 대상에게 매번 1스택씩 부여하면, 요약(본문)에는
     "[버프]×1 부여 → 최종 1/2/3"처럼 부여 횟수만큼 줄이 늘어나지 않고
     "[버프]×3 부여 → 최종 3" 한 줄로 합쳐져야 한다."""
-    ignite = BuffData(
-        id="그을음",
+    stack_debuff = BuffData(
+        id="적층 디버프",
         buff_class_name="BuffReceivedDamage",
         duration_turn_value=1,
         duration_count_value=None,
@@ -249,21 +249,23 @@ def test_repeated_stackable_buff_add_on_same_target_merges_into_one_summary_line
         max_stack=10,
     )
     skill = SkillData(
-        id="거화",
+        id="적층 스킬",
         target_rule="SkillTargetRuleNamed",
         target_count=1,
         cost=0,
         effects=[
             SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None),
-            SkillEffectAddBuff(None, None, None, "그을음", None),
+            SkillEffectAddBuff(None, None, None, "적층 디버프", None),
         ],
         description="",
     )
-    ctx = BattlefieldContext(buff_dict={"그을음": ignite}, skill_dict={"거화": skill})
+    ctx = BattlefieldContext(
+        buff_dict={"적층 디버프": stack_debuff}, skill_dict={"적층 스킬": skill}
+    )
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
-        get_test_preset("아군 1", skill_1_id="거화", max_cost=3),
+        get_test_preset("아군 1", skill_1_id="적층 스킬", max_cost=3),
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
@@ -274,11 +276,14 @@ def test_repeated_stackable_buff_add_on_same_target_merges_into_one_summary_line
     )
 
     reply, _calc = _run(
-        ctx, manager, caster_id, "[거화/적군 1 - 거화/적군 1 - 거화/적군 1]"
+        ctx,
+        manager,
+        caster_id,
+        "[적층 스킬/적군 1 - 적층 스킬/적군 1 - 적층 스킬/적군 1]",
     )
 
-    assert "▹ 적군 1 | [그을음]×3 부여 → 최종 3" in reply.splitlines()
-    assert reply.count("그을음") == 1
+    assert "▹ 적군 1 | [적층 디버프]×3 부여 → 최종 3" in reply.splitlines()
+    assert reply.count("적층 디버프") == 1
 
 
 def test_fixed_damage_skill_omits_calculation_line():
