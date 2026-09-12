@@ -228,6 +228,15 @@ def _restore_dm_battle(
     )
 
 
+def _maybe_side(value: object) -> Optional[SideType]:
+    """필드 시트 meta에 저장된 진영 문자열을 SideType으로 되돌린다. 알 수 없는
+    값이면 None (그 항목만 버리고 나머지는 그대로 복원한다)."""
+    try:
+        return SideType(value)
+    except ValueError:
+        return None
+
+
 def _restore_practice_battle(
     state: "BotState",
     row: FieldRow,
@@ -272,8 +281,13 @@ def _restore_practice_battle(
         )
         return None
 
+    is_investigation = row.battle_type == FieldBattleType.INVESTIGATION
     context = PracticeBattlefieldContext(
-        buff_dict, skill_dict, passive_skill_dict, item_dict
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        is_duel=not is_investigation,
     )
     manager = PracticeRoundManager(context)
 
@@ -323,6 +337,15 @@ def _restore_practice_battle(
 
     manager.set_phase_for_restore(phase, first_mover, second_mover)
 
+    # 이 함수 위쪽에서 캐릭터 배치용 `side`(SideType)를 이미 쓰고 있으므로
+    # 여기서는 이름을 달리한다 — 같은 이름을 재사용하면 mypy가 먼저 추론한
+    # 비-Optional 타입과 충돌한다.
+    initial_max_hp: dict[SideType, int] = {}
+    for side_value, hp in (meta.get("initial_max_hp") or {}).items():
+        parsed_side = _maybe_side(side_value)
+        if parsed_side is not None:
+            initial_max_hp[parsed_side] = hp
+
     ps = PracticeBattleState(
         context=context,
         manager=manager,
@@ -339,7 +362,8 @@ def _restore_practice_battle(
         first_mover=first_mover,
         second_mover=second_mover,
         expected_accts=expected_accts,
-        is_investigation=(row.battle_type == FieldBattleType.INVESTIGATION),
+        is_investigation=is_investigation,
+        initial_max_hp_by_side=initial_max_hp,
     )
     state.practices[active_post_id] = ps
 

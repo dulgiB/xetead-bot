@@ -29,6 +29,11 @@ class PracticeBattlefieldContext(BattlefieldContext):
     대련 전용 전장 컨텍스트.
     - 캐릭터 체력은 실제 max_hp의 절반으로 초기화된다.
     - 아군/적군 구분 대신 SIDE_1/SIDE_2를 사용한다 (내부적으로는 ALLY/ENEMY에 매핑).
+
+    `is_duel`은 대련(양 팀이 대등한 PvP)과 상시전투(아군 vs 적군, 본 전투와
+    같은 의미)를 가른다. 내부 매핑이 SIDE_2 → FactionType.ENEMY로 고정돼
+    있어서, 진영에 따라 다르게 동작하는 규칙(0 체력 자동 탈락 등)이 대련에서는
+    "2팀에만 적용되는" 비대칭이 되어 버리기 때문이다.
     """
 
     def __init__(
@@ -37,7 +42,10 @@ class PracticeBattlefieldContext(BattlefieldContext):
         skill_dict: dict[str, SkillData],
         passive_skill_dict: "dict[str, PassiveSkillData] | None" = None,
         item_dict: "dict[str, ItemData] | None" = None,
+        *,
+        is_duel: bool = True,
     ):
+        self.is_duel = is_duel
         # 인벤토리는 미지원이지만 item_dict는 이름 조회용으로 받아 둔다 —
         # 파서가 "여기선 못 쓰는 아이템"과 "등록되지 않은 이름"을 구분해
         # 정확한 에러를 낼 수 있어야 하기 때문이다.
@@ -56,6 +64,19 @@ class PracticeBattlefieldContext(BattlefieldContext):
     @property
     def allow_fate_intervention(self) -> bool:
         return False
+
+    def _remove_eliminated_characters(self):
+        """대련에서는 0 체력 자동 탈락을 양 팀 모두 적용하지 않는다.
+
+        기반 구현은 FactionType.ENEMY만 제거하는데(아군은 admin이
+        `[탈락/이름]`으로 직접 처리), 대련에서는 그게 곧 "2팀만 제거된다"는
+        뜻이 된다. 그러면 2팀 전사자는 체력 비율 계산의 분자·분모에서 함께
+        빠지고 1팀 전사자는 0/최대로 남아, 양 팀이 똑같이 한 명씩 잃어도
+        2팀이 이긴다. 대련 참가자는 자진 기권(`[탈락]`)으로 직접 물러날 수
+        있으므로, 자동 제거는 양쪽 모두 하지 않는 쪽으로 맞춘다."""
+        if self.is_duel:
+            return []
+        return super()._remove_eliminated_characters()
 
     # ------------------------------------------------------------------
     # 공개 API (SideType 기반)

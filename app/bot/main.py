@@ -184,6 +184,11 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         "round_limit": ps.round_limit,
         "first_mover": ps.first_mover.value if ps.first_mover else None,
         "second_mover": ps.second_mover.value if ps.second_mover else None,
+        # 승패 비율의 분모. 필드에서 빠진 캐릭터는 복원 대상에 없으므로 복원 후
+        # 다시 계산하면 값이 달라진다.
+        "initial_max_hp": {
+            side.value: hp for side, hp in ps.initial_max_hp_by_side.items()
+        },
     }
 
 
@@ -1573,11 +1578,11 @@ def _mover_label(ps: PracticeBattleState, side: Optional[SideType]) -> str:
     팀 이름만 알리면 지금 누가 커맨드를 입력해야 하는지 각자 자기 팀을
     다시 확인해야 한다 — 특히 팀당 인원이 여럿이면 헷갈리므로 명단을
     함께 붙인다. 명단을 만들 수 없으면(전멸 직후 등) 기존처럼 팀 이름만
-    쓴다."""
+    쓴다. 동료(소환수)는 플레이어가 조작하지 않으므로 명단에서 뺀다."""
     label = ps.side_label(side)
     if side is None:
         return label
-    names = [char.id.name for char in ps.context.get_side_characters(side)]
+    names = [char.id.name for char in ps.actable_characters(side)]
     if not names:
         return label
     return f"{label} - {', '.join(names)}"
@@ -1614,6 +1619,7 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
     # 볼 수 있다. 이 호출이 없어서 대련/상시전투에서는 그 트리거가 한 번도
     # 발동하지 않았다.
     ps.context.on_battle_start()
+    ps.snapshot_initial_max_hp()
     ps.start_round()
     _upsert_practice_field_row(
         state, ps, phase_value=ps.phase.value if ps.phase else ""
@@ -1653,6 +1659,7 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
     # 볼 수 있다. 이 호출이 없어서 대련/상시전투에서는 그 트리거가 한 번도
     # 발동하지 않았다.
     ps.context.on_battle_start()
+    ps.snapshot_initial_max_hp()
     ps.start_round()
     _upsert_practice_field_row(
         state, ps, phase_value=ps.phase.value if ps.phase else ""

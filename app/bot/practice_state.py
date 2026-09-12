@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, CombatStatType
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeRoundPhase, SideType
@@ -43,9 +44,32 @@ class PracticeBattleState:
     pending_participants: list[str] = field(default_factory=list)
     pending_placements: list[tuple] = field(default_factory=list)
 
+    # 전투 시작 시점의 팀별 최대 체력 합(동료 제외). 승패는 체력 "비율"로
+    # 가르는데, 필드에서 빠진 캐릭터(상시전투의 0 체력 적군, 자진 기권한
+    # 참가자)는 context.characters에서 사라져 분모에서도 함께 빠진다 — 그러면
+    # 잃은 인원이 많은 팀일수록 비율이 올라가는 역전이 생긴다. 시작 시점 값을
+    # 붙잡아 두고 분모로 쓰면 "얼마나 잃었는가"가 그대로 비율에 남는다.
+    initial_max_hp_by_side: dict[SideType, int] = field(default_factory=dict)
+
     @property
     def phase(self) -> Optional[PracticeRoundPhase]:
         return self.manager.phase
+
+    def actable_characters(self, side: SideType) -> list[CombatCharacter]:
+        """플레이어가 직접 조작하는 캐릭터만 (동료/소환수 제외).
+
+        차례 안내 명단과 승패용 체력 합계가 이 기준을 공유한다."""
+        return [
+            char
+            for char in self.context.get_side_characters(side)
+            if char.id not in self.context.companion_owners
+        ]
+
+    def snapshot_initial_max_hp(self) -> None:
+        """전투 시작(첫 라운드 진입) 시점에 팀별 최대 체력 합을 고정한다."""
+        self.initial_max_hp_by_side = {
+            side: self._live_max_hp_by_side(side) for side in SideType
+        }
 
     def all_declared(self) -> bool:
         """모든 expected_accts가 선언을 완료했는지 확인한다."""
@@ -71,12 +95,27 @@ class PracticeBattleState:
         self.manager.end_round()
 
     def total_hp_by_side(self, side: SideType) -> int:
-        return sum(c.status.curr_hp for c in self.context.get_side_characters(side))
+        """팀의 현재 체력 합. 동료(소환수)는 제외한다 — 동료는 플레이어가
+        조작하는 참가자가 아니라 소환자의 방어 장치이고, 전투 도중 소환·재소환
+        되면서 팀의 체력 총량 자체를 바꾼다. 승패 비율의 분모
+        (total_max_hp_by_side)는 전투 시작 시점 스냅샷이라, 동료를 분자에만
+        더하면 비율이 100%를 넘고 동료를 잃은 팀은 반대로 손해를 본다."""
+        return sum(c.status.curr_hp for c in self.actable_characters(side))
+
+    def _live_max_hp_by_side(self, side: SideType) -> int:
+        return sum(
+            c.status[CombatStatType.MAX_HP] for c in self.actable_characters(side)
+        )
 
     def total_max_hp_by_side(self, side: SideType) -> int:
-        return sum(
-            c.status[CombatStatType.MAX_HP]
-            for c in self.context.get_side_characters(side)
+        """승패 비율의 분모.
+
+        전투 시작 시점 스냅샷과 현재 필드 합 중 큰 쪽을 쓴다 — 현재 필드 합만
+        쓰면 필드에서 빠진 캐릭터가 분모에서도 함께 사라져 "잃은 인원이
+        많을수록 비율이 올라가는" 역전이 생긴다. 스냅샷이 없으면(재기동 복원
+        등) 현재 필드 기준으로 계산한다."""
+        return max(
+            self.initial_max_hp_by_side.get(side, 0), self._live_max_hp_by_side(side)
         )
 
     def winner(self) -> Optional[SideType]:
