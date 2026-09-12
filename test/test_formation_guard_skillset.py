@@ -230,6 +230,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "value_0": "",
                 "value_type_0": "",
                 "buff_id_0": "방어막",
+                "reference_buff_id_0": "반사",
                 "buff_stack_cap_0": "",
                 "target_override_0": "",
                 "effect_1": "",

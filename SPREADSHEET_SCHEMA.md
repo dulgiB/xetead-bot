@@ -53,7 +53,7 @@
 | `condition_value`                  | `condition`이 참조하는 정수값 (예: 퍼센트 임계값, 명수 등 — 조건 클래스마다 의미가 다름)                       |
 | `is_debuff`                        | 디버프 여부 (boolean). `TargetHasDebuffCondition` 등에서 조회                             |
 | `max_stack`                        | 최대 적층 스택 수. 비우면 적층 불가(재부여 시 지속시간만 갱신, 스택은 그대로)                                 |
-| `reference_buff_id`                | 다른 버프 id를 참조해야 하는 버프 전용 (스택 수 기반 대미지 등). 대부분의 버프에는 필요 없음                       |
+| `reference_buff_id`                | 다른 버프 id를 참조해야 하는 버프 전용 (스택 수 기반 대미지, 추가 증가분의 조건이 되는 디버프 등). 대부분의 버프에는 필요 없음. **코드가 특정 버프 id를 알아야 하는 경우는 반드시 이 컬럼을 거친다** — 구현체에 id를 박아 두면 시트만 봐서는 그 행이 쓰이는지 알 수 없어, 미사용 행 정리 때 조용히 깨진다 |
 | `description`                     | 표시용 설명                                                                          |
 
 지속시간(`duration_turn_value`/`duration_count_value`)을 둘 다 비우면 패시브
@@ -212,7 +212,7 @@
 | `SkillEffectAddBuffPerDamagedColumn`             | holder 기준 좌우 value열(자신의 열 포함) 중 이번 라운드에 아군이 피격된 **열의 개수**만큼 buff_id 스택 부여(한 열에서 여러 명이 맞아도 1스택). value는 수치가 아니라 반경. 패시브 전용 — 라운드 확정 후에 평가된다 |
 | `SkillEffectRemoveDebuffs`                       | 대상의 패시브가 아닌 디버프를 전부 제거                                         |
 | `SkillEffectAddBuffIfHolderHasFormationBuff`     | 시전자가 [Formation] 버프를 보유한 상태일 때만 대상에게 버프 부여                     |
-| `SkillEffectShieldOrReflectIfTargetHasFormationBuff` | 대상이 [Formation] 보유 시 대체 버프(보통 [반사]), 아니면 기본 버프(보통 [방어막]) 부여 |
+| `SkillEffectShieldOrReflectIfTargetHasFormationBuff` | 대상이 [Formation] 계열 버프 보유 시 `reference_buff_id_N` 버프를, 아니면 `buff_id_N` 버프를 부여. `reference_buff_id_N`을 비우면 항상 `buff_id_N`만 부여한다 |
 | `SkillEffectConsumeStackForDamage`               | 시전자 자신의 적층형 버프 스택을 소모하며 그 소모량 × value%만큼 대미지                  |
 | `SkillEffectHealAndFillBuffStack`                | 적층형 버프의 여유 스택 수 × value%만큼 회복 + 시전자 스택을 즉시 최대치로 채움          |
 | `SkillEffectDamageByDebuffStackTier`             | 대상의 적층형 디버프 스택 수(최대 5 기준 3단계)에 따라 대미지 계수/처리 방식이 갈림          |
