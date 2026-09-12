@@ -41,7 +41,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "디버프. 최대 5회까지 중첩된다. 단독으로는 쓸모가 없다.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": 5,
             }
         ),
@@ -59,7 +59,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트용 무관 디버프(수치 효과 없음)",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
             }
         ),

@@ -8,6 +8,7 @@ from battle.objects.buff.conditions import Condition
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     BuffApplyTiming,
+    BuffType,
     BuffCountDeductCondition,
     ValueSourceType,
     ValueType,
@@ -145,7 +146,7 @@ class BuffBase(abc.ABC):
             data.duration_count_deduct_condition,
         )
         self.condition = data.condition
-        self.is_debuff = data.is_debuff
+        self.buff_type = data.buff_type
 
         # None이면 적층 불가 버프.
         self.max_stack = data.max_stack
@@ -199,7 +200,9 @@ class BuffBase(abc.ABC):
         obj.value_type = value_type
         obj.duration = BuffDurationCounter(None, None, None)
         obj.condition = condition
-        obj.is_debuff = False
+        # 패시브 래퍼/모디파이어 템플릿은 버프 목록에 노출되지도, 버프/디버프
+        # 집계에 잡히지도 않아야 한다.
+        obj.buff_type = BuffType.NEUTRAL
         obj.max_stack = None
         obj.stack_count = 1
         obj.reference_buff_id = reference_buff_id

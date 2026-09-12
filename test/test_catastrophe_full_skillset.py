@@ -40,7 +40,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition_value": "",
                 "description": "패시브로 축적되는 저주. 해제할 수 없다. "
                 "전투 종료 시 남은 스택×5만큼 자신의 체력이 감소한다.",
-                "is_debuff": False,
+                "type": "기타",
                 "max_stack": 10,
             }
         ),
@@ -59,7 +59,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "받는 대미지 -5%",
-                "is_debuff": False,
+                "type": "버프",
             }
         ),
         "도발": BuffData.from_dict(
@@ -74,7 +74,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "적의 공격과 부가 효과를 자신에게 유도 (도발 공격)",
-                "is_debuff": False,
+                "type": "버프",
             }
         ),
     }

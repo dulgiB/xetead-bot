@@ -6,7 +6,12 @@ from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.models import BuffData
-from battle.objects.define import BattlefieldColumnIndex, FactionType, ValueType
+from battle.objects.define import (
+    BattlefieldColumnIndex,
+    BuffType,
+    FactionType,
+    ValueType,
+)
 from battle.objects.models import CharacterId
 from battle.objects.skill.effects import SkillEffectAddBuff
 from battle.objects.skill.models import SkillData
@@ -26,7 +31,7 @@ def stationary_debuff_data() -> BuffData:
         value=20,
         condition_="HolderDidNotMoveThisTurnCondition",
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
 

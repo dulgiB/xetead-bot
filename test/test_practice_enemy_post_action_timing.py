@@ -39,7 +39,7 @@ def _guard_buff() -> BuffData:
             "value_type_1": "",
             "condition": "",
             "condition_value": "",
-            "is_debuff": "FALSE",
+            "type": "버프",
             "max_stack": "",
             "reference_buff_id": "",
             "description": "",

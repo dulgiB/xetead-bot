@@ -47,7 +47,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "버프. 받는 대미지가 5% 감소한다.",
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -63,7 +63,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "디버프. 주는 대미지가 15% 감소한다.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
             }
         ),
@@ -79,7 +79,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "디버프. 대상이 가하는 모든 공격과 그 부가 효과가 부여자를 향한다.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
             }
         ),
@@ -95,7 +95,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "버프. 받는 대미지를 무효화한다. 부가 효과는 그대로 적용된다.",
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -114,7 +114,7 @@ def _buff_dict() -> dict[str, BuffData]:
                     "버프. 받는 대미지를 무효화하고, 무효화한 대미지의 40%를 "
                     "공격자에게 되돌려 보낸다. 부가 효과는 그대로 적용된다."
                 ),
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -133,7 +133,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트용. 주는 대미지가 50% 증가한다.",
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -149,7 +149,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트용. 받는 대미지가 50% 감소한다.",
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -167,7 +167,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트용 마커 디버프. 주는 대미지가 10% 감소한다.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
             }
         ),

@@ -70,7 +70,7 @@ def _buff_dict() -> dict[str, BuffData]:
                     "동료가 필드에 살아 있는 한 받는 대미지를 절반씩 나누고,"
                     " 자신을 공격한 대상에게 공격 굴림 80%만큼 반격한다."
                 ),
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -86,7 +86,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "받는 대미지가 20% 감소한다.",
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -102,7 +102,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "적의 공격과 부가 효과를 자신에게 유도",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
             }
         ),

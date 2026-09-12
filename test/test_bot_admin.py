@@ -11,8 +11,10 @@ from pathlib import Path
 from battle.core.commands.define import RoundPhaseType  # noqa: E402
 from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
 from battle.objects.buff.models import BuffData  # noqa: E402
-from battle.objects.define import (  # noqa: E402
+from battle.objects.define import (
+    # noqa: E402,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueType,
 )
@@ -428,7 +430,7 @@ def test_enemy_post_action_summary_lists_unique_granted_buff_info(monkeypatch):
         value=15,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="받는 대미지가 15% 증가한다.",
     )
     skill = SkillData(
@@ -2279,7 +2281,7 @@ def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
         value=999,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
     ctx = PracticeBattlefieldContext(buff_dict={"맹독": dot_buff}, skill_dict={})
@@ -2336,7 +2338,7 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
         value=999,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
     atk_buff = BuffData(
@@ -2349,7 +2351,7 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
         value=3,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
     )
     ctx = PracticeBattlefieldContext(
@@ -2421,7 +2423,7 @@ def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_cal
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.NEUTRAL,
         description="",
         max_stack=20,
     )

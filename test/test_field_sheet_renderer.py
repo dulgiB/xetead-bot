@@ -6,6 +6,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -151,7 +152,7 @@ def test_referenced_buff_line_stripped_once_buff_is_granted():
                 value=10,
                 condition_=None,
                 condition_value=None,
-                is_debuff=False,
+                buff_type=BuffType.BUFF,
                 description="보조 버프의 개별 설명입니다.",
             )
         },

@@ -1,6 +1,7 @@
 from typing import TYPE_CHECKING
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
+from battle.objects.define import BuffType
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
 from battle.objects.skill.models import SkillEffectBase
 
@@ -12,7 +13,7 @@ def _clearable_debuffs(context: "BattlefieldContext", target: CharacterId) -> li
     return [
         b
         for b in context.buff_container.get_buffs_by(target, None)
-        if b.is_debuff and not b.duration.is_passive
+        if b.buff_type == BuffType.DEBUFF and not b.duration.is_passive
     ]
 
 

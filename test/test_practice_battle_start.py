@@ -40,7 +40,7 @@ def _mark_buff() -> BuffData:
             "value_type_1": "",
             "condition": "",
             "condition_value": "",
-            "is_debuff": "FALSE",
+            "type": "버프",
             "max_stack": 3,
             "reference_buff_id": "",
             "description": "",

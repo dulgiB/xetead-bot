@@ -41,7 +41,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "",
-                "is_debuff": False,
+                "type": "기타",
                 "max_stack": 10,
             }
         ),

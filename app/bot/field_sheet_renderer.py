@@ -43,6 +43,7 @@ from battle.core.commands.models import CharacterCommand
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
     BattlefieldColumnIndex,
+    BuffType,
     CombatStatType,
     FactionType,
 )
@@ -53,6 +54,14 @@ from bot.sheet_cache import SheetCache
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.character.combat_character import CombatCharacter
+
+# 버프 분류별 머리 기호. NEUTRAL은 이롭지도 해롭지도 않은 마커라 방향을 가진
+# 삼각형 대신 중립적인 기호를 쓴다.
+_BUFF_TYPE_ICON = {
+    BuffType.BUFF: "▴",
+    BuffType.DEBUFF: "▾",
+    BuffType.NEUTRAL: "▪",
+}
 
 _FIELD_SHEET = "필드"
 
@@ -298,7 +307,7 @@ def _format_buff_cell(
             if label in seen_passive_labels:
                 continue
             seen_passive_labels.add(label)
-        icon = "▾" if buff.is_debuff else "▴"
+        icon = _BUFF_TYPE_ICON[buff.buff_type]
         stack_count = buff.stack_count if buff.max_stack is not None else None
         display_lines.append(f"{icon} {label}{buff.duration.display_text(stack_count)}")
         description = _strip_lines_for_already_present_buffs(

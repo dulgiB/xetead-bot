@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, ClassVar, Iterator, Optional
 
 from utils.battle_helpers import is_reachable
 
-from battle.objects.define import CombatStatType
+from battle.objects.define import BuffType, CombatStatType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -136,7 +136,7 @@ class HolderHasBuffCondition(Condition):
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
         return any(
-            not buff.duration.is_passive and not buff.is_debuff
+            not buff.duration.is_passive and buff.buff_type == BuffType.BUFF
             for buff in context.buff_container.get_buffs_by(holder, None)
         )
 
@@ -154,7 +154,7 @@ class TargetHasDebuffCondition(Condition):
         if attacker_or_target is None:
             return False
         return any(
-            not buff.duration.is_passive and buff.is_debuff
+            not buff.duration.is_passive and buff.buff_type == BuffType.DEBUFF
             for buff in context.buff_container.get_buffs_by(attacker_or_target, None)
         )
 
