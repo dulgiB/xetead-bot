@@ -78,6 +78,7 @@ def _passive_buff_dict() -> dict[str, PassiveBuffData]:
                 "value_1": 5,
                 "condition": "TargetHasDebuffCondition",
                 "condition_value": "",
+                "reference_buff_id": "균열",
             }
         ),
     }

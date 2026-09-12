@@ -9,11 +9,12 @@ if TYPE_CHECKING:
 
 
 class SkillEffectShieldOrReflectIfTargetHasFormationBuff(SkillEffectBase):
-    """대상 각각에 대해 [Formation] 버프 보유 여부를 확인해, 보유 중이면 대체 버프
-    ([반사])를, 아니면 기본 버프(self.buff_id, 보통 [방어막])를 부여한다."""
+    """대상 각각에 대해 [Formation] 버프 보유 여부를 확인해, 보유 중이면 대체
+    버프를, 아니면 기본 버프(`buff_id_N`)를 부여한다.
+    대체 버프는 시트의 `reference_buff_id_N`에서 온다.
+    """
 
     _GATE_BUFF_CLASS_NAME: ClassVar[str] = "BuffFormation"
-    _ALTERNATE_BUFF_ID: ClassVar[str] = "반사"
 
     def _expand(
         self,
@@ -29,13 +30,15 @@ class SkillEffectShieldOrReflectIfTargetHasFormationBuff(SkillEffectBase):
         list[BuffRemoveData],
     ]:
         assert self.buff_id is not None
+        alternate_buff_id = self.reference_buff_id
         buff_add_list = []
         for target in targets:
-            has_gate_buff = any(
+            buff_id = self.buff_id
+            if alternate_buff_id is not None and any(
                 buff.uid.buff_name == self._GATE_BUFF_CLASS_NAME
                 for buff in context.buff_container.get_buffs_by(target, None)
-            )
-            buff_id = self._ALTERNATE_BUFF_ID if has_gate_buff else self.buff_id
+            ):
+                buff_id = alternate_buff_id
             buff_add_list.append(
                 BuffAddData(
                     given_by=holder,

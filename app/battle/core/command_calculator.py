@@ -354,7 +354,7 @@ class CommandPartCalculator:
                 continue
             for damage_calc in mutable.damage_data_list:
                 original = damage_calc.base.target_id
-                final, reduction = self._resolve_redirect(
+                final, reduction, label = self._resolve_redirect(
                     damage_calc.base.attacker_id,
                     original,
                     ignores_taunt=damage_calc.base.ignores_taunt,
@@ -366,7 +366,7 @@ class CommandPartCalculator:
                 if reduction:
                     damage_calc.received_modifiers.append(
                         FloatValueModifier(
-                            source_name="희생 방어",
+                            source_name=label,
                             value=-reduction,
                             applies_to_fixed=True,
                         )
@@ -377,15 +377,17 @@ class CommandPartCalculator:
         attacker_id: CharacterId,
         original_target: CharacterId,
         ignores_taunt: bool = False,
-    ) -> tuple[CharacterId, float]:
-        """도발(공격자 기준) → 희생 방어(대상 기준) 순으로 최종 대상을 결정한다.
+    ) -> tuple[CharacterId, float, str]:
+        """도발(공격자 기준) → 대리 수령(대상 기준) 순으로 최종 대상을 결정한다.
 
         ignores_taunt=True(열 광역기 등)면 도발 리다이렉트 단계를 건너뛴다.
 
-        반환: (최종 대상, 희생 방어 경감 퍼센트). 희생 방어가 없으면 경감은 0.
+        반환: (최종 대상, 경감 퍼센트, 계산식에 표시할 이름). 대리 수령 버프가
+        없으면 경감은 0이고 이름은 빈 문자열이다.
         """
         final = original_target
         reduction: float = 0
+        label = ""
         # 열 광역기 등 ignores_taunt 항목은 대상별 개별 판단이 설계 의도다.
         if not ignores_taunt:
             if self.precomputed_taunt_redirects is not None:
@@ -396,8 +398,8 @@ class CommandPartCalculator:
                 final = taunt_target
         sacrifice = self._consume_sacrifice_protector(final)
         if sacrifice is not None:
-            final, reduction = sacrifice
-        return final, reduction
+            final, reduction, label = sacrifice
+        return final, reduction, label
 
     def _get_target_override(
         self: "CommandPartCalculator", attacker_id: CharacterId
@@ -429,10 +431,14 @@ class CommandPartCalculator:
 
     def _consume_sacrifice_protector(
         self: "CommandPartCalculator", target_id: CharacterId
-    ) -> Optional[tuple[CharacterId, float]]:
-        """target_id를 보호하는 희생 방어 버프가 있으면 (보호자, 경감 퍼센트)를 반환한다.
+    ) -> Optional[tuple[CharacterId, float, str]]:
+        """target_id를 보호하는 대리 수령 버프가 있으면 (보호자, 경감 퍼센트,
+        버프 id)를 반환한다.
 
         경감 퍼센트는 버프의 value(퍼센트 포인트, 예: 20 → 보호자 받는 대미지 −20%)다.
+        버프 id는 계산식에 그대로 표시되므로, 이 메커니즘을 쓰는 버프가 여럿이면
+        각자 자기 이름으로 나온다 — 특정 버프 이름을 여기 박아 두면 시트에서
+        그 버프를 지우거나 이름을 바꿔도 계산식은 옛 이름을 계속 보여준다.
         """
         for buff in self.context.buff_container.get_buffs_by(
             target_id, BuffApplyTiming.ON_ACTION
@@ -446,7 +452,7 @@ class CommandPartCalculator:
                 buff.duration.remaining_count -= 1
                 if buff.duration.finished:
                     self.context.buff_container.remove(buff.uid)
-            return protector, buff.value
+            return protector, buff.value, buff.id
         return None
 
     @staticmethod
