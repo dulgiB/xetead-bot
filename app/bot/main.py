@@ -80,6 +80,10 @@ _RE_INVESTIGATION_DECLARATION = re.compile(
     rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([^\[\]]+)]"
 )
 _RE_PRACTICE_RETIRE = re.compile(rf"\[{whitespace_tolerant_literal('탈락')}]")
+_PRACTICE_PHASE_GUIDE = (
+    "해당 팀 전원이 타래로 이어서 커맨드를 입력해 주세요 "
+    "(전원이 입력하면 자동으로 다음 차례로 넘어갑니다)."
+)
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
     rf"\[{whitespace_tolerant_literal('상시전투')}]"
 )
@@ -184,6 +188,15 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         "round_limit": ps.round_limit,
         "first_mover": ps.first_mover.value if ps.first_mover else None,
         "second_mover": ps.second_mover.value if ps.second_mover else None,
+        # 이번 페이즈에 이미 선언을 마친 캐릭터. 페이즈는 그 팀 전원이 선언해야
+        # 넘어가므로, 복원 시 이 목록이 비어 있으면 이미 행동한 캐릭터가 같은
+        # 페이즈에 한 번 더 행동할 수 있게 된다.
+        "declared": [c.name for c in ps.manager.declared_this_phase],
+        # 승패 비율의 분모. 필드에서 빠진 캐릭터는 복원 대상에 없으므로
+        # 복원 후 다시 계산하면 값이 달라진다.
+        "initial_max_hp": {
+            side.value: hp for side, hp in ps.initial_max_hp_by_side.items()
+        },
     }
 
 
@@ -843,7 +856,7 @@ class MastodonBotListener(StreamListener):
                 proxy_reply,
                 proxy_calc,
                 proxy_game_post,
-                proxy_battle_log,
+                proxy_battle_logs,
                 proxy_ended,
                 proxy_ps,
             ) = _handle_practice_proxy_command(
@@ -856,7 +869,10 @@ class MastodonBotListener(StreamListener):
                 reply_status = self._reply_with_calc(
                     status_id, acct, visibility, proxy_reply, proxy_calc
                 )
-                _persist_battle_log(state, proxy_battle_log, str(reply_status["id"]))
+                for proxy_battle_log in proxy_battle_logs:
+                    _persist_battle_log(
+                        state, proxy_battle_log, str(reply_status["id"])
+                    )
                 if proxy_game_post is not None:
                     mention_prefix = _practice_mention_prefix(practice_participants)
                     new_post = self._mastodon.status_post(
@@ -1573,14 +1589,24 @@ def _mover_label(ps: PracticeBattleState, side: Optional[SideType]) -> str:
     팀 이름만 알리면 지금 누가 커맨드를 입력해야 하는지 각자 자기 팀을
     다시 확인해야 한다 — 특히 팀당 인원이 여럿이면 헷갈리므로 명단을
     함께 붙인다. 명단을 만들 수 없으면(전멸 직후 등) 기존처럼 팀 이름만
-    쓴다."""
+    쓴다. 동료(소환수)는 플레이어가 조작하지 않으므로 명단에서 뺀다."""
     label = ps.side_label(side)
     if side is None:
         return label
-    names = [char.id.name for char in ps.context.get_side_characters(side)]
+    names = [char.id.name for char in ps.actable_characters(side)]
     if not names:
         return label
     return f"{label} - {', '.join(names)}"
+
+
+def _pending_actors_text(ps: PracticeBattleState) -> str:
+    """이번 페이즈에 아직 선언하지 않은 캐릭터 안내. 전원이 선언을 마쳐야
+    다음 페이즈로 넘어가므로, 누구를 기다리는 중인지 커맨드 답글에 붙여
+    알려준다. 남은 사람이 없으면 빈 문자열."""
+    pending = ps.pending_actors()
+    if not pending:
+        return ""
+    return "\n\n◊ 남은 선언: " + ", ".join(char_id.name for char_id in pending)
 
 
 def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
@@ -1610,6 +1636,11 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
     ps.field_id = str(ps.prep_post_id)
+    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
+    # 볼 수 있다. 이 호출이 없어서 대련/상시전투에서는 그 트리거가 한 번도
+    # 발동하지 않았다.
+    ps.context.on_battle_start()
+    ps.snapshot_initial_max_hp()
     ps.start_round()
     _upsert_practice_field_row(
         state, ps, phase_value=ps.phase.value if ps.phase else ""
@@ -1620,7 +1651,7 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
         f"◊ 상시전투 시작\n"
         f"라운드 상한: {ps.round_limit}라운드\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
-        f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
+        f"{_PRACTICE_PHASE_GUIDE}\n\n"
         f"{_field_text(ps)}"
     )
     if errors:
@@ -1645,6 +1676,11 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
     total = len(ps.context.characters)
     ps.round_limit = max(3, 1 + total)
     ps.field_id = str(ps.prep_post_id)
+    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
+    # 볼 수 있다. 이 호출이 없어서 대련/상시전투에서는 그 트리거가 한 번도
+    # 발동하지 않았다.
+    ps.context.on_battle_start()
+    ps.snapshot_initial_max_hp()
     ps.start_round()
     _upsert_practice_field_row(
         state, ps, phase_value=ps.phase.value if ps.phase else ""
@@ -1655,7 +1691,7 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
         f"◊ 대련 시작\n"
         f"라운드 상한: {ps.round_limit}라운드\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
-        f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
+        f"{_PRACTICE_PHASE_GUIDE}\n\n"
         f"{_field_text(ps)}"
     )
     if errors:
@@ -1663,9 +1699,33 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
     return game_post
 
 
+def _finish_practice_battle(
+    state: "BotState", ps: PracticeBattleState, phase_value: str
+) -> str:
+    """대련/상시전투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이 함수가
+    끝나면 state.practices에서 제거된 상태다.
+
+    전투 종료 훅(_apply_practice_battle_end_effects)은 반드시 winner() 앞에
+    와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다."""
+    assert ps.active_post_id is not None
+    battle_mode = "상시전투" if ps.is_investigation else "대련"
+    battle_end_body = _apply_practice_battle_end_effects(ps)
+    winner = ps.winner()
+    winner_label = ps.side_label(winner)
+    body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
+    game_post = (
+        f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
+        f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
+        + "\n\n".join(body_blocks)
+    )
+    _upsert_practice_field_row(state, ps, phase_value=phase_value, ended=True)
+    state.practices.pop(ps.active_post_id, None)
+    return game_post
+
+
 def _finalize_practice_phase(
     state: "BotState", ps: PracticeBattleState, current_phase: PracticeRoundPhase
-) -> tuple[str, bool]:
+) -> tuple[Optional[str], bool]:
     """대련/상시전투에서 커맨드 하나(캐릭터 본인 답글 또는 admin/world
     프록시)가 처리된 직후 호출한다 — 다음 페이즈/라운드로 전환하거나
     전투를 종료하고, 그 안내 게시물 텍스트를 만든다.
@@ -1675,38 +1735,32 @@ def _finalize_practice_phase(
     공유해야 한다 — 그렇지 않으면 계정이 없어 프록시로만 조작 가능한
     에너미가 마지막으로 행동하는 페이즈에서 라운드가 영원히 멈춘다.
 
-    반환값: (game_post_text, ended). ended=True면 ps가 이미
+    반환값: (game_post_text_or_None, ended). game_post가 None이면 이번
+    페이즈가 아직 끝나지 않았다는 뜻 — 그 팀에 아직 선언하지 않은 캐릭터가
+    남아 있으므로 페이즈와 active_post_id를 그대로 두고, 남은 캐릭터들이
+    같은 게시물에 이어서 답글을 달게 한다. ended=True면 ps가 이미
     state.practices에서 제거된 상태다."""
     assert ps.active_post_id is not None  # 호출측이 이미 확인함
-    battle_mode = "상시전투" if ps.is_investigation else "대련"
+
+    hp1 = ps.total_hp_by_side(SideType.SIDE_1)
+    hp2 = ps.total_hp_by_side(SideType.SIDE_2)
+    side_wiped = hp1 == 0 or hp2 == 0
+
+    # 한쪽이 전멸했다면 남은 팀원의 선언을 기다릴 이유가 없다 — 그 자리에서
+    # 라운드를 닫고 종료한다.
+    if not side_wiped and ps.pending_actors():
+        return None, False
 
     if current_phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
-        hp1 = ps.total_hp_by_side(SideType.SIDE_1)
-        hp2 = ps.total_hp_by_side(SideType.SIDE_2)
-        if hp1 == 0 or hp2 == 0:
+        if side_wiped:
             ps.end_round()
-            battle_end_body = _apply_practice_battle_end_effects(ps)
-            winner = ps.winner()
-            winner_label = ps.side_label(winner)
-            body_blocks = [
-                block for block in (_field_board(ps), battle_end_body) if block
-            ]
-            game_post = (
-                f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
-                f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
-                + "\n\n".join(body_blocks)
-            )
-            _upsert_practice_field_row(
-                state, ps, phase_value=current_phase.value, ended=True
-            )
-            state.practices.pop(ps.active_post_id, None)
-            return game_post, True
+            return _finish_practice_battle(state, ps, current_phase.value), True
 
         ps.advance_to_second_mover()
         second_label = _mover_label(ps, ps.second_mover)
         game_post = (
             f"◊ [{ps.round_n}라운드] 후공: {second_label}\n"
-            f"후공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
+            f"{_PRACTICE_PHASE_GUIDE}\n\n"
             f"{_field_text(ps)}"
         )
         return game_post, False
@@ -1719,26 +1773,13 @@ def _finalize_practice_phase(
     hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
     if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
-        battle_end_body = _apply_practice_battle_end_effects(ps)
-        winner = ps.winner()
-        winner_label = ps.side_label(winner)
-        body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
-        game_post = (
-            f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
-            f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
-            + "\n\n".join(body_blocks)
-        )
-        _upsert_practice_field_row(
-            state, ps, phase_value=current_phase.value, ended=True
-        )
-        state.practices.pop(ps.active_post_id, None)
-        return game_post, True
+        return _finish_practice_battle(state, ps, current_phase.value), True
 
     ps.start_round()
     mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
         f"◊ [{ps.round_n}라운드] 선공: {mover_label}\n"
-        f"선공은 타래로 이어서 커맨드를 입력해 주세요.\n\n"
+        f"{_PRACTICE_PHASE_GUIDE}\n\n"
         f"{_field_text(ps)}"
     )
     return game_post, False
@@ -1750,36 +1791,67 @@ def _handle_practice_proxy_command(
     Optional[str],
     str,
     Optional[str],
-    Optional[log_sheets.BattleCommandLog],
+    list[log_sheets.BattleCommandLog],
     bool,
     Optional[PracticeBattleState],
 ]:
     """대련/상시전투 중 admin/world가 계정이 없는 캐릭터(주로 에너미)의
     커맨드를 프록시로 대신 입력한다. text에서 "(◊ )이름 [커맨드]" 패턴을
-    모두 찾아, 그중 조건에 맞는 활성 대련/상시전투 참가자로 해석되는 첫
-    번째 줄만 처리한다 — 대련/상시전투는 페이즈당 유효한 커맨드가 1개뿐이라
-    여러 줄을 한꺼번에 처리할 이유가 없다.
+    모두 찾아, 조건에 맞는 활성 대련/상시전투 참가자로 해석되는 줄을 위에서부터
+    차례로 처리한다 — 한 페이즈는 그 팀 전원이 선언해야 넘어가므로, 계정 없는
+    에너미가 여럿이면 한 게시물에 줄을 나눠 한꺼번에 넣을 수 있어야 한다.
 
     require_investigation이 True면(world 계정) 상시전투가 아닌 대련
     참가자는 대상에서 제외한다 — world는 상시전투 맥락에서만 프록시가
     허용된다.
 
-    캐릭터 본인 답글 경로(_handle_practice_command)와 동일하게, 처리
-    직후 _finalize_practice_phase로 자동으로 다음 페이즈/라운드로
-    전환한다.
+    캐릭터 본인 답글 경로(_handle_practice_command)와 동일하게, 각 커맨드
+    처리 직후 _finalize_practice_phase로 페이즈 전환을 판정한다(그 팀 전원이
+    선언을 마쳤을 때만 실제로 넘어간다).
 
     반환값: (reply_text_or_None, calc_text, game_post_text_or_None,
-    battle_log_or_None, ended, ps_or_None). ps가 None이면 이 text에서
-    조건에 맞는 대상을 찾지 못했다는 뜻 — 호출측은 기존 admin 라우팅
-    (본 전투 프록시 등)으로 넘어가야 한다."""
+    battle_logs, ended, ps_or_None). ps가 None이면 이 text에서 조건에 맞는
+    대상을 찾지 못했다는 뜻 — 호출측은 기존 admin 라우팅(본 전투 프록시 등)
+    으로 넘어가야 한다. 여러 줄을 처리한 경우 reply/calc는 빈 줄로 이어
+    붙이고 battle_logs에는 줄마다 하나씩 담긴다."""
+    ps: Optional[PracticeBattleState] = None
+    reply_parts: list[str] = []
+    calc_parts: list[str] = []
+    battle_logs: list[log_sheets.BattleCommandLog] = []
+    game_post: Optional[str] = None
+    ended = False
+
+    def _result() -> tuple[
+        Optional[str],
+        str,
+        Optional[str],
+        list[log_sheets.BattleCommandLog],
+        bool,
+        Optional[PracticeBattleState],
+    ]:
+        if ps is None:
+            return None, "", None, [], False, None
+        return (
+            "\n\n".join(reply_parts),
+            "\n\n".join(calc_parts),
+            game_post,
+            battle_logs,
+            ended,
+            ps,
+        )
+
     for m in admin_commands._RE_PROXY.finditer(text):
         char_name, cmd_str = m.group(1).strip(), m.group(2).strip()
-        ps: Optional[PracticeBattleState] = None
         char_id = None
         for candidate in state.practices.values():
             if candidate.active_post_id is None:
                 continue
             if require_investigation and not candidate.is_investigation:
+                continue
+            # 이미 어느 세션을 처리 중이면 그 세션의 참가자만 이어서 받는다 —
+            # 한 게시물이 서로 다른 대련 두 개를 동시에 진행시키면 어느 쪽
+            # active_post_id로 정산 게시물을 이어야 할지 정할 수 없다.
+            if ps is not None and candidate is not ps:
                 continue
             resolved = candidate.context.resolve_character_id(CharacterId(char_name))
             if resolved in candidate.context.characters:
@@ -1787,17 +1859,15 @@ def _handle_practice_proxy_command(
                 break
         if ps is None or char_id is None:
             continue
+        if ended:
+            # 앞선 줄에서 전투가 이미 끝났다 — 남은 줄은 처리할 대상이 없다.
+            reply_parts.append(f"◊ {char_id.name}: 전투가 이미 종료되었습니다.")
+            continue
 
         current_phase = ps.phase
         if current_phase is None:
-            return (
-                "◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.",
-                "",
-                None,
-                None,
-                False,
-                ps,
-            )
+            reply_parts.append("◊ 커맨드를 입력할 수 있는 타이밍이 아닙니다.")
+            continue
 
         field_id = ps.field_id
         round_n = ps.round_n
@@ -1805,41 +1875,56 @@ def _handle_practice_proxy_command(
         try:
             command = parse_character_command(char_id, cmd_str, ps.context)
             if command is None:
-                return "◊ 커맨드 형식을 인식할 수 없습니다.", "", None, None, False, ps
+                reply_parts.append("◊ 커맨드 형식을 인식할 수 없습니다.")
+                continue
             result = ps.manager.process_command(command)
             entries = [
                 entry
                 for part_result in result.part_results
                 for entry in part_result.log_entries
             ]
-            battle_log = log_sheets.BattleCommandLog(
-                field_id=field_id,
-                round_n=round_n,
-                phase=current_phase.value,
-                battle_type=_practice_battle_type(ps),
-                command_text=cmd_str,
-                mastodon_id=acct,
-                entries=entries,
+            battle_logs.append(
+                log_sheets.BattleCommandLog(
+                    field_id=field_id,
+                    round_n=round_n,
+                    phase=current_phase.value,
+                    battle_type=_practice_battle_type(ps),
+                    command_text=cmd_str,
+                    mastodon_id=acct,
+                    entries=entries,
+                )
             )
             reply_text, calc_text = format_battle_reply(
                 ps.context, char_id, result.part_results
             )
         except CommandValidationError as e:
-            battle_log = log_sheets.BattleCommandLog(
-                field_id=field_id,
-                round_n=round_n,
-                phase=current_phase.value,
-                battle_type=_practice_battle_type(ps),
-                command_text=cmd_str,
-                mastodon_id=acct,
-                error_trace=traceback.format_exc(),
+            battle_logs.append(
+                log_sheets.BattleCommandLog(
+                    field_id=field_id,
+                    round_n=round_n,
+                    phase=current_phase.value,
+                    battle_type=_practice_battle_type(ps),
+                    command_text=cmd_str,
+                    mastodon_id=acct,
+                    error_trace=traceback.format_exc(),
+                )
             )
-            return f"◊ {e}", "", None, battle_log, False, ps
+            reply_parts.append(f"◊ {e}")
+            continue
 
-        game_post, ended = _finalize_practice_phase(state, ps, current_phase)
-        return reply_text, calc_text, game_post, battle_log, ended, ps
+        reply_parts.append(reply_text)
+        if calc_text:
+            calc_parts.append(calc_text)
+        new_game_post, ended = _finalize_practice_phase(state, ps, current_phase)
+        if new_game_post is not None:
+            game_post = new_game_post
 
-    return None, "", None, None, False, None
+    if ps is not None and not ended:
+        pending_text = _pending_actors_text(ps).strip()
+        if pending_text:
+            reply_parts.append(pending_text)
+
+    return _result()
 
 
 def _handle_practice_command(
@@ -1873,39 +1958,33 @@ def _handle_practice_command(
     if _RE_PRACTICE_RETIRE.search(text):
         # 탈락은 턴 순서와 무관한 자진 기권 커맨드라, 선공/후공 페이즈
         # 검증(manager.process_command)을 거치지 않고 즉시 처리한다.
+        retire_phase = ps.phase
         side = ps.context.get_side(char_id)
         ps.context.remove_character(char_id)
         reply_text = format_eliminated_characters([char_id])
         battle_log = log_sheets.BattleCommandLog(
             field_id=ps.field_id,
             round_n=ps.round_n,
-            phase=ps.phase.value if ps.phase is not None else "",
+            phase=retire_phase.value if retire_phase is not None else "",
             battle_type=_practice_battle_type(ps),
             command_text=text,
             mastodon_id=acct,
         )
 
         if ps.total_hp_by_side(side) > 0:
-            # 같은 편에 남은 캐릭터가 있으면 전투는 계속된다.
-            return reply_text, "", None, battle_log, False
+            # 같은 편에 남은 캐릭터가 있으면 전투는 계속된다. 다만 기권한
+            # 캐릭터가 이번 페이즈의 마지막 미선언자였을 수 있으므로, 페이즈
+            # 전환 판정을 한 번 태워야 라운드가 멈춰 서지 않는다.
+            if retire_phase is None:
+                return reply_text, "", None, battle_log, False
+            game_post, ended = _finalize_practice_phase(state, ps, retire_phase)
+            if game_post is None:
+                reply_text += _pending_actors_text(ps)
+            return reply_text, "", game_post, battle_log, ended
 
-        battle_mode = "상시전투" if ps.is_investigation else "대련"
-        battle_end_body = _apply_practice_battle_end_effects(ps)
-        winner = ps.winner()
-        winner_label = ps.side_label(winner)
-        body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
-        game_post = (
-            f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
-            f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
-            + "\n\n".join(body_blocks)
+        game_post = _finish_practice_battle(
+            state, ps, retire_phase.value if retire_phase is not None else ""
         )
-        _upsert_practice_field_row(
-            state,
-            ps,
-            phase_value=ps.phase.value if ps.phase is not None else "",
-            ended=True,
-        )
-        state.practices.pop(ps.active_post_id, None)
         return reply_text, "", game_post, battle_log, True
 
     current_phase = ps.phase
@@ -1962,6 +2041,9 @@ def _handle_practice_command(
         return f"◊ {e}", "", None, battle_log, False
 
     game_post, ended = _finalize_practice_phase(state, ps, current_phase)
+    if game_post is None and not ended:
+        # 페이즈가 아직 안 끝났다 — 같은 팀에서 누구를 더 기다리는지 알려준다.
+        reply_text += _pending_actors_text(ps)
     return reply_text, calc_text, game_post, battle_log, ended
 
 

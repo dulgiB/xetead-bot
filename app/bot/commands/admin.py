@@ -905,7 +905,7 @@ def _cmd_practice_prep(
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     context = PracticeBattlefieldContext(
-        buff_dict, skill_dict, passive_skill_dict, item_dict
+        buff_dict, skill_dict, passive_skill_dict, item_dict, is_duel=True
     )
     manager = PracticeRoundManager(context)
     ps = PracticeBattleState(
@@ -1336,7 +1336,7 @@ def _cmd_investigation_battle(
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     context = PracticeBattlefieldContext(
-        buff_dict, skill_dict, passive_skill_dict, item_dict
+        buff_dict, skill_dict, passive_skill_dict, item_dict, is_duel=False
     )
     manager = PracticeRoundManager(context)
     ps = PracticeBattleState(

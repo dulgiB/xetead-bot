@@ -2244,6 +2244,25 @@ def test_world_proxy_cannot_control_duel_participants(monkeypatch):
     assert archer_hp_after == archer_hp_before
 
 
+def _declare_practice_phase(
+    state, ps, name_to_acct: dict[str, str], command: str = "[이동/2]"
+):
+    """지금 행동할 차례인 팀 전원이 차례로 커맨드를 선언하게 하고, 페이즈가
+    실제로 넘어간(또는 전투가 끝난) 시점의 game_post를 돌려준다.
+
+    대련/상시전투의 한 페이즈는 그 팀 전원이 선언해야 넘어가므로, 팀에 여러
+    명이 있으면 한 명만 선언해서는 game_post가 나오지 않는다."""
+    game_post = None
+    while ps.pending_actors():
+        acct = name_to_acct[ps.pending_actors()[0].name]
+        _reply, _calc, game_post, _log, ended = _handle_practice_command(
+            acct, command, state, ps
+        )
+        if game_post is not None or ended:
+            break
+    return game_post
+
+
 def test_practice_ends_immediately_when_round_end_dot_wipes_a_side():
     """대련은 이미 공격으로 한쪽이 즉시 전멸하면 그 자리에서 승자를 선언하고
     종료된다. 이 테스트는 그중 놓치기 쉬운 경로 하나를 확인한다 — 후공 차례
@@ -2357,7 +2376,6 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
     ps = PracticeBattleState(context=ctx, manager=manager, round_limit=5)
     ps.start_round()
 
-    side_to_acct = {SideType.SIDE_1: "acct_a", SideType.SIDE_2: "acct_b"}
     state = BotState(
         char_dict={
             "acct_a": get_test_preset("A"),
@@ -2373,12 +2391,11 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
     ps.active_post_id = 5000
     state.practices[5000] = ps
 
-    first_acct = side_to_acct[ps.first_mover]
-    _, _, game_post, _, _ = _handle_practice_command(first_acct, "[이동/2]", state, ps)
+    name_to_acct = {"A": "acct_a", "C": "acct_c", "B": "acct_b"}
+    game_post = _declare_practice_phase(state, ps, name_to_acct)
     assert "종료" not in game_post  # 아직 전멸 전 — 라운드가 계속돼야 한다
 
-    second_acct = side_to_acct[ps.second_mover]
-    _, _, game_post, _, _ = _handle_practice_command(second_acct, "[이동/2]", state, ps)
+    game_post = _declare_practice_phase(state, ps, name_to_acct)
 
     assert "종료" in game_post
     assert "승자: 1팀 (A, C)" in game_post
@@ -3337,3 +3354,134 @@ def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
     assert CharacterId("고블린") not in orc_battle.session.context.characters
     assert CharacterId("전사1") in goblin_battle.session.context.characters
     assert CharacterId("전사2") in orc_battle.session.context.characters
+
+
+def _practice_state_with(names_by_side, **ps_kwargs):
+    """대련용 PracticeBattleState와 BotState를 한 번에 만든다.
+    names_by_side: {SideType: [이름, ...]} — 계정은 "acct_{소문자 이름}"으로 고정."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={}, is_duel=True)
+    char_dict = {}
+    for side, names in names_by_side.items():
+        for name in names:
+            ctx.add_character(get_test_preset(name), side, BattlefieldColumnIndex(0))
+            char_dict[f"acct_{name.lower()}"] = get_test_preset(name)
+
+    manager = PracticeRoundManager(ctx)
+    ps = PracticeBattleState(context=ctx, manager=manager, **ps_kwargs)
+    ps.snapshot_initial_max_hp()
+    ps.start_round()
+
+    state = BotState(
+        char_dict=char_dict,
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+        log_spreadsheet=None,
+    )
+    ps.active_post_id = 5000
+    state.practices[5000] = ps
+    return ctx, ps, state
+
+
+def test_practice_phase_waits_until_every_member_of_the_acting_side_declares():
+    """한 페이즈는 그 팀 전원이 선언해야 넘어간다. 예전에는 가장 먼저 도착한
+    커맨드 하나만 처리하고 곧바로 다음 페이즈로 넘어가, 같은 팀의 나머지
+    캐릭터는 그 라운드에 아예 행동할 수 없었다."""
+    ctx, ps, state = _practice_state_with(
+        {SideType.SIDE_1: ["A", "A2"], SideType.SIDE_2: ["B"]}, round_limit=5
+    )
+    ps.manager._first_mover, ps.manager._second_mover = (
+        SideType.SIDE_1,
+        SideType.SIDE_2,
+    )
+
+    reply, _calc, game_post, _log, ended = _handle_practice_command(
+        "acct_a", "[이동/2]", state, ps
+    )
+    assert game_post is None  # 아직 A2가 남았다 — 페이즈 유지
+    assert not ended
+    assert "남은 선언: A2" in reply
+    assert ps.phase == PracticeRoundPhase.FIRST_MOVER_ACTION
+
+    _reply, _calc, game_post, _log, _ended = _handle_practice_command(
+        "acct_a2", "[이동/2]", state, ps
+    )
+    assert game_post is not None
+    assert "후공" in game_post
+    assert ps.phase == PracticeRoundPhase.SECOND_MOVER_ACTION
+
+
+def test_practice_same_character_cannot_declare_twice_in_one_phase():
+    ctx, ps, state = _practice_state_with(
+        {SideType.SIDE_1: ["A", "A2"], SideType.SIDE_2: ["B"]}, round_limit=5
+    )
+    ps.manager._first_mover, ps.manager._second_mover = (
+        SideType.SIDE_1,
+        SideType.SIDE_2,
+    )
+
+    _handle_practice_command("acct_a", "[이동/2]", state, ps)
+    reply, _calc, game_post, _log, _ended = _handle_practice_command(
+        "acct_a", "[이동/3]", state, ps
+    )
+
+    assert "이미" in reply
+    assert game_post is None
+    assert ps.phase == PracticeRoundPhase.FIRST_MOVER_ACTION
+
+
+def test_practice_retire_can_complete_a_phase_it_was_blocking():
+    """기권한 캐릭터가 그 페이즈의 마지막 미선언자였다면, 기권 처리만으로도
+    페이즈가 넘어가야 한다 — 아니면 아무도 채울 수 없는 조건으로 멈춘다."""
+    ctx, ps, state = _practice_state_with(
+        {SideType.SIDE_1: ["A", "A2"], SideType.SIDE_2: ["B"]}, round_limit=5
+    )
+    ps.manager._first_mover, ps.manager._second_mover = (
+        SideType.SIDE_1,
+        SideType.SIDE_2,
+    )
+
+    _handle_practice_command("acct_a", "[이동/2]", state, ps)
+    reply, _calc, game_post, _log, ended = _handle_practice_command(
+        "acct_a2", "[탈락]", state, ps
+    )
+
+    assert not ended
+    assert "탈락" in reply
+    assert game_post is not None and "후공" in game_post
+
+
+def test_practice_start_calls_on_battle_start(monkeypatch):
+    """_start_practice_battle()은 배치를 마친 뒤 on_battle_start()를 호출해야
+    한다 — "전투 시작" 트리거 패시브(소환수 등)가 대련에서 전혀 발동하지 않던
+    원인이 이 호출의 부재였다."""
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={}, is_duel=True)
+    ps = PracticeBattleState(
+        context=ctx,
+        manager=PracticeRoundManager(ctx),
+        declared={
+            "acct_a": (SideType.SIDE_1, BattlefieldColumnIndex(0)),
+            "acct_b": (SideType.SIDE_2, BattlefieldColumnIndex(0)),
+        },
+    )
+    state = BotState(
+        char_dict={"acct_a": get_test_preset("A"), "acct_b": get_test_preset("B")},
+        name_dict={},
+        noncombat_char_dict={},
+        spreadsheet=None,
+        field_spreadsheet=None,
+        log_spreadsheet=None,
+    )
+
+    placed_when_called: list[int] = []
+    monkeypatch.setattr(
+        ctx,
+        "on_battle_start",
+        lambda: placed_when_called.append(len(ctx.characters)),
+        raising=False,
+    )
+
+    main_module._start_practice_battle(state, ps)
+
+    assert placed_when_called == [2]  # 배치 이후에 정확히 한 번
