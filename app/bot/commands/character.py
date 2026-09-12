@@ -64,9 +64,8 @@ def handle_character_command(
     (`state.session`, `str(state.preparation_status_id)`, `MAIN`)와 DM 전투
     (각 `DmBattleState.session`/`.field_id`, `DM`)가 이 함수를 공유하기
     위함이다. 이 함수 스스로 본 전투/DM 전투를 구분할 방법이 없으므로
-    `battle_type`을 기본값 없이 반드시 caller가 넘기게 한다 — 과거에는
-    `is_main` 기본값(True)에 의존해 DM 전투 커맨드도 본 전투로 잘못
-    기록되는 버그가 있었다.
+    `battle_type`을 기본값 없이 반드시 caller가 넘기게 한다 — 기본값을 두면
+    넘기는 것을 잊은 DM 전투 경로가 조용히 본 전투로 기록된다.
 
     반환값: (reply_text_or_None, calc_text, battle_log_or_None). 두 번째
     요소(calc_text)는 계산식만 모은 텍스트로, 비어 있지 않으면 호출측이

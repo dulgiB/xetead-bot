@@ -186,9 +186,9 @@ def merge_stackable_buff_add_lines(
     """part_results 전체에 걸쳐 같은 (대상, buff_id) 조합의 적층형 버프 부여를
     "▹ 대상 | [라벨]×합계 부여 → 최종 M" 한 줄로 합산해 미리 조립해 둔다.
     한 커맨드가 같은 대상에게 같은 적층형 버프를 여러 파트(예: 공격을 여러
-    번 나눠 선언)에 걸쳐 부여하면, 예전에는 "×1 부여 → 최종 1/2/3"처럼 부여
-    횟수만큼 줄이 늘어났다 — 대미지/회복과 같은 방식으로 합쳐서 한 줄로
-    보여준다. 적층형이 아닌 버프(buff_label이 없음)는 대상으로 하지 않는다
+    번 나눠 선언)에 걸쳐 부여할 수 있는데, 합치지 않으면 "×1 부여 → 최종
+    1/2/3"처럼 부여 횟수만큼 줄이 늘어난다 — 대미지/회복과 같은 방식으로
+    한 줄로 합쳐서 보여준다. 적층형이 아닌 버프(buff_label이 없음)는 대상으로 하지 않는다
     (지속시간 갱신은 매번 같은 문구라 합칠 대상 자체가 없다)."""
     total_stack_delta: dict[tuple[BattleLogEntryKind, str], int] = {}
     last_final_stack: dict[tuple[BattleLogEntryKind, str], int] = {}

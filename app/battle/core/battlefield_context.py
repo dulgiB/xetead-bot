@@ -604,7 +604,6 @@ class BattlefieldContext:
 
     @property
     def allow_item_usage(self) -> bool:
-        """이 전장에서 아이템 커맨드를 사용할 수 있는지 여부."""
         return True
 
     @property

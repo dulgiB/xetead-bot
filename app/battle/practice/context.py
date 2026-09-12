@@ -29,11 +29,8 @@ class PracticeBattlefieldContext(BattlefieldContext):
     대련 전용 전장 컨텍스트.
     - 캐릭터 체력은 실제 max_hp의 절반으로 초기화된다.
     - 아군/적군 구분 대신 SIDE_1/SIDE_2를 사용한다 (내부적으로는 ALLY/ENEMY에 매핑).
-
-    `is_duel`은 대련(양 팀이 대등한 PvP)과 상시전투(아군 vs 적군, 본 전투와
-    같은 의미)를 가른다. 내부 매핑이 SIDE_2 → FactionType.ENEMY로 고정돼
-    있어서, 진영에 따라 다르게 동작하는 규칙(0 체력 자동 탈락 등)이 대련에서는
-    "2팀에만 적용되는" 비대칭이 되어 버리기 때문이다.
+    - `is_duel`로 대련(대등한 PvP)과 상시전투(아군 vs 적군)를 가른다. 진영에
+      따라 다르게 동작하는 규칙이 대련에서는 비대칭이 되기 때문이다.
     """
 
     def __init__(

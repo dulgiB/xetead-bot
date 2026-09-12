@@ -32,24 +32,21 @@ class RoundManager:
     def get_enemy_declared_commands(self) -> dict[CharacterId, list[CharacterCommand]]:
         return self._enemy_command_list
 
+    # 아래 세 getter는 모두 직전 정산 결과를 답글용 game_post 텍스트 조립에
+    # 넘기기 위한 것이다.
+
     def get_last_post_action_results(
         self,
     ) -> dict[CharacterId, list[CommandPartProcessResult]]:
-        """가장 최근 ENEMY_POST_ACTION 정산에서 적군 개별 캐릭터가 낸
-        결과(대미지/힐/계산식 포함)를 반환한다. 답글용 game_post 텍스트
-        조립에 쓰인다."""
+        """ENEMY_POST_ACTION에서 적군 개별 캐릭터가 낸 결과(대미지/힐/계산식)."""
         return self._last_post_action_results
 
     def get_last_round_end_log_entries(self) -> list[BattleLogEntry]:
-        """가장 최근 BUFF_UPDATE_AND_NEXT_ROUND_STANDBY 정산에서 발동한
-        ON_ROUND_END 버프(DoT/HoT 등)의 결과를 반환한다. 답글용 game_post
-        텍스트 조립에 쓰인다."""
+        """라운드 종료 정산에서 발동한 ON_ROUND_END 버프(DoT/HoT 등)의 결과."""
         return self._last_round_end_log_entries
 
     def get_last_eliminated_characters(self) -> list[CharacterId]:
-        """가장 최근 BUFF_UPDATE_AND_NEXT_ROUND_STANDBY 정산에서 체력 0으로
-        필드에서 제거된 캐릭터 목록을 반환한다. 답글용 game_post 텍스트
-        조립에 쓰인다."""
+        """라운드 종료 정산에서 체력 0으로 필드에서 제거된 캐릭터."""
         return self._last_eliminated_characters
 
     def set_phase_for_restore(self, phase: RoundPhaseType) -> None:

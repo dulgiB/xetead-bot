@@ -1,9 +1,9 @@
 """대련/상시전투에서 "전투 시작" 트리거 패시브가 실제로 발동하는지 검증한다.
 
-배경: 본 전투는 BattleSession이 배치 직후 context.on_battle_start()를 부르지만
-(bot/session.py), 대련/상시전투는 그 지점이 아예 없어서 BATTLE_START 트리거를
-쓰는 패시브(전투 시작 시 소환수를 부르는 패시브 등)가 한 번도 평가되지
-않았다."""
+BATTLE_START 타이밍은 context.on_battle_start()에서만 평가된다. 본 전투는
+BattleSession이 배치 직후 이를 부르지만(bot/session.py), 대련/상시전투는 시작
+지점이 따로라 그 호출을 빠뜨리기 쉽다 — 빠지면 전투 시작 시 소환수를 부르는
+패시브 같은 것이 조용히 아무 일도 하지 않는다."""
 
 import os
 
