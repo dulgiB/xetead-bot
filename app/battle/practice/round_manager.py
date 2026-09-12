@@ -54,6 +54,16 @@ class PracticeRoundManager:
     def to_phase(self, phase: PracticeRoundPhase) -> None:
         if phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
             self._context.on_start_round()
+            # 본 전투의 ENEMY_POST_ACTION 진입 시점에 대응한다 — 그 라운드의
+            # 피격을 경감해 줄 버프를 부여하는 "적 후행 시" 패시브는 실제
+            # 공격이 처리되기 *전에* 걸려야 한다. 대련은 양 팀이 같은 라운드
+            # 안에서 행동하므로 그 "전"에 해당하는 유일한 지점이 라운드
+            # 시작이다. 라운드 종료(end_round)로 미루면, 1턴짜리 방어 버프가
+            # 부여되자마자 같은 end_round의 턴 차감으로 사라져 한 번도 쓰이지
+            # 못한다. damaged_this_round를 읽는 효과는 여기 걸리지 않는다 —
+            # PassiveSkillWrapperBuff가 그런 효과만 따로 모아
+            # ON_ENEMY_POST_ACTION_RESOLVED로 등록하기 때문이다.
+            self._context.buff_container.on_enemy_post_action()
             sides = list(SideType)
             random.shuffle(sides)
             self._first_mover, self._second_mover = sides[0], sides[1]
@@ -70,15 +80,17 @@ class PracticeRoundManager:
         on_enemy_post_action()/on_enemy_post_action_resolved()를 호출해
         "적 후행 시" 트리거 패시브(예: 피격 시 [유예된 재앙] 스택을 쌓는
         패시브)를 평가한다. 대련은 PRE/POST 구분 없이 선공/후공을 각각
-        process_ally_command()로 즉시 처리하는 대칭 구조라 이 훅을 호출하는
-        지점이 아예 없었고, 그 결과 이 트리거를 쓰는 패시브가 대련에서는
-        전혀 발동하지 않았다. 대련은 라운드당 지연 공격 정산 단계가 따로
-        없어 두 훅을 순서상 구분할 지점이 없으므로, 그 라운드의 모든 행동이
-        끝난 이 시점(damaged_this_round가 확정된 뒤)에 두 훅을 함께 평가해
-        본 전투와 동일한 결과를 낸다. _apply_round_events()가 버프 타이밍만
-        보고 진영을 가리지 않으므로 SIDE_1/SIDE_2 양쪽 모두에 대칭으로
-        적용된다."""
-        self._context.buff_container.on_enemy_post_action()
+        process_ally_command()로 즉시 처리하는 대칭 구조라, 본 전투의 두
+        훅을 각각 어디에 대응시킬지 직접 정해야 한다:
+
+        - on_enemy_post_action()      → 라운드 시작 (to_phase 참고).
+          그 라운드의 공격을 실제로 경감해야 하므로 공격보다 앞서야 한다.
+        - on_enemy_post_action_resolved() → 여기.
+          damaged_this_round(이번 라운드에 누가 맞았는지)가 확정된 뒤에만
+          올바른 값이 나오므로 그 라운드의 모든 행동이 끝난 뒤여야 한다.
+
+        _apply_round_events()가 버프 타이밍만 보고 진영을 가리지 않으므로
+        SIDE_1/SIDE_2 양쪽 모두에 대칭으로 적용된다."""
         self._context.buff_container.on_enemy_post_action_resolved()
         self._context.on_finish_round()
         self._phase = None
