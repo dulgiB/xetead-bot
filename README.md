@@ -31,6 +31,29 @@ uv sync
 PYTHONPATH=app uv run python app/bot/main.py
 ```
 
+### 운영 배포
+
+`main`의 CI가 통과하면 `.github/workflows/deploy-prod.yml`이 운영 서버에
+SSH로 붙어 체크아웃을 갱신하고 `bot` 컨테이너를 재빌드·재시작한다
+(`docker compose build bot` → `up -d --no-deps bot`). 이미지 빌드 방식이라
+코드 변경 반영에는 재빌드가 필수다.
+
+**봇 재시작은 진행 중인 전투의 스트리밍 연결을 끊으므로** 배포 job은
+`prod` environment에 걸려 있고, GitHub Actions에서 승인해야 실제로
+진행된다. 승인 전까지는 대기 상태로 멈춰 있고, 전투가 끝난 뒤 승인하면
+된다. 수동 배포가 필요하면 같은 워크플로를 `workflow_dispatch`로 실행한다
+(이 경우 `origin/main` 최신 커밋이 배포된다).
+
+`prod` environment secrets:
+
+| 시크릿                     | 설명                                             |
+|-------------------------|------------------------------------------------|
+| `PROD_SSH_HOST`         | 운영 서버 호스트                                      |
+| `PROD_SSH_USER`         | SSH 계정 (docker 그룹 소속이어야 한다)                     |
+| `PROD_SSH_KEY`          | 배포 전용 개인키 (공개키는 서버 `authorized_keys`에 등록)       |
+| `PROD_SSH_KNOWN_HOSTS`  | 서버 호스트키 (`ssh-keyscan` 결과). 호스트키 검증에 쓴다        |
+| `PROD_SSH_PORT`         | (선택) SSH 포트. 기본값 `22`                          |
+
 ---
 
 ## 스프레드시트 설정
