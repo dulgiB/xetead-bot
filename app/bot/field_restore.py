@@ -335,7 +335,12 @@ def _restore_practice_battle(
     # 복원되지 않으므로, 이 호출이 없으면 재기동 이후 영영 사라진다.
     context.on_battle_start()
 
-    manager.set_phase_for_restore(phase, first_mover, second_mover)
+    declared = {
+        CharacterId(name)
+        for name in meta.get("declared", [])
+        if CharacterId(name) in context.characters
+    }
+    manager.set_phase_for_restore(phase, first_mover, second_mover, declared)
 
     # 이 함수 위쪽에서 캐릭터 배치용 `side`(SideType)를 이미 쓰고 있으므로
     # 여기서는 이름을 달리한다 — 같은 이름을 재사용하면 mypy가 먼저 추론한

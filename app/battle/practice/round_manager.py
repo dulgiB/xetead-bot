@@ -3,6 +3,7 @@ import random
 from battle.core.command_processors import process_ally_command
 from battle.core.commands.models import CharacterCommand, CommandProcessResult
 from battle.exceptions import CommandValidationError
+from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeRoundPhase, SideType
 
@@ -13,10 +14,14 @@ class PracticeRoundManager:
 
     턴 흐름:
       to_phase(FIRST_MOVER_ACTION)  — 라운드 시작 + 선공/후공 결정
-      process_command(...)           — 선공 측 캐릭터 커맨드 즉시 처리
+      process_command(...) × N       — 선공 측 캐릭터 전원이 각자 1회 선언
       to_phase(SECOND_MOVER_ACTION) — 후공 페이즈로 전환
-      process_command(...)           — 후공 측 캐릭터 커맨드 즉시 처리
+      process_command(...) × N       — 후공 측 캐릭터 전원이 각자 1회 선언
       end_round()                    — 라운드 종료 버프 처리 후 다음 턴 대기
+
+    한 페이즈에서 그 팀의 캐릭터는 각자 딱 한 번만 선언할 수 있고, 팀 전원이
+    선언을 마쳐야 다음 페이즈로 넘어간다(대기 판정은 pending_actors()를 쓰는
+    호출측 몫이다).
     """
 
     def __init__(self, context: PracticeBattlefieldContext) -> None:
@@ -24,6 +29,7 @@ class PracticeRoundManager:
         self._phase: PracticeRoundPhase | None = None
         self._first_mover: SideType | None = None
         self._second_mover: SideType | None = None
+        self._declared_this_phase: set[CharacterId] = set()
 
     @property
     def first_mover(self) -> SideType | None:
@@ -37,20 +43,52 @@ class PracticeRoundManager:
     def phase(self) -> PracticeRoundPhase | None:
         return self._phase
 
+    @property
+    def declared_this_phase(self) -> set[CharacterId]:
+        return self._declared_this_phase
+
     def set_phase_for_restore(
         self,
         phase: PracticeRoundPhase,
         first_mover: SideType | None,
         second_mover: SideType | None,
+        declared: "set[CharacterId] | None" = None,
     ) -> None:
         """봇 재기동 복원 전용: on_start_round()나 선공/후공 재결정 없이
         페이즈·선공/후공 값만 대입한다. 크래시 이전에 결정된 선공/후공을
         그대로 유지해야 하므로(다시 정하면 실제 진행과 어긋난다) 호출측이
-        복원한 값을 명시적으로 넘긴다 — 다음 라운드의 교대도 이 값을 기준으로
-        이어진다."""
+        복원한 값을 명시적으로 넘긴다. `declared`는 크래시 이전에 이번
+        페이즈의 선언을 이미 마친 캐릭터들 — 빠뜨리면 그들이 같은 페이즈에
+        한 번 더 행동할 수 있게 된다."""
         self._phase = phase
         self._first_mover = first_mover
         self._second_mover = second_mover
+        self._declared_this_phase = set(declared or ())
+
+    def expected_side(self) -> SideType | None:
+        """지금 행동할 차례인 팀. 페이즈가 없으면 None."""
+        if self._phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
+            return self._first_mover
+        if self._phase == PracticeRoundPhase.SECOND_MOVER_ACTION:
+            return self._second_mover
+        return None
+
+    def pending_actors(self) -> list[CharacterId]:
+        """이번 페이즈에 아직 선언하지 않은, 선언할 수 있는 캐릭터 목록.
+
+        체력 0인 캐릭터는 애초에 커맨드를 낼 수 없고(try_expansion_if_valid),
+        동료(소환수)는 플레이어가 조작하는 대상이 아니므로 둘 다 제외한다 —
+        포함하면 아무도 채울 수 없는 대기 조건이 되어 라운드가 멈춘다."""
+        side = self.expected_side()
+        if side is None:
+            return []
+        return [
+            char.id
+            for char in self._context.get_side_characters(side)
+            if char.id not in self._context.companion_owners
+            and char.status.curr_hp > 0
+            and char.id not in self._declared_this_phase
+        ]
 
     def to_phase(self, phase: PracticeRoundPhase) -> None:
         if phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
@@ -84,6 +122,7 @@ class PracticeRoundManager:
             pass
 
         self._phase = phase
+        self._declared_this_phase = set()
 
     def end_round(self) -> None:
         """라운드 종료 버프 처리. 다음 턴은 to_phase(FIRST_MOVER_ACTION)로 시작한다.
@@ -106,11 +145,13 @@ class PracticeRoundManager:
         self._context.buff_container.on_enemy_post_action_resolved()
         self._context.on_finish_round()
         self._phase = None
+        self._declared_this_phase = set()
 
     def process_command(self, command: CharacterCommand) -> CommandProcessResult:
         """
         커맨드를 검증하고 즉시 전개·적용한다.
-        선공 페이즈에는 선공 팀, 후공 페이즈에는 후공 팀만 행동할 수 있다.
+        선공 페이즈에는 선공 팀, 후공 페이즈에는 후공 팀만 행동할 수 있고,
+        캐릭터 한 명은 한 페이즈에 한 번만 선언할 수 있다.
         """
         if self._phase is None:
             raise CommandValidationError("커맨드를 입력할 수 있는 타이밍이 아닙니다.")
@@ -130,7 +171,14 @@ class PracticeRoundManager:
                 f"{phase_label} 타이밍에는 {expected_side.value} 캐릭터만 행동할 수 있습니다."
             )
 
+        if command.user_id in self._declared_this_phase:
+            raise CommandValidationError(
+                f"{command.user_id.name}은(는) 이미 이번 {self._phase.value}에 "
+                "행동을 선언했습니다."
+            )
+
         # 대련은 PRE/POST 구분 없이 즉시 전체를 처리한다.
         result = process_ally_command(self._context, command)
         self._context.results.extend(result.part_results)
+        self._declared_this_phase.add(command.user_id)
         return result

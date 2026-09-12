@@ -3,6 +3,7 @@ from typing import Optional
 
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, CombatStatType
+from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
@@ -55,10 +56,15 @@ class PracticeBattleState:
     def phase(self) -> Optional[PracticeRoundPhase]:
         return self.manager.phase
 
+    def pending_actors(self) -> list[CharacterId]:
+        """이번 페이즈에 아직 선언하지 않은 캐릭터 목록 (PracticeRoundManager 위임)."""
+        return self.manager.pending_actors()
+
     def actable_characters(self, side: SideType) -> list[CombatCharacter]:
         """플레이어가 직접 조작하는 캐릭터만 (동료/소환수 제외).
 
-        차례 안내 명단과 승패용 체력 합계가 이 기준을 공유한다."""
+        행동 선언 대기 판정, 차례 안내 명단, 승패용 체력 합계가 모두 이 기준을
+        공유한다."""
         return [
             char
             for char in self.context.get_side_characters(side)
