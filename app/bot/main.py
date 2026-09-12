@@ -1637,8 +1637,7 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
     ps.round_limit = max(3, 1 + total)
     ps.field_id = str(ps.prep_post_id)
     # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
-    # 볼 수 있다. 이 호출이 없어서 대련/상시전투에서는 그 트리거가 한 번도
-    # 발동하지 않았다.
+    # 볼 수 있다.
     ps.context.on_battle_start()
     ps.snapshot_initial_max_hp()
     ps.start_round()
@@ -1677,8 +1676,7 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
     ps.round_limit = max(3, 1 + total)
     ps.field_id = str(ps.prep_post_id)
     # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
-    # 볼 수 있다. 이 호출이 없어서 대련/상시전투에서는 그 트리거가 한 번도
-    # 발동하지 않았다.
+    # 볼 수 있다.
     ps.context.on_battle_start()
     ps.snapshot_initial_max_hp()
     ps.start_round()
