@@ -12,7 +12,7 @@ class PracticeRoundManager:
     대련 턴 진행 관리자.
 
     턴 흐름:
-      to_phase(FIRST_MOVER_ACTION)  — 라운드 시작 + 선공/후공 무작위 결정
+      to_phase(FIRST_MOVER_ACTION)  — 라운드 시작 + 선공/후공 결정
       process_command(...)           — 선공 측 캐릭터 커맨드 즉시 처리
       to_phase(SECOND_MOVER_ACTION) — 후공 페이즈로 전환
       process_command(...)           — 후공 측 캐릭터 커맨드 즉시 처리
@@ -43,10 +43,11 @@ class PracticeRoundManager:
         first_mover: SideType | None,
         second_mover: SideType | None,
     ) -> None:
-        """봇 재기동 복원 전용: on_start_round()나 선공/후공 재추첨 없이
+        """봇 재기동 복원 전용: on_start_round()나 선공/후공 재결정 없이
         페이즈·선공/후공 값만 대입한다. 크래시 이전에 결정된 선공/후공을
-        그대로 유지해야 하므로(재추첨하면 실제 진행과 어긋난다) 호출측이
-        복원한 값을 명시적으로 넘긴다."""
+        그대로 유지해야 하므로(다시 정하면 실제 진행과 어긋난다) 호출측이
+        복원한 값을 명시적으로 넘긴다 — 다음 라운드의 교대도 이 값을 기준으로
+        이어진다."""
         self._phase = phase
         self._first_mover = first_mover
         self._second_mover = second_mover
@@ -64,9 +65,20 @@ class PracticeRoundManager:
             # PassiveSkillWrapperBuff가 그런 효과만 따로 모아
             # ON_ENEMY_POST_ACTION_RESOLVED로 등록하기 때문이다.
             self._context.buff_container.on_enemy_post_action()
-            sides = list(SideType)
-            random.shuffle(sides)
-            self._first_mover, self._second_mover = sides[0], sides[1]
+            if self._first_mover is None or self._second_mover is None:
+                sides = list(SideType)
+                random.shuffle(sides)
+                self._first_mover, self._second_mover = sides[0], sides[1]
+            else:
+                # 첫 라운드만 무작위로 정하고 이후로는 교대한다. 매 라운드
+                # 다시 뽑으면 1턴짜리 버프/디버프의 가치가 추첨 결과에 따라
+                # 요동친다 — 라운드 종료에 턴이 차감되므로, 후공 페이즈에 건
+                # 1턴 효과는 상대가 행동할 기회 없이 그대로 사라진다. 교대는
+                # 그 손해를 양 팀에 균등하게 나눈다.
+                self._first_mover, self._second_mover = (
+                    self._second_mover,
+                    self._first_mover,
+                )
 
         elif phase == PracticeRoundPhase.SECOND_MOVER_ACTION:
             pass
