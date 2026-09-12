@@ -1,0 +1,93 @@
+name: Deploy prod
+
+# main의 CI가 성공하면 운영 서버에 SSH로 붙어 재빌드/재시작한다.
+# environment: prod에 required reviewer가 걸려 있어, 실제 배포는 승인을
+# 누른 뒤에만 진행된다(봇 재시작은 진행 중인 전투의 스트리밍 연결을 끊는다).
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# 배포는 한 번에 하나만 — 승인 대기 중 머지가 더 쌓여도 순차 실행한다.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # CI 실패분은 배포하지 않는다. 수동 실행(workflow_dispatch)은 origin/main 최신을 배포.
+    # workflow_run의 branches 필터는 head_branch 이름만 보므로, 포크가 자기
+    # main 브랜치에서 PR을 열면 그 CI 실행도 필터를 통과한다 — 이 저장소에
+    # 직접 push된 CI 실행만 배포 대상으로 삼는다.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: prod
+    timeout-minutes: 45
+
+    steps:
+      - name: SSH 키 준비
+        env:
+          SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PROD_SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: 운영 서버 재배포
+        env:
+          SSH_HOST: ${{ secrets.PROD_SSH_HOST }}
+          SSH_USER: ${{ secrets.PROD_SSH_USER }}
+          SSH_PORT: ${{ secrets.PROD_SSH_PORT || '22' }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          ssh -i ~/.ssh/deploy_key \
+              -o IdentitiesOnly=yes \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+              -o ServerAliveInterval=30 \
+              -p "$SSH_PORT" \
+              "$SSH_USER@$SSH_HOST" \
+              'bash -s' -- "$TARGET_SHA" <<'REMOTE'
+          set -euo pipefail
+
+          TARGET_SHA="${1:-}"
+          REPO_DIR="$HOME/xetead-bot"
+          COMPOSE_DIR="$HOME/mastodon"
+
+          cd "$REPO_DIR"
+          git fetch --prune origin main
+          if [ -z "$TARGET_SHA" ]; then
+            TARGET_SHA="$(git rev-parse origin/main)"
+          fi
+          # origin/main에 포함된 커밋만 배포한다.
+          git merge-base --is-ancestor "$TARGET_SHA" origin/main
+
+          echo "==> $(git rev-parse --short HEAD) -> $(git rev-parse --short "$TARGET_SHA")"
+          git checkout main
+          git reset --hard "$TARGET_SHA"
+          git --no-pager log -1 --format='%h %s'
+
+          # bot 서비스는 이 체크아웃을 이미지로 빌드한다(볼륨 마운트가 아님).
+          cd "$COMPOSE_DIR"
+          docker compose build bot
+          docker compose up -d --no-deps bot
+
+          sleep 15
+          status="$(docker compose ps -q bot | xargs -r docker inspect -f '{{.State.Status}}')"
+          echo "==> bot status: $status"
+          docker compose logs --tail 40 bot
+          [ "$status" = "running" ]
+
+          # Pi 디스크가 빌드 잔여 레이어로 차지 않게 오래된 dangling 이미지만 정리.
+          docker image prune -f --filter 'until=168h' >/dev/null || true
+          REMOTE
