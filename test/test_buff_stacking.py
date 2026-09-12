@@ -15,6 +15,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -47,7 +48,7 @@ def make_curse_data(max_stack: int = 10) -> BuffData:
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.NEUTRAL,
         max_stack=max_stack,
     )
 
@@ -111,7 +112,7 @@ class TestBuffStackAccumulation:
             value=5,
             condition_=None,
             condition_value=None,
-            is_debuff=False,
+            buff_type=BuffType.BUFF,
         )
         ctx = BattlefieldContext(buff_dict={"공격력 증가": buff}, skill_dict={})
         holder = CharacterId("대상")
@@ -142,7 +143,7 @@ class TestBuffStackAccumulation:
             value=5,
             condition_=None,
             condition_value=None,
-            is_debuff=False,
+            buff_type=BuffType.BUFF,
         )
         ctx = BattlefieldContext(buff_dict={"공격력 증가": buff}, skill_dict={})
         holder = CharacterId("대상")
@@ -183,7 +184,7 @@ class TestConsumeStackForDamage:
             value=0,
             condition_=None,
             condition_value=None,
-            is_debuff=False,
+            buff_type=BuffType.BUFF,
         )
         skill = SkillData(
             id="저주 폭발",
@@ -492,4 +493,4 @@ class TestBuffCatastropheBattleEnd:
         buff = ctx.get_buff_instance(catastrophe_id, "재앙")
         assert buff is not None
         assert buff.stack_count == 3
-        assert buff.is_debuff is False
+        assert buff.buff_type == BuffType.NEUTRAL

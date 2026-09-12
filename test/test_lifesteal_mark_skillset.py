@@ -57,7 +57,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "value_0": "",
                 "condition": "",
                 "condition_value": "",
-                "is_debuff": False,
+                "type": "버프",
                 "description": "패시브로 쌓이는 순수 적층 마커.",
                 "max_stack": 3,
             }
@@ -76,7 +76,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "value_0": 0,
                 "condition": "",
                 "condition_value": "",
-                "is_debuff": True,
+                "type": "디버프",
                 "description": "받는 대미지가 (홀더의 [스택_테스트] 스택 수)×10%만큼 증가.",
             }
         ),
@@ -91,7 +91,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "value_0": 10,
                 "condition": "",
                 "condition_value": "",
-                "is_debuff": True,
+                "type": "디버프",
                 "description": "받는 대미지 10% 증가.",
             }
         ),
@@ -106,7 +106,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "value_0": 1,
                 "condition": "",
                 "condition_value": "",
-                "is_debuff": True,
+                "type": "디버프",
                 "description": "다음 라운드 시작 시 코스트 1 감소.",
             }
         ),

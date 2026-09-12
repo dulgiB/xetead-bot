@@ -9,6 +9,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -127,7 +128,7 @@ def test_build_log_entries_records_stacking_buff_add_with_stack_count():
         value=1,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
         max_stack=5,
     )
@@ -173,7 +174,7 @@ def test_build_log_entries_records_buff_remove_from_stack_consumption():
         value=1,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
         max_stack=5,
     )
@@ -243,7 +244,7 @@ def test_build_log_entries_records_debuff_clear():
         value=5,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
     cleanse_skill = SkillData(

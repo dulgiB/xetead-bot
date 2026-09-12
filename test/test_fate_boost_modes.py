@@ -14,6 +14,7 @@ from battle.exceptions import CommandValidationError
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     FateBoostMode,
     ValueSourceType,
@@ -48,7 +49,7 @@ def _buff_data(max_stack: int | None = None) -> BuffData:
         value=_BUFF_VALUE,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
         max_stack=max_stack,
     )

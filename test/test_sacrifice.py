@@ -12,6 +12,7 @@ from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
     BuffApplyTiming,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -35,7 +36,7 @@ def sacrifice_buff_data() -> BuffData:
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
     )
 
@@ -277,7 +278,7 @@ def test_turn_based_sacrifice_redirects_every_round(sacrifice_skill):
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
     )
     ctx, manager, protector_id, protected_id, enemy_id = _setup(
@@ -318,7 +319,7 @@ def test_sacrifice_redirects_attached_debuff(sacrifice_buff_data, sacrifice_skil
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
     enemy_skill = SkillData(
@@ -412,7 +413,7 @@ def test_sacrifice_reduces_redirected_damage():
         value=20,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
     )
     fixed_attack = SkillData(

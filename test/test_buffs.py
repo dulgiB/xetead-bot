@@ -20,6 +20,7 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     BuffApplyTiming,
     BuffCountDeductCondition,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -56,7 +57,7 @@ def make_buff_data(
     value: int = 0,
     condition_: str | None = None,
     condition_value: int | None = None,
-    is_debuff: bool = False,
+    buff_type: BuffType = BuffType.BUFF,
 ) -> BuffData:
     return BuffData(
         id=buff_id,
@@ -69,7 +70,7 @@ def make_buff_data(
         value=value,
         condition_=condition_,
         condition_value=condition_value,
-        is_debuff=is_debuff,
+        buff_type=buff_type,
     )
 
 

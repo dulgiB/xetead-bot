@@ -10,6 +10,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -125,7 +126,7 @@ def test_taunted_attacker_header_shows_original_and_redirected_target():
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
     ctx = BattlefieldContext(buff_dict={"도발": taunt}, skill_dict={})
@@ -244,7 +245,7 @@ def test_repeated_stackable_buff_add_on_same_target_merges_into_one_summary_line
         value=5,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
         max_stack=10,
     )
@@ -327,7 +328,7 @@ def test_self_targeted_skill_header_uses_caster_name():
         value=5,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
     )
     skill = SkillData(
@@ -363,7 +364,7 @@ def test_skill_with_damage_and_debuff_clear_combines_lines_in_effect_order():
         value=5,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
     skill = SkillData(
@@ -533,7 +534,7 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
         max_stack=5,
     )
@@ -593,7 +594,7 @@ def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
         max_stack=10,
     )
@@ -695,7 +696,7 @@ def _dot_buff_data(*, buff_id: str = "DoT", value: int = 10) -> BuffData:
             "condition": "",
             "condition_value": "",
             "description": "",
-            "is_debuff": True,
+            "type": "디버프",
         }
     )
 
@@ -713,7 +714,7 @@ def _hot_buff_data(*, buff_id: str = "HoT", value: int = 10) -> BuffData:
             "condition": "",
             "condition_value": "",
             "description": "",
-            "is_debuff": False,
+            "type": "버프",
         }
     )
 
@@ -842,7 +843,7 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
             "condition": "",
             "condition_value": "",
             "description": "",
-            "is_debuff": True,
+            "type": "디버프",
             "max_stack": 3,
         }
     )
@@ -858,7 +859,7 @@ def test_round_end_stack_proportional_dot_shows_calculation_line():
             "condition": "",
             "condition_value": "",
             "description": "",
-            "is_debuff": True,
+            "type": "디버프",
             "reference_buff_id": "Mark",
         }
     )

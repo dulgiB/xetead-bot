@@ -7,7 +7,12 @@ import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.models import BuffData
-from battle.objects.define import SkillTargetOverrideType, ValueSourceType, ValueType
+from battle.objects.define import (
+    BuffType,
+    SkillTargetOverrideType,
+    ValueSourceType,
+    ValueType,
+)
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
     SkillEffectDamage,
@@ -39,7 +44,7 @@ def buff_atk_data() -> BuffData:
         value=1,
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
     )
 

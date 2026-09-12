@@ -20,6 +20,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -53,7 +54,7 @@ def make_ignite_buff_data(duration_turn_value: int = 2) -> BuffData:
         value=0,
         condition_=None,
         condition_value=None,
-        is_debuff=True,
+        buff_type=BuffType.DEBUFF,
         description="",
     )
 

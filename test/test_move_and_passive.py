@@ -8,6 +8,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
@@ -499,7 +500,7 @@ def _guard_buff_data() -> BuffData:
         value=-10,  # 받는 대미지 −10%
         condition_=None,
         condition_value=None,
-        is_debuff=False,
+        buff_type=BuffType.BUFF,
         description="",
     )
 

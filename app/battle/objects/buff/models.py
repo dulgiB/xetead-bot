@@ -3,9 +3,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional, Type
 
 from battle.objects.buff.conditions import Condition
-from battle.objects.define import BuffCountDeductCondition, ValueType
+from battle.objects.define import BuffCountDeductCondition, BuffType, ValueType
 from battle.objects.models import CharacterId
-from utils.spreadsheet_bool import parse_spreadsheet_bool
 from utils.spreadsheet_row import SpreadsheetRow
 
 if TYPE_CHECKING:
@@ -27,8 +26,9 @@ class BuffData:
     condition_: Optional[str]
     condition_value: Optional[int]
 
-    # 디버프 여부 — TargetHasDebuffCondition에서 사용
-    is_debuff: bool
+    # 버프/디버프/기타 분류 — TargetHasDebuffCondition·HolderHasBuffCondition·
+    # 디버프 해제가 집계 대상을 고를 때 쓴다. 시트 컬럼명은 `type`이다.
+    buff_type: BuffType
 
     description: str
 
@@ -69,7 +69,7 @@ class BuffData:
             condition_value=int(data["condition_value"])
             if data["condition_value"]
             else None,
-            is_debuff=parse_spreadsheet_bool(data.get("is_debuff", False)),
+            buff_type=BuffType(data["type"]),
             description=str(data["description"]),
             max_stack=int(data["max_stack"]) if data.get("max_stack") else None,
             reference_buff_id=str(data["reference_buff_id"])

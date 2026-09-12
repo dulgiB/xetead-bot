@@ -16,6 +16,7 @@ from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueType,
 )
@@ -122,7 +123,7 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
             value=10,
             condition_=None,
             condition_value=None,
-            is_debuff=False,
+            buff_type=BuffType.BUFF,
             description="",
         )
         passive = PassiveSkillData(

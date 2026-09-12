@@ -48,7 +48,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "버프. 주는 대미지가 20% 증가한다.",
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -67,7 +67,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "description": (
                     "버프. 주는 대미지가 25% 증가하는 대신 받는 대미지가 10% 증가한다."
                 ),
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -86,7 +86,7 @@ def _buff_dict() -> dict[str, BuffData]:
                     "버프. 사거리 내의 [버프_2]으로 지정된 아군이 누군가를 "
                     "공격할 때마다 자신도 그 대상에게 공격 굴림 60% 대미지를 입힌다."
                 ),
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
                 "reference_buff_id": "버프_2",
             }
@@ -103,7 +103,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트 전용. 받는 대미지가 50% 감소한다.",
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -122,7 +122,7 @@ def _buff_dict() -> dict[str, BuffData]:
                     "테스트 전용. 받는 대미지를 무효화하고, 무효화한 대미지의 "
                     "40%를 공격자에게 되돌려 보낸다."
                 ),
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
             }
         ),
@@ -138,7 +138,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트 전용. 도발.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
             }
         ),
@@ -512,7 +512,7 @@ class TestPassiveSkill:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트 전용.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": 5,
             }
         )
@@ -528,7 +528,7 @@ class TestPassiveSkill:
                 "condition": "",
                 "condition_value": "",
                 "description": "테스트 전용.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
                 "reference_buff_id": "스택_테스트",
             }

@@ -56,7 +56,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "디버프. 3회까지 적층된다. 단독으로는 효과가 없다.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": 3,
             }
         ),
@@ -72,7 +72,7 @@ def _buff_dict() -> dict[str, BuffData]:
                 "condition": "",
                 "condition_value": "",
                 "description": "디버프. 라운드 종료마다 [Mark] 스택×5 고정 대미지를 입는다.",
-                "is_debuff": True,
+                "type": "디버프",
                 "max_stack": "",
                 "reference_buff_id": "Mark",
             }
@@ -92,7 +92,7 @@ def _buff_dict() -> dict[str, BuffData]:
                     "버프. 사거리 내의 적이 이동할 때마다(강제 이동 포함) "
                     "이동한 적의 [Mark] 스택×공격 굴림 70% 대미지를 입힌다."
                 ),
-                "is_debuff": False,
+                "type": "버프",
                 "max_stack": "",
                 "reference_buff_id": "Mark",
             }
