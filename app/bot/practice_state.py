@@ -57,14 +57,10 @@ class PracticeBattleState:
         return self.manager.phase
 
     def pending_actors(self) -> list[CharacterId]:
-        """이번 페이즈에 아직 선언하지 않은 캐릭터 목록 (PracticeRoundManager 위임)."""
         return self.manager.pending_actors()
 
     def actable_characters(self, side: SideType) -> list[CombatCharacter]:
-        """플레이어가 직접 조작하는 캐릭터만 (동료/소환수 제외).
-
-        행동 선언 대기 판정, 차례 안내 명단, 승패용 체력 합계가 모두 이 기준을
-        공유한다."""
+        """플레이어가 직접 조작하는 캐릭터만 (동료/소환수 제외)."""
         return [
             char
             for char in self.context.get_side_characters(side)
@@ -78,7 +74,6 @@ class PracticeBattleState:
         }
 
     def all_declared(self) -> bool:
-        """모든 expected_accts가 선언을 완료했는지 확인한다."""
         return bool(self.expected_accts) and all(
             a in self.declared for a in self.expected_accts
         )
@@ -101,11 +96,8 @@ class PracticeBattleState:
         self.manager.end_round()
 
     def total_hp_by_side(self, side: SideType) -> int:
-        """팀의 현재 체력 합. 동료(소환수)는 제외한다 — 동료는 플레이어가
-        조작하는 참가자가 아니라 소환자의 방어 장치이고, 전투 도중 소환·재소환
-        되면서 팀의 체력 총량 자체를 바꾼다. 승패 비율의 분모
-        (total_max_hp_by_side)는 전투 시작 시점 스냅샷이라, 동료를 분자에만
-        더하면 비율이 100%를 넘고 동료를 잃은 팀은 반대로 손해를 본다."""
+        """승패 비율의 분자. 동료(소환수)는 전투 도중 소환·재소환되며 팀의
+        체력 총량을 바꾸므로, 시작 시점에 고정한 분모와 짝이 맞지 않는다."""
         return sum(c.status.curr_hp for c in self.actable_characters(side))
 
     def _live_max_hp_by_side(self, side: SideType) -> int:
@@ -114,12 +106,8 @@ class PracticeBattleState:
         )
 
     def total_max_hp_by_side(self, side: SideType) -> int:
-        """승패 비율의 분모.
-
-        전투 시작 시점 스냅샷과 현재 필드 합 중 큰 쪽을 쓴다 — 현재 필드 합만
-        쓰면 필드에서 빠진 캐릭터가 분모에서도 함께 사라져 "잃은 인원이
-        많을수록 비율이 올라가는" 역전이 생긴다. 스냅샷이 없으면(재기동 복원
-        등) 현재 필드 기준으로 계산한다."""
+        """승패 비율의 분모. 스냅샷이 없으면(재기동 복원 등) 현재 필드
+        기준으로 계산한다."""
         return max(
             self.initial_max_hp_by_side.get(side, 0), self._live_max_hp_by_side(side)
         )

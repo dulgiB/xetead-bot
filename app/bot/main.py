@@ -1600,9 +1600,7 @@ def _mover_label(ps: PracticeBattleState, side: Optional[SideType]) -> str:
 
 
 def _pending_actors_text(ps: PracticeBattleState) -> str:
-    """이번 페이즈에 아직 선언하지 않은 캐릭터 안내. 전원이 선언을 마쳐야
-    다음 페이즈로 넘어가므로, 누구를 기다리는 중인지 커맨드 답글에 붙여
-    알려준다. 남은 사람이 없으면 빈 문자열."""
+    """커맨드 답글에 덧붙일 "아직 누구를 기다리는 중인지" 안내."""
     pending = ps.pending_actors()
     if not pending:
         return ""
@@ -1733,11 +1731,10 @@ def _finalize_practice_phase(
     공유해야 한다 — 그렇지 않으면 계정이 없어 프록시로만 조작 가능한
     에너미가 마지막으로 행동하는 페이즈에서 라운드가 영원히 멈춘다.
 
-    반환값: (game_post_text_or_None, ended). game_post가 None이면 이번
-    페이즈가 아직 끝나지 않았다는 뜻 — 그 팀에 아직 선언하지 않은 캐릭터가
-    남아 있으므로 페이즈와 active_post_id를 그대로 두고, 남은 캐릭터들이
-    같은 게시물에 이어서 답글을 달게 한다. ended=True면 ps가 이미
-    state.practices에서 제거된 상태다."""
+    반환값: (game_post_text_or_None, ended). game_post가 None이면 그 팀에
+    아직 선언하지 않은 캐릭터가 남았다는 뜻 — 페이즈와 active_post_id를
+    그대로 둬서 남은 캐릭터들이 같은 게시물에 이어 답글을 달게 한다.
+    ended=True면 ps가 이미 state.practices에서 제거된 상태다."""
     assert ps.active_post_id is not None  # 호출측이 이미 확인함
 
     hp1 = ps.total_hp_by_side(SideType.SIDE_1)
