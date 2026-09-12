@@ -316,6 +316,11 @@ def _restore_practice_battle(
         )
         return None
 
+    # 본 전투 복원과 같은 이유로, 배치를 마친 뒤 "전투 시작" 트리거 패시브를
+    # 다시 태운다 — 소환수처럼 시트에 행이 없는 캐릭터는 필드 스냅샷에서
+    # 복원되지 않으므로, 이 호출이 없으면 재기동 이후 영영 사라진다.
+    context.on_battle_start()
+
     manager.set_phase_for_restore(phase, first_mover, second_mover)
 
     ps = PracticeBattleState(
