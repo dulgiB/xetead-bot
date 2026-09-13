@@ -3,20 +3,22 @@
 비대칭이 된다. 승패를 체력 비율로 가르는 구조라 그 비대칭이 곧 판정 왜곡이다.
 
 상시전투는 실제로 아군 vs 적군 구도이므로 기존 규칙을 그대로 유지해야 한다 —
-두 모드를 가르는 것이 PracticeBattlefieldContext.is_duel이다.
+두 모드를 가르는 것이 PracticeBattlefieldContext.is_duel(대련·결투 True,
+상시전투 False)이다.
 """
 
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
-from battle.practice.define import PracticeRoundPhase, SideType
+from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
 from bot.practice_state import PracticeBattleState
 from helpers import get_test_preset
 
 
 def _context(*, is_duel: bool) -> PracticeBattlefieldContext:
-    return PracticeBattlefieldContext(buff_dict={}, skill_dict={}, is_duel=is_duel)
+    mode = PracticeBattleMode.PRACTICE if is_duel else PracticeBattleMode.INVESTIGATION
+    return PracticeBattlefieldContext(buff_dict={}, skill_dict={}, mode=mode)
 
 
 def _place(ctx, name: str, side: SideType, column: int = 0, **preset_kwargs) -> None:

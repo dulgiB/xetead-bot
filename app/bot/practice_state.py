@@ -5,19 +5,22 @@ from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, CombatStatType
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
-from battle.practice.define import PracticeRoundPhase, SideType
+from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
 
 
 @dataclass
 class PracticeBattleState:
-    """대련 또는 상시전투 세션 상태."""
+    """대련/상시전투/결투 세션 상태."""
 
     context: PracticeBattlefieldContext
     manager: PracticeRoundManager
 
+    mode: PracticeBattleMode = PracticeBattleMode.PRACTICE
+
     round_n: int = 0
-    round_limit: int = 3
+    # None이면 라운드 상한 없음(결투) — 한쪽이 전멸할 때까지 계속된다.
+    round_limit: Optional[int] = 3
 
     prep_post_id: int = 0
     active_post_id: Optional[int] = None
@@ -41,9 +44,13 @@ class PracticeBattleState:
     )
 
     # 상시전투 전용 (admin이 준비)
-    is_investigation: bool = False
     pending_participants: list[str] = field(default_factory=list)
     pending_placements: list[tuple] = field(default_factory=list)
+
+    # 전투 시작 시점의 팀별 참가자 이름. 결투 패배 대가는 자진 기권해
+    # 필드에서 빠진 캐릭터에게도 적용되므로, 현재 배치 상태가 아니라 시작
+    # 시점의 명부를 봐야 한다.
+    roster_by_side: dict[SideType, list[str]] = field(default_factory=dict)
 
     # 전투 시작 시점의 팀별 최대 체력 합(동료 제외). 승패는 체력 "비율"로
     # 가르는데, 필드에서 빠진 캐릭터(상시전투의 0 체력 적군, 자진 기권한
@@ -51,6 +58,15 @@ class PracticeBattleState:
     # 잃은 인원이 많은 팀일수록 비율이 올라가는 역전이 생긴다. 시작 시점 값을
     # 붙잡아 두고 분모로 쓰면 "얼마나 잃었는가"가 그대로 비율에 남는다.
     initial_max_hp_by_side: dict[SideType, int] = field(default_factory=dict)
+
+    @property
+    def is_investigation(self) -> bool:
+        return self.mode == PracticeBattleMode.INVESTIGATION
+
+    @property
+    def is_duel_match(self) -> bool:
+        """결투(임시 체력이 최대 체력이고, 패배 시 실제 체력이 깎이는 모드)."""
+        return self.mode == PracticeBattleMode.DUEL
 
     @property
     def phase(self) -> Optional[PracticeRoundPhase]:
@@ -71,6 +87,13 @@ class PracticeBattleState:
         """전투 시작(첫 라운드 진입) 시점에 팀별 최대 체력 합을 고정한다."""
         self.initial_max_hp_by_side = {
             side: self._live_max_hp_by_side(side) for side in SideType
+        }
+
+    def snapshot_roster(self) -> None:
+        """전투 시작 시점에 팀별 참가자 명부를 고정한다."""
+        self.roster_by_side = {
+            side: [char.id.name for char in self.actable_characters(side)]
+            for side in SideType
         }
 
     def all_declared(self) -> bool:

@@ -27,9 +27,9 @@ app/
         admin.py                 # AdminCommand 계열 (강제 이동/대미지/힐/버프 부여·제거)
     exceptions.py                # CommandValidationError, 검증 실패 메시지 생성 함수들
     logger.py                    # Logger, CommandResult (콘솔 디버그 로그)
-    practice/                    # 대련/상시전투 전용 축소 라운드 관리
+    practice/                    # 대련/결투/상시전투 전용 축소 라운드 관리
       context.py                 # PracticeBattlefieldContext
-      define.py                  # SideType, PracticeRoundPhase
+      define.py                  # SideType, PracticeBattleMode, PracticeRoundPhase
       round_manager.py           # PracticeRoundManager
     objects/
       buff/
@@ -65,7 +65,7 @@ app/
       character.py              # 캐릭터 전투 커맨드 핸들러
       noncombat.py              # 비전투 커맨드 핸들러 (판정, 의뢰, 상시조사)
     session.py                  # BattleSession
-    practice_state.py           # PracticeBattleState (대련/상시전투)
+    practice_state.py           # PracticeBattleState (대련/결투/상시전투)
     dm_battle_state.py          # DmBattleState (DM 전투)
     noncombat_state.py          # NonCombatState
     load_data.py                # 스프레드시트 데이터 로딩
@@ -267,7 +267,8 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 아니라 스킬 id 단위 전역 상태다(스킬 데이터 자체가 에너미별이 아니라 id로
 공유되므로).
 
-대련/상시전투(`PracticeRoundManager`)는 페이즈 구조가 달라 이 기능 대상이 아니다.
+대련/결투/상시전투(`PracticeRoundManager`)는 페이즈 구조가 달라 이 기능
+대상이 아니다.
 
 ---
 
@@ -371,7 +372,9 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 - **대련/상시전투 제외**: `BattlefieldContext.allow_fate_intervention`을
   `PracticeBattlefieldContext`가 `False`로 덮는다 — 체력 절반인 임시 캐릭터로
   진행하고 체력 변동을 시트에 반영하지 않아, 되돌릴 수 없는 자원 소비를 걸 수
-  없기 때문이다(`allow_item_usage`와 같은 패턴).
+  없기 때문이다(`allow_item_usage`와 같은 패턴). **결투는 예외로 허용된다** —
+  대가를 임시 체력이 아니라 시트의 실제 체력에서 빼기 때문이다(아래 "결투"
+  참고).
 
 ### 스킬별 보정 모드 (`fate_mode`)
 
@@ -398,6 +401,45 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 `skill/models.py`의 `fate_config_error()`가 잡아 `[전투개시]` 시점에 admin
 DM으로 경고한다. 전투를 세우지는 않는다 — 잘못 설정된 스킬도 보정만 빠질 뿐
 정상 동작하므로, 전투 전체를 막는 편이 손해가 크다.
+
+---
+
+## 대련 · 결투 · 상시전투 (`PracticeBattleMode`)
+
+셋 다 `PracticeRoundManager`의 선공/후공 2페이즈 구조를 공유하고,
+`PracticeBattleMode`(`battle/practice/define.py`)로만 갈린다. 이 enum 하나가
+컨텍스트(`PracticeBattlefieldContext.mode`)와 봇 세션
+(`PracticeBattleState.mode`), "필드" 시트의 `battle_type`(`FieldBattleType`)을
+함께 정한다.
+
+| | 대련 | 결투 | 상시전투 |
+|---|---|---|---|
+| 임시 체력 | `max_hp // 2` | `max_hp` | `max_hp // 2` |
+| 라운드 상한 | `max(3, 인원+1)` | 없음(`round_limit=None`) | `max(3, 인원+1)` |
+| 0 체력 자동 탈락 | 없음(`is_duel`) | 없음(`is_duel`) | 적군만 |
+| 아이템 | ✗ | ✗ | ✗ |
+| 키워드 보정 | ✗ | ✓ (실제 체력 소모) | ✗ |
+| 패배 대가 | 없음 | 실제 체력 −20 | 없음 |
+
+### 실제 체력(시트 체력)과 임시 체력
+
+결투만 두 체력을 동시에 들고 있다 — 전장의 `status.curr_hp`(임시)와
+`PracticeBattlefieldContext.persistent_hp`("캐릭터" 시트 값). 후자는 배치
+시점에 시트에서 읽어 채우고, 자진 기권으로 필드에서 빠져도 지우지 않는다
+(패배 대가가 기권자에게도 적용되므로).
+
+- **키워드 보정 대가**: `BattlefieldContext.fate_cost_hp()` /
+  `pay_fate_cost_hp()`를 결투 컨텍스트가 덮어 실제 체력에서 뺀다. 시트 반영은
+  봇 계층(`main.py`의 `_apply_duel_fate_cost()`)이 커맨드 처리 성공 후에 한다.
+- **패배 대가**: `main.py`의 `_apply_duel_defeat_penalty()`가 전투 종료 시점에
+  `log_sheets.apply_persistent_hp_delta()`로 시트를 다시 읽어 깎는다. 라이브
+  값이 아니라 시트를 다시 읽는 이유는, 전투가 길어지는 동안 GM이 고친 체력을
+  덮어쓰지 않기 위해서다. 대상은 현재 필드가 아니라
+  `PracticeBattleState.roster_by_side`(시작 시점 명부)다.
+- **표시**: 두 체력이 한 답글에 섞이므로, 실제 체력이 바뀐 로그 엔트리는
+  `BattleLogEntry.hp_is_persistent=True`로 만들어 체력 뒤에 `※`가 붙고 그
+  블록 마지막 줄에 `※ 실제 체력` 각주가 따라붙는다. 이 엔트리는 같은 대상의
+  임시 체력 대미지와 합산되지 않는다(`merge_damage_heal_lines`).
 
 ---
 

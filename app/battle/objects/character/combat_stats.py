@@ -103,7 +103,7 @@ class CombatStats:
         if self._revival_count <= 0:
             return None
         return FloatValueModifier(
-            source_name="부활 대가",
+            source_name="부활",
             value=self._revival_count * REVIVAL_RECEIVED_DAMAGE_PERCENT_PER_COUNT,
             applies_to_fixed=True,
         )
