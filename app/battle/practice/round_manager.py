@@ -97,20 +97,15 @@ class PracticeRoundManager:
             # 쪽. 양 팀이 같은 라운드에 행동하므로 "모든 공격보다 앞"인
             # 지점이 여기뿐이다 (end_round() 참고).
             self._context.buff_container.on_enemy_post_action()
-            if self._first_mover is None or self._second_mover is None:
-                sides = list(SideType)
-                random.shuffle(sides)
-                self._first_mover, self._second_mover = sides[0], sides[1]
-            else:
-                # 첫 라운드만 무작위로 정하고 이후로는 교대한다. 매 라운드
-                # 다시 뽑으면 1턴짜리 버프/디버프의 가치가 추첨 결과에 따라
-                # 요동친다 — 라운드 종료에 턴이 차감되므로, 후공 페이즈에 건
-                # 1턴 효과는 상대가 행동할 기회 없이 그대로 사라진다. 교대는
-                # 그 손해를 양 팀에 균등하게 나눈다.
-                self._first_mover, self._second_mover = (
-                    self._second_mover,
-                    self._first_mover,
-                )
+            # 매 라운드 다시 뽑는다. 대련/상시전투의 밸런스는 PvE 기준으로
+            # 짜인 캐릭터들을 그대로 맞붙이는 것이라, 순서를 고정하면 불리한
+            # 캐릭터가 매번 같은 방식으로 진다 — 선공을 잡으면 상대가 행동하기
+            # 전에 끝낼 수도 있다는 추첨이 그 열세를 뒤집을 여지를 만든다.
+            # (후공 페이즈에 건 1턴 효과가 그냥 사라지던 문제는 순서가 아니라
+            #  지속시간 차감 쪽에서 해결한다 — end_round() 참고.)
+            sides = list(SideType)
+            random.shuffle(sides)
+            self._first_mover, self._second_mover = sides[0], sides[1]
 
         elif phase == PracticeRoundPhase.SECOND_MOVER_ACTION:
             pass
