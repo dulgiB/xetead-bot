@@ -102,19 +102,17 @@ def _play_round_with_attack(
     ctx: PracticeBattlefieldContext,
     attacker_side: SideType,
     command_text: str,
+    attacker_name: str = "적군",
 ) -> None:
     """FIRST_MOVER_ACTION → SECOND_MOVER_ACTION → end_round() 순서를 그대로
     따라가며, attacker_side 차례에만 command_text를 실행한다."""
+    attacker = CharacterId(attacker_name)
     manager.to_phase(PracticeRoundPhase.FIRST_MOVER_ACTION)
     if manager.first_mover == attacker_side:
-        manager.process_command(
-            parse_character_command(CharacterId("적군"), command_text, ctx)
-        )
+        manager.process_command(parse_character_command(attacker, command_text, ctx))
     manager.to_phase(PracticeRoundPhase.SECOND_MOVER_ACTION)
     if manager.second_mover == attacker_side:
-        manager.process_command(
-            parse_character_command(CharacterId("적군"), command_text, ctx)
-        )
+        manager.process_command(parse_character_command(attacker, command_text, ctx))
     manager.end_round()
 
 
@@ -159,3 +157,74 @@ def test_extra_stack_gained_when_holder_itself_is_hit():
 
     # 같은 열 피격(효과 0) + 자신 피격(효과 1) 둘 다 조건을 만족해 2스택.
     assert ctx.get_buff_stack(catastrophe_id, "재앙") == 2
+
+
+def test_no_stack_when_only_the_opposing_side_in_the_same_column_is_hit():
+    """상대 팀은 같은 열에 서 있어도 "같은 열 아군"이 아니다.
+
+    대련/결투는 1팀→아군, 2팀→적군으로 매핑되므로 양 팀이 같은 열 번호에
+    설 수 있다. 진영을 보지 않고 열만 보면 상대를 때린 것만으로 스택이
+    쌓여, 맞은 적 없는 캐릭터가 전투 종료 대미지를 뒤집어쓴다."""
+    ctx = _make_context()
+    manager = PracticeRoundManager(ctx)
+
+    catastrophe_id = CharacterId("Catastrophe")
+    ctx.add_character(
+        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        SideType.SIDE_1,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군"), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
+
+    _play_round_with_attack(
+        manager, ctx, SideType.SIDE_1, "[공격/적군]", attacker_name="Catastrophe"
+    )
+
+    assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
+
+
+def test_no_stack_per_damaged_column_when_only_the_opposing_side_is_hit():
+    """열 개수로 스택을 세는 효과(SkillEffectAddBuffPerDamagedColumn)도
+    같은 기준이어야 한다 — 상대 팀이 맞은 열은 세지 않는다."""
+    passive_dict = {
+        "PassiveSkill": PassiveSkillData.from_dict(
+            {
+                "id": "PassiveSkill",
+                "trigger": "적 후행 시",
+                "target_type": "자신을 포함한 좌우 1열 아군",
+                "buff_id": "",
+                "effect_0": "SkillEffectAddBuffPerDamagedColumn",
+                "value_source_0": "",
+                "value_0": 1,
+                "value_type_0": "",
+                "buff_id_0": "재앙",
+                "target_override_0": "자신",
+                "condition_0": "",
+                "condition_value_0": "",
+                "description": "",
+            },
+            {},
+        ),
+    }
+    ctx = PracticeBattlefieldContext(
+        buff_dict=_buff_dict(), skill_dict={}, passive_skill_dict=passive_dict
+    )
+    manager = PracticeRoundManager(ctx)
+
+    catastrophe_id = CharacterId("Catastrophe")
+    ctx.add_character(
+        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        SideType.SIDE_1,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군"), SideType.SIDE_2, BattlefieldColumnIndex(0)
+    )
+
+    _play_round_with_attack(
+        manager, ctx, SideType.SIDE_1, "[공격/적군]", attacker_name="Catastrophe"
+    )
+
+    assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
