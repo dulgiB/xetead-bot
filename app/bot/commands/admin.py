@@ -22,7 +22,7 @@ from battle.objects.define import (
 from battle.objects.models import CharacterId
 from battle.objects.skill.models import fate_config_error
 from battle.practice.context import PracticeBattlefieldContext
-from battle.practice.define import SideType
+from battle.practice.define import PracticeBattleMode, SideType
 from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
 
@@ -36,6 +36,7 @@ from bot.battle_reply_text import (
     format_round_end_log_entries,
     merge_damage_heal_lines,
     merge_stackable_buff_add_lines,
+    with_persistent_hp_footnote,
 )
 from bot.commands.character import mark_fate_used_if_needed
 from bot.dm_battle_state import DmBattleState
@@ -89,6 +90,7 @@ _RE_CONTINUE = re.compile(rf"\[{whitespace_tolerant_literal('전투속행')}]")
 _RE_END = re.compile(rf"\[{whitespace_tolerant_literal('전투종료')}]")
 _RE_INVESTIGATION_BATTLE = re.compile(rf"\[{whitespace_tolerant_literal('상시전투')}]")
 _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
+_RE_DUEL_PREP = re.compile(rf"\[{whitespace_tolerant_literal('결투')}]")
 _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생')}]")
 _RE_PROXY = re.compile(
     r"^\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[[^\[\]\n]+])\s*$", re.MULTILINE
@@ -892,7 +894,10 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
 
 
 def _cmd_practice_prep(
-    expected_accts: list[str], state: "BotState", visibility: str = "public"
+    expected_accts: list[str],
+    state: "BotState",
+    visibility: str = "public",
+    mode: PracticeBattleMode = PracticeBattleMode.PRACTICE,
 ) -> AdminCommandResult:
     (
         buff_dict,
@@ -905,12 +910,13 @@ def _cmd_practice_prep(
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     context = PracticeBattlefieldContext(
-        buff_dict, skill_dict, passive_skill_dict, item_dict, is_duel=True
+        buff_dict, skill_dict, passive_skill_dict, item_dict, mode=mode
     )
     manager = PracticeRoundManager(context)
     ps = PracticeBattleState(
         context=context,
         manager=manager,
+        mode=mode,
         expected_accts=list(expected_accts),
         visibility=visibility,
     )
@@ -919,7 +925,7 @@ def _cmd_practice_prep(
         " ".join(f"@{a}" for a in expected_accts) if expected_accts else "(없음)"
     )
     game_post = (
-        f"◊ 대련 준비\n참여 대상: {participant_text}\n\n"
+        f"◊ {mode.value} 준비\n참여 대상: {participant_text}\n\n"
         "이 게시물에 답글로 포지션을 선언해 주세요.\n"
         "예: [1팀/3열] 또는 [2팀/5열]"
     )
@@ -1231,7 +1237,8 @@ def _format_named_reply(
             )
         if calc:
             calc_blocks.append(f"{escape_markdown(char_id.name)} {calc}")
-    return "\n\n".join(body_blocks), "\n\n".join(calc_blocks)
+    body = with_persistent_hp_footnote("\n\n".join(body_blocks), parts)
+    return body, "\n\n".join(calc_blocks)
 
 
 def _format_enemy_post_action_results(
@@ -1336,13 +1343,17 @@ def _cmd_investigation_battle(
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     context = PracticeBattlefieldContext(
-        buff_dict, skill_dict, passive_skill_dict, item_dict, is_duel=False
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        mode=PracticeBattleMode.INVESTIGATION,
     )
     manager = PracticeRoundManager(context)
     ps = PracticeBattleState(
         context=context,
         manager=manager,
-        is_investigation=True,
+        mode=PracticeBattleMode.INVESTIGATION,
         expected_accts=list(mentions),
         visibility=visibility,
     )

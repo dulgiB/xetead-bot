@@ -22,7 +22,7 @@ from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
-from battle.practice.define import PracticeRoundPhase, SideType
+from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
 
 from bot.dm_battle_state import DmBattleState
@@ -228,6 +228,13 @@ def _restore_dm_battle(
     )
 
 
+_PRACTICE_MODE_BY_FIELD_TYPE: dict[FieldBattleType, PracticeBattleMode] = {
+    FieldBattleType.PRACTICE: PracticeBattleMode.PRACTICE,
+    FieldBattleType.INVESTIGATION: PracticeBattleMode.INVESTIGATION,
+    FieldBattleType.DUEL: PracticeBattleMode.DUEL,
+}
+
+
 def _maybe_side(value: object) -> Optional[SideType]:
     """필드 시트 meta에 저장된 진영 문자열을 SideType으로 되돌린다. 알 수 없는
     값이면 None (그 항목만 버리고 나머지는 그대로 복원한다)."""
@@ -281,13 +288,15 @@ def _restore_practice_battle(
         )
         return None
 
-    is_investigation = row.battle_type == FieldBattleType.INVESTIGATION
+    mode = _PRACTICE_MODE_BY_FIELD_TYPE.get(
+        row.battle_type, PracticeBattleMode.PRACTICE
+    )
     context = PracticeBattlefieldContext(
         buff_dict,
         skill_dict,
         passive_skill_dict,
         item_dict,
-        is_duel=not is_investigation,
+        mode=mode,
     )
     manager = PracticeRoundManager(context)
 
@@ -351,11 +360,20 @@ def _restore_practice_battle(
         if parsed_side is not None:
             initial_max_hp[parsed_side] = hp
 
+    roster: dict[SideType, list[str]] = {}
+    for side_value, names in (meta.get("roster") or {}).items():
+        parsed_side = _maybe_side(side_value)
+        if parsed_side is not None:
+            roster[parsed_side] = list(names)
+
     ps = PracticeBattleState(
         context=context,
         manager=manager,
+        mode=mode,
         round_n=row.round_n,
-        round_limit=meta.get("round_limit", 3),
+        # 결투는 라운드 상한이 없다 — meta가 없는 행이어도 기본값 3이
+        # 들어가 첫 라운드에 바로 끝나는 일이 없어야 한다.
+        round_limit=(meta.get("round_limit", 3) if mode.has_round_limit else None),
         # "필드" 행은 start_round() 이후에만 만들어지므로, 복원 대상 행이
         # 있다는 것 자체가 선언 접수가 끝났다는 뜻이다(prep_post_id=0).
         prep_post_id=0,
@@ -367,14 +385,13 @@ def _restore_practice_battle(
         first_mover=first_mover,
         second_mover=second_mover,
         expected_accts=expected_accts,
-        is_investigation=is_investigation,
         initial_max_hp_by_side=initial_max_hp,
+        roster_by_side=roster,
     )
     state.practices[active_post_id] = ps
 
-    battle_label = "상시전투" if ps.is_investigation else "대련"
     return (
-        f"{battle_label} {row.round_n}라운드 {phase.value} — "
+        f"{mode.value} {row.round_n}라운드 {phase.value} — "
         f"캐릭터 {restored}명 복원 (field_id={row.field_id})"
     )
 

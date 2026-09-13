@@ -15,7 +15,7 @@ from battle.objects.define import BattlefieldColumnIndex  # noqa: E402
 from battle.objects.models import CharacterId  # noqa: E402
 from battle.objects.passive_skill.models import PassiveSkillData  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
-from battle.practice.define import SideType  # noqa: E402
+from battle.practice.define import PracticeBattleMode, SideType  # noqa: E402
 from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
 from bot import main as main_module  # noqa: E402
 from bot.main import BotState  # noqa: E402
@@ -135,7 +135,7 @@ def test_practice_start_calls_on_battle_start_after_placement(monkeypatch):
 
 def test_investigation_start_calls_on_battle_start_after_placement(monkeypatch):
     ctx, ps, state = _state_and_session()
-    ps.is_investigation = True
+    ps.mode = PracticeBattleMode.INVESTIGATION
     placed_when_called = _record_on_battle_start(monkeypatch, ctx)
 
     main_module._start_investigation_battle(state, ps)

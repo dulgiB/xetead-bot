@@ -178,6 +178,11 @@ class BattleLogEntry:
     # 반격/반사류처럼 제3자가 대신 가한 대미지의 발생 원인 라벨.
     # 캐릭터 본인의 직접 행동이면 비어 있다.
     source_labels: tuple[str, ...] = ()
+    # 이 엔트리의 체력이 전장의 체력이 아니라 "캐릭터" 시트의 체력일 때 True.
+    # 결투처럼 임시 체력으로 싸우면서 일부 대가만 시트의 체력에서 빼는 모드가
+    # 있어(PracticeBattlefieldContext 참고), 답글에서 두 체력을 구분해 보여줄
+    # 수 있어야 한다.
+    hp_is_persistent: bool = False
 
 
 @dataclass(frozen=True)

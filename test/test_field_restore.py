@@ -6,9 +6,13 @@ os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 import logging  # noqa: E402
 
 from battle.core.commands.define import RoundPhaseType  # noqa: E402
-from battle.objects.define import FactionType  # noqa: E402
+from battle.objects.define import CombatStatType, FactionType  # noqa: E402
 from battle.objects.models import CharacterId  # noqa: E402
-from battle.practice.define import PracticeRoundPhase, SideType  # noqa: E402
+from battle.practice.define import (  # noqa: E402
+    PracticeBattleMode,
+    PracticeRoundPhase,
+    SideType,
+)
 from bot import field_restore  # noqa: E402
 from bot.log_sheets import FieldBattleType, FieldRow  # noqa: E402
 from bot.main import BotState  # noqa: E402
@@ -312,6 +316,44 @@ def test_restore_practice_battle_marks_investigation_type():
     field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert state.practices[789].is_investigation is True
+
+
+def test_restore_duel_keeps_full_hp_and_no_round_limit():
+    """결투 행은 최대 체력 그대로 복원되고 라운드 상한이 다시 생기지 않아야
+    한다 — 상한이 붙으면 재기동 직후 라운드 하나로 끝나 버린다."""
+    state = _make_state({"1팀캐릭터": get_test_preset("1팀캐릭터", max_hp=100)})
+    row = FieldRow(
+        field_id="prep-duel",
+        battle_type=FieldBattleType.DUEL,
+        round_n=4,
+        phase=PracticeRoundPhase.FIRST_MOVER_ACTION.value,
+        characters=[
+            {
+                "name": "1팀캐릭터",
+                "faction": "아군",
+                "position": 1,
+                "remaining_cost": 3,
+                "curr_hp": 55,
+            }
+        ],
+        meta={
+            "active_post_id": 321,
+            "first_mover": SideType.SIDE_1.value,
+            "second_mover": SideType.SIDE_2.value,
+            "roster": {SideType.SIDE_1.value: ["1팀캐릭터", "기권한캐릭터"]},
+        },
+    )
+
+    field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
+
+    ps = state.practices[321]
+    assert ps.mode == PracticeBattleMode.DUEL
+    assert ps.round_limit is None
+    character = ps.context.characters[CharacterId("1팀캐릭터")]
+    assert character.status[CombatStatType.MAX_HP] == 100
+    assert character.status.curr_hp == 55
+    # 자진 기권해 필드에 없는 캐릭터도 패배 대가 대상으로 남아야 한다.
+    assert ps.roster_by_side[SideType.SIDE_1] == ["1팀캐릭터", "기권한캐릭터"]
 
 
 def test_restore_practice_battle_fails_when_active_post_id_missing():

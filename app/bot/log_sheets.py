@@ -40,8 +40,8 @@ logger = logging.getLogger(__name__)
 class FieldBattleType(str, Enum):
     """ "필드" 시트 한 행이 어떤 종류의 전투/세션을 기록하는지 구분한다.
 
-    재개(재기동 복원) 시 이 값으로 본 전투/DM 전투/대련/상시전투/상시조사 중
-    무엇을 복원할지 분기한다. INVESTIGATION_QUEST(상시조사)는 전투가 아니라
+    재개(재기동 복원) 시 이 값으로 본 전투/DM 전투/대련/결투/상시전투/상시조사
+    중 무엇을 복원할지 분기한다. INVESTIGATION_QUEST(상시조사)는 전투가 아니라
     [상시조사]의 메뉴/의뢰 개요 진행 상태를 기록한다 — INVESTIGATION(상시전투,
     상시조사 수락 후 실제로 벌어지는 전투)과 이름이 비슷하니 혼동하지 말 것.
     """
@@ -49,6 +49,7 @@ class FieldBattleType(str, Enum):
     MAIN = "본전투"
     DM = "DM전투"
     PRACTICE = "대련"
+    DUEL = "결투"
     INVESTIGATION = "상시전투"
     INVESTIGATION_QUEST = "상시조사"
 
@@ -194,14 +195,25 @@ def build_field_characters(
 _UNFORMATTED = gspread.utils.ValueRenderOption.unformatted
 
 
-def _load_hp_write_targets(
+@dataclass(frozen=True)
+class _HpRow:
+    """캐릭터/에너미 시트에서 읽은 체력 행 하나."""
+
+    worksheet: gspread.Worksheet
+    row: int
+    hp_col: int
+    curr_hp: Optional[int]
+    max_hp: Optional[int]
+
+
+def _load_hp_rows(
     spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
-) -> dict[str, tuple[gspread.Worksheet, int, int]]:
-    """이름 → (worksheet, 행 번호, curr_hp 열 번호) 매핑을 시트당 1회 읽기로
-    구축한다. `cache`가 주어지면 load_char_data()가 이미 읽어 둔 값을 그대로
-    재사용해(같은 (시트, value_render_option) 조합이면 캐시 히트) 추가
-    네트워크 호출 없이 매핑만 만든다."""
-    targets: dict[str, tuple[gspread.Worksheet, int, int]] = {}
+) -> dict[str, _HpRow]:
+    """이름 → 체력 행 매핑을 시트당 1회 읽기로 구축한다. `cache`가 주어지면
+    load_char_data()가 이미 읽어 둔 값을 그대로 재사용해(같은 (시트,
+    value_render_option) 조합이면 캐시 히트) 추가 네트워크 호출 없이 매핑만
+    만든다."""
+    rows: dict[str, _HpRow] = {}
     for sheet_name in ("캐릭터", "에너미"):
         try:
             ws = (
@@ -222,11 +234,92 @@ def _load_hp_write_targets(
             continue
         hp_col = header.index("curr_hp") + 1
         name_col = header.index("name")
+        max_hp_col = header.index("max_hp") if "max_hp" in header else None
         for idx, row in enumerate(values[1:], start=2):
             name = row[name_col] if name_col < len(row) else ""
-            if name and name not in targets:
-                targets[name] = (ws, idx, hp_col)
-    return targets
+            if not name or name in rows:
+                continue
+            rows[name] = _HpRow(
+                worksheet=ws,
+                row=idx,
+                hp_col=hp_col,
+                curr_hp=_as_int(row[hp_col - 1] if hp_col - 1 < len(row) else None),
+                max_hp=_as_int(
+                    row[max_hp_col]
+                    if max_hp_col is not None and max_hp_col < len(row)
+                    else None
+                ),
+            )
+    return rows
+
+
+def _as_int(value: object) -> Optional[int]:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+@dataclass(frozen=True)
+class PersistentHpChange:
+    """시트의 실제 체력을 직접 바꾼 결과 하나."""
+
+    name: str
+    curr_hp: int
+    max_hp: int
+    # 실제로 줄어든(늘어난) 양. 0 고정 때문에 요청한 delta보다 작을 수 있다.
+    applied_delta: int
+
+
+def apply_persistent_hp_delta(
+    spreadsheet: gspread.Spreadsheet,
+    names: list[str],
+    delta: int,
+    cache: Optional[SheetCache] = None,
+) -> tuple[list[PersistentHpChange], list[str]]:
+    """ "캐릭터"/"에너미" 시트의 curr_hp에 delta를 더해 기록하고
+    (적용 결과 목록, 실패한 이름 목록)을 반환한다.
+    체력은 0 미만으로 내려가지 않는다.
+
+    결투 패배 대가처럼 전장의 임시 체력이 아니라 시트의 실제 체력을 직접
+    깎는 정산용이다. 라이브 세션이 들고 있는 값이 아니라 시트를 그 시점에
+    다시 읽어 계산하므로, 전투가 길어지는 동안 GM이 시트에서 체력을 고쳤어도
+    그 값을 덮어쓰지 않는다.
+    """
+    if not names:
+        return [], []
+    try:
+        hp_rows = _load_hp_rows(spreadsheet, cache)
+    except Exception:
+        logger.exception("실제 체력 정산 대상 조회 실패")
+        return [], list(names)
+
+    applied: list[PersistentHpChange] = []
+    failed: list[str] = []
+    for name in names:
+        hp_row = hp_rows.get(name)
+        if hp_row is None or hp_row.curr_hp is None:
+            logger.error("'%s'의 시트 체력을 찾을 수 없어 실제 체력 정산 실패", name)
+            failed.append(name)
+            continue
+        new_hp = max(0, hp_row.curr_hp + delta)
+        try:
+            hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, new_hp)
+        except Exception:
+            logger.exception("'%s'의 실제 체력(%s) 시트 반영 실패", name, new_hp)
+            failed.append(name)
+            continue
+        if cache is not None:
+            cache.invalidate(hp_row.worksheet.title)
+        applied.append(
+            PersistentHpChange(
+                name=name,
+                curr_hp=new_hp,
+                max_hp=hp_row.max_hp if hp_row.max_hp is not None else 0,
+                applied_delta=new_hp - hp_row.curr_hp,
+            )
+        )
+    return applied, failed
 
 
 def write_back_changed_hp(
@@ -247,7 +340,7 @@ def write_back_changed_hp(
     않는다. 실패해도 라이브 세션 상태(context)는 이미 정확하므로, 다음
     성공적인 write-back 시점에 시트도 자연히 다시 맞춰진다.
 
-    이름→행 매핑을 시트당 1회만 읽어서 구축한 뒤(_load_hp_write_targets)
+    이름→행 매핑을 시트당 1회만 읽어서 구축한 뒤(_load_hp_rows)
     변경된 캐릭터 수만큼 그 매핑을 재사용한다 — 바뀐 캐릭터가 N명이어도
     읽기는 시트당 1회로 고정된다(쓰기는 여전히 캐릭터별 update_cell).
     """
@@ -260,7 +353,7 @@ def write_back_changed_hp(
         return
 
     try:
-        targets = _load_hp_write_targets(spreadsheet, cache)
+        hp_rows = _load_hp_rows(spreadsheet, cache)
     except Exception:
         logger.exception("체력 시트 반영 대상 조회 실패")
         return
@@ -270,8 +363,8 @@ def write_back_changed_hp(
         char = context.characters.get(char_id)
         # 여기서 찾을 수 없다는 것 자체가 탈락(체력 0)을 의미한다.
         curr_hp = char.status.curr_hp if char is not None else 0
-        target = targets.get(name)
-        if target is None:
+        hp_row = hp_rows.get(name)
+        if hp_row is None:
             if char_id in context.companion_owners:
                 # 소환된 동료는 시트에 자기 행이 없는 게 정상이다.
                 logger.debug(
@@ -286,9 +379,8 @@ def write_back_changed_hp(
                     curr_hp,
                 )
             continue
-        ws, row, hp_col = target
         try:
-            ws.update_cell(row, hp_col, curr_hp)
+            hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, curr_hp)
         except Exception:
             logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
 

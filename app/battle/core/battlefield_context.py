@@ -23,6 +23,7 @@ from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
+    FATE_INTERVENTION_HP_COST,
     MAX_SKILL_SLOT_COUNT,
     BattlefieldColumnIndex,
     CombatStatType,
@@ -616,6 +617,24 @@ class BattlefieldContext:
         않으므로(PracticeBattlefieldContext 참고) 그런 소비를 걸 수 없다.
         """
         return True
+
+    def fate_cost_hp(self, character: CombatCharacter) -> int:
+        """운명간섭 체력 대가를 낼 체력. 사용 가능 여부 검증에 쓴다."""
+        return character.status.curr_hp
+
+    def pay_fate_cost_hp(self, character: CombatCharacter) -> tuple[int, int, bool]:
+        """운명간섭 체력 대가를 실제로 차감하고
+        (차감 후 체력, 최대 체력, 그 체력이 시트의 실제 체력인지)를 반환한다.
+
+        결투는 임시 체력이 아니라 시트의 실제 체력에서 빼야 해서
+        (PracticeBattlefieldContext) 차감 대상 자체가 전장마다 다르다.
+        """
+        character.status.curr_hp -= FATE_INTERVENTION_HP_COST
+        return (
+            character.status.curr_hp,
+            character.status[CombatStatType.MAX_HP],
+            False,
+        )
 
     def has_item(self, item_id: str) -> bool:
         return item_id in self._item_dictionary

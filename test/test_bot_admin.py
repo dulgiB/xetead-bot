@@ -22,7 +22,11 @@ from battle.objects.models import CharacterId  # noqa: E402
 from battle.objects.skill.effects import SkillEffectAddBuff  # noqa: E402
 from battle.objects.skill.models import SkillData  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
-from battle.practice.define import PracticeRoundPhase, SideType  # noqa: E402
+from battle.practice.define import (  # noqa: E402
+    PracticeBattleMode,
+    PracticeRoundPhase,
+    SideType,
+)
 from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
 from bot import log_sheets  # noqa: E402
 from bot import main as main_module  # noqa: E402
@@ -325,9 +329,7 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     어느 적이 한 행동인지는 본문에 표시하지 않는다 — 여러 적의 결과를 한
     게시물에 모아 보여주므로, 필요하면 계산식(CW 후속 게시물, 이름이
     붙어 있다)을 펼쳐서 확인하면 된다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -357,9 +359,7 @@ def test_enemy_post_action_summary_merges_damage_to_same_target_across_attackers
     공격자마다 별도 줄이 아니라 그 아군에 대한 대미지 합계 한 줄로 합쳐져야
     한다 — 개별 커맨드 답글의 spoiler_text 요약과 동일한 방식으로, 적이
     많아져도 본문이 늘어지지 않게 하기 위함이다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -417,9 +417,7 @@ def test_enemy_post_action_summary_lists_unique_granted_buff_info(monkeypatch):
     "**【버프 정보】**\n▹ [버프id]: 설명" 형식으로 모아 보여줘야 한다. 같은
     버프(열 광역기로 두 명에게 동시에 부여)가 여러 명에게 적용돼도 설명은
     buff_id 기준으로 한 번만 나와야 한다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     buff = BuffData(
         id="테스트디버프",
         buff_class_name="BuffReceivedDamage",
@@ -495,10 +493,10 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
     ws = _RecordingWorksheet({2: "유효 캐릭터", 3: "적 캐릭터"})
     monkeypatch.setattr(
         log_sheets,
-        "_load_hp_write_targets",
+        "_load_hp_rows",
         lambda spreadsheet, cache=None: {
-            "유효 캐릭터": (ws, 2, 1),
-            "적 캐릭터": (ws, 3, 1),
+            "유효 캐릭터": log_sheets._HpRow(ws, 2, 1, curr_hp=100, max_hp=100),
+            "적 캐릭터": log_sheets._HpRow(ws, 3, 1, curr_hp=100, max_hp=100),
         },
     )
     state = _make_state(
@@ -860,7 +858,7 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
     ps = PracticeBattleState(
         context=context,
         manager=manager,
-        is_investigation=True,
+        mode=PracticeBattleMode.INVESTIGATION,
         expected_accts=["user1"],
         prep_post_id=1000,
     )
@@ -2117,7 +2115,7 @@ def _start_active_investigation(
     ps = PracticeBattleState(
         context=ctx,
         manager=manager,
-        is_investigation=True,
+        mode=PracticeBattleMode.INVESTIGATION,
         expected_accts=[ally_acct],
         active_post_id=active_post_id,
         round_limit=5,
@@ -2198,7 +2196,7 @@ def test_world_proxy_for_investigation_enemy_also_advances_round(monkeypatch):
 
 def test_world_proxy_cannot_control_duel_participants(monkeypatch):
     """world 계정의 프록시 권한은 상시전투 참가자로 한정된다 — 대련
-    (is_investigation=False)은 참가자 전원이 실제 계정이라 world가 대신
+    (대련 모드)은 참가자 전원이 실제 계정이라 world가 대신
     조작할 수 없어야 한다."""
     state = _make_state()
     monkeypatch.setattr(
@@ -2221,7 +2219,7 @@ def test_world_proxy_cannot_control_duel_participants(monkeypatch):
     ps = PracticeBattleState(
         context=ctx,
         manager=manager,
-        is_investigation=False,
+        mode=PracticeBattleMode.PRACTICE,
         expected_accts=["swordsman_acct", "archer_acct"],
         active_post_id=6000,
     )
@@ -2489,7 +2487,7 @@ def test_practice_field_text_uses_team_labels_not_faction_labels():
     ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
     ps = PracticeBattleState(
-        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=False
+        context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
     text = main_module._field_text(ps)
@@ -2508,7 +2506,9 @@ def test_investigation_field_text_still_uses_faction_labels():
     ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
     ps = PracticeBattleState(
-        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=True
+        context=ctx,
+        manager=PracticeRoundManager(ctx),
+        mode=PracticeBattleMode.INVESTIGATION,
     )
 
     text = main_module._field_text(ps)
@@ -2526,7 +2526,7 @@ def test_practice_field_text_shows_team_1_before_team_2():
     ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
     ps = PracticeBattleState(
-        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=False
+        context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
     text = main_module._field_text(ps)
@@ -2542,7 +2542,9 @@ def test_investigation_field_text_still_shows_enemy_before_ally():
     ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
     ps = PracticeBattleState(
-        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=True
+        context=ctx,
+        manager=PracticeRoundManager(ctx),
+        mode=PracticeBattleMode.INVESTIGATION,
     )
 
     text = main_module._field_text(ps)
@@ -2559,7 +2561,7 @@ def test_practice_field_text_hides_empty_columns():
     ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
     ps = PracticeBattleState(
-        context=ctx, manager=PracticeRoundManager(ctx), is_investigation=False
+        context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
     text = main_module._field_text(ps)
@@ -2873,9 +2875,7 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
     하므로 attack_range를 전체 열 폭(7)으로 넉넉히 잡는다 — 그렇지 않으면
     무작위 배치 결과에 따라 사거리 밖 판정으로 테스트가 간헐적으로 실패한다.
     """
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state()
     char_dict = {"player_acct": get_test_preset("전사", attack_range=7)}
     name_dict = {
@@ -3286,9 +3286,7 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
 def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
     """두 개의 DM 전투가 동시에 진행되어도 서로의 상태(적/아군 배치, 라운드)가
     섞이면 안 된다 — state.dm_battles는 여러 인스턴스를 동시에 관리해야 한다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state()
     char_dict = {
         "player1_acct": get_test_preset("전사1"),
@@ -3361,7 +3359,7 @@ def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
 def _practice_state_with(names_by_side, **ps_kwargs):
     """대련용 PracticeBattleState와 BotState를 한 번에 만든다.
     names_by_side: {SideType: [이름, ...]} — 계정은 "acct_{소문자 이름}"으로 고정."""
-    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={}, is_duel=True)
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
     char_dict = {}
     for side, names in names_by_side.items():
         for name in names:
@@ -3457,7 +3455,7 @@ def test_practice_start_calls_on_battle_start(monkeypatch):
     """_start_practice_battle()은 배치를 마친 뒤 on_battle_start()를 호출해야
     한다 — 이 호출이 "전투 시작" 트리거 패시브(소환수 등)의 유일한 평가
     지점이다."""
-    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={}, is_duel=True)
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
     ps = PracticeBattleState(
         context=ctx,
         manager=PracticeRoundManager(ctx),

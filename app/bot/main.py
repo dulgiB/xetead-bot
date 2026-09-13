@@ -11,11 +11,21 @@ from typing import Optional
 
 import gspread
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import (
+    BattleLogEntry,
+    BattleLogEntryKind,
+    CharacterCommand,
+)
 from battle.core.commands.parser import count_bracket_groups, parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
-from battle.practice.define import PracticeRoundPhase, SideType
+from battle.practice.define import (
+    DUEL_DEFEAT_HP_PENALTY,
+    PracticeBattleMode,
+    PracticeRoundPhase,
+    SideType,
+)
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -23,14 +33,16 @@ from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from utils.name_matching import whitespace_tolerant_literal
 
 from bot.battle_reply_text import (
+    escape_markdown,
     format_battle_end_log_entries,
     format_battle_reply,
     format_eliminated_characters,
+    format_log_entry_block,
 )
 from bot.commands import admin as admin_commands
 from bot.commands import noncombat as noncombat_commands
 from bot.commands.admin import AdminCommandResult, handle_admin_command
-from bot.commands.character import handle_character_command
+from bot.commands.character import handle_character_command, mark_fate_used_if_needed
 from bot.commands.noncombat import (
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
@@ -53,7 +65,7 @@ from bot.commands.noncombat import (
 from bot import field_restore, log_sheets
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
-from bot.load_data import load_all_data, load_char_data
+from bot.load_data import load_all_data, load_char_data, update_character_curr_hp
 from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCombatState
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
@@ -80,10 +92,7 @@ _RE_INVESTIGATION_DECLARATION = re.compile(
     rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([^\[\]]+)]"
 )
 _RE_PRACTICE_RETIRE = re.compile(rf"\[{whitespace_tolerant_literal('탈락')}]")
-_PRACTICE_PHASE_GUIDE = (
-    "해당 팀 전원이 타래로 이어서 커맨드를 입력해 주세요 "
-    "(전원이 입력하면 자동으로 다음 차례로 넘어갑니다)."
-)
+_PRACTICE_PHASE_GUIDE = "해당 팀 전원이 타래로 이어서 커맨드를 입력해 주세요."
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
     rf"\[{whitespace_tolerant_literal('상시전투')}]"
 )
@@ -172,12 +181,15 @@ def _split_for_post(text: str, prefix_len: int) -> list[str]:
     return chunks or [""]
 
 
+_PRACTICE_MODE_TO_FIELD_TYPE: dict[PracticeBattleMode, log_sheets.FieldBattleType] = {
+    PracticeBattleMode.PRACTICE: log_sheets.FieldBattleType.PRACTICE,
+    PracticeBattleMode.INVESTIGATION: log_sheets.FieldBattleType.INVESTIGATION,
+    PracticeBattleMode.DUEL: log_sheets.FieldBattleType.DUEL,
+}
+
+
 def _practice_battle_type(ps: PracticeBattleState) -> log_sheets.FieldBattleType:
-    return (
-        log_sheets.FieldBattleType.INVESTIGATION
-        if ps.is_investigation
-        else log_sheets.FieldBattleType.PRACTICE
-    )
+    return _PRACTICE_MODE_TO_FIELD_TYPE[ps.mode]
 
 
 def _practice_field_meta(ps: PracticeBattleState) -> dict:
@@ -197,6 +209,9 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         "initial_max_hp": {
             side.value: hp for side, hp in ps.initial_max_hp_by_side.items()
         },
+        # 결투 패배 대가 대상. 자진 기권한 캐릭터는 필드 스냅샷에 남지 않아
+        # 복원 후 명부를 다시 만들면 대가에서 빠져 버린다.
+        "roster": {side.value: names for side, names in ps.roster_by_side.items()},
     }
 
 
@@ -921,17 +936,24 @@ class MastodonBotListener(StreamListener):
             self._post_admin_result(result, status_id, acct, visibility, state)
             return
 
-        # 1.5. 캐릭터 계정이 직접 [대련]을 시작 — 상시전투와 달리 대련은
-        # admin 커맨드가 아니다. 발신자와 함께 멘션된 상대가 참여 대상이 된다.
-        if acct in state.char_dict and admin_commands._RE_PRACTICE_PREP.search(text):
-            expected_accts = [acct] + self._thread_participants(
-                status_id, in_reply_to_id, mentions or [], acct
-            )
-            result = admin_commands._cmd_practice_prep(
-                expected_accts, state, visibility
-            )
-            self._post_admin_result(result, status_id, acct, visibility, state)
-            return
+        # 1.5. 캐릭터 계정이 직접 [대련]/[결투]를 시작 — 상시전투와 달리 이
+        # 둘은 admin 커맨드가 아니다. 발신자와 함께 멘션된 상대가 참여 대상이
+        # 된다.
+        if acct in state.char_dict:
+            prep_mode = None
+            if admin_commands._RE_DUEL_PREP.search(text):
+                prep_mode = PracticeBattleMode.DUEL
+            elif admin_commands._RE_PRACTICE_PREP.search(text):
+                prep_mode = PracticeBattleMode.PRACTICE
+            if prep_mode is not None:
+                expected_accts = [acct] + self._thread_participants(
+                    status_id, in_reply_to_id, mentions or [], acct
+                )
+                result = admin_commands._cmd_practice_prep(
+                    expected_accts, state, visibility, prep_mode
+                )
+                self._post_admin_result(result, status_id, acct, visibility, state)
+                return
 
         # 2. 대련/상시전투 준비 게시물 답글 (포지션 선언)
         practice = self._resolve_practice(acct, status_id, in_reply_to_id, state)
@@ -1617,6 +1639,66 @@ def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
     return body
 
 
+def _apply_duel_defeat_penalty(
+    state: "BotState", ps: PracticeBattleState, winner: Optional[SideType]
+) -> str:
+    """결투에서 패배한 팀 전원의 실제 체력을 깎고, 그 결과를 전투 중 결과 줄과
+    같은 형식의 블록으로 반환한다(결투가 아니거나 무승부면 빈 문자열).
+
+    대상은 필드에 남은 캐릭터가 아니라 시작 시점의 명부다 — 자진 기권한
+    캐릭터도 패배 측이면 대가를 치른다. 체력은 라이브 세션이 들고 있는 값이
+    아니라 시트를 다시 읽어 깎으므로, 전투 도중 GM이 시트에서 고친 체력을
+    덮어쓰지 않는다."""
+    if not ps.is_duel_match or winner is None:
+        return ""
+    loser = winner.opposite
+    names = list(ps.roster_by_side.get(loser, []))
+    if not names:
+        return ""
+
+    changes, failed = log_sheets.apply_persistent_hp_delta(
+        state.spreadsheet,
+        names,
+        -DUEL_DEFEAT_HP_PENALTY,
+        cache=state.sheet_cache,
+    )
+
+    entries = []
+    dead_names = []
+    for change in changes:
+        # 라이브 세션의 실제 체력도 맞춰 둔다 — 같은 캐릭터가 이 전투 안에서
+        # 다시 조회될 일은 없지만, 어긋난 값을 남겨 둘 이유도 없다.
+        persistent = ps.context.persistent_hp.get(CharacterId(change.name))
+        if persistent is not None:
+            persistent.curr_hp = change.curr_hp
+        entries.append(
+            BattleLogEntry(
+                target_name=change.name,
+                kind=BattleLogEntryKind.DAMAGE,
+                result=f"대미지 {-change.applied_delta}",
+                value=-change.applied_delta,
+                hp_after=change.curr_hp,
+                max_hp=change.max_hp,
+                hp_is_persistent=True,
+            )
+        )
+        if change.curr_hp == 0:
+            dead_names.append(change.name)
+
+    blocks = [format_log_entry_block(ps.context, entries, "결투 패배 처리")]
+    blocks += [
+        f"◊ {escape_markdown(name)}의 체력이 0이 되어 사망 처리됩니다."
+        f" @{WORLD_MASTODON_ID}"
+        for name in dead_names
+    ]
+    if failed:
+        blocks.append(
+            "⚠️ 다음 캐릭터의 실제 체력 반영에 실패했습니다. 관리자가 직접"
+            " 확인해 주세요: " + ", ".join(escape_markdown(name) for name in failed)
+        )
+    return "\n\n".join(block for block in blocks if block)
+
+
 def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
     errors: list[str] = []
@@ -1631,22 +1713,12 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
         except CommandValidationError as e:
             errors.append(str(e))
 
-    total = len(ps.context.characters)
-    ps.round_limit = max(3, 1 + total)
-    ps.field_id = str(ps.prep_post_id)
-    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
-    # 볼 수 있다.
-    ps.context.on_battle_start()
-    ps.snapshot_initial_max_hp()
-    ps.start_round()
-    _upsert_practice_field_row(
-        state, ps, phase_value=ps.phase.value if ps.phase else ""
-    )
+    _begin_practice_rounds(state, ps)
 
     mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
         f"◊ 상시전투 시작\n"
-        f"라운드 상한: {ps.round_limit}라운드\n\n"
+        f"{_round_limit_text(ps)}\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
         f"{_field_text(ps)}"
@@ -1656,8 +1728,33 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
     return game_post
 
 
+def _round_limit_text(ps: PracticeBattleState) -> str:
+    if ps.round_limit is None:
+        return "라운드 상한: 없음"
+    return f"라운드 상한: {ps.round_limit}라운드"
+
+
+def _begin_practice_rounds(state: "BotState", ps: PracticeBattleState) -> None:
+    """배치가 끝난 대련/상시전투/결투의 첫 라운드를 연다."""
+    if ps.mode.has_round_limit:
+        ps.round_limit = max(3, 1 + len(ps.context.characters))
+    else:
+        ps.round_limit = None
+    ps.field_id = str(ps.prep_post_id)
+    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
+    # 볼 수 있다.
+    ps.context.on_battle_start()
+    ps.snapshot_initial_max_hp()
+    ps.snapshot_roster()
+    ps.start_round()
+    _upsert_practice_field_row(
+        state, ps, phase_value=ps.phase.value if ps.phase else ""
+    )
+
+
 def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
-    """대련 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을 반환한다."""
+    """대련/결투 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을
+    반환한다."""
     errors: list[str] = []
 
     for acct, (side, column) in ps.declared.items():
@@ -1670,22 +1767,12 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
         except CommandValidationError as e:
             errors.append(str(e))
 
-    total = len(ps.context.characters)
-    ps.round_limit = max(3, 1 + total)
-    ps.field_id = str(ps.prep_post_id)
-    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
-    # 볼 수 있다.
-    ps.context.on_battle_start()
-    ps.snapshot_initial_max_hp()
-    ps.start_round()
-    _upsert_practice_field_row(
-        state, ps, phase_value=ps.phase.value if ps.phase else ""
-    )
+    _begin_practice_rounds(state, ps)
 
     mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
-        f"◊ 대련 시작\n"
-        f"라운드 상한: {ps.round_limit}라운드\n\n"
+        f"◊ {ps.mode.value} 시작\n"
+        f"{_round_limit_text(ps)}\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
         f"{_field_text(ps)}"
@@ -1698,19 +1785,21 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
 def _finish_practice_battle(
     state: "BotState", ps: PracticeBattleState, phase_value: str
 ) -> str:
-    """대련/상시전투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이 함수가
-    끝나면 state.practices에서 제거된 상태다.
+    """대련/상시전투/결투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이
+    함수가 끝나면 state.practices에서 제거된 상태다.
 
     전투 종료 훅(_apply_practice_battle_end_effects)은 반드시 winner() 앞에
     와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다."""
     assert ps.active_post_id is not None
-    battle_mode = "상시전투" if ps.is_investigation else "대련"
     battle_end_body = _apply_practice_battle_end_effects(ps)
     winner = ps.winner()
     winner_label = ps.side_label(winner)
-    body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
+    defeat_body = _apply_duel_defeat_penalty(state, ps, winner)
+    body_blocks = [
+        block for block in (_field_board(ps), battle_end_body, defeat_body) if block
+    ]
     game_post = (
-        f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
+        f"◊ {ps.mode.value} 종료 ({ps.round_n}라운드)\n\n"
         f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
         + "\n\n".join(body_blocks)
     )
@@ -1767,7 +1856,8 @@ def _finalize_practice_phase(
     hp1 = ps.total_hp_by_side(SideType.SIDE_1)
     hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
-    if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
+    round_limit_reached = ps.round_limit is not None and ps.round_n >= ps.round_limit
+    if hp1 == 0 or hp2 == 0 or round_limit_reached:
         return _finish_practice_battle(state, ps, current_phase.value), True
 
     ps.start_round()
@@ -1778,6 +1868,42 @@ def _finalize_practice_phase(
         f"{_field_text(ps)}"
     )
     return game_post, False
+
+
+def _apply_duel_fate_cost(
+    state: "BotState",
+    ps: PracticeBattleState,
+    char_id: CharacterId,
+    command: CharacterCommand,
+) -> str:
+    """결투에서 키워드 보정을 쓴 커맨드의 대가를 시트에 반영한다(실패 안내
+    문구를 반환하며, 반영할 게 없거나 성공하면 빈 문자열).
+
+    전장은 임시 체력 대신 실제 체력을 깎아 두기만 하므로
+    (PracticeBattlefieldContext.pay_fate_cost_hp), 그 값을 시트에 옮기는 것은
+    봇 계층의 몫이다. 이미 커맨드가 처리된 뒤라 실패를 위로 던지면 답글
+    자체가 사라지므로, write_back_changed_hp()와 같이 흡수하고 알리기만
+    한다."""
+    if not ps.is_duel_match or not any(part.fate_boost for part in command.parts):
+        return ""
+    persistent = ps.context.persistent_hp.get(char_id)
+    if persistent is None:
+        return ""
+    try:
+        update_character_curr_hp(
+            state.spreadsheet,
+            char_id.name,
+            persistent.curr_hp,
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        logger.exception("결투 키워드 보정 대가 반영 실패: %s", char_id.name)
+        return (
+            "⚠️ 키워드 보정 대가(실제 체력 소모) 반영에 실패했습니다."
+            " 관리자에게 문의해 주세요."
+        )
+    mark_fate_used_if_needed(state, char_id, command)
+    return ""
 
 
 def _handle_practice_proxy_command(
@@ -1892,6 +2018,9 @@ def _handle_practice_proxy_command(
             reply_text, calc_text = format_battle_reply(
                 ps.context, char_id, result.part_results
             )
+            fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+            if fate_warning:
+                reply_text += f"\n{fate_warning}"
         except CommandValidationError as e:
             battle_logs.append(
                 log_sheets.BattleCommandLog(
@@ -2023,6 +2152,9 @@ def _handle_practice_command(
         reply_text, calc_text = format_battle_reply(
             ps.context, char_id, result.part_results
         )
+        fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+        if fate_warning:
+            reply_text += f"\n{fate_warning}"
     except CommandValidationError as e:
         battle_log = log_sheets.BattleCommandLog(
             field_id=field_id,
