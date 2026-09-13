@@ -39,7 +39,6 @@ from bot.battle_reply_text import (
     with_persistent_hp_footnote,
 )
 from bot.commands.character import mark_fate_used_if_needed
-from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import (
     find_unreachable_enemy_buffs,
@@ -91,22 +90,12 @@ _RE_END = re.compile(rf"\[{whitespace_tolerant_literal('전투종료')}]")
 _RE_INVESTIGATION_BATTLE = re.compile(rf"\[{whitespace_tolerant_literal('상시전투')}]")
 _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
 _RE_DUEL_PREP = re.compile(rf"\[{whitespace_tolerant_literal('결투')}]")
-_RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생')}]")
 _RE_PROXY = re.compile(
     r"^\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[[^\[\]\n]+])\s*$", re.MULTILINE
 )
 # "[판정: 선착 1인, 55분까지]"처럼 콜론을 쓰는 안내문 표기. admin이 이 표기를
 # 쓰면서 봇을 실수로 멘션해도 오류를 내지 않고 조용히 무시하기 위한 것이다.
 _RE_JUDGE_ANNOUNCE = re.compile(rf"\[{whitespace_tolerant_literal('판정')}\s*:[^\]]*]")
-
-
-def _dm_mention_prefix(dm_state: "DmBattleState") -> str:
-    """DM 전투 참가자 멘션 텍스트를 만든다. visibility="direct" 게시물은
-    명시적으로 멘션된 계정만 볼 수 있으므로, 페이즈 전환/정산/종료 게시물마다
-    이 프리픽스를 붙여야 참가자가 스레드를 계속 확인할 수 있다."""
-    if not dm_state.mentions:
-        return ""
-    return " ".join(f"@{a}" for a in dm_state.mentions) + " "
 
 
 _VALID_COLUMNS = [
@@ -139,24 +128,13 @@ class AdminCommandResult:
     attach_field_image: bool = False
     # reply_text를 답글이 아니라 타임라인의 새 게시물로 올린다(전투 준비 공지 등).
     post_as_new_status: bool = False
-    # game_post_text의 post_id를 이 세션의 active_post_id로 쓰고 등록한다.
-    dm_battle_to_register: Optional["DmBattleState"] = None
     # 새 세션을 곧바로 state에 꽂지 않고 이 필드로 넘기는 이유는, 등록 키인
     # 게시물 id가 게시 완료 시점에야 정해지기 때문이다.
     practice_to_register: Optional["PracticeBattleState"] = None
-    # game_post_text를 확인 답글 뒤에 이어 붙여 스레드를 선형으로 유지한다.
-    # 이전 라운드 공지에 다시 답글로 달면 확인 답글과 형제가 되어 스레드가
-    # 두 갈래로 갈라진다. DM 전투만 쓴다.
-    game_post_reply_to_confirmation: bool = False
-    # None이면 계정 기본값을 따른다.
-    game_post_visibility: Optional[str] = None
     # game_post_text에서 분리된 계산식. game_post_text 자체는 이미지와 함께
     # 바로 보이는 본문으로 남아야 해서, calc_text처럼 같은 게시물의
     # spoiler_text에 합치지 않고 별도 CW 게시물로 뗀다.
     game_post_calc_text: str = ""
-    # CW 후속 게시물 매 조각 앞에 붙일 접두어. "direct" 전투는 멘션되지 않은
-    # 게시물이 참가자에게 보이지 않아 계산식에도 멘션을 반복해야 한다.
-    game_post_calc_prefix: str = ""
     # admin에게만 DM으로 조용히 보낸다 — 시트 설정 오류처럼 플레이어에게
     # 노출하면 안 되지만 admin은 알아야 하는 내용용.
     admin_dm_text: Optional[str] = None
@@ -207,31 +185,8 @@ def handle_admin_command(
     프록시 커맨드(대신 입력)는 캐릭터 본인이 아니라 이 admin 계정이
     입력했다는 의미이므로, 로그_전투에는 캐릭터가 아닌 이 값이 기록된다.
     """
-    dm_state = (
-        state.dm_battles.get(in_reply_to_id) if in_reply_to_id is not None else None
-    )
-    if dm_state is not None:
-        if _RE_PHASE.search(text):
-            return _cmd_dm_battle_advance_phase(dm_state, state)
-        if _RE_CONTINUE.search(text):
-            return _cmd_dm_battle_continue(dm_state, state)
-        if _RE_END.search(text):
-            return _cmd_dm_battle_end(dm_state, state)
-        if result := _dispatch_proxy_commands(
-            text,
-            lambda name, cmd: _cmd_dm_battle_proxy(dm_state, name, cmd, state, acct),
-        ):
-            return result
-        return AdminCommandResult(
-            "◊ 전투 진행 중에는 [진행]/[전투속행]/[전투종료] 또는 "
-            "'{캐릭터 이름} [커맨드]' 형식의 프록시 커맨드만 사용할 수 있습니다."
-        )
-
     if _RE_BATTLE_PREP.search(text):
         return _cmd_battle_prep(state)
-
-    if _RE_DM_BATTLE_START.search(text):
-        return _cmd_dm_battle_start(text, mentions or [], state, visibility)
 
     # [상시전투]는 같은 메시지에 [배치/...]를 함께 실을 수 있고 그 토큰을
     # 스스로 파싱하므로, 아래 _RE_MANUAL_PLACE보다 먼저 와야 한다. 순서가
@@ -1398,379 +1353,13 @@ def _cmd_investigation_battle(
     )
 
 
-# ---------------------------------------------------------------------------
-# DM 전투 핸들러
-# ---------------------------------------------------------------------------
-
-
-def _dm_battle_column_token(raw: str) -> str:
-    """DM 전투의 [배치/이름/열] 문법은 진영 지정이 없다(배치 대상이 항상
-    적군으로 고정이라 무의미하기 때문) — 본 전투 문법인 [배치/이름/적군 N열]을
-    실수로 그대로 써도(예: "적군 4열") 에러 없이 마지막 토큰(열 표기)만
-    조용히 취한다."""
-    parts = raw.split()
-    return parts[-1] if parts else raw
-
-
-def _cmd_dm_battle_start(
-    text: str, mentions: list[str], state: "BotState", visibility: str
-) -> AdminCommandResult:
-    """[전투 발생] 커맨드: 본 전투와 동일한 풀스탯 BattleSession을 만들어
-    적을 [배치/이름/열]로 즉시 배치하고, 이 DM에 함께 멘션되어 "캐릭터"
-    시트에 등록된 계정을 겹침 없이 무작위로 아군 배치한 뒤 바로 전투를
-    시작한다 — 본 전투와 달리 참전 신청/[전투준비]/[전투개시] 단계가 없다."""
-    (
-        buff_dict,
-        skill_dict,
-        passive_skill_dict,
-        item_dict,
-        inventory,
-        state.char_dict,
-        state.name_dict,
-        state.noncombat_char_dict,
-    ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
-    session = BattleSession(
-        buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
-    )
-
-    errors: list[str] = []
-    for m in _RE_MANUAL_PLACE.finditer(text):
-        name = resolve_matching_key(m.group(1).strip(), state.name_dict.keys())
-        data = state.name_dict.get(name)
-        if data is None:
-            errors.append(f"지정된 캐릭터({name})를 찾을 수 없습니다.")
-            continue
-        try:
-            column = BattlefieldColumnIndex.from_str(
-                _dm_battle_column_token(m.group(2).strip())
-            )
-            session.add_character(data, FactionType.ENEMY, column)
-        except (ValueError, CommandValidationError) as e:
-            errors.append(str(e))
-
-    participant_accts = [acct for acct in mentions if acct in state.char_dict]
-    ally_data_list = [state.char_dict[acct] for acct in participant_accts]
-    errors.extend(_assign_random_positions(session, ally_data_list, FactionType.ALLY))
-
-    if not session.context.characters:
-        reply_parts = ["◊ 배치에 모두 실패하여 전투를 시작하지 못했습니다."]
-        if errors:
-            reply_parts.append("⚠️ 오류:\n" + "\n".join(errors))
-        return AdminCommandResult("\n".join(reply_parts))
-
-    session.start()
-    dm_state = DmBattleState(
-        session=session,
-        field_id="",
-        active_post_id=0,
-        visibility=visibility,
-        mentions=participant_accts,
-    )
-
-    mention_prefix = _dm_mention_prefix(dm_state)
-    phase_body, phase_calc = _make_phase_post_text(
-        RoundPhaseType.ENEMY_PRE_ACTION, session.round_n, session, state.name_dict
-    )
-    game_post = f"{mention_prefix}{phase_body}\n\n{session.context}"
-    if errors:
-        game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
-
-    return AdminCommandResult(
-        "",
-        game_post,
-        dm_battle_to_register=dm_state,
-        game_post_calc_text=phase_calc,
-        game_post_calc_prefix=mention_prefix,
-    )
-
-
-def _cmd_dm_battle_advance_phase(
-    dm_state: DmBattleState, state: "BotState"
-) -> AdminCommandResult:
-    session = dm_state.session
-    new_phase = session.advance_phase()
-
-    post_action_results = (
-        session.manager.get_last_post_action_results()
-        if new_phase == RoundPhaseType.ENEMY_POST_ACTION
-        else None
-    )
-    if post_action_results is not None:
-        post_action_entries = [
-            entry
-            for part_results in post_action_results.values()
-            for part_result in part_results
-            for entry in part_result.log_entries
-        ]
-        write_back_changed_hp(
-            state.spreadsheet,
-            session.context,
-            post_action_entries,
-            cache=state.sheet_cache,
-        )
-
-    round_end_log_entries = (
-        session.manager.get_last_round_end_log_entries()
-        if new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
-        else None
-    )
-    if round_end_log_entries:
-        write_back_changed_hp(
-            state.spreadsheet,
-            session.context,
-            round_end_log_entries,
-            cache=state.sheet_cache,
-        )
-
-    eliminated_characters = (
-        session.manager.get_last_eliminated_characters()
-        if new_phase == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
-        else None
-    )
-
-    winner = _check_dm_battle_wipe(dm_state)
-    if winner is not None:
-        end_body, end_calc = _end_dm_battle(dm_state, state, winner)
-        mention_prefix = _dm_mention_prefix(dm_state)
-        return AdminCommandResult(
-            "◊ 페이즈 전환 처리 완료",
-            f"{mention_prefix}{end_body}",
-            game_post_reply_to_confirmation=True,
-            game_post_visibility=dm_state.visibility,
-            game_post_calc_text=end_calc,
-            game_post_calc_prefix=mention_prefix,
-        )
-
-    mention_prefix = _dm_mention_prefix(dm_state)
-    phase_body, phase_calc = _make_phase_post_text(
-        new_phase,
-        session.round_n,
-        session,
-        state.name_dict,
-        post_action_results,
-        round_end_log_entries,
-        eliminated_characters,
-    )
-    game_post = f"{mention_prefix}{phase_body}\n\n{session.context}"
-
-    return AdminCommandResult(
-        f"◊ 페이즈 전환: {new_phase.value}",
-        game_post,
-        dm_battle_to_register=dm_state,
-        game_post_reply_to_confirmation=True,
-        game_post_visibility=dm_state.visibility,
-        game_post_calc_text=phase_calc,
-        game_post_calc_prefix=mention_prefix,
-    )
-
-
-def _cmd_dm_battle_continue(
-    dm_state: DmBattleState, state: "BotState"
-) -> AdminCommandResult:
-    session = dm_state.session
-    if session.current_phase != RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY:
-        return AdminCommandResult(
-            "◊ 라운드 종료 단계에서만 [전투 속행]을 입력할 수 있습니다."
-        )
-
-    new_phase = session.advance_phase()  # → ENEMY_PRE_ACTION
-    mention_prefix = _dm_mention_prefix(dm_state)
-    phase_body, phase_calc = _make_phase_post_text(
-        new_phase, session.round_n, session, state.name_dict
-    )
-    game_post = f"{mention_prefix}{phase_body}\n\n{session.context}"
-
-    return AdminCommandResult(
-        f"◊ 라운드 {session.round_n} 시작",
-        game_post,
-        dm_battle_to_register=dm_state,
-        game_post_reply_to_confirmation=True,
-        game_post_visibility=dm_state.visibility,
-        game_post_calc_text=phase_calc,
-        game_post_calc_prefix=mention_prefix,
-    )
-
-
-def _cmd_dm_battle_end(
-    dm_state: DmBattleState, state: "BotState"
-) -> AdminCommandResult:
-    """관리자가 [전투종료]로 강제 종료한다 — 전멸 시 자동 종료의 안전장치."""
-    end_body, end_calc = _end_dm_battle(dm_state, state, winner=None)
-    mention_prefix = _dm_mention_prefix(dm_state)
-    return AdminCommandResult(
-        "",
-        f"{mention_prefix}{end_body}",
-        game_post_visibility=dm_state.visibility,
-        game_post_calc_text=end_calc,
-        game_post_calc_prefix=mention_prefix,
-    )
-
-
-def _cmd_dm_battle_proxy(
-    dm_state: DmBattleState,
-    char_name: str,
-    cmd_str: str,
-    state: "BotState",
-    acct: str = "",
-) -> tuple[str, str, Optional[BattleCommandLog]]:
-    """반환값: (reply_text, calc_text, battle_log_or_None)."""
-    session = dm_state.session
-    char_id = session.context.resolve_character_id(CharacterId(char_name))
-    if char_id not in session.context.characters:
-        return (
-            f"◊ 지정한 캐릭터({char_name})는 전투에 참여하고 있지 않습니다.",
-            "",
-            None,
-        )
-
-    field_id = dm_state.field_id
-    round_n = session.round_n
-    phase = session.current_phase
-    is_enemy_declare = session.context.characters[char_id].faction == FactionType.ENEMY
-
-    try:
-        command = parse_character_command(char_id, cmd_str, session.context)
-        if command is None:
-            return "◊ 커맨드 형식을 인식할 수 없습니다.", "", None
-
-        before = len(session.context.results)
-        session.context.inventory.cache = state.sheet_cache
-        session.process_command(command)
-        new_results = session.context.results[before:]
-        entries = [entry for result in new_results for entry in result.log_entries]
-        write_back_changed_hp(
-            state.spreadsheet, session.context, entries, cache=state.sheet_cache
-        )
-        mark_fate_used_if_needed(state, char_id, command)
-
-        battle_log = BattleCommandLog(
-            field_id=field_id,
-            round_n=round_n,
-            phase=phase.value,
-            battle_type=FieldBattleType.DM,
-            command_text=cmd_str,
-            mastodon_id=acct,
-            entries=entries,
-        )
-        reply_text, calc_text = _format_named_reply(
-            session.context,
-            char_id,
-            new_results,
-            state.name_dict,
-            show_skill_preview=is_enemy_declare,
-        )
-        if is_enemy_declare:
-            reveal_declared_enemy_skills(
-                state.spreadsheet, session.context, command, cache=state.sheet_cache
-            )
-        return f"{reply_text}\n\n{session.context}", calc_text, battle_log
-    except CommandValidationError as e:
-        battle_log = BattleCommandLog(
-            field_id=field_id,
-            round_n=round_n,
-            phase=phase.value,
-            battle_type=FieldBattleType.DM,
-            command_text=cmd_str,
-            mastodon_id=acct,
-            error_trace=traceback.format_exc(),
-        )
-        return f"◊ {e}\n\n{session.context}", "", battle_log
-
-
-def _check_dm_battle_wipe(dm_state: DmBattleState) -> Optional[FactionType]:
-    """진영별 HP 합산 후 한쪽이 전멸했으면 승리 진영을 반환한다."""
-    hp_by_faction: dict[FactionType, int] = {
-        FactionType.ALLY: 0,
-        FactionType.ENEMY: 0,
-    }
-    for char in dm_state.session.context.characters.values():
-        hp_by_faction[char.faction] += char.status.curr_hp
-
-    ally_wiped = hp_by_faction[FactionType.ALLY] <= 0
-    enemy_wiped = hp_by_faction[FactionType.ENEMY] <= 0
-    if ally_wiped == enemy_wiped:
-        return None
-    return FactionType.ALLY if enemy_wiped else FactionType.ENEMY
-
-
-def _end_dm_battle(
-    dm_state: DmBattleState, state: "BotState", winner: Optional[FactionType]
-) -> tuple[str, str]:
-    """DM 전투를 종료 처리한다(전멸 자동 종료/관리자 수동 종료 공용).
-
-    본 전투의 _cmd_end와 동일하게 전투 종료 시점 버프 훅([재앙] 등) 처리 후
-    변경된 HP를 "캐릭터" 시트에 반영하고, state.dm_battles에서 이 세션을
-    제거한다. 반환값은 (본문, 계산식) — DM 참가자 멘션 접두어는 이 함수가
-    아니라 호출측이 붙인다(계산식 CW 후속 게시물에도 반복해서 붙여야
-    하므로 한 곳에서 관리한다)."""
-    session = dm_state.session
-    battle_end_entries = session.context.on_battle_end()
-    if battle_end_entries:
-        write_back_changed_hp(
-            state.spreadsheet,
-            session.context,
-            battle_end_entries,
-            cache=state.sheet_cache,
-        )
-
-    if dm_state.field_id:
-        try:
-            upsert_field_row(
-                state.spreadsheet,
-                dm_state.field_id,
-                battle_type=FieldBattleType.DM,
-                round_n=session.round_n,
-                phase=session.current_phase.value,
-                characters=build_field_characters(session.context, include_hp=False),
-                ended=True,
-                meta={
-                    "active_post_id": dm_state.active_post_id,
-                    "visibility": dm_state.visibility,
-                },
-                cache=state.sheet_cache,
-            )
-        except Exception:
-            _log_system_error("필드 시트 저장")
-
-    state.dm_battles.pop(dm_state.active_post_id, None)
-
-    result = f"◊ 전투 종료 (라운드 {session.round_n})"
-    if winner is not None:
-        result += f"\n\n승자: {winner.value}"
-
-    battle_end_body, battle_end_calc = format_battle_end_log_entries(
-        session.context, battle_end_entries
-    )
-    body_blocks = [
-        block
-        for block in (format_final_hp_roster(session.context), battle_end_body)
-        if block
-    ]
-    if body_blocks:
-        result += "\n\n" + "\n\n".join(body_blocks)
-    return result, battle_end_calc
-
-
-def find_dm_battle_by_field_id(
-    state: "BotState", field_id: str
-) -> Optional[DmBattleState]:
-    """field_id(전투 개시 게시물 id)로 진행 중인 DmBattleState를 찾는다.
-
-    state.dm_battles는 스레드 tip post_id(페이즈 전환마다 바뀜)를 키로 쓰므로,
-    안정적인 field_id로 찾으려면 값들을 선형 탐색해야 한다 — 동시 진행되는 DM
-    전투 수가 적어(수 개 이내) 성능에 문제되지 않는다."""
-    return next(
-        (dm for dm in state.dm_battles.values() if dm.field_id == field_id), None
-    )
-
-
 def find_practice_by_field_id(
     state: "BotState", field_id: str
 ) -> Optional[PracticeBattleState]:
     """field_id(전투 개시 게시물 id 고정 값)로 진행 중인 PracticeBattleState를
     찾는다. state.practices는 진행 게시물(tip) id(페이즈 전환마다 바뀜)를
-    키로 쓰므로, find_dm_battle_by_field_id와 동일한 이유로 값들을 선형
-    탐색해야 한다."""
+    키로 쓰므로, 안정적인 field_id로 찾으려면 값들을 선형 탐색해야 한다 —
+    동시 진행되는 세션 수가 적어(수 개 이내) 성능에 문제되지 않는다."""
     return next(
         (ps for ps in state.practices.values() if ps.field_id == field_id), None
     )

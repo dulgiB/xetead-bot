@@ -112,7 +112,7 @@ def format_battle_reply(
     합산된 한 줄로만 보인다 — 계산식에는 각 파트의 굴림이 그대로 남는다.
 
     `show_skill_preview=True`이면 SKILL 파트마다 그 스킬의 효과 설명을
-    예고 줄로 덧붙인다 (적군 PRE 선언 답글 전용 — 본 전투/DM 전투에서만
+    예고 줄로 덧붙인다 (적군 PRE 선언 답글 전용 — 본 전투에서만
     사용된다). 스킬이 아직 공개되지 않았으면(`SkillData.revealed=False`)
     설명 대신 블라인드 문구를 보여준다.
 
@@ -120,7 +120,7 @@ def format_battle_reply(
     파트를 하나씩 잘라 이 함수를 여러 번 호출하는 프록시 경로 전용이다 —
     그 경로는 파트 전체를 한 번에 못 보므로, 호출측이 전체 파트 기준으로
     미리 계산한 합산 결과를 여기 넘겨 공유해야 여러 번 호출해도 중복
-    없이 한 곳에서만 합산된 줄이 나온다. 직접 호출(본 전투/DM 전투/대련의
+    없이 한 곳에서만 합산된 줄이 나온다. 직접 호출(본 전투/대련의
     캐릭터 커맨드)은 항상 전체 파트 리스트를 한 번에 넘기므로 넘길 필요
     없다(내부에서 자체적으로 계산한다)."""
     parts = drop_intermediate_consecutive_moves(part_results)
@@ -262,7 +262,7 @@ def drop_intermediate_consecutive_moves(
     (이동/5열-공격/대상-이동/6열) 연속이 아니므로 그대로 각각 남는다.
 
     `format_battle_reply()`가 파트 리스트 전체를 한 번에 받는 경로(본
-    전투/DM 전투/대련의 직접 커맨드)뿐 아니라, admin.py의
+    전투/대련의 직접 커맨드)뿐 아니라, admin.py의
     `_format_named_reply()`처럼 파트를 하나씩 잘라 개별 블록으로 조립하는
     프록시 경로에서도 그 루프를 돌기 전에 먼저 이 함수로 걸러야 한다."""
     filtered: list[CommandPartProcessResult] = []

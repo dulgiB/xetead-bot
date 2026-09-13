@@ -53,19 +53,15 @@ def handle_character_command(
     session: "BattleSession",
     field_id: str,
     battle_type: FieldBattleType,
-    *,
-    silent_on_unrecognized: bool = False,
-) -> tuple[Optional[str], str, Optional[BattleCommandLog]]:
+) -> tuple[str, str, Optional[BattleCommandLog]]:
     """
     mastodon acct를 char_dict로 캐릭터 ID로 변환 후 커맨드를 파싱·처리한다.
     검증 실패 시 오류 메시지 문자열을 반환한다.
 
-    `session`/`field_id`/`battle_type`은 호출측이 명시한다 — 본 전투
-    (`state.session`, `str(state.preparation_status_id)`, `MAIN`)와 DM 전투
-    (각 `DmBattleState.session`/`.field_id`, `DM`)가 이 함수를 공유하기
-    위함이다. 이 함수 스스로 본 전투/DM 전투를 구분할 방법이 없으므로
-    `battle_type`을 기본값 없이 반드시 caller가 넘기게 한다 — 기본값을 두면
-    넘기는 것을 잊은 DM 전투 경로가 조용히 본 전투로 기록된다.
+    `session`/`field_id`/`battle_type`은 호출측이 명시한다 — 이 함수 스스로
+    어떤 전투인지 구분할 방법이 없으므로 `battle_type`을 기본값 없이 반드시
+    caller가 넘기게 한다 — 기본값을 두면 넘기는 것을 잊은 경로가 조용히 본
+    전투로 기록된다.
 
     반환값: (reply_text_or_None, calc_text, battle_log_or_None). 두 번째
     요소(calc_text)는 계산식만 모은 텍스트로, 비어 있지 않으면 호출측이
@@ -73,11 +69,6 @@ def handle_character_command(
     로그_전투 기록용 자료다 (전투가 시작되지 않았거나 캐릭터를 찾지 못하는
     등, 커맨드 자체를 시도하지 않은 경우는 None).
 
-    `silent_on_unrecognized=True`면 대괄호 커맨드 자체가 없는 입력(사담 등)에
-    대해 에러 문자열 대신 `(None, "", None)`을 반환한다 — DM 전투처럼 스레드
-    하나가 계속 이어지는 구조에서, 참가자가 잡담을 해도 에러 답글로 스레드를
-    어지럽히지 않기 위함이다. 본 전투는 페이즈마다 게시물이 바뀌는 구조라
-    해당되지 않으므로 기본값은 False로 기존 동작을 유지한다.
     """
     if not session.started:
         return "◊ 전투가 시작되지 않았습니다.", "", None
@@ -114,8 +105,6 @@ def handle_character_command(
     try:
         command = parse_character_command(char_id, text, session.context)
         if command is None:
-            if silent_on_unrecognized:
-                return None, "", None
             return (
                 "◊ 커맨드 형식을 인식할 수 없습니다. 예: [공격/이름] 또는 [이동/3]",
                 "",

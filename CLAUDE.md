@@ -61,12 +61,11 @@ app/
   bot/                          # Mastodon 봇 인터페이스
     main.py                     # 봇 진입점 (MastodonBotListener)
     commands/
-      admin.py                  # Admin 커맨드 핸들러 (본 전투/DM 전투 공통)
+      admin.py                  # Admin 커맨드 핸들러
       character.py              # 캐릭터 전투 커맨드 핸들러
       noncombat.py              # 비전투 커맨드 핸들러 (판정, 의뢰, 상시조사)
     session.py                  # BattleSession
     practice_state.py           # PracticeBattleState (대련/결투/상시전투)
-    dm_battle_state.py          # DmBattleState (DM 전투)
     noncombat_state.py          # NonCombatState
     load_data.py                # 스프레드시트 데이터 로딩
     log_sheets.py                # "필드"/"로그_전투"/"로그_비전투" 시트 기록 (내부 자동화 DB)
@@ -186,7 +185,7 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 - 기준을 페이즈 **시작** 시점으로 잡는 이유: 라운드 시작 훅
   (`on_start_round`/`on_enemy_post_action`)이 거는 방어 버프는 그 라운드를
   지키라고 걸린 것이므로 유예 대상이 아니어야 한다.
-- 본 전투/DM 전투는 인자를 넘기지 않는다 — 아군 행동 뒤에 적 후행 정산이
+- 본 전투는 인자를 넘기지 않는다 — 아군 행동 뒤에 적 후행 정산이
   오도록 페이즈가 고정돼 있어 같은 문제가 없다.
 
 ### 제3자 반응형 트리거와 공용 헬퍼
@@ -252,7 +251,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 
 ### 에너미 스킬 예고 블라인드 (`SkillData.revealed`)
 
-본 전투/DM 전투(`RoundPhaseType.ENEMY_PRE_ACTION`이 있는 두 경로)에서 에너미가
+본 전투(`RoundPhaseType.ENEMY_PRE_ACTION`이 있는 경로)에서 에너미가
 스킬을 선언하면 답글에 `↳ {description}` 형태로 효과를 미리 예고한다
 (`bot/battle_reply_text.py`의 `format_battle_reply(..., show_skill_preview=True)`).
 아직 한 번도 선언된 적 없는 스킬(`SkillData.revealed == False`, "스킬_에너미"

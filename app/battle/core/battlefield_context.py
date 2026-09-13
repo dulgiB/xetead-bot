@@ -442,7 +442,7 @@ class BattlefieldContext:
         self, skip_applied_after: Optional[int] = None
     ) -> tuple[list[BattleLogEntry], list[CharacterId]]:
         """`skip_applied_after`는 지속시간 차감에서 제외할 기준 일련번호다
-        (`BuffContainer.on_round_end()` 참고). 본 전투/DM 전투는 넘기지
+        (`BuffContainer.on_round_end()` 참고). 본 전투는 넘기지
         않는다 — 적 후행 정산이 아군 행동 뒤에 오도록 페이즈가 고정돼 있어
         마지막 차례에 걸린 효과가 그냥 사라지는 문제가 없다."""
         log_entries, _ = self.buff_container.on_round_end(skip_applied_after)
