@@ -1,9 +1,10 @@
-"""대련/상시전투의 선공/후공은 매 라운드 다시 뽑는다.
+"""대련/결투의 선공/후공은 매 라운드 다시 뽑고, 상시전투는 아군 선공 고정이다.
 
 대련의 밸런스는 PvE 기준으로 짜인 캐릭터를 그대로 맞붙이는 것이라, 순서를
 고정하면 불리한 캐릭터가 매번 같은 방식으로 진다. 매 라운드 추첨은 "선공을
 잡으면 상대가 행동하기 전에 끝낼 수도 있다"는 역전 여지를 남기는 밸런스
-장치다.
+장치다. 반대로 상시전투는 본 전투와 같은 아군 vs 적군 구도이므로, 본 전투가
+아군 행동 뒤에 적 후행 정산을 두는 것과 같은 순서를 따른다.
 
 한때 이 추첨을 교대로 바꾼 적이 있는데, 그 이유는 후공 페이즈에 건 1턴
 효과가 상대의 행동 기회 없이 사라지는 문제였다. 그건 이제 지속시간 차감
@@ -19,8 +20,8 @@ from battle.practice.round_manager import PracticeRoundManager
 from helpers import get_test_preset
 
 
-def _manager() -> PracticeRoundManager:
-    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
+def _manager(*, is_duel: bool = True) -> PracticeRoundManager:
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={}, is_duel=is_duel)
     ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
     return PracticeRoundManager(ctx)
@@ -71,3 +72,24 @@ def test_restored_session_redraws_on_the_next_round():
 
     assert manager.first_mover in (SideType.SIDE_1, SideType.SIDE_2)
     assert manager.second_mover == manager.first_mover.opposite
+
+
+def test_investigation_always_moves_the_ally_side_first():
+    """상시전투는 추첨하지 않는다 — 아군(1팀)이 항상 선공이다."""
+    manager = _manager(is_duel=False)
+
+    for _ in range(5):
+        assert _play_round(manager) == SideType.SIDE_1
+
+
+def test_investigation_first_mover_is_fixed_even_after_restore():
+    manager = _manager(is_duel=False)
+    manager.set_phase_for_restore(
+        PracticeRoundPhase.SECOND_MOVER_ACTION, SideType.SIDE_2, SideType.SIDE_1
+    )
+
+    manager.end_round()
+    manager.to_phase(PracticeRoundPhase.FIRST_MOVER_ACTION)
+
+    assert manager.first_mover == SideType.SIDE_1
+    assert manager.second_mover == SideType.SIDE_2

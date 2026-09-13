@@ -90,6 +90,23 @@ class PracticeRoundManager:
             and char.id not in self._declared_this_phase
         ]
 
+    def _draw_movers(self) -> tuple[SideType, SideType]:
+        """이번 라운드의 (선공, 후공)을 정한다.
+
+        - 대련/결투: 매 라운드 다시 뽑는다. 밸런스가 PvE 기준으로 짜인
+          캐릭터들을 그대로 맞붙이는 구조라 순서를 고정하면 불리한 캐릭터가
+          매번 같은 방식으로 진다 — "선공을 잡으면 상대가 행동하기 전에 끝낼
+          수도 있다"는 추첨이 그 열세를 뒤집을 여지를 만든다.
+        - 상시전투: 아군(SIDE_1) 선공 고정. 본 전투가 아군 행동 뒤에 적 후행
+          정산을 두는 것과 같은 순서로, 같은 아군 vs 적군 구도인 상시전투도
+          아군이 먼저 움직인다.
+        """
+        if not self._context.is_duel:
+            return SideType.SIDE_1, SideType.SIDE_2
+        sides = list(SideType)
+        random.shuffle(sides)
+        return sides[0], sides[1]
+
     def to_phase(self, phase: PracticeRoundPhase) -> None:
         if phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
             self._context.on_start_round()
@@ -97,15 +114,7 @@ class PracticeRoundManager:
             # 쪽. 양 팀이 같은 라운드에 행동하므로 "모든 공격보다 앞"인
             # 지점이 여기뿐이다 (end_round() 참고).
             self._context.buff_container.on_enemy_post_action()
-            # 매 라운드 다시 뽑는다. 대련/상시전투의 밸런스는 PvE 기준으로
-            # 짜인 캐릭터들을 그대로 맞붙이는 것이라, 순서를 고정하면 불리한
-            # 캐릭터가 매번 같은 방식으로 진다 — 선공을 잡으면 상대가 행동하기
-            # 전에 끝낼 수도 있다는 추첨이 그 열세를 뒤집을 여지를 만든다.
-            # (후공 페이즈에 건 1턴 효과가 그냥 사라지던 문제는 순서가 아니라
-            #  지속시간 차감 쪽에서 해결한다 — end_round() 참고.)
-            sides = list(SideType)
-            random.shuffle(sides)
-            self._first_mover, self._second_mover = sides[0], sides[1]
+            self._first_mover, self._second_mover = self._draw_movers()
 
         elif phase == PracticeRoundPhase.SECOND_MOVER_ACTION:
             pass
