@@ -10,7 +10,7 @@ from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.skill.models import SkillData
-from battle.practice.define import SideType
+from battle.practice.define import PracticeBattleMode, SideType
 
 # 내부는 상위 클래스와 같은 FactionType으로 동작하고, 외부 API에서만
 # SideType을 노출한다.
@@ -40,9 +40,9 @@ class PracticeBattlefieldContext(BattlefieldContext):
         passive_skill_dict: "dict[str, PassiveSkillData] | None" = None,
         item_dict: "dict[str, ItemData] | None" = None,
         *,
-        is_duel: bool = True,
+        mode: PracticeBattleMode = PracticeBattleMode.PRACTICE,
     ):
-        self.is_duel = is_duel
+        self.mode = mode
         # 인벤토리는 미지원이지만 item_dict는 이름 조회용으로 받아 둔다 —
         # 파서가 "여기선 못 쓰는 아이템"과 "등록되지 않은 이름"을 구분해
         # 정확한 에러를 낼 수 있어야 하기 때문이다.
@@ -53,6 +53,10 @@ class PracticeBattlefieldContext(BattlefieldContext):
             item_dict=item_dict,
             milestone_n=1,
         )
+
+    @property
+    def is_duel(self) -> bool:
+        return self.mode != PracticeBattleMode.INVESTIGATION
 
     @property
     def allow_item_usage(self) -> bool:

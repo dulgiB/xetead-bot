@@ -5,7 +5,7 @@ from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, CombatStatType
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
-from battle.practice.define import PracticeRoundPhase, SideType
+from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
 
 
@@ -15,6 +15,8 @@ class PracticeBattleState:
 
     context: PracticeBattlefieldContext
     manager: PracticeRoundManager
+
+    mode: PracticeBattleMode = PracticeBattleMode.PRACTICE
 
     round_n: int = 0
     round_limit: int = 3
@@ -41,7 +43,6 @@ class PracticeBattleState:
     )
 
     # 상시전투 전용 (admin이 준비)
-    is_investigation: bool = False
     pending_participants: list[str] = field(default_factory=list)
     pending_placements: list[tuple] = field(default_factory=list)
 
@@ -51,6 +52,10 @@ class PracticeBattleState:
     # 잃은 인원이 많은 팀일수록 비율이 올라가는 역전이 생긴다. 시작 시점 값을
     # 붙잡아 두고 분모로 쓰면 "얼마나 잃었는가"가 그대로 비율에 남는다.
     initial_max_hp_by_side: dict[SideType, int] = field(default_factory=dict)
+
+    @property
+    def is_investigation(self) -> bool:
+        return self.mode == PracticeBattleMode.INVESTIGATION
 
     @property
     def phase(self) -> Optional[PracticeRoundPhase]:

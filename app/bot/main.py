@@ -15,7 +15,7 @@ from battle.core.commands.parser import count_bracket_groups, parse_character_co
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
-from battle.practice.define import PracticeRoundPhase, SideType
+from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -172,12 +172,14 @@ def _split_for_post(text: str, prefix_len: int) -> list[str]:
     return chunks or [""]
 
 
+_PRACTICE_MODE_TO_FIELD_TYPE: dict[PracticeBattleMode, log_sheets.FieldBattleType] = {
+    PracticeBattleMode.PRACTICE: log_sheets.FieldBattleType.PRACTICE,
+    PracticeBattleMode.INVESTIGATION: log_sheets.FieldBattleType.INVESTIGATION,
+}
+
+
 def _practice_battle_type(ps: PracticeBattleState) -> log_sheets.FieldBattleType:
-    return (
-        log_sheets.FieldBattleType.INVESTIGATION
-        if ps.is_investigation
-        else log_sheets.FieldBattleType.PRACTICE
-    )
+    return _PRACTICE_MODE_TO_FIELD_TYPE[ps.mode]
 
 
 def _practice_field_meta(ps: PracticeBattleState) -> dict:
@@ -1684,7 +1686,7 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
 
     mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
-        f"◊ 대련 시작\n"
+        f"◊ {ps.mode.value} 시작\n"
         f"라운드 상한: {ps.round_limit}라운드\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
@@ -1704,13 +1706,12 @@ def _finish_practice_battle(
     전투 종료 훅(_apply_practice_battle_end_effects)은 반드시 winner() 앞에
     와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다."""
     assert ps.active_post_id is not None
-    battle_mode = "상시전투" if ps.is_investigation else "대련"
     battle_end_body = _apply_practice_battle_end_effects(ps)
     winner = ps.winner()
     winner_label = ps.side_label(winner)
     body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
     game_post = (
-        f"◊ {battle_mode} 종료 ({ps.round_n}라운드)\n\n"
+        f"◊ {ps.mode.value} 종료 ({ps.round_n}라운드)\n\n"
         f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
         + "\n\n".join(body_blocks)
     )
