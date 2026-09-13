@@ -30,6 +30,13 @@ class BuffContainer:
         self._apply_seq += 1
         return self._apply_seq
 
+    @property
+    def current_apply_seq(self) -> int:
+        """지금까지 부여된 버프의 마지막 일련번호. 이 값을 어느 시점에 붙잡아
+        두면 "그 뒤에 새로 걸린 버프"를 나중에 가려낼 수 있다
+        (`on_round_end(skip_applied_after=...)`)."""
+        return self._apply_seq
+
     def add(self, add_event: "BuffAddData"):
         buff_data = self._context.get_buff_data_by_id(add_event.buff_id)
         buff_class = buff_data.get_buff_class()
@@ -315,11 +322,23 @@ class BuffContainer:
     def on_round_start(self):
         self._apply_round_events(BuffApplyTiming.ON_ROUND_START)
 
-    def on_round_end(self) -> tuple[list[BattleLogEntry], list[BuffUid]]:
+    def on_round_end(
+        self, skip_applied_after: Optional[int] = None
+    ) -> tuple[list[BattleLogEntry], list[BuffUid]]:
+        """라운드 종료 이벤트를 처리하고 지속시간을 1턴 차감한다.
+
+        `skip_applied_after`가 주어지면 그 일련번호 이후에 걸린 버프는 이번
+        차감에서 제외한다 — 대련/상시전투처럼 양 팀이 한 라운드 안에서 각자
+        한 번씩 행동하는 구조에서, 라운드의 마지막 행동 차례에 걸린 1턴짜리
+        효과가 상대에게 단 한 번의 행동 기회도 주지 못한 채 사라지는 것을
+        막기 위한 유예다(`PracticeRoundManager` 참고).
+        """
         log_entries = self._apply_round_events(BuffApplyTiming.ON_ROUND_END)
 
         buffs_to_remove: list[BuffBase] = []
         for buff in self._buffs:
+            if skip_applied_after is not None and buff.applied_at > skip_applied_after:
+                continue
             buff.duration.deduct_turn()
             if buff.duration.finished:
                 buffs_to_remove.append(buff)
