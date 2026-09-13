@@ -340,6 +340,7 @@ def test_restore_duel_keeps_full_hp_and_no_round_limit():
             "active_post_id": 321,
             "first_mover": SideType.SIDE_1.value,
             "second_mover": SideType.SIDE_2.value,
+            "roster": {SideType.SIDE_1.value: ["1팀캐릭터", "기권한캐릭터"]},
         },
     )
 
@@ -351,6 +352,8 @@ def test_restore_duel_keeps_full_hp_and_no_round_limit():
     character = ps.context.characters[CharacterId("1팀캐릭터")]
     assert character.status[CombatStatType.MAX_HP] == 100
     assert character.status.curr_hp == 55
+    # 자진 기권해 필드에 없는 캐릭터도 패배 대가 대상으로 남아야 한다.
+    assert ps.roster_by_side[SideType.SIDE_1] == ["1팀캐릭터", "기권한캐릭터"]
 
 
 def test_restore_practice_battle_fails_when_active_post_id_missing():

@@ -329,9 +329,7 @@ def test_enemy_post_action_summary_includes_calculation(monkeypatch):
     어느 적이 한 행동인지는 본문에 표시하지 않는다 — 여러 적의 결과를 한
     게시물에 모아 보여주므로, 필요하면 계산식(CW 후속 게시물, 이름이
     붙어 있다)을 펼쳐서 확인하면 된다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -361,9 +359,7 @@ def test_enemy_post_action_summary_merges_damage_to_same_target_across_attackers
     공격자마다 별도 줄이 아니라 그 아군에 대한 대미지 합계 한 줄로 합쳐져야
     한다 — 개별 커맨드 답글의 spoiler_text 요약과 동일한 방식으로, 적이
     많아져도 본문이 늘어지지 않게 하기 위함이다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
@@ -421,9 +417,7 @@ def test_enemy_post_action_summary_lists_unique_granted_buff_info(monkeypatch):
     "**【버프 정보】**\n▹ [버프id]: 설명" 형식으로 모아 보여줘야 한다. 같은
     버프(열 광역기로 두 명에게 동시에 부여)가 여러 명에게 적용돼도 설명은
     buff_id 기준으로 한 번만 나와야 한다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     buff = BuffData(
         id="테스트디버프",
         buff_class_name="BuffReceivedDamage",
@@ -499,10 +493,10 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
     ws = _RecordingWorksheet({2: "유효 캐릭터", 3: "적 캐릭터"})
     monkeypatch.setattr(
         log_sheets,
-        "_load_hp_write_targets",
+        "_load_hp_rows",
         lambda spreadsheet, cache=None: {
-            "유효 캐릭터": (ws, 2, 1),
-            "적 캐릭터": (ws, 3, 1),
+            "유효 캐릭터": log_sheets._HpRow(ws, 2, 1, curr_hp=100, max_hp=100),
+            "적 캐릭터": log_sheets._HpRow(ws, 3, 1, curr_hp=100, max_hp=100),
         },
     )
     state = _make_state(
@@ -2881,9 +2875,7 @@ def _setup_dm_battle_state(monkeypatch, enemy_max_hp: int = 100):
     하므로 attack_range를 전체 열 폭(7)으로 넉넉히 잡는다 — 그렇지 않으면
     무작위 배치 결과에 따라 사거리 밖 판정으로 테스트가 간헐적으로 실패한다.
     """
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state()
     char_dict = {"player_acct": get_test_preset("전사", attack_range=7)}
     name_dict = {
@@ -3294,9 +3286,7 @@ def test_dm_battle_character_reply_always_includes_field_board(monkeypatch):
 def test_dm_battles_run_concurrently_without_state_bleed(monkeypatch):
     """두 개의 DM 전투가 동시에 진행되어도 서로의 상태(적/아군 배치, 라운드)가
     섞이면 안 된다 — state.dm_battles는 여러 인스턴스를 동시에 관리해야 한다."""
-    monkeypatch.setattr(
-        log_sheets, "_load_hp_write_targets", lambda spreadsheet, cache=None: {}
-    )
+    monkeypatch.setattr(log_sheets, "_load_hp_rows", lambda spreadsheet, cache=None: {})
     state = _make_state()
     char_dict = {
         "player1_acct": get_test_preset("전사1"),

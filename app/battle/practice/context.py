@@ -24,6 +24,15 @@ _FACTION_TO_SIDE: dict[FactionType, SideType] = {
 }
 
 
+@dataclasses.dataclass
+class PersistentHp:
+    """캐릭터 시트에 적힌 실제 체력. 임시 체력(전장의 status.curr_hp)과
+    구분해서 들고 있는다 — 결투에서 패배 대가만 이쪽에서 빠지기 때문이다."""
+
+    curr_hp: int
+    max_hp: int
+
+
 class PracticeBattlefieldContext(BattlefieldContext):
     """
     대련/상시전투/결투 전용 전장 컨텍스트.
@@ -44,6 +53,10 @@ class PracticeBattlefieldContext(BattlefieldContext):
         mode: PracticeBattleMode = PracticeBattleMode.PRACTICE,
     ):
         self.mode = mode
+        # 결투 한정으로 캐릭터별 실제 체력을 들고 있는다. 필드에서 빠진
+        # 캐릭터(자진 기권)의 값도 지우지 않는다 — 패배 대가는 기권자에게도
+        # 적용되기 때문이다.
+        self.persistent_hp: dict[CharacterId, PersistentHp] = {}
         # 인벤토리는 미지원이지만 item_dict는 이름 조회용으로 받아 둔다 —
         # 파서가 "여기선 못 쓰는 아이템"과 "등록되지 않은 이름"을 구분해
         # 정확한 에러를 낼 수 있어야 하기 때문이다.
@@ -96,6 +109,11 @@ class PracticeBattlefieldContext(BattlefieldContext):
             data, max_hp=practice_hp, curr_hp=practice_hp
         )
         super().add_character(practice_data, _SIDE_TO_FACTION[side], column_idx)
+        if self.mode == PracticeBattleMode.DUEL:
+            self.persistent_hp[CharacterId(data.name)] = PersistentHp(
+                curr_hp=data.curr_hp if data.curr_hp is not None else data.max_hp,
+                max_hp=data.max_hp,
+            )
 
     def get_side(self, char_id: CharacterId) -> SideType:
         return _FACTION_TO_SIDE[self.characters[char_id].faction]

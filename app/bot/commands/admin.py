@@ -36,6 +36,7 @@ from bot.battle_reply_text import (
     format_round_end_log_entries,
     merge_damage_heal_lines,
     merge_stackable_buff_add_lines,
+    with_persistent_hp_footnote,
 )
 from bot.commands.character import mark_fate_used_if_needed
 from bot.dm_battle_state import DmBattleState
@@ -1236,7 +1237,8 @@ def _format_named_reply(
             )
         if calc:
             calc_blocks.append(f"{escape_markdown(char_id.name)} {calc}")
-    return "\n\n".join(body_blocks), "\n\n".join(calc_blocks)
+    body = with_persistent_hp_footnote("\n\n".join(body_blocks), parts)
+    return body, "\n\n".join(calc_blocks)
 
 
 def _format_enemy_post_action_results(

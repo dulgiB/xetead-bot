@@ -15,7 +15,13 @@ from battle.core.commands.parser import count_bracket_groups, parse_character_co
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
-from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
+from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
+from battle.practice.define import (
+    DUEL_DEFEAT_HP_PENALTY,
+    PracticeBattleMode,
+    PracticeRoundPhase,
+    SideType,
+)
 from dotenv import load_dotenv
 from mastodon import Mastodon, StreamListener
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -23,9 +29,11 @@ from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from utils.name_matching import whitespace_tolerant_literal
 
 from bot.battle_reply_text import (
+    escape_markdown,
     format_battle_end_log_entries,
     format_battle_reply,
     format_eliminated_characters,
+    format_log_entry_block,
 )
 from bot.commands import admin as admin_commands
 from bot.commands import noncombat as noncombat_commands
@@ -200,6 +208,9 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         "initial_max_hp": {
             side.value: hp for side, hp in ps.initial_max_hp_by_side.items()
         },
+        # 결투 패배 대가 대상. 자진 기권한 캐릭터는 필드 스냅샷에 남지 않아
+        # 복원 후 명부를 다시 만들면 대가에서 빠져 버린다.
+        "roster": {side.value: names for side, names in ps.roster_by_side.items()},
     }
 
 
@@ -1627,6 +1638,66 @@ def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
     return body
 
 
+def _apply_duel_defeat_penalty(
+    state: "BotState", ps: PracticeBattleState, winner: Optional[SideType]
+) -> str:
+    """결투에서 패배한 팀 전원의 실제 체력을 깎고, 그 결과를 전투 중 결과 줄과
+    같은 형식의 블록으로 반환한다(결투가 아니거나 무승부면 빈 문자열).
+
+    대상은 필드에 남은 캐릭터가 아니라 시작 시점의 명부다 — 자진 기권한
+    캐릭터도 패배 측이면 대가를 치른다. 체력은 라이브 세션이 들고 있는 값이
+    아니라 시트를 다시 읽어 깎으므로, 전투 도중 GM이 시트에서 고친 체력을
+    덮어쓰지 않는다."""
+    if not ps.is_duel_match or winner is None:
+        return ""
+    loser = winner.opposite
+    names = list(ps.roster_by_side.get(loser, []))
+    if not names:
+        return ""
+
+    changes, failed = log_sheets.apply_persistent_hp_delta(
+        state.spreadsheet,
+        names,
+        -DUEL_DEFEAT_HP_PENALTY,
+        cache=state.sheet_cache,
+    )
+
+    entries = []
+    dead_names = []
+    for change in changes:
+        # 라이브 세션의 실제 체력도 맞춰 둔다 — 같은 캐릭터가 이 전투 안에서
+        # 다시 조회될 일은 없지만, 어긋난 값을 남겨 둘 이유도 없다.
+        persistent = ps.context.persistent_hp.get(CharacterId(change.name))
+        if persistent is not None:
+            persistent.curr_hp = change.curr_hp
+        entries.append(
+            BattleLogEntry(
+                target_name=change.name,
+                kind=BattleLogEntryKind.DAMAGE,
+                result=f"대미지 {-change.applied_delta}",
+                value=-change.applied_delta,
+                hp_after=change.curr_hp,
+                max_hp=change.max_hp,
+                hp_is_persistent=True,
+            )
+        )
+        if change.curr_hp == 0:
+            dead_names.append(change.name)
+
+    blocks = [format_log_entry_block(ps.context, entries, "결투 패배 처리")]
+    blocks += [
+        f"◊ {escape_markdown(name)}의 체력이 0이 되어 사망 처리됩니다."
+        f" @{WORLD_MASTODON_ID}"
+        for name in dead_names
+    ]
+    if failed:
+        blocks.append(
+            "⚠️ 다음 캐릭터의 실제 체력 반영에 실패했습니다. 관리자가 직접"
+            " 확인해 주세요: " + ", ".join(escape_markdown(name) for name in failed)
+        )
+    return "\n\n".join(block for block in blocks if block)
+
+
 def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
     errors: list[str] = []
@@ -1673,6 +1744,7 @@ def _begin_practice_rounds(state: "BotState", ps: PracticeBattleState) -> None:
     # 볼 수 있다.
     ps.context.on_battle_start()
     ps.snapshot_initial_max_hp()
+    ps.snapshot_roster()
     ps.start_round()
     _upsert_practice_field_row(
         state, ps, phase_value=ps.phase.value if ps.phase else ""
@@ -1721,7 +1793,10 @@ def _finish_practice_battle(
     battle_end_body = _apply_practice_battle_end_effects(ps)
     winner = ps.winner()
     winner_label = ps.side_label(winner)
-    body_blocks = [block for block in (_field_board(ps), battle_end_body) if block]
+    defeat_body = _apply_duel_defeat_penalty(state, ps, winner)
+    body_blocks = [
+        block for block in (_field_board(ps), battle_end_body, defeat_body) if block
+    ]
     game_post = (
         f"◊ {ps.mode.value} 종료 ({ps.round_n}라운드)\n\n"
         f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"

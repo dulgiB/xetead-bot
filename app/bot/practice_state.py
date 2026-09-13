@@ -47,6 +47,11 @@ class PracticeBattleState:
     pending_participants: list[str] = field(default_factory=list)
     pending_placements: list[tuple] = field(default_factory=list)
 
+    # 전투 시작 시점의 팀별 참가자 이름. 결투 패배 대가는 자진 기권해
+    # 필드에서 빠진 캐릭터에게도 적용되므로, 현재 배치 상태가 아니라 시작
+    # 시점의 명부를 봐야 한다.
+    roster_by_side: dict[SideType, list[str]] = field(default_factory=dict)
+
     # 전투 시작 시점의 팀별 최대 체력 합(동료 제외). 승패는 체력 "비율"로
     # 가르는데, 필드에서 빠진 캐릭터(상시전투의 0 체력 적군, 자진 기권한
     # 참가자)는 context.characters에서 사라져 분모에서도 함께 빠진다 — 그러면
@@ -82,6 +87,13 @@ class PracticeBattleState:
         """전투 시작(첫 라운드 진입) 시점에 팀별 최대 체력 합을 고정한다."""
         self.initial_max_hp_by_side = {
             side: self._live_max_hp_by_side(side) for side in SideType
+        }
+
+    def snapshot_roster(self) -> None:
+        """전투 시작 시점에 팀별 참가자 명부를 고정한다."""
+        self.roster_by_side = {
+            side: [char.id.name for char in self.actable_characters(side)]
+            for side in SideType
         }
 
     def all_declared(self) -> bool:

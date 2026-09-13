@@ -49,6 +49,31 @@ def escape_markdown(text: str) -> str:
 
 
 _HIDDEN_HP_TEXT = "?/?"
+# 전장의 임시 체력이 아니라 "캐릭터" 시트의 실제 체력을 보여주는 줄에 붙이는
+# 표시와, 그 표시가 들어간 블록 마지막에 한 번만 붙이는 각주.
+_PERSISTENT_HP_MARK = "※"
+PERSISTENT_HP_FOOTNOTE = "※ 실제 체력"
+
+
+def _has_persistent_hp_entry(part_results: list[CommandPartProcessResult]) -> bool:
+    return any(
+        entry.hp_is_persistent
+        for part_result in part_results
+        for entry in part_result.log_entries
+    )
+
+
+def with_persistent_hp_footnote(
+    text: str, part_results: list[CommandPartProcessResult]
+) -> str:
+    """실제 체력 줄이 섞여 있으면 그 블록의 마지막 줄로 각주를 붙인다.
+
+    파트를 하나씩 잘라 여러 블록으로 조립하는 경로(admin.py의
+    `_format_named_reply()`)에서는 개별 블록이 아니라 다 합친 뒤 한 번만
+    호출해야 각주가 중간에 끼지 않는다."""
+    if not text or not _has_persistent_hp_entry(part_results):
+        return text
+    return f"{text}\n{PERSISTENT_HP_FOOTNOTE}"
 
 
 def _format_hp_fraction(character: "CombatCharacter") -> str:
@@ -119,7 +144,11 @@ def format_battle_reply(
             bodies.append(body)
         if calc_block:
             calc_blocks.append(calc_block)
-    return "\n".join(bodies), "\n\n".join(calc_blocks)
+    body = "\n".join(bodies)
+    if _merged_lines is None:
+        # 파트를 잘라 여러 번 호출하는 경로는 호출측이 다 합친 뒤 직접 붙인다.
+        body = with_persistent_hp_footnote(body, parts)
+    return body, "\n\n".join(calc_blocks)
 
 
 _MERGEABLE_KINDS = (BattleLogEntryKind.DAMAGE, BattleLogEntryKind.HEAL)
@@ -142,6 +171,10 @@ def merge_damage_heal_lines(
     for part_result in part_results:
         for entry in part_result.log_entries:
             if entry.kind not in _MERGEABLE_KINDS or entry.value is None:
+                continue
+            # 실제 체력 줄은 같은 대상의 임시 체력 대미지와 합쳐지면 안 된다
+            # — 합계도 잔여 체력도 서로 다른 체력의 값이 섞여 버린다.
+            if entry.hp_is_persistent:
                 continue
             key = (entry.kind, entry.target_name)
             totals[key] = totals.get(key, 0) + entry.value
@@ -296,18 +329,26 @@ def format_battle_end_log_entries(
     편이 낫다는 판단으로, 계산식도 본문에 함께 포함시키고 두 번째 값은
     항상 빈 문자열이다(호출측이 CW 후속 게시물을 만들지 않도록). 발동한
     효과가 없으면 둘 다 빈 문자열이다."""
+    return format_log_entry_block(context, entries, "전투 종료 처리"), ""
+
+
+def format_log_entry_block(
+    context: "BattlefieldContext", entries: list[BattleLogEntry], header: str
+) -> str:
+    """로그 엔트리들을 "**【헤더】**" 아래 결과 줄로 나열한 블록을 만든다.
+    전투 중 결과 줄(`_format_entry()`)과 같은 형식이라, 정산 종류가 달라도
+    읽는 쪽에서는 같은 모양으로 보인다. 엔트리가 없으면 빈 문자열이다."""
     if not entries:
-        return "", ""
+        return ""
     lines = []
     for entry in entries:
         line, calc, final_value = _format_entry(context, entry)
         lines.append(line)
         if calc:
             lines.append(f"　↳ {calc} → {final_value}")
-    header = "**【전투 종료 처리】**"
-    body = f"{header}\n" + "\n".join(lines)
-    calc = ""
-    return body, calc
+    if any(entry.hp_is_persistent for entry in entries):
+        lines.append(PERSISTENT_HP_FOOTNOTE)
+    return f"**【{header}】**\n" + "\n".join(lines)
 
 
 def format_final_hp_roster(context: "BattlefieldContext") -> str:
@@ -374,7 +415,9 @@ def _format_part(
             # emitted에 일부러 등록하지 않는다 — 여기서 키를 선점하면 같은
             # 대상이 다른 파트에서 내야 할 합산 줄까지 지워진다.
             pass
-        elif entry.kind in _MERGEABLE_KINDS or is_mergeable_buff_add:
+        elif (
+            entry.kind in _MERGEABLE_KINDS and not entry.hp_is_persistent
+        ) or is_mergeable_buff_add:
             # 다른 파트가 이미 합산 줄로 냈으면 본문에는 또 넣지 않는다 —
             # 계산식은 이 파트 고유의 굴림이므로 그대로 남긴다.
             key = (
@@ -513,6 +556,8 @@ def _format_damage_or_heal(
             if _is_hp_hidden(context, entry.target_name)
             else f"{entry.hp_after}/{entry.max_hp}"
         )
+        if entry.hp_is_persistent:
+            hp_text += _PERSISTENT_HP_MARK
         line = f"▹ {target_name} | {final_value} → {hp_text}{label_suffix}"
     roll_display = (
         escape_markdown(entry.roll_display) if entry.roll_display is not None else None

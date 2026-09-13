@@ -184,13 +184,13 @@ def test_write_back_changed_hp_still_logs_error_for_non_companion_miss(caplog):
     )
 
 
-def test_load_hp_write_targets_reads_each_sheet_only_once():
+def test_load_hp_rows_reads_each_sheet_only_once():
     """바뀐 캐릭터가 여러 명이어도 시트 읽기는 시트당 1회로 고정되어야 한다."""
     spreadsheet = _FakeSpreadsheetForHpLookup(
         ["아군1", "아군2", "아군3"], enemy_names=["적1", "적2"]
     )
 
-    targets = log_sheets._load_hp_write_targets(spreadsheet)
+    targets = log_sheets._load_hp_rows(spreadsheet)
 
     assert set(targets.keys()) == {"아군1", "아군2", "아군3", "적1", "적2"}
     assert spreadsheet.worksheet("캐릭터").get_values_call_count == 1

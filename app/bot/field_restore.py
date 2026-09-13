@@ -360,6 +360,12 @@ def _restore_practice_battle(
         if parsed_side is not None:
             initial_max_hp[parsed_side] = hp
 
+    roster: dict[SideType, list[str]] = {}
+    for side_value, names in (meta.get("roster") or {}).items():
+        parsed_side = _maybe_side(side_value)
+        if parsed_side is not None:
+            roster[parsed_side] = list(names)
+
     ps = PracticeBattleState(
         context=context,
         manager=manager,
@@ -380,6 +386,7 @@ def _restore_practice_battle(
         second_mover=second_mover,
         expected_accts=expected_accts,
         initial_max_hp_by_side=initial_max_hp,
+        roster_by_side=roster,
     )
     state.practices[active_post_id] = ps
 

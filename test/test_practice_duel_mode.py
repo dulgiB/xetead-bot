@@ -1,8 +1,9 @@
 """결투([결투]) 전용 규칙 테스트.
 
-결투는 대련과 진행이 같고 두 가지가 다르다:
+결투는 대련과 진행이 같고 세 가지만 다르다:
   1. 임시 체력이 최대 체력의 절반이 아니라 최대 체력 그대로다.
   2. 라운드 상한이 없다 — 한쪽이 전멸할 때까지 계속된다.
+  3. 패배한 팀은 임시 체력이 아니라 시트의 실제 체력을 20 잃는다.
 
 대련/상시전투와 공유하는 진행 규칙 자체는 test_practice_* 다른 파일에서
 다루므로 여기서는 위 차이점만 확인한다.
@@ -18,6 +19,7 @@ from battle.objects.define import BattlefieldColumnIndex  # noqa: E402
 from battle.objects.models import CharacterId  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import (  # noqa: E402
+    DUEL_DEFEAT_HP_PENALTY,
     PracticeBattleMode,
     PracticeRoundPhase,
     SideType,
@@ -146,6 +148,21 @@ def test_practice_still_halves_max_hp():
     assert ctx.characters[_A].status.curr_hp == 50
 
 
+def test_duel_tracks_sheet_hp_separately_from_battle_hp():
+    """임시 체력과 별개로 시트의 실제 체력을 들고 있어야 대가를 뺄 수 있다."""
+    ctx = PracticeBattlefieldContext(
+        buff_dict={}, skill_dict={}, mode=PracticeBattleMode.DUEL
+    )
+    ctx.add_character(
+        get_test_preset(_A.name, max_hp=100, initial_hp=40),
+        SideType.SIDE_1,
+        BattlefieldColumnIndex(0),
+    )
+
+    assert ctx.characters[_A].status.curr_hp == 100
+    assert ctx.persistent_hp[_A].curr_hp == 40
+
+
 # ── 2. 라운드 상한 ───────────────────────────────────────────────────────────
 
 
@@ -201,3 +218,85 @@ def test_duel_ends_when_one_side_is_wiped(monkeypatch):
 
     assert ended is True
     assert post is not None and "결투 종료" in post
+
+
+# ── 3. 패배 대가 ─────────────────────────────────────────────────────────────
+
+
+def test_defeated_side_loses_real_hp(monkeypatch):
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_B.name) == 80 - DUEL_DEFEAT_HP_PENALTY
+    assert state.spreadsheet.hp_of(_A.name) == 100
+    assert "**【결투 패배 처리】**" in post
+    assert f"▹ {_B.name} | -{DUEL_DEFEAT_HP_PENALTY} → 60/100※" in post
+    assert "※ 실제 체력" in post
+
+
+def test_defeat_penalty_footnote_is_the_last_line_of_its_block(monkeypatch):
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    block = post.split("**【결투 패배 처리】**")[1].split("\n\n")[0]
+    assert block.strip().splitlines()[-1] == "※ 실제 체력"
+
+
+def test_draw_applies_no_defeat_penalty(monkeypatch):
+    """양 팀이 동시에 전멸하면(승자 없음) 어느 쪽도 실제 체력을 잃지 않는다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 100})
+    ctx.characters[_A].status.curr_hp = 0
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_A.name) == 100
+    assert state.spreadsheet.hp_of(_B.name) == 100
+    assert "결투 패배 처리" not in post
+
+
+def test_defeat_penalty_floors_at_zero_and_calls_world(monkeypatch):
+    """실제 체력이 대가보다 적으면 0에서 멈추고, 사망 처리 확인을 요청한다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 15})
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_B.name) == 0
+    assert f"▹ {_B.name} | -15 → 0/100※" in post
+    assert (
+        f"◊ {_B.name}의 체력이 0이 되어 사망 처리됩니다."
+        f" @{main_module.WORLD_MASTODON_ID}" in post
+    )
+
+
+def test_retired_participant_still_pays_the_defeat_penalty(monkeypatch):
+    """자진 기권해 필드에서 빠져도 패배 측이면 대가를 치른다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ctx.remove_character(_B)
+
+    main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_B.name) == 80 - DUEL_DEFEAT_HP_PENALTY
+
+
+def test_practice_mode_never_touches_real_hp(monkeypatch):
+    """대련은 패배해도 시트의 체력이 그대로여야 한다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ps.mode = PracticeBattleMode.PRACTICE
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_B.name) == 80
+    assert "결투 패배 처리" not in post

@@ -1,5 +1,9 @@
 from enum import Enum
 
+# 결투에서 패배한 팀의 캐릭터가 잃는 실제 체력(임시 체력이 아니라 "캐릭터"
+# 시트의 체력).
+DUEL_DEFEAT_HP_PENALTY = 20
+
 
 class SideType(str, Enum):
     SIDE_1 = "1팀"
