@@ -40,8 +40,8 @@ logger = logging.getLogger(__name__)
 class FieldBattleType(str, Enum):
     """ "필드" 시트 한 행이 어떤 종류의 전투/세션을 기록하는지 구분한다.
 
-    재개(재기동 복원) 시 이 값으로 본 전투/DM 전투/대련/상시전투/상시조사 중
-    무엇을 복원할지 분기한다. INVESTIGATION_QUEST(상시조사)는 전투가 아니라
+    재개(재기동 복원) 시 이 값으로 본 전투/DM 전투/대련/결투/상시전투/상시조사
+    중 무엇을 복원할지 분기한다. INVESTIGATION_QUEST(상시조사)는 전투가 아니라
     [상시조사]의 메뉴/의뢰 개요 진행 상태를 기록한다 — INVESTIGATION(상시전투,
     상시조사 수락 후 실제로 벌어지는 전투)과 이름이 비슷하니 혼동하지 말 것.
     """
@@ -49,6 +49,7 @@ class FieldBattleType(str, Enum):
     MAIN = "본전투"
     DM = "DM전투"
     PRACTICE = "대련"
+    DUEL = "결투"
     INVESTIGATION = "상시전투"
     INVESTIGATION_QUEST = "상시조사"
 

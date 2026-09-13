@@ -231,6 +231,7 @@ def _restore_dm_battle(
 _PRACTICE_MODE_BY_FIELD_TYPE: dict[FieldBattleType, PracticeBattleMode] = {
     FieldBattleType.PRACTICE: PracticeBattleMode.PRACTICE,
     FieldBattleType.INVESTIGATION: PracticeBattleMode.INVESTIGATION,
+    FieldBattleType.DUEL: PracticeBattleMode.DUEL,
 }
 
 
@@ -364,7 +365,9 @@ def _restore_practice_battle(
         manager=manager,
         mode=mode,
         round_n=row.round_n,
-        round_limit=meta.get("round_limit", 3),
+        # 결투는 라운드 상한이 없다 — meta가 없는 행이어도 기본값 3이
+        # 들어가 첫 라운드에 바로 끝나는 일이 없어야 한다.
+        round_limit=(meta.get("round_limit", 3) if mode.has_round_limit else None),
         # "필드" 행은 start_round() 이후에만 만들어지므로, 복원 대상 행이
         # 있다는 것 자체가 선언 접수가 끝났다는 뜻이다(prep_post_id=0).
         prep_post_id=0,

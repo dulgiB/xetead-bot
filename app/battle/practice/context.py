@@ -26,11 +26,12 @@ _FACTION_TO_SIDE: dict[FactionType, SideType] = {
 
 class PracticeBattlefieldContext(BattlefieldContext):
     """
-    대련 전용 전장 컨텍스트.
-    - 캐릭터 체력은 실제 max_hp의 절반으로 초기화된다.
+    대련/상시전투/결투 전용 전장 컨텍스트.
+    - 캐릭터 체력은 실제 max_hp의 절반으로 초기화된다 (결투는 max_hp 그대로).
     - 아군/적군 구분 대신 SIDE_1/SIDE_2를 사용한다 (내부적으로는 ALLY/ENEMY에 매핑).
-    - `is_duel`로 대련(대등한 PvP)과 상시전투(아군 vs 적군)를 가른다. 진영에
-      따라 다르게 동작하는 규칙이 대련에서는 비대칭이 되기 때문이다.
+    - `is_duel`로 대등한 PvP(대련·결투)와 상시전투(아군 vs 적군)를 가른다.
+      진영에 따라 다르게 동작하는 규칙이 대등한 PvP에서는 비대칭이 되기
+      때문이다.
     """
 
     def __init__(
@@ -67,13 +68,14 @@ class PracticeBattlefieldContext(BattlefieldContext):
         return False
 
     def _remove_eliminated_characters(self):
-        """대련에서는 0 체력 자동 탈락을 양 팀 모두 적용하지 않는다.
+        """대등한 PvP(대련·결투)에서는 0 체력 자동 탈락을 양 팀 모두
+        적용하지 않는다.
 
         기반 구현은 FactionType.ENEMY만 제거하는데(아군은 admin이
-        `[탈락/이름]`으로 직접 처리), 대련에서는 그게 곧 "2팀만 제거된다"는
+        `[탈락/이름]`으로 직접 처리), 여기서는 그게 곧 "2팀만 제거된다"는
         뜻이 된다. 그러면 2팀 전사자는 체력 비율 계산의 분자·분모에서 함께
         빠지고 1팀 전사자는 0/최대로 남아, 양 팀이 똑같이 한 명씩 잃어도
-        2팀이 이긴다. 대련 참가자는 자진 기권(`[탈락]`)으로 직접 물러날 수
+        2팀이 이긴다. 참가자는 자진 기권(`[탈락]`)으로 직접 물러날 수
         있으므로, 자동 제거는 양쪽 모두 하지 않는 쪽으로 맞춘다."""
         if self.is_duel:
             return []
@@ -89,7 +91,7 @@ class PracticeBattlefieldContext(BattlefieldContext):
         side: SideType,
         column_idx: BattlefieldColumnIndex,
     ) -> None:
-        practice_hp = data.max_hp // 2
+        practice_hp = data.max_hp if self.mode.uses_full_hp else data.max_hp // 2
         practice_data = dataclasses.replace(
             data, max_hp=practice_hp, curr_hp=practice_hp
         )

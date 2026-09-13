@@ -11,7 +11,7 @@ from battle.practice.round_manager import PracticeRoundManager
 
 @dataclass
 class PracticeBattleState:
-    """대련 또는 상시전투 세션 상태."""
+    """대련/상시전투/결투 세션 상태."""
 
     context: PracticeBattlefieldContext
     manager: PracticeRoundManager
@@ -19,7 +19,8 @@ class PracticeBattleState:
     mode: PracticeBattleMode = PracticeBattleMode.PRACTICE
 
     round_n: int = 0
-    round_limit: int = 3
+    # None이면 라운드 상한 없음(결투) — 한쪽이 전멸할 때까지 계속된다.
+    round_limit: Optional[int] = 3
 
     prep_post_id: int = 0
     active_post_id: Optional[int] = None
@@ -56,6 +57,11 @@ class PracticeBattleState:
     @property
     def is_investigation(self) -> bool:
         return self.mode == PracticeBattleMode.INVESTIGATION
+
+    @property
+    def is_duel_match(self) -> bool:
+        """결투(임시 체력이 최대 체력이고, 패배 시 실제 체력이 깎이는 모드)."""
+        return self.mode == PracticeBattleMode.DUEL
 
     @property
     def phase(self) -> Optional[PracticeRoundPhase]:

@@ -89,6 +89,7 @@ _RE_CONTINUE = re.compile(rf"\[{whitespace_tolerant_literal('전투속행')}]")
 _RE_END = re.compile(rf"\[{whitespace_tolerant_literal('전투종료')}]")
 _RE_INVESTIGATION_BATTLE = re.compile(rf"\[{whitespace_tolerant_literal('상시전투')}]")
 _RE_PRACTICE_PREP = re.compile(rf"\[{whitespace_tolerant_literal('대련')}]")
+_RE_DUEL_PREP = re.compile(rf"\[{whitespace_tolerant_literal('결투')}]")
 _RE_DM_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투발생')}]")
 _RE_PROXY = re.compile(
     r"^\s*(?:◊\s*)?([^\[\]\n]+?)\s+(\[[^\[\]\n]+])\s*$", re.MULTILINE

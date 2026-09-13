@@ -175,6 +175,7 @@ def _split_for_post(text: str, prefix_len: int) -> list[str]:
 _PRACTICE_MODE_TO_FIELD_TYPE: dict[PracticeBattleMode, log_sheets.FieldBattleType] = {
     PracticeBattleMode.PRACTICE: log_sheets.FieldBattleType.PRACTICE,
     PracticeBattleMode.INVESTIGATION: log_sheets.FieldBattleType.INVESTIGATION,
+    PracticeBattleMode.DUEL: log_sheets.FieldBattleType.DUEL,
 }
 
 
@@ -923,17 +924,24 @@ class MastodonBotListener(StreamListener):
             self._post_admin_result(result, status_id, acct, visibility, state)
             return
 
-        # 1.5. 캐릭터 계정이 직접 [대련]을 시작 — 상시전투와 달리 대련은
-        # admin 커맨드가 아니다. 발신자와 함께 멘션된 상대가 참여 대상이 된다.
-        if acct in state.char_dict and admin_commands._RE_PRACTICE_PREP.search(text):
-            expected_accts = [acct] + self._thread_participants(
-                status_id, in_reply_to_id, mentions or [], acct
-            )
-            result = admin_commands._cmd_practice_prep(
-                expected_accts, state, visibility
-            )
-            self._post_admin_result(result, status_id, acct, visibility, state)
-            return
+        # 1.5. 캐릭터 계정이 직접 [대련]/[결투]를 시작 — 상시전투와 달리 이
+        # 둘은 admin 커맨드가 아니다. 발신자와 함께 멘션된 상대가 참여 대상이
+        # 된다.
+        if acct in state.char_dict:
+            prep_mode = None
+            if admin_commands._RE_DUEL_PREP.search(text):
+                prep_mode = PracticeBattleMode.DUEL
+            elif admin_commands._RE_PRACTICE_PREP.search(text):
+                prep_mode = PracticeBattleMode.PRACTICE
+            if prep_mode is not None:
+                expected_accts = [acct] + self._thread_participants(
+                    status_id, in_reply_to_id, mentions or [], acct
+                )
+                result = admin_commands._cmd_practice_prep(
+                    expected_accts, state, visibility, prep_mode
+                )
+                self._post_admin_result(result, status_id, acct, visibility, state)
+                return
 
         # 2. 대련/상시전투 준비 게시물 답글 (포지션 선언)
         practice = self._resolve_practice(acct, status_id, in_reply_to_id, state)
@@ -1633,8 +1641,33 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
         except CommandValidationError as e:
             errors.append(str(e))
 
-    total = len(ps.context.characters)
-    ps.round_limit = max(3, 1 + total)
+    _begin_practice_rounds(state, ps)
+
+    mover_label = _mover_label(ps, ps.first_mover)
+    game_post = (
+        f"◊ 상시전투 시작\n"
+        f"{_round_limit_text(ps)}\n\n"
+        f"[{ps.round_n}라운드] 선공: {mover_label}\n"
+        f"{_PRACTICE_PHASE_GUIDE}\n\n"
+        f"{_field_text(ps)}"
+    )
+    if errors:
+        game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
+    return game_post
+
+
+def _round_limit_text(ps: PracticeBattleState) -> str:
+    if ps.round_limit is None:
+        return "라운드 상한: 없음 (한쪽이 전멸할 때까지)"
+    return f"라운드 상한: {ps.round_limit}라운드"
+
+
+def _begin_practice_rounds(state: "BotState", ps: PracticeBattleState) -> None:
+    """배치가 끝난 대련/상시전투/결투의 첫 라운드를 연다."""
+    if ps.mode.has_round_limit:
+        ps.round_limit = max(3, 1 + len(ps.context.characters))
+    else:
+        ps.round_limit = None
     ps.field_id = str(ps.prep_post_id)
     # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
     # 볼 수 있다.
@@ -1645,21 +1678,10 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
         state, ps, phase_value=ps.phase.value if ps.phase else ""
     )
 
-    mover_label = _mover_label(ps, ps.first_mover)
-    game_post = (
-        f"◊ 상시전투 시작\n"
-        f"라운드 상한: {ps.round_limit}라운드\n\n"
-        f"[{ps.round_n}라운드] 선공: {mover_label}\n"
-        f"{_PRACTICE_PHASE_GUIDE}\n\n"
-        f"{_field_text(ps)}"
-    )
-    if errors:
-        game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
-    return game_post
-
 
 def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
-    """대련 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을 반환한다."""
+    """대련/결투 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을
+    반환한다."""
     errors: list[str] = []
 
     for acct, (side, column) in ps.declared.items():
@@ -1672,22 +1694,12 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
         except CommandValidationError as e:
             errors.append(str(e))
 
-    total = len(ps.context.characters)
-    ps.round_limit = max(3, 1 + total)
-    ps.field_id = str(ps.prep_post_id)
-    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
-    # 볼 수 있다.
-    ps.context.on_battle_start()
-    ps.snapshot_initial_max_hp()
-    ps.start_round()
-    _upsert_practice_field_row(
-        state, ps, phase_value=ps.phase.value if ps.phase else ""
-    )
+    _begin_practice_rounds(state, ps)
 
     mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
         f"◊ {ps.mode.value} 시작\n"
-        f"라운드 상한: {ps.round_limit}라운드\n\n"
+        f"{_round_limit_text(ps)}\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
         f"{_field_text(ps)}"
@@ -1700,8 +1712,8 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
 def _finish_practice_battle(
     state: "BotState", ps: PracticeBattleState, phase_value: str
 ) -> str:
-    """대련/상시전투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이 함수가
-    끝나면 state.practices에서 제거된 상태다.
+    """대련/상시전투/결투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이
+    함수가 끝나면 state.practices에서 제거된 상태다.
 
     전투 종료 훅(_apply_practice_battle_end_effects)은 반드시 winner() 앞에
     와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다."""
@@ -1768,7 +1780,8 @@ def _finalize_practice_phase(
     hp1 = ps.total_hp_by_side(SideType.SIDE_1)
     hp2 = ps.total_hp_by_side(SideType.SIDE_2)
 
-    if hp1 == 0 or hp2 == 0 or ps.round_n >= ps.round_limit:
+    round_limit_reached = ps.round_limit is not None and ps.round_n >= ps.round_limit
+    if hp1 == 0 or hp2 == 0 or round_limit_reached:
         return _finish_practice_battle(state, ps, current_phase.value), True
 
     ps.start_round()
