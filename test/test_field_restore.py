@@ -121,49 +121,6 @@ def test_restore_main_battle_fails_when_no_character_restorable():
     assert state.session is None
 
 
-def test_restore_dm_battle_registers_by_active_post_id():
-    state = _make_state({"적1": get_test_preset("적1")})
-    row = FieldRow(
-        field_id="field-dm-1",
-        battle_type=FieldBattleType.DM,
-        round_n=2,
-        phase=RoundPhaseType.ENEMY_POST_ACTION.value,
-        characters=[
-            {"name": "적1", "faction": "적군", "position": 1, "remaining_cost": 3}
-        ],
-        meta={"active_post_id": 555, "visibility": "direct"},
-    )
-
-    summary = field_restore._restore_dm_battle(state, row, {}, {}, {}, {}, None)
-
-    assert summary is not None
-    assert 555 in state.dm_battles
-    dm = state.dm_battles[555]
-    assert dm.field_id == "field-dm-1"
-    assert dm.active_post_id == 555
-    assert dm.session.round_n == 2
-    assert dm.session.current_phase == RoundPhaseType.ENEMY_POST_ACTION
-
-
-def test_restore_dm_battle_skips_when_active_post_id_missing():
-    state = _make_state({"적1": get_test_preset("적1")})
-    row = FieldRow(
-        field_id="field-dm-1",
-        battle_type=FieldBattleType.DM,
-        round_n=1,
-        phase=RoundPhaseType.ENEMY_PRE_ACTION.value,
-        characters=[
-            {"name": "적1", "faction": "적군", "position": 1, "remaining_cost": 3}
-        ],
-        meta={},
-    )
-
-    summary = field_restore._restore_dm_battle(state, row, {}, {}, {}, {}, None)
-
-    assert summary is None
-    assert state.dm_battles == {}
-
-
 def test_restore_investigation_session_menu_stage():
     """개요 게시물 이전(메뉴 답글 대기 중)에 재기동해도 acct/menu_post_id만
     으로 세션을 복원할 수 있어야 한다."""
@@ -358,7 +315,7 @@ def test_restore_duel_keeps_full_hp_and_no_round_limit():
 
 def test_restore_practice_battle_fails_when_active_post_id_missing():
     """active_post_id 메타가 없으면 state.practices에 등록할 키가 없으므로
-    복원을 포기해야 한다(DM 전투와 동일한 가드)."""
+    복원을 포기해야 한다."""
     state = _make_state({"아군1": get_test_preset("아군1")})
     row = FieldRow(
         field_id="prep-1",
@@ -440,8 +397,8 @@ def test_restore_all_skips_unrestorable_rows(monkeypatch):
             meta={},
         ),
         FieldRow(
-            field_id="dm-broken",
-            battle_type=FieldBattleType.DM,
+            field_id="practice-broken",
+            battle_type=FieldBattleType.PRACTICE,
             round_n=1,
             phase="알 수 없는 페이즈",
             characters=[],
@@ -456,4 +413,3 @@ def test_restore_all_skips_unrestorable_rows(monkeypatch):
 
     assert len(summaries) == 1
     assert state.session is not None
-    assert state.dm_battles == {}
