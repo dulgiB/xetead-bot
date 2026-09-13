@@ -4,6 +4,7 @@
   1. 임시 체력이 최대 체력의 절반이 아니라 최대 체력 그대로다.
   2. 라운드 상한이 없다 — 한쪽이 전멸할 때까지 계속된다.
   3. 패배한 팀은 임시 체력이 아니라 시트의 실제 체력을 20 잃는다.
+그리고 그 대가 구조 덕에 키워드 보정만은 허용된다(실제 체력에서 빠진다).
 
 대련/상시전투와 공유하는 진행 규칙 자체는 test_practice_* 다른 파일에서
 다루므로 여기서는 위 차이점만 확인한다.
@@ -14,9 +15,19 @@ import os
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
+import pytest  # noqa: E402
+from battle.core.command_processors import process_ally_command  # noqa: E402
 from battle.core.commands.parser import parse_character_command  # noqa: E402
-from battle.objects.define import BattlefieldColumnIndex  # noqa: E402
+from battle.exceptions import CommandValidationError  # noqa: E402
+from battle.objects.define import (  # noqa: E402
+    FATE_INTERVENTION_HP_COST,
+    BattlefieldColumnIndex,
+    ValueSourceType,
+    ValueType,
+)
 from battle.objects.models import CharacterId  # noqa: E402
+from battle.objects.skill.effects import SkillEffectDamage  # noqa: E402
+from battle.objects.skill.models import SkillData  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import (  # noqa: E402
     DUEL_DEFEAT_HP_PENALTY,
@@ -300,3 +311,92 @@ def test_practice_mode_never_touches_real_hp(monkeypatch):
 
     assert state.spreadsheet.hp_of(_B.name) == 80
     assert "결투 패배 처리" not in post
+
+
+# ── 4. 키워드 보정 ───────────────────────────────────────────────────────────
+
+
+def _damage_skill() -> dict[str, SkillData]:
+    return {
+        "Cost2Skill": SkillData(
+            id="Cost2Skill",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=2,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 30, ValueType.INTEGER, None, None
+                )
+            ],
+            description="",
+        )
+    }
+
+
+def _run(ctx, text: str):
+    command = parse_character_command(_A, text, ctx)
+    assert command is not None
+    return process_ally_command(ctx, command)
+
+
+def test_duel_fate_boost_spends_sheet_hp_not_battle_hp(monkeypatch):
+    _silence_field_sheet(monkeypatch)
+    ctx, _ps, _state = _duel_state(
+        hp_by_name={_A.name: 90, _B.name: 100},
+        skill_dict=_damage_skill(),
+        revival_count=1,
+    )
+    battle_hp_before = ctx.characters[_A].status.curr_hp
+
+    _run(ctx, f"[공격+/{_B.name}]")
+
+    assert ctx.characters[_A].status.curr_hp == battle_hp_before
+    assert ctx.persistent_hp[_A].curr_hp == 90 - FATE_INTERVENTION_HP_COST
+
+
+def test_duel_fate_boost_rejected_when_sheet_hp_is_too_low(monkeypatch):
+    """임시 체력이 가득해도 실제 체력이 대가 이하면 쓸 수 없다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, _ps, _state = _duel_state(
+        hp_by_name={_A.name: FATE_INTERVENTION_HP_COST, _B.name: 100},
+        skill_dict=_damage_skill(),
+        revival_count=1,
+    )
+
+    with pytest.raises(CommandValidationError, match="체력"):
+        _run(ctx, f"[공격+/{_B.name}]")
+
+    assert ctx.persistent_hp[_A].curr_hp == FATE_INTERVENTION_HP_COST
+
+
+def test_duel_fate_boost_cost_is_written_back_to_the_sheet(monkeypatch):
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(
+        hp_by_name={_A.name: 90, _B.name: 100},
+        skill_dict=_damage_skill(),
+        revival_count=1,
+    )
+    monkeypatch.setattr(main_module, "mark_fate_used_if_needed", lambda *a, **k: None)
+
+    command = parse_character_command(_A, f"[공격+/{_B.name}]", ctx)
+    assert command is not None
+    process_ally_command(ctx, command)
+    warning = main_module._apply_duel_fate_cost(state, ps, _A, command)
+
+    assert warning == ""
+    assert state.spreadsheet.hp_of(_A.name) == 90 - FATE_INTERVENTION_HP_COST
+
+
+def test_practice_mode_still_rejects_fate_boost():
+    ctx = PracticeBattlefieldContext(
+        buff_dict={}, skill_dict={}, mode=PracticeBattleMode.PRACTICE
+    )
+    assert ctx.allow_fate_intervention is False
+
+
+def test_duel_still_rejects_items():
+    ctx = PracticeBattlefieldContext(
+        buff_dict={}, skill_dict={}, mode=PracticeBattleMode.DUEL
+    )
+    assert ctx.allow_item_usage is False
+    assert ctx.allow_fate_intervention is True

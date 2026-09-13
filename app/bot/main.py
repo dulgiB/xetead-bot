@@ -11,11 +11,15 @@ from typing import Optional
 
 import gspread
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import (
+    BattleLogEntry,
+    BattleLogEntryKind,
+    CharacterCommand,
+)
 from battle.core.commands.parser import count_bracket_groups, parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
-from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
 from battle.practice.define import (
     DUEL_DEFEAT_HP_PENALTY,
     PracticeBattleMode,
@@ -38,7 +42,7 @@ from bot.battle_reply_text import (
 from bot.commands import admin as admin_commands
 from bot.commands import noncombat as noncombat_commands
 from bot.commands.admin import AdminCommandResult, handle_admin_command
-from bot.commands.character import handle_character_command
+from bot.commands.character import handle_character_command, mark_fate_used_if_needed
 from bot.commands.noncombat import (
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
@@ -61,7 +65,7 @@ from bot.commands.noncombat import (
 from bot import field_restore, log_sheets
 from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
-from bot.load_data import load_all_data, load_char_data
+from bot.load_data import load_all_data, load_char_data, update_character_curr_hp
 from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCombatState
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
@@ -1869,6 +1873,42 @@ def _finalize_practice_phase(
     return game_post, False
 
 
+def _apply_duel_fate_cost(
+    state: "BotState",
+    ps: PracticeBattleState,
+    char_id: CharacterId,
+    command: CharacterCommand,
+) -> str:
+    """결투에서 키워드 보정을 쓴 커맨드의 대가를 시트에 반영한다(실패 안내
+    문구를 반환하며, 반영할 게 없거나 성공하면 빈 문자열).
+
+    전장은 임시 체력 대신 실제 체력을 깎아 두기만 하므로
+    (PracticeBattlefieldContext.pay_fate_cost_hp), 그 값을 시트에 옮기는 것은
+    봇 계층의 몫이다. 이미 커맨드가 처리된 뒤라 실패를 위로 던지면 답글
+    자체가 사라지므로, write_back_changed_hp()와 같이 흡수하고 알리기만
+    한다."""
+    if not ps.is_duel_match or not any(part.fate_boost for part in command.parts):
+        return ""
+    persistent = ps.context.persistent_hp.get(char_id)
+    if persistent is None:
+        return ""
+    try:
+        update_character_curr_hp(
+            state.spreadsheet,
+            char_id.name,
+            persistent.curr_hp,
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        logger.exception("결투 키워드 보정 대가 반영 실패: %s", char_id.name)
+        return (
+            "⚠️ 키워드 보정 대가(실제 체력 소모) 반영에 실패했습니다."
+            " 관리자에게 문의해 주세요."
+        )
+    mark_fate_used_if_needed(state, char_id, command)
+    return ""
+
+
 def _handle_practice_proxy_command(
     text: str, state: "BotState", acct: str, *, require_investigation: bool
 ) -> tuple[
@@ -1981,6 +2021,9 @@ def _handle_practice_proxy_command(
             reply_text, calc_text = format_battle_reply(
                 ps.context, char_id, result.part_results
             )
+            fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+            if fate_warning:
+                reply_text += f"\n{fate_warning}"
         except CommandValidationError as e:
             battle_logs.append(
                 log_sheets.BattleCommandLog(
@@ -2112,6 +2155,9 @@ def _handle_practice_command(
         reply_text, calc_text = format_battle_reply(
             ps.context, char_id, result.part_results
         )
+        fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+        if fate_warning:
+            reply_text += f"\n{fate_warning}"
     except CommandValidationError as e:
         battle_log = log_sheets.BattleCommandLog(
             field_id=field_id,

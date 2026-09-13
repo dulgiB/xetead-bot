@@ -5,7 +5,11 @@ from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from battle.core.battlefield_context import BattlefieldContext
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
-from battle.objects.define import BattlefieldColumnIndex, FactionType
+from battle.objects.define import (
+    FATE_INTERVENTION_HP_COST,
+    BattlefieldColumnIndex,
+    FactionType,
+)
 from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
@@ -27,7 +31,8 @@ _FACTION_TO_SIDE: dict[FactionType, SideType] = {
 @dataclasses.dataclass
 class PersistentHp:
     """캐릭터 시트에 적힌 실제 체력. 임시 체력(전장의 status.curr_hp)과
-    구분해서 들고 있는다 — 결투에서 패배 대가만 이쪽에서 빠지기 때문이다."""
+    구분해서 들고 있는다 — 결투에서 키워드 보정 대가와 패배 대가만 이쪽에서
+    빠지기 때문이다."""
 
     curr_hp: int
     max_hp: int
@@ -78,7 +83,25 @@ class PracticeBattlefieldContext(BattlefieldContext):
 
     @property
     def allow_fate_intervention(self) -> bool:
-        return False
+        """결투에서만 허용한다 — 대가를 임시 체력이 아니라 시트의 실제
+        체력에서 빼므로(`pay_fate_cost_hp()`), 대련/상시전투를 막는 이유인
+        "되돌릴 수 없는 자원을 임시 캐릭터에게 걸 수 없다"가 결투에는
+        해당하지 않는다."""
+        return self.mode == PracticeBattleMode.DUEL
+
+    def fate_cost_hp(self, character: CombatCharacter) -> int:
+        if self.mode != PracticeBattleMode.DUEL:
+            return super().fate_cost_hp(character)
+        return self.persistent_hp[character.id].curr_hp
+
+    def pay_fate_cost_hp(self, character: CombatCharacter) -> tuple[int, int, bool]:
+        if self.mode != PracticeBattleMode.DUEL:
+            return super().pay_fate_cost_hp(character)
+        # 임시 체력은 그대로 두고 실제 체력만 깎는다. 시트 반영은 봇 계층이
+        # 커맨드 처리 성공 후에 이 값을 읽어 수행한다.
+        hp = self.persistent_hp[character.id]
+        hp.curr_hp -= FATE_INTERVENTION_HP_COST
+        return hp.curr_hp, hp.max_hp, True
 
     def _remove_eliminated_characters(self):
         """대등한 PvP(대련·결투)에서는 0 체력 자동 탈락을 양 팀 모두

@@ -131,7 +131,7 @@ def process_ally_command(
     # 코스트·체력·아이템은 검증과 실제 처리를 모두 통과한 뒤에만 소모한다.
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
-    _apply_fate_intervention_cost(user, command, results_per_part)
+    _apply_fate_intervention_cost(context, user, command, results_per_part)
     for part in command.parts:
         if part.type_ == ActionType.USE_ITEM and part.item_id is not None:
             context.inventory.consume(command.user_id.name, part.item_id)
@@ -181,7 +181,7 @@ def process_enemy_command_on_pre_action(
 
     # 운명간섭 대가도 코스트와 같이 선언 시점에 소모한다 — POST에서 소모하면
     # 재전개마다 중복 소모되거나 아예 누락된다.
-    _apply_fate_intervention_cost(user, command, results_per_part)
+    _apply_fate_intervention_cost(context, user, command, results_per_part)
 
     return CommandProcessResult(original_command=command, part_results=results_per_part)
 
@@ -395,6 +395,7 @@ def try_expansion_if_valid(
 
 
 def _apply_fate_intervention_cost(
+    context: BattlefieldContext,
     user: "CombatCharacter",
     command: CharacterCommand,
     results_per_part: list[CommandPartProcessResult],
@@ -406,13 +407,16 @@ def _apply_fate_intervention_cost(
     답글·시트 반영이 기존 경로를 그대로 타도록 대미지 로그 엔트리 형태로
     결과에 얹는다(로그 엔트리의 `result`를 보고 체력을 write-back하는
     `bot/log_sheets.py`의 write_back_changed_hp() 참고).
+
+    어느 체력에서 빼는지는 전장이 정한다(`pay_fate_cost_hp()`) — 결투는
+    임시 체력이 아니라 시트의 실제 체력에서 뺀다.
     """
     if not any(part.fate_boost for part in command.parts):
         return
     if not results_per_part:
         return
 
-    user.status.curr_hp -= FATE_INTERVENTION_HP_COST
+    hp_after, max_hp, hp_is_persistent = context.pay_fate_cost_hp(user)
     user.fate_used = True
     results_per_part[-1].log_entries.append(
         BattleLogEntry(
@@ -420,9 +424,10 @@ def _apply_fate_intervention_cost(
             kind=BattleLogEntryKind.DAMAGE,
             result=f"대미지 {FATE_INTERVENTION_HP_COST}",
             value=FATE_INTERVENTION_HP_COST,
-            hp_after=user.status.curr_hp,
-            max_hp=user.status[CombatStatType.MAX_HP],
+            hp_after=hp_after,
+            max_hp=max_hp,
             source_labels=("키워드 보정",),
+            hp_is_persistent=hp_is_persistent,
         )
     )
 
@@ -464,9 +469,10 @@ def _validate_fate_boost(
     if user.fate_used:
         raise CommandValidationError(error_fate_already_used())
     # 체력 소모가 곧 전투불능을 뜻하지 않도록 "초과"를 요구한다.
-    if user.status.curr_hp <= FATE_INTERVENTION_HP_COST:
+    available_hp = context.fate_cost_hp(user)
+    if available_hp <= FATE_INTERVENTION_HP_COST:
         raise CommandValidationError(
-            error_fate_not_enough_hp(FATE_INTERVENTION_HP_COST, user.status.curr_hp)
+            error_fate_not_enough_hp(FATE_INTERVENTION_HP_COST, available_hp)
         )
     return fate_part
 
