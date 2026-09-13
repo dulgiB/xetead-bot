@@ -2084,8 +2084,11 @@ def _handle_practice_command(
         # 검증(manager.process_command)을 거치지 않고 즉시 처리한다.
         retire_phase = ps.phase
         side = ps.context.get_side(char_id)
-        ps.context.remove_character(char_id)
-        reply_text = format_eliminated_characters([char_id])
+        # 소환자가 빠지면 동료도 함께 내린다(force_remove_character). 동료만
+        # 남으면 주인을 잃은 채 characters에 남아, 위치 조회가 owner를 따라가다
+        # 실패해 그 뒤의 "필드" 시트 저장이 계속 깨진다.
+        removed = ps.context.force_remove_character(char_id)
+        reply_text = format_eliminated_characters(removed)
         battle_log = log_sheets.BattleCommandLog(
             field_id=ps.field_id,
             round_n=ps.round_n,
