@@ -92,10 +92,7 @@ _RE_INVESTIGATION_DECLARATION = re.compile(
     rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([^\[\]]+)]"
 )
 _RE_PRACTICE_RETIRE = re.compile(rf"\[{whitespace_tolerant_literal('탈락')}]")
-_PRACTICE_PHASE_GUIDE = (
-    "해당 팀 전원이 타래로 이어서 커맨드를 입력해 주세요 "
-    "(전원이 입력하면 자동으로 다음 차례로 넘어갑니다)."
-)
+_PRACTICE_PHASE_GUIDE = "해당 팀 전원이 타래로 이어서 커맨드를 입력해 주세요."
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
     rf"\[{whitespace_tolerant_literal('상시전투')}]"
 )
@@ -1733,7 +1730,7 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
 
 def _round_limit_text(ps: PracticeBattleState) -> str:
     if ps.round_limit is None:
-        return "라운드 상한: 없음 (한쪽이 전멸할 때까지)"
+        return "라운드 상한: 없음"
     return f"라운드 상한: {ps.round_limit}라운드"
 
 
