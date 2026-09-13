@@ -15,13 +15,14 @@ import random
 
 from battle.objects.define import BattlefieldColumnIndex
 from battle.practice.context import PracticeBattlefieldContext
-from battle.practice.define import PracticeRoundPhase, SideType
+from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
 from helpers import get_test_preset
 
 
 def _manager(*, is_duel: bool = True) -> PracticeRoundManager:
-    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={}, is_duel=is_duel)
+    mode = PracticeBattleMode.PRACTICE if is_duel else PracticeBattleMode.INVESTIGATION
+    ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={}, mode=mode)
     ctx.add_character(get_test_preset("A"), SideType.SIDE_1, BattlefieldColumnIndex(0))
     ctx.add_character(get_test_preset("B"), SideType.SIDE_2, BattlefieldColumnIndex(0))
     return PracticeRoundManager(ctx)
