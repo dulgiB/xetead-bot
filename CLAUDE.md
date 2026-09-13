@@ -110,6 +110,12 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
      (적 선언)          (아군 행동)        (적 공격 정산)            (버프 턴수 차감, 라운드 종료)
 ```
 
+대련/상시전투는 이 4페이즈 대신 선공/후공 2페이즈를 쓴다
+(`PracticeRoundManager`). 선공은 **매 라운드 다시 추첨한다** — 밸런스가 PvE
+기준으로 짜여 있어 순서를 고정하면 불리한 캐릭터가 매번 같은 방식으로 지므로,
+"선공을 잡으면 상대가 행동하기 전에 끝낼 수도 있다"는 역전 여지를 남기는
+밸런스 장치다.
+
 - 적군 커맨드는 **PRE**에서 이동과 PRE 타이밍 버프만 즉시 처리, 대미지/힐/POST 버프는 `remaining_parts_dict`에 저장했다가 **POST** 페이즈에 처리.
 - `on_start_round()` = 코스트 초기화 + `ON_ROUND_START` 버프 이벤트.
 - `on_finish_round()` = `ON_ROUND_END` 버프 이벤트 + 턴 차감/제거.
@@ -161,6 +167,21 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 - `remaining_turns`: 라운드 종료 시 차감
 - `remaining_count`: 공격 또는 피격 시 차감 (`BuffCountDeductCondition`)
 - 둘 다 `None`이면 패시브 (영구)
+
+**대련/상시전투/결투에는 "마지막 행동 차례 유예"가 붙는다.** 이 구조는 양
+팀이 한 라운드 안에서 각자 한 번씩 행동하므로, 라운드의 마지막 차례에
+상대에게 건 1턴짜리 효과(도발·약화 등)는 상대가 그 상태로 행동할 기회를 한
+번도 얻지 못한 채 라운드 종료 차감으로 사라진다 — 코스트를 쓴 행동이 통째로
+무효가 되는데 순서는 플레이어가 고를 수 없다. 그래서
+`PracticeRoundManager.end_round()`가 그 페이즈 시작 시점의 부여 일련번호를
+`on_finish_round(skip_applied_after=...)`로 넘겨, **그 페이즈 중에 걸린
+효과만** 이번 차감에서 건너뛴다(다음 라운드 종료에는 정상 차감).
+
+- 기준을 페이즈 **시작** 시점으로 잡는 이유: 라운드 시작 훅
+  (`on_start_round`/`on_enemy_post_action`)이 거는 방어 버프는 그 라운드를
+  지키라고 걸린 것이므로 유예 대상이 아니어야 한다.
+- 본 전투/DM 전투는 인자를 넘기지 않는다 — 아군 행동 뒤에 적 후행 정산이
+  오도록 페이즈가 고정돼 있어 같은 문제가 없다.
 
 ### 제3자 반응형 트리거와 공용 헬퍼
 
