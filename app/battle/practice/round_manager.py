@@ -28,6 +28,9 @@ class PracticeRoundManager:
         self._first_mover: SideType | None = None
         self._second_mover: SideType | None = None
         self._declared_this_phase: set[CharacterId] = set()
+        # 지금 페이즈가 시작될 때의 버프 부여 일련번호. 이 페이즈 중에 새로
+        # 걸린 효과는 이번 라운드 종료 차감에서 제외한다(end_round() 참고).
+        self._phase_start_apply_seq = 0
 
     @property
     def first_mover(self) -> SideType | None:
@@ -60,6 +63,7 @@ class PracticeRoundManager:
         self._first_mover = first_mover
         self._second_mover = second_mover
         self._declared_this_phase = set(declared or ())
+        self._phase_start_apply_seq = self._context.buff_container.current_apply_seq
 
     def expected_side(self) -> SideType | None:
         """지금 행동할 차례인 팀."""
@@ -86,6 +90,23 @@ class PracticeRoundManager:
             and char.id not in self._declared_this_phase
         ]
 
+    def _draw_movers(self) -> tuple[SideType, SideType]:
+        """이번 라운드의 (선공, 후공)을 정한다.
+
+        - 대련/결투: 매 라운드 다시 뽑는다. 밸런스가 PvE 기준으로 짜인
+          캐릭터들을 그대로 맞붙이는 구조라 순서를 고정하면 불리한 캐릭터가
+          매번 같은 방식으로 진다 — "선공을 잡으면 상대가 행동하기 전에 끝낼
+          수도 있다"는 추첨이 그 열세를 뒤집을 여지를 만든다.
+        - 상시전투: 아군(SIDE_1) 선공 고정. 본 전투가 아군 행동 뒤에 적 후행
+          정산을 두는 것과 같은 순서로, 같은 아군 vs 적군 구도인 상시전투도
+          아군이 먼저 움직인다.
+        """
+        if not self._context.is_duel:
+            return SideType.SIDE_1, SideType.SIDE_2
+        sides = list(SideType)
+        random.shuffle(sides)
+        return sides[0], sides[1]
+
     def to_phase(self, phase: PracticeRoundPhase) -> None:
         if phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
             self._context.on_start_round()
@@ -93,26 +114,17 @@ class PracticeRoundManager:
             # 쪽. 양 팀이 같은 라운드에 행동하므로 "모든 공격보다 앞"인
             # 지점이 여기뿐이다 (end_round() 참고).
             self._context.buff_container.on_enemy_post_action()
-            if self._first_mover is None or self._second_mover is None:
-                sides = list(SideType)
-                random.shuffle(sides)
-                self._first_mover, self._second_mover = sides[0], sides[1]
-            else:
-                # 첫 라운드만 무작위로 정하고 이후로는 교대한다. 매 라운드
-                # 다시 뽑으면 1턴짜리 버프/디버프의 가치가 추첨 결과에 따라
-                # 요동친다 — 라운드 종료에 턴이 차감되므로, 후공 페이즈에 건
-                # 1턴 효과는 상대가 행동할 기회 없이 그대로 사라진다. 교대는
-                # 그 손해를 양 팀에 균등하게 나눈다.
-                self._first_mover, self._second_mover = (
-                    self._second_mover,
-                    self._first_mover,
-                )
+            self._first_mover, self._second_mover = self._draw_movers()
 
         elif phase == PracticeRoundPhase.SECOND_MOVER_ACTION:
             pass
 
         self._phase = phase
         self._declared_this_phase = set()
+        # 라운드 시작 훅(on_start_round/on_enemy_post_action)이 건 버프는 이
+        # 스냅샷보다 앞서므로 유예 대상이 아니다 — 그 라운드를 지키라고 걸린
+        # 방어 버프가 한 라운드 더 남는 것을 막는다.
+        self._phase_start_apply_seq = self._context.buff_container.current_apply_seq
 
     def end_round(self) -> None:
         """라운드 종료 버프 처리. 다음 턴은 to_phase(FIRST_MOVER_ACTION)로 시작한다.
@@ -131,9 +143,21 @@ class PracticeRoundManager:
           올바른 값이 나오므로 그 라운드의 모든 행동이 끝난 뒤여야 한다.
 
         _apply_round_events()가 버프 타이밍만 보고 진영을 가리지 않으므로
-        SIDE_1/SIDE_2 양쪽 모두에 대칭으로 적용된다."""
+        SIDE_1/SIDE_2 양쪽 모두에 대칭으로 적용된다.
+
+        지속시간 차감에는 **마지막 행동 차례 유예**가 붙는다. 이 구조에서는
+        양 팀이 한 라운드 안에서 각자 한 번씩 행동하므로, 라운드의 마지막
+        차례에 상대에게 건 1턴짜리 효과(도발·약화 등)는 상대가 그 상태로
+        행동할 기회를 한 번도 얻지 못한 채 이 차감으로 사라진다 — 코스트를
+        쓴 행동이 통째로 무효가 되고, 순서는 플레이어가 고를 수 없다.
+        그래서 이번 페이즈 중에 걸린 효과는 이번 차감에서 건너뛰어, 모든
+        1턴 효과가 최소 한 번의 행동 기회를 보장받게 한다(그 다음 라운드
+        종료에는 정상적으로 차감된다).
+
+        본 전투는 아군 행동 뒤에 적 후행 정산이 오도록 페이즈가 고정돼 있어
+        이 문제가 없으므로, 유예는 이 관리자에서만 넘긴다."""
         self._context.buff_container.on_enemy_post_action_resolved()
-        self._context.on_finish_round()
+        self._context.on_finish_round(skip_applied_after=self._phase_start_apply_seq)
         self._phase = None
         self._declared_this_phase = set()
 
