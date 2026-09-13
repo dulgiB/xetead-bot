@@ -63,7 +63,6 @@ from bot.commands.noncombat import (
     parse_transfer_item_args,
 )
 from bot import field_restore, log_sheets
-from bot.dm_battle_state import DmBattleState
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data, update_character_curr_hp
 from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCombatState
@@ -245,9 +244,8 @@ def _register_practice(
     """PracticeBattleState의 진행 게시물(tip) 키를 new_post_id로 옮긴다.
 
     state.practices는 진행 게시물 id(prep 단계엔 prep_post_id, 시작 후엔
-    active_post_id)를 키로 쓰므로, _register_dm_battle과 동일한 이유로 옛
-    키를 먼저 지우지 않으면 이전 게시물 id로도 계속 라우팅되는 좀비 항목이
-    남는다.
+    active_post_id)를 키로 쓰므로, 옛 키를 먼저 지우지 않으면 이전 게시물
+    id로도 계속 라우팅되는 좀비 항목이 남는다.
     """
     old_key = (
         ps.active_post_id
@@ -296,8 +294,6 @@ def _apply_game_post_side_effects(
         and result.practice_to_register is not None
     ):
         _register_practice(state, result.practice_to_register, new_post_id, prep=True)
-    if result.dm_battle_to_register is not None:
-        _register_dm_battle(state, result.dm_battle_to_register, new_post_id)
     if state.session is not None and state.session.started:
         state.active_phase_post_id = (
             new_post_id if state.session.current_phase in _COMMAND_PHASES else None
@@ -315,38 +311,6 @@ def _apply_game_post_side_effects(
                     "필드 메타 갱신 실패 (본 전투 field_id=%s)",
                     state.preparation_status_id,
                 )
-
-
-def _register_dm_battle(state: "BotState", dm: DmBattleState, new_post_id: int) -> None:
-    """DmBattleState의 스레드 tip을 new_post_id로 옮긴다.
-
-    state.dm_battles는 tip post_id를 키로 쓰므로, 옛 키를 지우지 않으면
-    페이즈가 넘어갈 때마다 이전 게시물 id로도 계속 라우팅되는 좀비 항목이
-    남는다 — 반드시 옛 키를 먼저 지운 뒤 새 키로 등록해야 한다.
-    """
-    if not dm.field_id:
-        dm.field_id = str(new_post_id)
-    state.dm_battles.pop(dm.active_post_id, None)
-    dm.active_post_id = new_post_id
-    state.dm_battles[new_post_id] = dm
-
-    # DM 전투는 여러 개가 동시에 진행될 수 있어 field_id별로 행을 따로
-    # 관리한다. 페이즈 전환마다 다시 호출되어 최신 상태로 갱신된다.
-    try:
-        log_sheets.upsert_field_row(
-            state.spreadsheet,
-            dm.field_id,
-            battle_type=log_sheets.FieldBattleType.DM,
-            round_n=dm.session.round_n,
-            phase=dm.session.current_phase.value,
-            characters=log_sheets.build_field_characters(
-                dm.session.context, include_hp=False
-            ),
-            meta={"active_post_id": dm.active_post_id, "visibility": dm.visibility},
-            cache=state.sheet_cache,
-        )
-    except Exception:
-        logger.exception("필드 시트 저장 실패 (DM 전투 field_id=%s)", dm.field_id)
 
 
 def _persist_battle_log(
@@ -413,24 +377,6 @@ def _persist_battle_log(
                     meta=_practice_field_meta(ps),
                     cache=state.sheet_cache,
                 )
-        elif battle_log.battle_type == log_sheets.FieldBattleType.DM:
-            dm = admin_commands.find_dm_battle_by_field_id(state, battle_log.field_id)
-            if dm is not None:
-                log_sheets.upsert_field_row(
-                    state.spreadsheet,
-                    battle_log.field_id,
-                    battle_type=log_sheets.FieldBattleType.DM,
-                    round_n=dm.session.round_n,
-                    phase=dm.session.current_phase.value,
-                    characters=log_sheets.build_field_characters(
-                        dm.session.context, include_hp=False
-                    ),
-                    meta={
-                        "active_post_id": dm.active_post_id,
-                        "visibility": dm.visibility,
-                    },
-                    cache=state.sheet_cache,
-                )
     except Exception:
         logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
 
@@ -477,9 +423,6 @@ class BotState:
     # active_post_id). 여러 대련/상시전투가 동시에 진행될 수 있다.
     practices: dict[int, PracticeBattleState] = field(default_factory=dict)
     noncombat: NonCombatState = field(default_factory=NonCombatState)
-    dm_battles: dict[int, DmBattleState] = field(
-        default_factory=dict
-    )  # key = 현재 스레드 tip 게시물 id
     # 멘션 하나를 처리하는 동안에만 유효한 읽기 캐시. 스프레드시트마다 따로
     # 두는 이유는 gspread에 worksheet 이름별 캐싱이 없어, 부를 때마다 시트
     # 메타데이터를 통째로 다시 읽기 때문이다. on_notification 시작마다 새로
@@ -704,51 +647,6 @@ class MastodonBotListener(StreamListener):
 
         return accounts
 
-    def _resolve_admin_reply_target(
-        self,
-        text: str,
-        status_id: int,
-        in_reply_to_id: Optional[int],
-        state: "BotState",
-    ) -> Optional[int]:
-        """handle_admin_command에 넘길 in_reply_to_id를 정한다.
-
-        DM 전투 커맨드는 그 전투 스레드의 tip 게시물(state.dm_battles의 키)에
-        답글을 달아야 인식된다 — tip은 페이즈가 넘어갈 때마다 바뀌므로,
-        스레드 중간의 오래된 게시물에 답글을 달면 그 전투로 라우팅되지
-        않는다. [전투 종료]만은 어느 시점에 입력해도 동작해야 하므로(전투를
-        접는 커맨드라 페이즈/게시물에 매일 이유가 없다), 직접 매칭이
-        실패하면 스레드 조상을 거슬러 올라가 그 스레드의 DM 전투를 찾아
-        tip id로 바꿔 준다. 못 찾으면 in_reply_to_id를 그대로 돌려준다.
-
-        이 보정이 없으면 DM 전투 스레드의 오래된 게시물에 단 [전투 종료]가
-        본 전투용 분기로 흘러가, 엉뚱하게 진행 중인 본 전투를 종료시키거나
-        "진행 중인 전투가 없습니다"로 실패한다.
-
-        조상 조회는 마스토돈 API 호출이 한 번 더 드는 경로라, 직접 매칭이
-        실패하고 진행 중인 DM 전투가 있으며 텍스트에 [전투 종료]가 실제로
-        들어 있을 때에만 한다."""
-        if in_reply_to_id is None or in_reply_to_id in state.dm_battles:
-            return in_reply_to_id
-        if not state.dm_battles or not admin_commands._RE_END.search(text):
-            return in_reply_to_id
-
-        try:
-            context = self._mastodon.status_context(status_id)
-        except Exception:
-            logger.exception("스레드 DM 전투 조회 실패 (status_id=%s)", status_id)
-            return in_reply_to_id
-
-        ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
-        for tip_id, dm in state.dm_battles.items():
-            # field_id([전투 발생] 응답 게시물)와 현재 tip 중 하나라도 조상에
-            # 있으면 이 스레드가 그 DM 전투의 스레드다.
-            if dm.active_post_id in ancestor_ids or (
-                dm.field_id.isdigit() and int(dm.field_id) in ancestor_ids
-            ):
-                return tip_id
-        return in_reply_to_id
-
     def _resolve_practice(
         self,
         acct: str,
@@ -916,9 +814,7 @@ class MastodonBotListener(StreamListener):
                 acct=acct,
                 mentions=thread_mentions,
                 visibility=visibility,
-                in_reply_to_id=self._resolve_admin_reply_target(
-                    text, status_id, in_reply_to_id, state
-                ),
+                in_reply_to_id=in_reply_to_id,
             )
             self._post_admin_result(result, status_id, acct, visibility, state)
             return
@@ -1094,40 +990,10 @@ class MastodonBotListener(StreamListener):
                 str(state.preparation_status_id),
                 log_sheets.FieldBattleType.MAIN,
             )
-            # 본 전투는 페이즈마다 게시물이 바뀌어 사담을 조용히 무시할
-            # 대상이 아니므로, silent_on_unrecognized 없이 항상 답한다.
-            assert response is not None
             reply_status = self._reply_with_calc(
                 status_id, acct, visibility, response, calc_text
             )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
-            return
-
-        # 5.5. DM 전투 중 캐릭터 커맨드 (해당 스레드의 tip 게시물에 대한 답글)
-        if in_reply_to_id is not None and in_reply_to_id in state.dm_battles:
-            dm_state = state.dm_battles[in_reply_to_id]
-            reply, calc_text, end_post_text, end_post_calc_text, battle_log = (
-                _handle_dm_battle_command(acct, text, state, dm_state)
-            )
-            if reply is None:
-                # 대괄호 커맨드 자체가 없는 답글(사담 등) — 조용히 무시한다.
-                return
-            reply_status = self._reply_with_calc(
-                status_id, acct, visibility, reply, calc_text
-            )
-            _persist_battle_log(state, battle_log, str(reply_status["id"]))
-            if end_post_text is not None:
-                end_post = self._mastodon.status_post(
-                    _truncate(end_post_text),
-                    visibility=dm_state.visibility,
-                    in_reply_to_id=dm_state.active_post_id,
-                )
-                self._post_calc_followups(
-                    end_post["id"],
-                    dm_state.visibility,
-                    end_post_calc_text,
-                    admin_commands._dm_mention_prefix(dm_state),
-                )
             return
 
         nc = state.noncombat
@@ -1291,23 +1157,17 @@ class MastodonBotListener(StreamListener):
         재사용한다."""
         if not result.reply_text:
             # reply_text가 비면 game_post_text를 단일 답글로 보낸다. 이 경로도
-            # game_post_visibility/calc_text를 반영해야 한다 — DM 전투의 수동
-            # [전투 종료]가 여기로 오는데, 무시하면 고정해 온 DM 가시성이
-            # 풀리고 종료 정산의 계산식이 통째로 사라진다.
+            # 계산식을 반영해야 한다 — 무시하면 종료 정산의 계산식이 통째로
+            # 사라진다.
             if result.game_post_text is not None:
                 post = self._reply(
                     status_id,
                     acct,
-                    result.game_post_visibility or visibility,
+                    visibility,
                     result.game_post_text,
                 )
                 _apply_game_post_side_effects(state, result, post["id"])
-                self._post_calc_followups(
-                    post["id"],
-                    result.game_post_visibility,
-                    result.game_post_calc_text,
-                    result.game_post_calc_prefix,
-                )
+                self._post_calc_followups(post["id"], None, result.game_post_calc_text)
         else:
             # 필드 시트 이미지는 아래 페이즈 게시물에만 첨부한다.
             if result.post_as_new_status:
@@ -1345,29 +1205,19 @@ class MastodonBotListener(StreamListener):
                     and state.session is not None
                 ):
                     post_text = f"{post_text}\n\n{state.session.context}"
-                base_kwargs: dict = {}
-                if result.game_post_visibility is not None:
-                    base_kwargs["visibility"] = result.game_post_visibility
                 # 캐릭터가 많으면 500자를 넘을 수 있다 — 뒷부분을 잘라내지 않고
                 # 계산식과 동일하게 줄 단위로 나눠 스레드로 이어 보낸다.
                 chunks = _split_for_post(post_text, 0)
-                first_kwargs = dict(base_kwargs, media_ids=game_media_ids or None)
-                if result.game_post_reply_to_confirmation:
-                    # 이전 페이즈 공지에 다시 답글로 달면 방금 보낸 확인
-                    # 답글과 형제가 되어 스레드가 갈라진다 — 확인 답글
-                    # 뒤에 이어야 선형으로 이어진다.
-                    first_kwargs["in_reply_to_id"] = reply_status["id"]
-                new_post = self._mastodon.status_post(chunks[0], **first_kwargs)
+                new_post = self._mastodon.status_post(
+                    chunks[0], media_ids=game_media_ids or None
+                )
                 for chunk in chunks[1:]:
                     new_post = self._mastodon.status_post(
-                        chunk, in_reply_to_id=new_post["id"], **base_kwargs
+                        chunk, in_reply_to_id=new_post["id"]
                     )
                 _apply_game_post_side_effects(state, result, new_post["id"])
                 self._post_calc_followups(
-                    new_post["id"],
-                    result.game_post_visibility,
-                    result.game_post_calc_text,
-                    result.game_post_calc_prefix,
+                    new_post["id"], None, result.game_post_calc_text
                 )
 
         if result.admin_dm_text:
@@ -1397,7 +1247,7 @@ class MastodonBotListener(StreamListener):
         공지 등)이 스레드 맨 끝에 달리게 하기 위함이다.
 
         mention_accts를 주면 발신자(acct) 한 명 대신 그 목록 전원을 앞에
-        멘션한다 (대련/DM 전투의 참여자 전원 멘션과 동일한 목적 — 여러
+        멘션한다 (대련의 참여자 전원 멘션과 동일한 목적 — 여러
         캐릭터가 함께 엮인 결과를 모두에게 알려야 할 때 사용)."""
         mention_prefix = (
             " ".join(f"@{a}" for a in mention_accts) + " "
@@ -1444,8 +1294,8 @@ class MastodonBotListener(StreamListener):
         상대방에게 알림이 가지 않으므로, 반드시 본문(계산식) 쪽에 넣는다.
 
         `spoiler_text`는 실측 결과 본문(status)과 별개로 그 자체가 500자
-        한도를 갖는다(합산 500자 제한과는 별도). DM 전투처럼 매 답글에
-        필드 보드 텍스트가 덧붙어 `text`가 그 자체로 500자를 넘어가면
+        한도를 갖는다(합산 500자 제한과는 별도). 매 답글에 필드 보드
+        텍스트가 덧붙어 `text`가 그 자체로 500자를 넘어가면
         한 게시물로 합칠 수 없으므로, 그 경우엔 본문을 평범한 답글로
         먼저 보내고 계산식만 별도의 CW 후속 게시물로 이어 붙인다."""
         if not calc_text:
@@ -1533,9 +1383,7 @@ class MastodonBotListener(StreamListener):
         인자 자체를 생략해 계정 기본값을 따르게 한다.
 
         `prefix`는 매 조각 앞에 반복해서 붙일 고정 접두어다 — 개별 커맨드
-        답글은 그 답글을 단 계정에게 알림이 가도록 "@계정\\n"을, DM
-        전투(visibility="direct")는 멘션되지 않은 게시물이 참가자에게
-        아예 보이지 않으므로 참가자 멘션을 반복해서 넘겨야 한다. 게임
+        답글은 그 답글을 단 계정에게 알림이 가도록 "@계정\\n"을 넘긴다. 게임
         진행 공지(game_post)처럼 특정 수신자가 없는 경우는 빈 문자열이면
         된다."""
         if not calc_text:
@@ -2175,49 +2023,6 @@ def _handle_practice_command(
         # 페이즈가 아직 안 끝났다 — 같은 팀에서 누구를 더 기다리는지 알려준다.
         reply_text += _pending_actors_text(ps)
     return reply_text, calc_text, game_post, battle_log, ended
-
-
-def _handle_dm_battle_command(
-    acct: str, text: str, state: "BotState", dm_state: DmBattleState
-) -> tuple[
-    Optional[str], str, Optional[str], str, Optional[log_sheets.BattleCommandLog]
-]:
-    """
-    DM 전투 중 캐릭터 커맨드를 처리한다. handle_character_command를 그대로
-    재사용하되, DM 전투는 스레드 답글이 유일한 실시간 확인 수단이므로 매
-    답글에 현재 필드 상태(str(context))를 덧붙이고, 처리 후 전멸 여부를
-    확인해 전멸 시 전투를 종료한다.
-
-    반환값: (reply_text_or_None, calc_text, end_post_text_or_None,
-    end_post_calc_text, battle_log_or_None)
-
-    reply_text가 None이면 대괄호 커맨드 자체가 없는 답글(사담 등)이었다는
-    뜻이다 — 호출측은 아무 것도 게시하지 않고 조용히 무시해야 한다. calc_text/
-    end_post_calc_text가 비어 있지 않으면 호출측이 spoiler_text="계산식"
-    후속 게시물로 이어 보낸다. DM 전투는 스레드 하나가 계속 이어지는
-    구조라 대련/상시전투와 동일하게 처리한다(본 전투는 페이즈마다 게시물이
-    바뀌므로 대상이 아니다).
-    """
-    response, calc_text, battle_log = handle_character_command(
-        acct,
-        text,
-        state,
-        dm_state.session,
-        dm_state.field_id,
-        log_sheets.FieldBattleType.DM,
-        silent_on_unrecognized=True,
-    )
-    if response is None:
-        return None, "", None, "", None
-    response = f"{response}\n\n{dm_state.session.context}"
-
-    winner = admin_commands._check_dm_battle_wipe(dm_state)
-    if winner is None:
-        return response, calc_text, None, "", battle_log
-
-    end_body, end_calc = admin_commands._end_dm_battle(dm_state, state, winner)
-    end_post_text = f"{admin_commands._dm_mention_prefix(dm_state)}{end_body}"
-    return response, calc_text, end_post_text, end_calc, battle_log
 
 
 def _restore_daily_quest_mid_state(state: "BotState") -> int:

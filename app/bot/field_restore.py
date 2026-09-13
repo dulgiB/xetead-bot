@@ -1,7 +1,7 @@
 """봇 재기동(크래시/재배포) 시 "필드" 시트에서 ended_at이 비어 있는 전투를
 찾아 BotState에 재구성한다.
 
-메모리에만 존재하던 BotState.session/practice/dm_battles는 프로세스가
+메모리에만 존재하던 BotState.session/practices는 프로세스가
 재시작되면 통째로 사라진다 — 이 모듈은 그 상태를 최대한 되살리되, 다음은
 복원 대상이 아니다:
 
@@ -25,7 +25,6 @@ from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
 from battle.practice.round_manager import PracticeRoundManager
 
-from bot.dm_battle_state import DmBattleState
 from bot.log_sheets import FieldBattleType, FieldRow, load_open_battle_rows
 from bot.noncombat_state import InvestigationSession
 from bot.practice_state import PracticeBattleState
@@ -67,16 +66,6 @@ def restore_all(
                     item_dict,
                     inventory,
                 )
-            elif row.battle_type == FieldBattleType.DM:
-                summary = _restore_dm_battle(
-                    state,
-                    row,
-                    buff_dict,
-                    skill_dict,
-                    passive_skill_dict,
-                    item_dict,
-                    inventory,
-                )
             elif row.battle_type == FieldBattleType.INVESTIGATION_QUEST:
                 summary = _restore_investigation_session(state, row)
             else:
@@ -98,7 +87,7 @@ def restore_all(
 def _restore_characters_full(
     session: "BattleSession", state: "BotState", characters: list[dict]
 ) -> int:
-    """본 전투/DM 전투 캐릭터 스냅샷을 순서대로 재배치한다. 이름을 못
+    """본 전투 캐릭터 스냅샷을 순서대로 재배치한다. 이름을 못
     찾으면(동료) 건너뛰고, 시트 상 이미 사망 처리된 캐릭터는
     add_character()가 거부하므로 그 역시 건너뛴다(라운드 종료 시 필드에서
     자동 제거된 캐릭터를 다시 살려내지 않기 위한 기존 동작과 일관됨).
@@ -169,61 +158,6 @@ def _restore_main_battle(
     name_label = session.name or "(이름 없음)"
     return (
         f"본전투 「{name_label}」 {row.round_n}라운드 {phase.value} — "
-        f"캐릭터 {restored}명 복원 (field_id={row.field_id})"
-    )
-
-
-def _restore_dm_battle(
-    state: "BotState",
-    row: FieldRow,
-    buff_dict: dict,
-    skill_dict: dict,
-    passive_skill_dict: dict,
-    item_dict: dict,
-    inventory,
-) -> Optional[str]:
-    try:
-        phase = RoundPhaseType(row.phase)
-    except ValueError:
-        logger.warning(
-            "DM 전투 복원 실패: 알 수 없는 phase=%s (field_id=%s)",
-            row.phase,
-            row.field_id,
-        )
-        return None
-
-    active_post_id = row.meta.get("active_post_id")
-    if active_post_id is None:
-        logger.warning(
-            "DM 전투 복원 실패: active_post_id 메타가 없습니다 (field_id=%s)",
-            row.field_id,
-        )
-        return None
-
-    session = BattleSession(
-        buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
-    )
-    restored = _restore_characters_full(session, state, row.characters)
-    if restored == 0:
-        logger.warning(
-            "DM 전투 복원 실패: 복원 가능한 캐릭터가 없습니다 (field_id=%s)",
-            row.field_id,
-        )
-        return None
-
-    session.context.on_battle_start()
-    session.restore_progress(row.round_n, phase)
-
-    dm_state = DmBattleState(
-        session=session,
-        field_id=row.field_id,
-        active_post_id=active_post_id,
-        visibility=row.meta.get("visibility", "direct"),
-    )
-    state.dm_battles[active_post_id] = dm_state
-
-    return (
-        f"DM전투 {row.round_n}라운드 {phase.value} — "
         f"캐릭터 {restored}명 복원 (field_id={row.field_id})"
     )
 
