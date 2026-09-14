@@ -1,6 +1,6 @@
 """
 "아군 배려" 패시브 관련 테스트: (A) 아군에게 주는 대미지 감소(상시) +
-(B) 라운드 종료 시점 조건부로 다음 라운드에만 지속되는 자기 버프 부여.
+(B) 지난 라운드에 사거리 내 아군이 맞았다면 이번 라운드 동안 자기 버프 부여.
 
 CLAUDE.md 정책에 따라 실제 캠페인 캐릭터/패시브명 대신 일반화된 이름을 쓴다.
 """
@@ -27,6 +27,13 @@ from battle.objects.passive_skill.models import (
     PassiveSkillTrigger,
 )
 from battle.objects.skill.effects import SkillEffectAddBuff
+from battle.practice.context import PracticeBattlefieldContext
+from battle.practice.define import (
+    PracticeBattleMode,
+    PracticeRoundPhase,
+    SideType,
+)
+from battle.practice.round_manager import PracticeRoundManager
 from helpers import get_test_preset
 
 
@@ -103,20 +110,24 @@ class TestAllyDamageReduction:
 
 
 class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
-    """(B) 사거리 이내 자신을 제외한 아군이 그 라운드에 대미지를 입었다면,
-    다음 라운드에만 지속되는 '주는 대미지 +10%' 버프를 자신에게 부여해야
-    한다. 자신이 맞은 것만으로는 발동하지 않는다."""
+    """(B) 사거리 이내 자신을 제외한 아군이 **지난 라운드에** 대미지를
+    입었다면, 이번 라운드 동안 지속되는 '주는 대미지 +10%' 버프를 자신에게
+    부여해야 한다. 자신이 맞은 것만으로는 발동하지 않는다.
+
+    라운드 종료 트리거로 부여하면 같은 on_round_end()가 곧바로 턴을 차감해
+    지속시간을 2로 적어 보정해야 하는데, 그 차감을 유예하는
+    대련/상시전투에서는 같은 데이터가 2라운드 지속돼 모드별로 갈린다.
+    그래서 "라운드 시작 시 지난 라운드 결과로 판정"하는 형태로 표현한다."""
 
     REWARD_BUFF_ID = "RewardBuff"
 
-    def _make_context(self) -> BattlefieldContext:
-        reward_buff = BuffData(
+    def _make_reward_buff(self) -> BuffData:
+        return BuffData(
             id=self.REWARD_BUFF_ID,
             buff_class_name="BuffGivenDamage",
-            # ON_ROUND_END 시점에 부여된 버프는 부여되는 그 호출 안에서 즉시
-            # deduct_turn()이 한 번 실행되므로, "다음 라운드 1턴"을 보장하려면
-            # duration_turn_value를 2로 설정해야 한다.
-            duration_turn_value=2,
+            # 라운드 시작 시점에 부여되므로 설명 그대로 1턴이면 된다 —
+            # 그 라운드가 끝날 때 차감되어 사라진다.
+            duration_turn_value=1,
             duration_count_value=None,
             duration_count_deduct_condition=None,
             value_type=ValueType.PERCENT,
@@ -126,9 +137,11 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
             buff_type=BuffType.BUFF,
             description="",
         )
-        passive = PassiveSkillData(
+
+    def _make_passive(self) -> PassiveSkillData:
+        return PassiveSkillData(
             id="PassiveSkill",
-            trigger=PassiveSkillTrigger.ROUND_END,
+            trigger=PassiveSkillTrigger.ROUND_START,
             target_type=PassiveSkillTargetType.SELF,
             effects=[
                 SkillEffectAddBuff(
@@ -137,15 +150,19 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
                     value_type=None,
                     buff_id=self.REWARD_BUFF_ID,
                     buff_add_timing=None,
-                    condition_class_name="OtherAllyInRangeWasAttackedCondition",
+                    condition_class_name=(
+                        "OtherAllyInRangeWasAttackedLastRoundCondition"
+                    ),
                 )
             ],
             description="",
         )
+
+    def _make_context(self) -> BattlefieldContext:
         return BattlefieldContext(
-            buff_dict={self.REWARD_BUFF_ID: reward_buff},
+            buff_dict={self.REWARD_BUFF_ID: self._make_reward_buff()},
             skill_dict={},
-            passive_skill_dict={"PassiveSkill": passive},
+            passive_skill_dict={"PassiveSkill": self._make_passive()},
         )
 
     def _add_characters(self, ctx: BattlefieldContext) -> None:
@@ -161,7 +178,19 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
             get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(2)
         )
 
-    def test_buff_granted_after_round_end_when_ally_in_range_damaged(self):
+    def _finish_round_and_start_next(self, manager: RoundManager) -> None:
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+        manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+
+    def _has_reward(self, ctx: BattlefieldContext, holder_id: CharacterId) -> bool:
+        return any(
+            b.id == self.REWARD_BUFF_ID
+            for b in ctx.buff_container.get_buffs_by(holder_id, None)
+        )
+
+    def test_buff_granted_at_next_round_start_when_ally_in_range_damaged(self):
         ctx = self._make_context()
         manager = _make_manager(ctx)
         self._add_characters(ctx)
@@ -175,10 +204,12 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
 
-        assert any(
-            b.id == self.REWARD_BUFF_ID
-            for b in ctx.buff_container.get_buffs_by(holder_id, None)
-        )
+        # 맞은 그 라운드에는 아직 붙지 않는다.
+        assert not self._has_reward(ctx, holder_id)
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+
+        assert self._has_reward(ctx, holder_id)
 
     def test_no_buff_when_no_ally_in_range_was_damaged(self):
         ctx = self._make_context()
@@ -186,18 +217,13 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
         self._add_characters(ctx)
         holder_id = CharacterId("시전자")
 
-        manager.to_phase(RoundPhaseType.ALLY_ACTION)
-        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
-        manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+        self._finish_round_and_start_next(manager)
 
-        assert not any(
-            b.id == self.REWARD_BUFF_ID
-            for b in ctx.buff_container.get_buffs_by(holder_id, None)
-        )
+        assert not self._has_reward(ctx, holder_id)
 
     def test_no_buff_when_only_holder_itself_was_damaged(self):
         """사거리 이내 다른 아군은 멀쩡하고 홀더 자신만 맞았다면 발동하지
-        않아야 한다(OtherAllyInRangeWasAttackedCondition은 자신을 제외)."""
+        않아야 한다(자신은 제외하는 조건)."""
         ctx = self._make_context()
         manager = _make_manager(ctx)
         self._add_characters(ctx)
@@ -207,48 +233,78 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
         manager.process_command(
             parse_character_command(CharacterId("적군"), "[공격/시전자]", ctx)
         )
-        manager.to_phase(RoundPhaseType.ALLY_ACTION)
-        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
-        manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+        self._finish_round_and_start_next(manager)
 
-        assert not any(
-            b.id == self.REWARD_BUFF_ID
-            for b in ctx.buff_container.get_buffs_by(holder_id, None)
-        )
+        assert not self._has_reward(ctx, holder_id)
 
-    def test_buff_expires_after_the_following_round_ends(self):
-        """부여 라운드 종료 시 즉시 1턴이 깎이더라도, 다음 라운드 동안은
-        살아있고 그 다음 라운드가 끝나면 사라져야 한다."""
+    def test_buff_lasts_exactly_the_round_it_was_granted_in(self):
+        """라운드 시작 시 1턴짜리로 붙으므로 그 라운드 내내 유지되다가 라운드
+        종료 차감으로 사라진다. 지난 라운드에 아무도 맞지 않았다면 다시
+        붙지 않는다."""
         ctx = self._make_context()
         manager = _make_manager(ctx)
         self._add_characters(ctx)
         holder_id = CharacterId("시전자")
 
-        # Round 1: 피해아군이 공격당함 → 라운드 종료 시 보상 버프 부여
+        # Round 1: 피해아군이 공격당함
         manager.process_command(
             parse_character_command(CharacterId("적군"), "[공격/피해아군]", ctx)
         )
+        self._finish_round_and_start_next(manager)
+
+        # Round 2: 라운드 시작 시 부여되어 이번 라운드 동안 유지된다.
+        assert self._has_reward(ctx, holder_id)
         manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        assert self._has_reward(ctx, holder_id)
+
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
-        assert any(
-            b.id == self.REWARD_BUFF_ID
-            for b in ctx.buff_container.get_buffs_by(holder_id, None)
-        )
+        assert not self._has_reward(ctx, holder_id)
 
-        # Round 2: 아무도 공격당하지 않음 — 이번 라운드 동안은 보상 버프가 유지되어야 함
+        # Round 3: 지난 라운드(2)엔 아무도 맞지 않았으므로 다시 붙지 않는다.
         manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
-        manager.to_phase(RoundPhaseType.ALLY_ACTION)
-        assert any(
-            b.id == self.REWARD_BUFF_ID
-            for b in ctx.buff_container.get_buffs_by(holder_id, None)
-        )
+        assert not self._has_reward(ctx, holder_id)
 
-        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
-        manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
-
-        # Round 2 종료 시점에 소멸해야 한다.
-        assert not any(
-            b.id == self.REWARD_BUFF_ID
-            for b in ctx.buff_container.get_buffs_by(holder_id, None)
+    def test_practice_mode_grants_the_same_single_round_duration(self):
+        """대련/상시전투는 라운드 종료 차감에 "마지막 행동 차례 유예"가 붙어,
+        라운드 종료 트리거로 버프를 걸면 본 전투보다 1라운드 더 오래 간다.
+        라운드 시작 트리거로 표현하면 두 모드가 같아진다."""
+        ctx = PracticeBattlefieldContext(
+            buff_dict={self.REWARD_BUFF_ID: self._make_reward_buff()},
+            skill_dict={},
+            passive_skill_dict={"PassiveSkill": self._make_passive()},
+            mode=PracticeBattleMode.INVESTIGATION,
         )
+        manager = PracticeRoundManager(ctx)
+        ctx.add_character(
+            get_test_preset("시전자", passive_skill_id="PassiveSkill", attack_range=3),
+            SideType.SIDE_1,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("피해아군"), SideType.SIDE_1, BattlefieldColumnIndex(2)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), SideType.SIDE_2, BattlefieldColumnIndex(2)
+        )
+        holder_id = CharacterId("시전자")
+
+        # Round 1: 후공(2팀)이 피해아군을 공격
+        manager.to_phase(PracticeRoundPhase.FIRST_MOVER_ACTION)
+        manager.to_phase(PracticeRoundPhase.SECOND_MOVER_ACTION)
+        manager.process_command(
+            parse_character_command(CharacterId("적군"), "[공격/피해아군]", ctx)
+        )
+        manager.end_round()
+        assert not self._has_reward(ctx, holder_id)
+
+        # Round 2: 시작 시 부여, 그 라운드 종료와 함께 사라진다.
+        manager.to_phase(PracticeRoundPhase.FIRST_MOVER_ACTION)
+        assert self._has_reward(ctx, holder_id)
+        manager.to_phase(PracticeRoundPhase.SECOND_MOVER_ACTION)
+        manager.end_round()
+        assert not self._has_reward(ctx, holder_id)
+
+        # Round 3: 다시 붙지 않아야 한다(본 전투와 동일).
+        manager.to_phase(PracticeRoundPhase.FIRST_MOVER_ACTION)
+        assert not self._has_reward(ctx, holder_id)

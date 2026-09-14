@@ -54,6 +54,25 @@ def _characters_in_holder_scope(
         yield char_id, char
 
 
+def _any_damaged_in_holder_scope(
+    context: "BattlefieldContext",
+    holder: CharacterId,
+    damaged: set[CharacterId],
+    *,
+    include_self: bool,
+) -> bool:
+    """holder의 사거리 이내·같은 진영 캐릭터 중 `damaged`에 든 자가 있는지.
+    "이번 라운드"(damaged_this_round)와 "지난 라운드"
+    (prev_damaged_this_round) 조건이 읽는 집합만 다르고 나머지가 같아
+    한곳에 모은다."""
+    return any(
+        char_id in damaged
+        for char_id, _ in _characters_in_holder_scope(
+            context, holder, same_faction=True, include_self=include_self, in_range=True
+        )
+    )
+
+
 @dataclass(frozen=True)
 class Condition(abc.ABC):
     value: Optional[int] = None
@@ -389,11 +408,8 @@ class AllyInRangeWasAttackedCondition(RoundResolvedCondition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        return any(
-            char_id in context.damaged_this_round
-            for char_id, _ in _characters_in_holder_scope(
-                context, holder, same_faction=True, include_self=True, in_range=True
-            )
+        return _any_damaged_in_holder_scope(
+            context, holder, context.damaged_this_round, include_self=True
         )
 
 
@@ -410,9 +426,32 @@ class OtherAllyInRangeWasAttackedCondition(RoundResolvedCondition):
         holder: CharacterId,
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
-        return any(
-            char_id in context.damaged_this_round
-            for char_id, _ in _characters_in_holder_scope(
-                context, holder, same_faction=True, include_self=False, in_range=True
-            )
+        return _any_damaged_in_holder_scope(
+            context, holder, context.damaged_this_round, include_self=False
+        )
+
+
+@dataclass(frozen=True)
+class OtherAllyInRangeWasAttackedLastRoundCondition(Condition):
+    """OtherAllyInRangeWasAttackedCondition과 같은 판정을 **지난 라운드**의
+    피격 기록(prev_damaged_this_round)으로 한다.
+
+    "지난 라운드에 아군이 맞았으면 이번 라운드 동안 버프" 같은 효과는 라운드
+    종료 트리거로 걸면 안 된다 — 같은 on_round_end()가 곧바로 턴을 차감해
+    지속시간이 1턴 짧아지고, 그 차감을 유예하는 대련/상시전투와 본 전투의
+    결과가 갈린다. 라운드 시작 트리거 + 이 조건으로 표현하면 지속시간을
+    설명 그대로(1턴) 적을 수 있고 모드와 무관하게 같게 동작한다.
+
+    라운드 시작 시점엔 아직 아무도 움직이지 않았으므로 사거리 판정도 지난
+    라운드의 최종 위치 기준이 된다.
+    """
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        return _any_damaged_in_holder_scope(
+            context, holder, context.prev_damaged_this_round, include_self=False
         )
