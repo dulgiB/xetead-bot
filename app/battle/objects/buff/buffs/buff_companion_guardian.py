@@ -6,6 +6,7 @@ from battle.core.commands.models import DamageCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
 from battle.objects.buff.damage_factory import make_coefficient_damage_calc
+from battle.objects.buff.reactive_damage import apply_pure_damage_modifiers_to
 from battle.objects.companion import is_companion_alive
 from battle.objects.define import BuffApplyTiming, ValueSourceType, ValueType
 from battle.objects.models import (
@@ -121,16 +122,24 @@ class CompanionGuardianEvent(BuffEvent):
         if attacker_alive:
             assert attacker_or_target is not None  # attacker_alive가 이미 보장
             counter_label = f"{self.label}(반격)"
-            effect_data.damage_data_list.append(
-                make_coefficient_damage_calc(
-                    attacker_id=holder,
-                    target_id=attacker_or_target,
-                    value_source=ValueSourceType.STAT_ATK_ROLL,
-                    source_name=counter_label,
-                    coefficient_value=self.counter_percent,
-                    triggers_received_damage_passives=False,
-                    source_label=counter_label,
-                )
+            counter_calc = make_coefficient_damage_calc(
+                attacker_id=holder,
+                target_id=attacker_or_target,
+                value_source=ValueSourceType.STAT_ATK_ROLL,
+                source_name=counter_label,
+                coefficient_value=self.counter_percent,
+                triggers_received_damage_passives=False,
+                source_label=counter_label,
+            )
+            # holder는 이 반격에서 실제로 공격을 가하는 쪽이므로, 다른 반격
+            # 버프(BuffCounterDamageOn*)와 마찬가지로 holder의 "주는 대미지"·
+            # 공격자의 "받는 대미지" 버프가 반영되어야 한다.
+            apply_pure_damage_modifiers_to(
+                counter_calc,
+                holder,
+                attacker_or_target,
+                calculator,
+                effect_seq_number,
             )
 
 
