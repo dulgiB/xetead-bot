@@ -228,6 +228,11 @@ class CommandPartCalculator:
         # 배율을 못 받는다 — 수정자는 effect마다 다시 얹되 중복은 여기서 막는다.
         self._pure_modifiers_applied: set[tuple[int, CharacterId]] = set()
 
+        # 제3자 반응형 훅(ALLY_DAMAGED / ALLY_IN_RANGE_DAMAGED /
+        # ALLY_IN_RANGE_ATTACKED)을 이미 발동시킨 (공격자, 대상) 쌍.
+        # ON_ATTACK/ON_HIT와 같은 "한 번의 타격" 기준이다.
+        self._reactive_hooks_fired: set[tuple[CharacterId, CharacterId]] = set()
+
         _apply_fate_boost_modifier(data.original_part, self.data_by_effect, context)
 
     @classmethod
@@ -566,6 +571,15 @@ class CommandPartCalculator:
                 continue
             if not damage_calc.base.triggers_received_damage_passives:
                 continue
+            # 반응형 훅도 ON_ATTACK/ON_HIT와 같은 "한 번의 타격" 기준을 따른다.
+            # 대미지 항목마다 부르면 effect를 여러 개 써서 같은 대상을 때리는
+            # 스킬에서 반격·추가 대미지 버프가 구성요소 수만큼 붙는다. 대상이
+            # 여럿인 광역기는 (공격자, 대상) 쌍이 서로 달라 대상별로 정상
+            # 발동한다.
+            reactive_key = (damage_calc.base.attacker_id, target_id)
+            if reactive_key in self._reactive_hooks_fired:
+                continue
+            self._reactive_hooks_fired.add(reactive_key)
             self.context.buff_container.on_character_damaged(
                 damage_calc.base.target_id, self, effect_seq_number
             )

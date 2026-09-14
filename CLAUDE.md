@@ -244,6 +244,12 @@ Condition들은 `_characters_in_holder_scope()` 헬퍼로 캐릭터 순회·필�
 공유한다. 새 범위 기반 Condition을 추가할 때는 이 헬퍼에 predicate만
 넘기는 방식을 우선 검토한다.
 
+이 훅들은 대미지 항목이 아니라 **"한 번의 타격"당 한 번** 발동한다
+(`CommandPartCalculator._reactive_hooks_fired`, ON_ATTACK/ON_HIT와 같은 기준).
+effect를 여러 개 써서 같은 대상을 때리는 스킬에서 반격·추가 대미지가 구성요소
+수만큼 붙지 않게 하기 위함이다. 묶는 단위는 (공격자, 대상) 쌍이라, 한 effect가
+아군 여럿을 동시에 때리는 광역기는 피격자마다 정상 발동한다.
+
 **동료(소환수)는 "아군" 범위 판정에서 일관되게 제외한다** —
 `_characters_in_holder_scope()`, `SkillTargetRuleAllAllies`,
 `PassiveSkill._resolve_targets()`, `SkillEffectAddBuffPerDamagedColumn`이

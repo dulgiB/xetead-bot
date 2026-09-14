@@ -223,6 +223,41 @@ def _skill_dict() -> dict[str, SkillData]:
                 ),
             }
         ),
+        "다중타격스킬": SkillData.from_dict(
+            {
+                "id": "다중타격스킬",
+                "target_rule": "SkillTargetRuleNamed",
+                "target_count": 1,
+                "cost": 2,
+                # 같은 대상을 effect 두 개로 때리는 스킬 — 실제로는 한 번의
+                # 타격을 구성하는 두 요소다.
+                "effect_0": "SkillEffectDamage",
+                "value_source_0": "공격 굴림값",
+                "value_0": 100,
+                "value_type_0": "퍼센트",
+                "effect_1": "SkillEffectDamage",
+                "value_source_1": "공격 굴림값",
+                "value_1": 50,
+                "value_type_1": "퍼센트",
+                "effect_2": "",
+                "description": "대상에게 공격 굴림 100% + 50% 대미지를 입힌다.",
+            }
+        ),
+        "열광역스킬": SkillData.from_dict(
+            {
+                "id": "열광역스킬",
+                "target_rule": "SkillTargetRuleColumn",
+                "target_count": 1,
+                "cost": 2,
+                "effect_0": "SkillEffectDamage",
+                "value_source_0": "공격 굴림값",
+                "value_0": 100,
+                "value_type_0": "퍼센트",
+                "effect_1": "",
+                "effect_2": "",
+                "description": "지정한 열의 적 전원에게 공격 굴림 100% 대미지를 입힌다.",
+            }
+        ),
         "Cost3Skill": SkillData.from_dict(
             {
                 "id": "Cost3Skill",
@@ -368,6 +403,56 @@ class TestPassiveSkill:
 
         # 홀더 공격 굴림 50 × 80% = 40.
         assert enemy_hp_before - enemy_hp_after == 40
+
+    def test_counter_fires_once_per_attack_not_per_damage_component(self):
+        """effect를 여러 개 써서 같은 대상을 때리는 스킬은 여러 번의 타격이
+        아니라 한 번의 타격이다 — 반응형 훅이 대미지 항목마다 돌면 반격이
+        구성요소 수만큼 붙는다."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        self._add_holder_and_ally(ctx)
+        enemy = CharacterId("적군")
+        ctx.characters[enemy].skills = [
+            ctx.get_skill_data_by_id("다중타격스킬").to_skill_instance(ctx, enemy)
+        ]
+        ctx.buff_container.add(
+            _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
+        )
+
+        enemy_hp_before = ctx.characters[enemy].status.curr_hp
+        manager.process_command(
+            parse_character_command(enemy, "[다중타격스킬/아군2]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # 홀더 공격 굴림 50 × 50% = 25 — effect가 둘이어도 한 번만.
+        assert enemy_hp_before - ctx.characters[enemy].status.curr_hp == 25
+
+    def test_counter_fires_once_per_damaged_ally_in_a_column_attack(self):
+        """반대로 한 effect가 아군 여럿을 동시에 때리면 피격자마다 발동해야
+        한다 — (공격자, 대상) 쌍이 서로 다르므로 묶이지 않는다."""
+        ctx = _make_context()
+        manager = _setup_enemy_pre_phase(ctx)
+        self._add_holder_and_ally(ctx)
+        ctx.add_character(
+            get_test_preset("아군3", atk=1, max_hp=1000),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(2),
+        )
+        enemy = CharacterId("적군")
+        ctx.characters[enemy].skills = [
+            ctx.get_skill_data_by_id("열광역스킬").to_skill_instance(ctx, enemy)
+        ]
+        ctx.buff_container.add(
+            _buff_add(given_by="Sentinel", applied_to="Sentinel", buff_id="버프_3")
+        )
+
+        enemy_hp_before = ctx.characters[enemy].status.curr_hp
+        manager.process_command(parse_character_command(enemy, "[열광역스킬/3]", ctx))
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # 아군2/아군3이 각각 맞았으므로 25 × 2 = 50.
+        assert enemy_hp_before - ctx.characters[enemy].status.curr_hp == 50
 
     def test_counter_damage_respects_holders_own_given_damage_buff(self):
         """반격도 홀더가 실제로 가하는 대미지이므로, 홀더가 보유한 [버프_1](주는
@@ -753,6 +838,24 @@ class TestCounterOnMarkedAllyAttackBuff:
         # 마크아군의 공격(100 × 1.25[버프_2] = 125) + 홀더의 반응
         # 대미지(공격 굴림 100 × 60% = 60) = 185.
         assert hp_before - hp_after == 185
+
+    def test_bonus_damage_fires_once_per_attack_not_per_damage_component(self):
+        """[버프_3]의 추가 대미지도 "한 번의 타격"당 한 번이다 — 마크아군이
+        effect 두 개짜리 스킬을 써도 홀더의 추가 대미지는 한 번만 붙는다."""
+        ctx, manager, holder, marked, enemy = self._setup()
+        ctx.characters[marked].skills = [
+            ctx.get_skill_data_by_id("다중타격스킬").to_skill_instance(ctx, marked)
+        ]
+
+        hp_before = ctx.characters[enemy].status.curr_hp
+        manager.process_command(
+            parse_character_command(marked, "[다중타격스킬/적군]", ctx)
+        )
+        hp_after = ctx.characters[enemy].status.curr_hp
+
+        # 마크아군의 공격(100 + 50 = 150, × 1.25[버프_2] → 125 + 62 = 187)
+        # + 홀더의 반응 대미지(100 × 60% = 60) = 247.
+        assert hp_before - hp_after == 247
 
     def test_reply_labels_bonus_damage_with_holders_name(self):
         """버프_3는 홀더 자신이 아니라 마크아군의 행동에 편승해 발동하므로,
