@@ -26,11 +26,13 @@ from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
 
 
-def _damage_skill(skill_id: str, target_rule: str) -> SkillData:
+def _damage_skill(
+    skill_id: str, target_rule: str, *, target_count: int = 1
+) -> SkillData:
     return SkillData(
         id=skill_id,
         target_rule=target_rule,
-        target_count=1,
+        target_count=target_count,
         cost=0,
         effects=[
             SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
@@ -102,3 +104,50 @@ def test_column_skill_with_correct_column_target_still_works():
     _run(ctx, manager, caster_id, "[스킬_1/1열]")
 
     assert ctx.characters[CharacterId("적군 1")].status.curr_hp == 95
+
+
+def test_named_excluding_self_rule_rejects_self_target():
+    """자기 지정이 설계상 성립하지 않는 스킬("자신 외의 아군을 지정")은 조용히
+    걸러내지 않고 입력 오류로 돌려준다 — 통과시키면 본인에게 걸린 버프가 다른
+    버프와 맞물려 의도하지 않은 자기 콤보가 되고, 조용히 무시해도 왜 아무
+    일도 안 일어나는지 알 수 없다."""
+    skill = _damage_skill("자기제외스킬", "SkillTargetRuleNamedExcludingSelf")
+    ctx, manager, caster_id = _setup(skill)
+
+    with pytest.raises(CommandValidationError):
+        _run(ctx, manager, caster_id, "[자기제외스킬/아군 1]")
+
+
+def test_named_excluding_self_rule_rejects_self_among_multiple_targets():
+    """대상을 여러 명 지정하는 스킬은 그중 하나만 자신이어도 거부해야 한다."""
+    skill = _damage_skill(
+        "자기제외스킬", "SkillTargetRuleNamedExcludingSelf", target_count=2
+    )
+    ctx, manager, caster_id = _setup(skill)
+    ctx.add_character(
+        get_test_preset("아군 2"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+
+    with pytest.raises(CommandValidationError):
+        _run(ctx, manager, caster_id, "[자기제외스킬/아군 2/아군 1]")
+
+
+def test_named_excluding_self_rule_allows_other_targets():
+    skill = _damage_skill("자기제외스킬", "SkillTargetRuleNamedExcludingSelf")
+    ctx, manager, caster_id = _setup(skill)
+
+    _run(ctx, manager, caster_id, "[자기제외스킬/적군 1]")
+
+    assert ctx.characters[CharacterId("적군 1")].status.curr_hp == 95
+
+
+def test_named_excluding_self_rejection_does_not_consume_cost():
+    """검증 실패는 코스트 차감 전에 일어나야 한다."""
+    skill = _damage_skill("자기제외스킬", "SkillTargetRuleNamedExcludingSelf")
+    ctx, manager, caster_id = _setup(skill)
+    cost_before = ctx.characters[caster_id].status.remaining_cost
+
+    with pytest.raises(CommandValidationError):
+        _run(ctx, manager, caster_id, "[자기제외스킬/아군 1]")
+
+    assert ctx.characters[caster_id].status.remaining_cost == cost_before
