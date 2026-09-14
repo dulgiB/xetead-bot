@@ -281,6 +281,96 @@ class TestConsumeStackForDamage:
         )
 
 
+class TestConsumeStackDamageIsFixed:
+    """스택 소모 대미지는 고정 대미지다 — 같은 스킬의 굴림 대미지와 달리
+    주는/받는 대미지 버프의 배율 밖에 있어야 한다("…만큼 최종 대미지가
+    고정으로 증가").
+
+    소모량은 차감 시점에야 확정되므로 값 자체를 ValueSourceType.FIXED로 둘
+    수는 없고(BaseValueIndicator.ignores_value_modifiers로 배율만 뗀다),
+    그래서 "FIXED가 아닌데 배율을 안 받는다"가 실제로 성립하는지 확인한다.
+    """
+
+    def _make_context(self):
+        curse = make_curse_data()
+        amplify = BuffData(
+            id="증폭",
+            description="",
+            buff_class_name="BuffGivenDamage",
+            duration_turn_value=2,
+            duration_count_value=None,
+            duration_count_deduct_condition=None,
+            value_type=ValueType.PERCENT,
+            value=100,
+            condition_=None,
+            condition_value=None,
+            buff_type=BuffType.BUFF,
+        )
+        skill = SkillData(
+            id="저주 폭발",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=2,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.STAT_ATK_ROLL, 100, ValueType.PERCENT, None, None
+                ),
+                SkillEffectConsumeStackForDamage(
+                    value_source=ValueSourceType.CONSUMED_BUFF_STACK,
+                    value=300,
+                    value_type=ValueType.PERCENT,
+                    buff_id="재앙",
+                    buff_add_timing=None,
+                    buff_stack_cap=5,
+                ),
+            ],
+            description="",
+        )
+        # milestone_n=0이면 주사위 없이 ATK 그대로 굴림 결과가 되어 결정적이다.
+        ctx = BattlefieldContext(
+            buff_dict={"재앙": curse, "증폭": amplify},
+            skill_dict={"저주 폭발": skill},
+            milestone_n=0,
+        )
+        manager = setup_ally_phase(ctx)
+        caster = CharacterId("Catastrophe")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Catastrophe", atk=10, skill_1_id="저주 폭발"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4
+            )
+        )
+        return ctx, manager, caster, target
+
+    def _run(self, *, amplified: bool) -> int:
+        ctx, manager, caster, target = self._make_context()
+        if amplified:
+            ctx.buff_container.add(
+                BuffAddData(given_by=caster, applied_to=caster, buff_id="증폭")
+            )
+        hp_before = ctx.characters[target].status.curr_hp
+        manager.process_command(
+            parse_character_command(caster, "[저주 폭발/적군]", ctx)
+        )
+        return hp_before - ctx.characters[target].status.curr_hp
+
+    def test_stack_damage_ignores_given_damage_buff(self):
+        """굴림 대미지 10(atk 10 × 100%) + 스택 대미지 12(4스택 × 3).
+        [증폭](+100%)은 굴림 쪽에만 붙어 20 + 12 = 32가 되어야 한다."""
+        assert self._run(amplified=False) == 22
+        assert self._run(amplified=True) == 32
+
+
 class TestAllyDamagedHook:
     """ALLY_DAMAGED 타이밍 패시브: 같은 열(자신 포함)의 피격에만 반응한다."""
 
