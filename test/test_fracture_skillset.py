@@ -14,6 +14,7 @@
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
@@ -311,13 +312,18 @@ class TestCost3Skill:
     분기한다. STAT_ATK_ROLL의 무작위성을 없애기 위해 milestone_n=0, 공격자
     atk=100으로 고정한다."""
 
-    def _make_ready_context(self):
+    def _make_ready_context(self, *, passive_skill_id: str | None = None):
         ctx = _make_context(milestone_n=0)
         manager = _setup_ally_phase(ctx)
         caster = CharacterId("Fracture")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Fracture", atk=100, skill_1_id="Cost3Skill"),
+            get_test_preset(
+                "Fracture",
+                atk=100,
+                skill_1_id="Cost3Skill",
+                passive_skill_id=passive_skill_id,
+            ),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -378,3 +384,69 @@ class TestCost3Skill:
 
         assert hp_before - hp_after == 500
         assert ctx.get_buff_stack(target, "균열") == 0
+
+    def test_max_tier_hit_still_receives_the_debuff_passive_bonus(self):
+        """스택을 전부 터뜨리는 그 일격 자신은 아직 [균열]이 걸린 상태를 보고
+        계산되어야 한다 — 차감이 대미지보다 먼저면 마무리기에서만 패시브
+        보정이 빠진다. 계수를 올려 보정하는 방식으로는 해결되지 않는다:
+        [균열] 외의 디버프가 함께 걸려 있으면 패시브가 그대로 발동해 이중으로
+        보정된다."""
+        ctx, manager, caster, target = self._make_ready_context(
+            passive_skill_id="PassiveSkill"
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+            )
+        )
+
+        hp_before = ctx.characters[target].status.curr_hp
+        manager.process_command(
+            parse_character_command(caster, "[Cost3Skill/적군]", ctx)
+        )
+        hp_after = ctx.characters[target].status.curr_hp
+
+        # 500% × (1 + 0.2[디버프] + 0.05[균열])
+        assert hp_before - hp_after == 625
+        assert ctx.get_buff_instance(target, "균열") is None
+
+    def test_max_tier_removes_the_fracture_instance_entirely(self):
+        """스택만 0으로 깎고 인스턴스를 남기면 남은 지속시간 동안 대상이
+        여전히 "[균열]이 걸린 상태"로 잡혀 패시브 보너스가 계속 붙고, 필드
+        요약에도 `[균열] (N턴/0스택)`이 뜬다."""
+        ctx, manager, caster, target = self._make_ready_context()
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+            )
+        )
+
+        manager.process_command(
+            parse_character_command(caster, "[Cost3Skill/적군]", ctx)
+        )
+
+        assert ctx.get_buff_instance(target, "균열") is None
+        assert "균열" not in ctx.format_field_text()
+
+    def test_max_tier_still_reports_final_zero_stack_in_the_log(self):
+        """인스턴스를 즉시 제거해도 답글에는 "→ 최종 0"이 남아야 한다 —
+        로그는 버프를 다시 조회하지 않고 차감 시점의 remaining_stack을 쓴다."""
+        ctx, manager, caster, target = self._make_ready_context()
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+            )
+        )
+
+        manager.process_command(
+            parse_character_command(caster, "[Cost3Skill/적군]", ctx)
+        )
+
+        remove_entries = [
+            entry
+            for result in ctx.results
+            for entry in result.log_entries
+            if entry.kind == BattleLogEntryKind.BUFF_REMOVE
+        ]
+        assert len(remove_entries) == 1
+        assert remove_entries[0].result == "[균열]×5 소모 → 최종 0"

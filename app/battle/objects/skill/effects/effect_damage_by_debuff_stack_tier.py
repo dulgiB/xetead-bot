@@ -23,6 +23,13 @@ class SkillEffectDamageByDebuffStackTier(SkillEffectBase):
       지속시간도 함께 갱신한다)
     - 3~4스택: 중간 계수로 대미지 + 스택 1 추가(동일)
     - 5스택(최대): 최고 계수로 대미지 + 스택 전량 제거
+
+    최대 스택 분기의 제거는 `after_damage=True`로 대미지 뒤에 미룬다 — 스택을
+    터뜨리는 그 일격 자신은 아직 디버프가 걸린 상태를 보고 계산되어야 한다.
+    (`buff_id` 디버프 보유를 조건으로 대미지를 올려 주는 패시브가 마무리기에만
+    빠지는 문제.) 계수를 대신 올려 보정하는 방식으로는 해결되지 않는다 —
+    `buff_id` 외의 디버프가 함께 걸려 있으면 패시브가 그대로 발동해 이중으로
+    보정되기 때문이다.
     """
 
     _MID_TIER_THRESHOLD: ClassVar[int] = 3
@@ -60,6 +67,7 @@ class SkillEffectDamageByDebuffStackTier(SkillEffectBase):
                         applied_to=target,
                         buff_id=self.buff_id,
                         requested_amount=stack_count,
+                        after_damage=True,
                     )
                 )
             else:

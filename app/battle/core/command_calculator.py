@@ -258,16 +258,14 @@ class CommandPartCalculator:
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_PRE_ACTION:
                     self._process_move(i)
-                    self._process_buff_remove(i)
-                    self._process_damage(i)
+                    self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
 
         elif phase == RoundPhaseType.ALLY_ACTION:
             for i in range(len(self.data_by_effect)):
                 self._process_move(i)
-                self._process_buff_remove(i)
-                self._process_damage(i)
+                self._consume_stacks_and_process_damage(i)
                 self._process_heal(i)
                 self._process_buff_add(i, phase)
 
@@ -275,14 +273,12 @@ class CommandPartCalculator:
             for i in range(len(self.data_by_effect)):
                 timing = self.data_by_effect[i].apply_timing
                 if timing is None:  # 아군 스킬 — 이동은 PRE에서 이미 처리했다
-                    self._process_buff_remove(i)
-                    self._process_damage(i)
+                    self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_POST_ACTION:
                     self._process_move(i)
-                    self._process_buff_remove(i)
-                    self._process_damage(i)
+                    self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
 
@@ -293,8 +289,7 @@ class CommandPartCalculator:
             # phase가 없다면 BuffContainer에서 호출한 경우
             for i in range(len(self.data_by_effect)):
                 self._process_move(i)
-                self._process_buff_remove(i)
-                self._process_damage(i)
+                self._consume_stacks_and_process_damage(i)
                 self._process_heal(i)
 
     def _process_move(self: "CommandPartCalculator", effect_seq_number: int) -> None:
@@ -306,20 +301,48 @@ class CommandPartCalculator:
                 move_data.character_id, self, effect_seq_number
             )
 
-    def _process_buff_remove(
+    def _consume_stacks_and_process_damage(
         self: "CommandPartCalculator", effect_seq_number: int
+    ) -> None:
+        """스택 차감 → 대미지 → 유예된 스택 차감 순으로 처리한다.
+
+        기본은 대미지보다 먼저 차감하는 것이다(CONSUMED_BUFF_STACK 값소스가
+        차감량을 읽어야 하므로). `BuffRemoveData.after_damage`가 켜진 항목만
+        대미지 뒤로 미뤄, 소모하는 일격 자신은 그 버프가 아직 걸린 상태를
+        보고 계산되게 한다.
+        """
+        self._process_buff_remove(effect_seq_number, after_damage=False)
+        self._process_damage(effect_seq_number)
+        self._process_buff_remove(effect_seq_number, after_damage=True)
+
+    def _process_buff_remove(
+        self: "CommandPartCalculator",
+        effect_seq_number: int,
+        *,
+        after_damage: bool,
     ) -> None:
         """적층형 버프의 스택을 실제로 차감하고, 실제 차감량을 result_value에
         기록한다(CONSUMED_BUFF_STACK 조회용). 스택이 부족해도 있는 만큼만 차감하고
-        실패하지 않는다."""
+        실패하지 않는다. `after_damage`가 같은 항목만 이번 호출에서 처리한다.
+
+        스택이 0이 되면 버프 인스턴스를 그 자리에서 제거한다 — 남겨 두면
+        수치가 0인데도 "그 버프를 보유 중"으로 잡혀(TargetHasDebuffCondition,
+        reference_buff_id 조회 등) 남은 지속시간 동안 효과가 계속 붙고, 필드
+        요약에도 `[버프] (N턴/0스택)`으로 표시된다. 로그에 찍을 "최종 스택"은
+        제거 전에 remaining_stack으로 빼 둔다."""
         for remove_calc in self.data_by_effect[effect_seq_number].buff_remove_data_list:
             base = remove_calc.base
+            if base.after_damage != after_damage:
+                continue
             buff = self.context.get_buff_instance(base.applied_to, base.buff_id)
             current = buff.stack_count if buff is not None else 0
             removed = min(base.requested_amount, current)
             if buff is not None and removed:
                 buff.stack_count -= removed
+                if buff.stack_count <= 0:
+                    self.context.buff_container.remove(buff.uid)
             remove_calc.result_value = removed
+            remove_calc.remaining_stack = buff.stack_count if buff is not None else 0
 
     @staticmethod
     def _damage_processed_in_phase(
@@ -816,9 +839,9 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
         for remove_calc in effect_data.buff_remove_data_list:
             if not remove_calc.result_value:
                 continue
-            final_stack = context.get_buff_stack(
-                remove_calc.base.applied_to, remove_calc.base.buff_id
-            )
+            # 스택이 0이 된 버프는 이미 제거됐으므로 다시 조회할 수 없다 —
+            # 차감 시점에 기록해 둔 잔여 스택을 쓴다.
+            final_stack = remove_calc.remaining_stack or 0
             entries.append(
                 BattleLogEntry(
                     target_name=remove_calc.base.applied_to.name,
