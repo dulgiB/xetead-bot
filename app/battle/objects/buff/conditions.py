@@ -23,7 +23,13 @@ def _characters_in_holder_scope(
     """holder를 기준으로 (진영 일치 여부) × (자신 포함 여부) ×
     (같은 열 / 사거리 내) 조건에 맞는 캐릭터들을 순회한다. "같은 열"/"사거리
     내" 범위만 다른 조건들(AllyInSameColumnCondition, AllyInRangeCountCondition
-    등)이 공유하는 순회 로직이다."""
+    등)이 공유하는 순회 로직이다.
+
+    동료(소환수, context.companion_owners)는 제외한다 — 슬롯을 차지하지 않고
+    소환자의 위치를 그대로 따르는 종속 개체라 "진형에 아군이 몇 명 있는가"를
+    세는 데 끼면 소환자 한 명이 두 명으로 잡힌다.
+    SkillTargetRuleAllAllies/PassiveSkill._resolve_targets()의 아군 범위와
+    같은 기준이다."""
     holder_char = context.characters.get(holder)
     if holder_char is None:
         return
@@ -32,6 +38,8 @@ def _characters_in_holder_scope(
 
     for char_id, char in context.characters.items():
         if not include_self and char_id == holder:
+            continue
+        if char_id in context.companion_owners:
             continue
         if (char.faction == holder_char.faction) != same_faction:
             continue
