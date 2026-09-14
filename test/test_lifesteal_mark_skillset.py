@@ -425,6 +425,8 @@ class TestCost2Skill:
         return ctx, manager, vampire, enemy
 
     def test_only_expose_granted_when_holder_lacks_stack_buff(self):
+        """required_target_buff_id가 비어 있는 쪽(코스트 2)은 홀더의 스택이
+        곧 게이트다 — 0이면 아무 것도 얹지 않는다."""
         ctx, manager, vampire, enemy = self._make_ready_context()
 
         manager.process_command(
@@ -510,6 +512,24 @@ class TestCost3Skill:
         granted = ctx.get_buff_instance(target, "받는대미지증가_테스트")
         assert granted is not None
         assert granted.value == 30  # 3스택 × 10%
+        assert ctx.get_buff_instance(target, "코스트감소_테스트") is None
+
+    def test_snapshot_debuff_granted_even_with_zero_holder_stack(self):
+        """게이트는 "대상이 선행 디버프를 보유했는가"이지 홀더의 스택 수가
+        아니다 — 스택 0이면 수치 0짜리 태그가 붙고, 그 태그 자체가 다음
+        사용의 코스트 감소 분기를 여는 조건이 된다."""
+        ctx, manager, vampire, target = self._make_ready_context(holder_stack=0)
+        ctx.buff_container.add(
+            BuffAddData(given_by=vampire, applied_to=target, buff_id="노출_테스트")
+        )
+
+        manager.process_command(
+            parse_character_command(vampire, "[Cost3Skill/적군]", ctx)
+        )
+
+        granted = ctx.get_buff_instance(target, "받는대미지증가_테스트")
+        assert granted is not None
+        assert granted.value == 0
         assert ctx.get_buff_instance(target, "코스트감소_테스트") is None
 
     def test_cost_reduction_granted_and_applied_next_round_when_already_marked(self):

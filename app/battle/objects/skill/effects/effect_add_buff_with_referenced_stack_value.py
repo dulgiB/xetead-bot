@@ -13,11 +13,16 @@ class SkillEffectAddBuffWithReferencedStackValue(SkillEffectBase):
     스냅샷해 targets에게 buff_id 버프를 부여한다(부여 이후 reference_buff_id
     스택이 바뀌어도 이미 부여된 버프의 수치는 갱신되지 않는다).
 
-    holder가 reference_buff_id를 보유하지 않으면(스택 0) 아무 것도 하지
-    않는다. required_target_buff_id가 채워져 있으면 그 버프를 보유한
-    대상에게만, 그리고 이미 buff_id를 보유한 대상은 건너뛴 채(재부여 없이
-    1회만 태그하는 콤보 용도) 부여한다 — 비어 있으면 대상 상태와 무관하게
-    항상 재부여(수치/지속시간 갱신)한다."""
+    required_target_buff_id가 무엇을 게이트로 삼을지를 가른다:
+
+    - 비어 있으면 "내 스택을 밑천 삼아 얹는" 모드다. holder가
+      reference_buff_id를 보유하지 않으면(스택 0) 아무 것도 하지 않고,
+      대상 상태와 무관하게 항상 재부여(수치/지속시간 갱신)한다.
+    - 채워져 있으면 "선행 버프가 붙은 대상을 1회만 태그하는" 콤보 모드다.
+      게이트는 대상이 그 선행 버프를 보유했는지이므로 holder의 스택 수는
+      보지 않는다 — 스택이 0이면 수치 0짜리 버프가 붙고, 그 태그 자체가
+      후속 효과(SkillEffectAddBuffIfTargetHasReferencedBuff 등)의 조건이
+      된다. 이미 buff_id를 보유한 대상은 건너뛴다."""
 
     def _expand(
         self,
@@ -38,7 +43,7 @@ class SkillEffectAddBuffWithReferencedStackValue(SkillEffectBase):
             and self.value is not None
         )
         holder_stack = context.get_buff_stack(holder, self.reference_buff_id)
-        if holder_stack <= 0:
+        if holder_stack <= 0 and self.required_target_buff_id is None:
             return [], [], [], [], []
         snapshot_value = holder_stack * self.value
 
