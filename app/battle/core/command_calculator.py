@@ -221,6 +221,13 @@ class CommandPartCalculator:
         self._on_attack_fired: set[CharacterId] = set()
         self._on_hit_fired: set[CharacterId] = set()
 
+        # 수치만 바꾸는 이벤트(is_pure_damage_modifier)를 이미 얹어 둔
+        # (effect_seq_number, 보유자) 조합. 위의 1회 제한은 부수효과가 있는
+        # 이벤트(반격·반사·지속 횟수 차감 등)를 위한 것이라, 그 제한을 그대로
+        # 수치 수정자에까지 적용하면 두 번째 이후 effect의 대미지만 조용히
+        # 배율을 못 받는다 — 수정자는 effect마다 다시 얹되 중복은 여기서 막는다.
+        self._pure_modifiers_applied: set[tuple[int, CharacterId]] = set()
+
         _apply_fate_boost_modifier(data.original_part, self.data_by_effect, context)
 
     @classmethod
@@ -502,9 +509,6 @@ class CommandPartCalculator:
         # 공격자 1명/대상 1명당 한 번만 적용·차감한다.
         for damage_calc in live_damage_calcs:
             attacker_id = damage_calc.base.attacker_id
-            if attacker_id in self._on_attack_fired:
-                continue
-            self._on_attack_fired.add(attacker_id)
             # ON_ACTION 버프는 역할과 무관하게 target_id==holder로만 필터링하므로,
             # 공격자==대상인 자멸형 자기 대미지는 이 ON_ATTACK 디스패치에서도
             # 대상 본인의 방어 버프를 깨울 수 있다 — ON_HIT 쪽과 동일하게 막는다.
@@ -513,6 +517,14 @@ class CommandPartCalculator:
                 and not damage_calc.base.triggers_holder_action_buffs
             ):
                 continue
+            if attacker_id in self._on_attack_fired:
+                # 부수효과가 있는 이벤트는 이미 한 번 돌았으므로 다시 돌리지
+                # 않되, 주는 대미지 배율은 이 effect의 항목에도 얹어야 한다.
+                self._apply_pure_modifier_events(
+                    effect_seq_number, attacker_id, damage_calc.base.target_id
+                )
+                continue
+            self._on_attack_fired.add(attacker_id)
             self._apply_buff_events(
                 effect_seq_number,
                 attacker_id,
@@ -522,7 +534,13 @@ class CommandPartCalculator:
 
         for damage_calc in live_damage_calcs:
             target_id = damage_calc.base.target_id
-            if target_id not in self._on_hit_fired:
+            if target_id in self._on_hit_fired:
+                # ON_ATTACK 쪽과 같은 이유로, 받는 대미지 배율만 이 effect의
+                # 항목에 다시 얹는다(반사·방어막 등 부수효과는 재실행 금지).
+                self._apply_pure_modifier_events(
+                    effect_seq_number, target_id, damage_calc.base.attacker_id
+                )
+            else:
                 self._on_hit_fired.add(target_id)
                 # 같은 대상을 향한 대미지가 전부 자멸형일 때만 건너뛴다.
                 if any(
@@ -708,6 +726,35 @@ class CommandPartCalculator:
             if self._buff_add_gate_passes(data, effect_seq_number):
                 self.context.buff_container.add(self._redirect_applied_to(data))
 
+    def _apply_pure_modifier_events(
+        self: "CommandPartCalculator",
+        effect_seq_number: int,
+        char_id: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> None:
+        """char_id의 ON_ACTION 버프 중 수치만 바꾸는 것(is_pure_damage_modifier)만
+        골라 이 effect의 대미지 항목에 얹는다.
+
+        _apply_buff_events()와 달리 지속 횟수를 차감하지 않고 부수효과 이벤트도
+        건너뛴다 — 같은 커맨드 안에서 이미 한 번 디스패치한 공격자/대상에게
+        "이 effect의 대미지에도 배율은 붙어야 한다"만 채워 주는 용도이기
+        때문이다. 수정자 이벤트는 이 effect의 대미지 항목 전체를 훑어 조건이
+        맞는 것마다 배율을 append하므로, 같은 effect에서 두 번 호출되면 그대로
+        중복 적용된다 — (effect, 보유자)당 1회로 막는다."""
+        key = (effect_seq_number, char_id)
+        if key in self._pure_modifiers_applied:
+            return
+        self._pure_modifiers_applied.add(key)
+
+        for buff in self.context.buff_container.get_buffs_by(
+            char_id, BuffApplyTiming.ON_ACTION
+        ):
+            event = buff.create_event()
+            if not event.is_pure_damage_modifier:
+                continue
+            if event.is_applied(self.context, char_id, attacker_or_target):
+                event.apply(char_id, attacker_or_target, self, effect_seq_number)
+
     def _apply_buff_events(
         self: "CommandPartCalculator",
         effect_seq_number: int,
@@ -715,6 +762,10 @@ class CommandPartCalculator:
         deduct_condition: Optional[BuffCountDeductCondition],
         attacker_or_target: Optional[CharacterId] = None,
     ) -> None:
+        # 전체 디스패치는 수정자 이벤트도 함께 얹으므로, 같은 effect에서
+        # _apply_pure_modifier_events()가 또 얹지 않도록 여기서 표시해 둔다.
+        self._pure_modifiers_applied.add((effect_seq_number, char_id))
+
         buffs = self.context.buff_container.get_buffs_by(
             char_id, BuffApplyTiming.ON_ACTION
         )
