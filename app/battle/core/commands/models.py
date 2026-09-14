@@ -135,6 +135,11 @@ class HealCalculateData:
 class BuffRemoveCalculateData:
     base: BuffRemoveData
     result_value: Optional[int] = None
+    # 차감 직후의 잔여 스택 수. 스택이 0이 되면 버프 인스턴스는 그 자리에서
+    # 제거되므로(CommandPartCalculator._process_buff_remove), 로그를 만들 때
+    # 버프를 다시 조회해서는 "최종 0스택"을 표시할 수 없다 — 차감 시점에
+    # 여기 기록해 둔 값을 쓴다.
+    remaining_stack: Optional[int] = None
 
 
 class BattleLogEntryKind(str, Enum):

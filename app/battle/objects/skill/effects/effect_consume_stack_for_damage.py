@@ -17,8 +17,19 @@ if TYPE_CHECKING:
 
 class SkillEffectConsumeStackForDamage(SkillEffectBase):
     """시전자 자신의 buff_id 적층형 버프 스택을 최대 buff_stack_cap만큼 소모
-    (제거)하면서, 동시에 그 소모량 × value%만큼 대미지를 targets에게 입힌다
-    (예: 자신에게 쌓인 스택형 디버프를 소모해 대상에게 대미지로 전가하는 스킬).
+    (제거)하면서, 동시에 그 소모량 × value%만큼 **고정 대미지**를 targets에게
+    입힌다 (예: 자신에게 쌓인 스택형 디버프를 소모해 대상에게 대미지로
+    전가하는 스킬).
+
+    고정 대미지 — 주는/받는 대미지 버프의 배율을 받지 않는다. "(소모한
+    스택 수)×N만큼 최종 대미지가 고정으로 증가한다"처럼 같은 스킬의 굴림
+    대미지와 달리 배율 밖에 있어야 하는 항목을 위한 효과이기 때문이다.
+    (m_res·부활 페널티·희생 방어 경감처럼 버프가 아닌 게임 메커니즘
+    — applies_to_fixed=True — 은 다른 고정 대미지와 마찬가지로 적용된다.)
+    값 자체를 ValueSourceType.FIXED로 둘 수는 없어 배율만 떼어낸다
+    (BaseValueIndicator.ignores_value_modifiers): 소모량은 실제 차감 시점에야
+    확정되므로, 전개 시점에 미리 계산하면 한 커맨드가 같은 스킬을 두 번
+    선언했을 때 두 번째가 차감 전 스택 수를 본다.
 
     제거와 대미지를 같은 effect(같은 effect_seq_number)로 함께 반환하는 이유:
     CommandPartCalculator.process()는 같은 인덱스에 대해 항상 _process_buff_remove()를
@@ -60,6 +71,7 @@ class SkillEffectConsumeStackForDamage(SkillEffectBase):
             value_source=self.value_source,
             coefficient=FloatValueModifier(source_name="계수", value=self.value),
             consumed_buff_id=self.buff_id,
+            ignores_value_modifiers=True,
         )
         damage_list = [
             DamageData(

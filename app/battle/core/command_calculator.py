@@ -221,6 +221,18 @@ class CommandPartCalculator:
         self._on_attack_fired: set[CharacterId] = set()
         self._on_hit_fired: set[CharacterId] = set()
 
+        # 수치만 바꾸는 이벤트(is_pure_damage_modifier)를 이미 얹어 둔
+        # (effect_seq_number, 보유자) 조합. 위의 1회 제한은 부수효과가 있는
+        # 이벤트(반격·반사·지속 횟수 차감 등)를 위한 것이라, 그 제한을 그대로
+        # 수치 수정자에까지 적용하면 두 번째 이후 effect의 대미지만 조용히
+        # 배율을 못 받는다 — 수정자는 effect마다 다시 얹되 중복은 여기서 막는다.
+        self._pure_modifiers_applied: set[tuple[int, CharacterId]] = set()
+
+        # 제3자 반응형 훅(ALLY_DAMAGED / ALLY_IN_RANGE_DAMAGED /
+        # ALLY_IN_RANGE_ATTACKED)을 이미 발동시킨 (공격자, 대상) 쌍.
+        # ON_ATTACK/ON_HIT와 같은 "한 번의 타격" 기준이다.
+        self._reactive_hooks_fired: set[tuple[CharacterId, CharacterId]] = set()
+
         _apply_fate_boost_modifier(data.original_part, self.data_by_effect, context)
 
     @classmethod
@@ -258,16 +270,14 @@ class CommandPartCalculator:
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_PRE_ACTION:
                     self._process_move(i)
-                    self._process_buff_remove(i)
-                    self._process_damage(i)
+                    self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
 
         elif phase == RoundPhaseType.ALLY_ACTION:
             for i in range(len(self.data_by_effect)):
                 self._process_move(i)
-                self._process_buff_remove(i)
-                self._process_damage(i)
+                self._consume_stacks_and_process_damage(i)
                 self._process_heal(i)
                 self._process_buff_add(i, phase)
 
@@ -275,14 +285,12 @@ class CommandPartCalculator:
             for i in range(len(self.data_by_effect)):
                 timing = self.data_by_effect[i].apply_timing
                 if timing is None:  # 아군 스킬 — 이동은 PRE에서 이미 처리했다
-                    self._process_buff_remove(i)
-                    self._process_damage(i)
+                    self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_POST_ACTION:
                     self._process_move(i)
-                    self._process_buff_remove(i)
-                    self._process_damage(i)
+                    self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
                     self._process_all_buff_add(i)
 
@@ -293,8 +301,7 @@ class CommandPartCalculator:
             # phase가 없다면 BuffContainer에서 호출한 경우
             for i in range(len(self.data_by_effect)):
                 self._process_move(i)
-                self._process_buff_remove(i)
-                self._process_damage(i)
+                self._consume_stacks_and_process_damage(i)
                 self._process_heal(i)
 
     def _process_move(self: "CommandPartCalculator", effect_seq_number: int) -> None:
@@ -306,20 +313,48 @@ class CommandPartCalculator:
                 move_data.character_id, self, effect_seq_number
             )
 
-    def _process_buff_remove(
+    def _consume_stacks_and_process_damage(
         self: "CommandPartCalculator", effect_seq_number: int
+    ) -> None:
+        """스택 차감 → 대미지 → 유예된 스택 차감 순으로 처리한다.
+
+        기본은 대미지보다 먼저 차감하는 것이다(CONSUMED_BUFF_STACK 값소스가
+        차감량을 읽어야 하므로). `BuffRemoveData.after_damage`가 켜진 항목만
+        대미지 뒤로 미뤄, 소모하는 일격 자신은 그 버프가 아직 걸린 상태를
+        보고 계산되게 한다.
+        """
+        self._process_buff_remove(effect_seq_number, after_damage=False)
+        self._process_damage(effect_seq_number)
+        self._process_buff_remove(effect_seq_number, after_damage=True)
+
+    def _process_buff_remove(
+        self: "CommandPartCalculator",
+        effect_seq_number: int,
+        *,
+        after_damage: bool,
     ) -> None:
         """적층형 버프의 스택을 실제로 차감하고, 실제 차감량을 result_value에
         기록한다(CONSUMED_BUFF_STACK 조회용). 스택이 부족해도 있는 만큼만 차감하고
-        실패하지 않는다."""
+        실패하지 않는다. `after_damage`가 같은 항목만 이번 호출에서 처리한다.
+
+        스택이 0이 되면 버프 인스턴스를 그 자리에서 제거한다 — 남겨 두면
+        수치가 0인데도 "그 버프를 보유 중"으로 잡혀(TargetHasDebuffCondition,
+        reference_buff_id 조회 등) 남은 지속시간 동안 효과가 계속 붙고, 필드
+        요약에도 `[버프] (N턴/0스택)`으로 표시된다. 로그에 찍을 "최종 스택"은
+        제거 전에 remaining_stack으로 빼 둔다."""
         for remove_calc in self.data_by_effect[effect_seq_number].buff_remove_data_list:
             base = remove_calc.base
+            if base.after_damage != after_damage:
+                continue
             buff = self.context.get_buff_instance(base.applied_to, base.buff_id)
             current = buff.stack_count if buff is not None else 0
             removed = min(base.requested_amount, current)
             if buff is not None and removed:
                 buff.stack_count -= removed
+                if buff.stack_count <= 0:
+                    self.context.buff_container.remove(buff.uid)
             remove_calc.result_value = removed
+            remove_calc.remaining_stack = buff.stack_count if buff is not None else 0
 
     @staticmethod
     def _damage_processed_in_phase(
@@ -479,9 +514,6 @@ class CommandPartCalculator:
         # 공격자 1명/대상 1명당 한 번만 적용·차감한다.
         for damage_calc in live_damage_calcs:
             attacker_id = damage_calc.base.attacker_id
-            if attacker_id in self._on_attack_fired:
-                continue
-            self._on_attack_fired.add(attacker_id)
             # ON_ACTION 버프는 역할과 무관하게 target_id==holder로만 필터링하므로,
             # 공격자==대상인 자멸형 자기 대미지는 이 ON_ATTACK 디스패치에서도
             # 대상 본인의 방어 버프를 깨울 수 있다 — ON_HIT 쪽과 동일하게 막는다.
@@ -490,6 +522,14 @@ class CommandPartCalculator:
                 and not damage_calc.base.triggers_holder_action_buffs
             ):
                 continue
+            if attacker_id in self._on_attack_fired:
+                # 부수효과가 있는 이벤트는 이미 한 번 돌았으므로 다시 돌리지
+                # 않되, 주는 대미지 배율은 이 effect의 항목에도 얹어야 한다.
+                self._apply_pure_modifier_events(
+                    effect_seq_number, attacker_id, damage_calc.base.target_id
+                )
+                continue
+            self._on_attack_fired.add(attacker_id)
             self._apply_buff_events(
                 effect_seq_number,
                 attacker_id,
@@ -499,7 +539,13 @@ class CommandPartCalculator:
 
         for damage_calc in live_damage_calcs:
             target_id = damage_calc.base.target_id
-            if target_id not in self._on_hit_fired:
+            if target_id in self._on_hit_fired:
+                # ON_ATTACK 쪽과 같은 이유로, 받는 대미지 배율만 이 effect의
+                # 항목에 다시 얹는다(반사·방어막 등 부수효과는 재실행 금지).
+                self._apply_pure_modifier_events(
+                    effect_seq_number, target_id, damage_calc.base.attacker_id
+                )
+            else:
                 self._on_hit_fired.add(target_id)
                 # 같은 대상을 향한 대미지가 전부 자멸형일 때만 건너뛴다.
                 if any(
@@ -525,6 +571,15 @@ class CommandPartCalculator:
                 continue
             if not damage_calc.base.triggers_received_damage_passives:
                 continue
+            # 반응형 훅도 ON_ATTACK/ON_HIT와 같은 "한 번의 타격" 기준을 따른다.
+            # 대미지 항목마다 부르면 effect를 여러 개 써서 같은 대상을 때리는
+            # 스킬에서 반격·추가 대미지 버프가 구성요소 수만큼 붙는다. 대상이
+            # 여럿인 광역기는 (공격자, 대상) 쌍이 서로 달라 대상별로 정상
+            # 발동한다.
+            reactive_key = (damage_calc.base.attacker_id, target_id)
+            if reactive_key in self._reactive_hooks_fired:
+                continue
+            self._reactive_hooks_fired.add(reactive_key)
             self.context.buff_container.on_character_damaged(
                 damage_calc.base.target_id, self, effect_seq_number
             )
@@ -685,6 +740,35 @@ class CommandPartCalculator:
             if self._buff_add_gate_passes(data, effect_seq_number):
                 self.context.buff_container.add(self._redirect_applied_to(data))
 
+    def _apply_pure_modifier_events(
+        self: "CommandPartCalculator",
+        effect_seq_number: int,
+        char_id: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> None:
+        """char_id의 ON_ACTION 버프 중 수치만 바꾸는 것(is_pure_damage_modifier)만
+        골라 이 effect의 대미지 항목에 얹는다.
+
+        _apply_buff_events()와 달리 지속 횟수를 차감하지 않고 부수효과 이벤트도
+        건너뛴다 — 같은 커맨드 안에서 이미 한 번 디스패치한 공격자/대상에게
+        "이 effect의 대미지에도 배율은 붙어야 한다"만 채워 주는 용도이기
+        때문이다. 수정자 이벤트는 이 effect의 대미지 항목 전체를 훑어 조건이
+        맞는 것마다 배율을 append하므로, 같은 effect에서 두 번 호출되면 그대로
+        중복 적용된다 — (effect, 보유자)당 1회로 막는다."""
+        key = (effect_seq_number, char_id)
+        if key in self._pure_modifiers_applied:
+            return
+        self._pure_modifiers_applied.add(key)
+
+        for buff in self.context.buff_container.get_buffs_by(
+            char_id, BuffApplyTiming.ON_ACTION
+        ):
+            event = buff.create_event()
+            if not event.is_pure_damage_modifier:
+                continue
+            if event.is_applied(self.context, char_id, attacker_or_target):
+                event.apply(char_id, attacker_or_target, self, effect_seq_number)
+
     def _apply_buff_events(
         self: "CommandPartCalculator",
         effect_seq_number: int,
@@ -692,6 +776,10 @@ class CommandPartCalculator:
         deduct_condition: Optional[BuffCountDeductCondition],
         attacker_or_target: Optional[CharacterId] = None,
     ) -> None:
+        # 전체 디스패치는 수정자 이벤트도 함께 얹으므로, 같은 effect에서
+        # _apply_pure_modifier_events()가 또 얹지 않도록 여기서 표시해 둔다.
+        self._pure_modifiers_applied.add((effect_seq_number, char_id))
+
         buffs = self.context.buff_container.get_buffs_by(
             char_id, BuffApplyTiming.ON_ACTION
         )
@@ -816,9 +904,9 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
         for remove_calc in effect_data.buff_remove_data_list:
             if not remove_calc.result_value:
                 continue
-            final_stack = context.get_buff_stack(
-                remove_calc.base.applied_to, remove_calc.base.buff_id
-            )
+            # 스택이 0이 된 버프는 이미 제거됐으므로 다시 조회할 수 없다 —
+            # 차감 시점에 기록해 둔 잔여 스택을 쓴다.
+            final_stack = remove_calc.remaining_stack or 0
             entries.append(
                 BattleLogEntry(
                     target_name=remove_calc.base.applied_to.name,

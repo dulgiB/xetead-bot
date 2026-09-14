@@ -20,7 +20,10 @@ class SkillEffectHealAndFillBuffStack(SkillEffectBase):
     """buff_id 적층형 버프의 "더 쌓을 수 있는 여유 스택 수" × value%만큼 대상을
     회복시키고, 시전자 자신의 해당 버프 스택을 즉시 최대치까지 채운다. 회복
     시도량이 대상에게 필요한 회복량(최대 체력 - 현재 체력)을 초과하면, 그
-    초과분만큼 시전자 자신이 회복한다.
+    초과분만큼 시전자 자신이 회복한다. 단 시전자 자신이 대상이면 초과분을
+    따로 돌리지 않는다 — 이미 자기 체력을 상한까지 채운 뒤라 실제로 회복되는
+    양이 0인데, 항목을 남기면 답글에 "회복 N"이 두 줄로 찍혀 그만큼 더 회복한
+    것처럼 보인다.
 
     주사위나 스탯 굴림이 개입하지 않는 결정론적 계산이라 expand() 시점에
     전부 즉시 계산해 FIXED 값으로 반환한다.
@@ -63,7 +66,7 @@ class SkillEffectHealAndFillBuffStack(SkillEffectBase):
                 )
             )
 
-        if total_overflow > 0:
+        if total_overflow > 0 and holder not in targets:
             heal_list.append(
                 HealData(
                     healer_id=holder,

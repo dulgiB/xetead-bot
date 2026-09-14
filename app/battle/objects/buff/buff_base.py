@@ -52,6 +52,14 @@ class BuffRemoveData:
     applied_to: CharacterId
     buff_id: str
     requested_amount: int
+    # True면 같은 effect의 대미지를 적용한 **뒤에** 차감한다. 소모하는 그
+    # 일격 자신은 아직 그 버프가 걸린 상태를 보고 계산해야 하는 마무리기용
+    # (예: 스택을 전부 터뜨리는 대미지가 "그 디버프가 걸린 적" 조건 패시브의
+    # 보정을 받아야 하는 경우).
+    # ValueSourceType.CONSUMED_BUFF_STACK으로 소모량을 읽어 대미지를 만드는
+    # 효과와는 함께 쓸 수 없다 — 그쪽은 대미지 계산 시점에 차감이 이미
+    # 끝나 있어야 한다.
+    after_damage: bool = False
 
 
 class BuffDurationCounter:

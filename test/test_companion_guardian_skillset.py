@@ -90,6 +90,38 @@ def _buff_dict() -> dict[str, BuffData]:
                 "max_stack": "",
             }
         ),
+        "CompanionBuff3": BuffData.from_dict(
+            {
+                "id": "CompanionBuff3",
+                "buff_name": "BuffGivenDamage",
+                "duration_turn_value": 2,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value_0": 50,
+                "value_type_0": "퍼센트",
+                "condition": "",
+                "condition_value": "",
+                "description": "주는 대미지가 50% 증가한다.",
+                "type": "버프",
+                "max_stack": "",
+            }
+        ),
+        "취약_테스트": BuffData.from_dict(
+            {
+                "id": "취약_테스트",
+                "buff_name": "BuffReceivedDamage",
+                "duration_turn_value": 2,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value_0": 20,
+                "value_type_0": "퍼센트",
+                "condition": "",
+                "condition_value": "",
+                "description": "받는 대미지가 20% 증가한다.",
+                "type": "디버프",
+                "max_stack": "",
+            }
+        ),
         "도발": BuffData.from_dict(
             {
                 "id": "도발",
@@ -635,6 +667,40 @@ class TestCompanionGuardianSplitAndCounter:
         # 반영되고 동료 몫엔 반영되지 않는 비대칭 버그였다면 동료는 100의
         # 절반인 50을 그대로 받아 owner_damage != companion_damage였다.
         assert owner_damage == companion_damage == 40
+
+    def test_counter_damage_reflects_given_and_received_damage_buffs(self):
+        """반격에서 실제로 공격을 가하는 쪽은 [CompanionBuff1] 보유자이므로,
+        다른 반격 버프(BuffCounterDamageOn*)와 마찬가지로 보유자의 "주는
+        대미지" 버프와 공격자의 "받는 대미지" 버프가 함께 반영되어야 한다."""
+        ctx = _make_context()
+        _add_owner(ctx, max_hp=200, atk=100)
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000, atk=100),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.on_battle_start()
+        manager = _setup_ally_phase(ctx)
+        enemy = CharacterId("적군")
+
+        ctx.buff_container.add(
+            BuffAddData(given_by=OWNER, applied_to=OWNER, buff_id="CompanionBuff3")
+        )
+        ctx.buff_container.add(
+            BuffAddData(given_by=OWNER, applied_to=enemy, buff_id="취약_테스트")
+        )
+
+        enemy_hp_before = ctx.characters[enemy].status.curr_hp
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+        manager.process_command(
+            parse_character_command(enemy, "[공격/CompanionGuardian]", ctx)
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+        # 공격 굴림 100 × 0.8[반격] × 1.5[주는 대미지] × 1.2[받는 대미지] = 144
+        assert enemy_hp_before - ctx.characters[enemy].status.curr_hp == 144
 
     def test_split_and_counter_modifier_labels_follow_buff_id_not_hardcoded(self):
         """분담/반격 modifier의 source_name(계산식에 노출되는 이름)은 "버프"

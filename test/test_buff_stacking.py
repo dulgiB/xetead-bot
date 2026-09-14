@@ -8,6 +8,7 @@ SkillEffectConsumeStackForDamage, SkillEffectHealAndFillBuffStack, BuffCatastrop
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
@@ -281,6 +282,96 @@ class TestConsumeStackForDamage:
         )
 
 
+class TestConsumeStackDamageIsFixed:
+    """스택 소모 대미지는 고정 대미지다 — 같은 스킬의 굴림 대미지와 달리
+    주는/받는 대미지 버프의 배율 밖에 있어야 한다("…만큼 최종 대미지가
+    고정으로 증가").
+
+    소모량은 차감 시점에야 확정되므로 값 자체를 ValueSourceType.FIXED로 둘
+    수는 없고(BaseValueIndicator.ignores_value_modifiers로 배율만 뗀다),
+    그래서 "FIXED가 아닌데 배율을 안 받는다"가 실제로 성립하는지 확인한다.
+    """
+
+    def _make_context(self):
+        curse = make_curse_data()
+        amplify = BuffData(
+            id="증폭",
+            description="",
+            buff_class_name="BuffGivenDamage",
+            duration_turn_value=2,
+            duration_count_value=None,
+            duration_count_deduct_condition=None,
+            value_type=ValueType.PERCENT,
+            value=100,
+            condition_=None,
+            condition_value=None,
+            buff_type=BuffType.BUFF,
+        )
+        skill = SkillData(
+            id="저주 폭발",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=2,
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.STAT_ATK_ROLL, 100, ValueType.PERCENT, None, None
+                ),
+                SkillEffectConsumeStackForDamage(
+                    value_source=ValueSourceType.CONSUMED_BUFF_STACK,
+                    value=300,
+                    value_type=ValueType.PERCENT,
+                    buff_id="재앙",
+                    buff_add_timing=None,
+                    buff_stack_cap=5,
+                ),
+            ],
+            description="",
+        )
+        # milestone_n=0이면 주사위 없이 ATK 그대로 굴림 결과가 되어 결정적이다.
+        ctx = BattlefieldContext(
+            buff_dict={"재앙": curse, "증폭": amplify},
+            skill_dict={"저주 폭발": skill},
+            milestone_n=0,
+        )
+        manager = setup_ally_phase(ctx)
+        caster = CharacterId("Catastrophe")
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("Catastrophe", atk=10, skill_1_id="저주 폭발"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4
+            )
+        )
+        return ctx, manager, caster, target
+
+    def _run(self, *, amplified: bool) -> int:
+        ctx, manager, caster, target = self._make_context()
+        if amplified:
+            ctx.buff_container.add(
+                BuffAddData(given_by=caster, applied_to=caster, buff_id="증폭")
+            )
+        hp_before = ctx.characters[target].status.curr_hp
+        manager.process_command(
+            parse_character_command(caster, "[저주 폭발/적군]", ctx)
+        )
+        return hp_before - ctx.characters[target].status.curr_hp
+
+    def test_stack_damage_ignores_given_damage_buff(self):
+        """굴림 대미지 10(atk 10 × 100%) + 스택 대미지 12(4스택 × 3).
+        [증폭](+100%)은 굴림 쪽에만 붙어 20 + 12 = 32가 되어야 한다."""
+        assert self._run(amplified=False) == 22
+        assert self._run(amplified=True) == 32
+
+
 class TestAllyDamagedHook:
     """ALLY_DAMAGED 타이밍 패시브: 같은 열(자신 포함)의 피격에만 반응한다."""
 
@@ -446,6 +537,54 @@ class TestSkillEffectHealAndFillBuffStack:
         assert ctx.characters[ally].status.curr_hp == 100
         assert ctx.characters[caster].status.curr_hp == 94
         assert ctx.get_buff_stack(caster, "재앙") == 10
+
+    def test_self_target_emits_a_single_heal_entry_without_overflow(self):
+        """자신을 대상으로 쓰면 초과분을 자신에게 다시 돌릴 이유가 없다 —
+        이미 상한까지 채운 뒤라 실제 회복량이 0인데, 항목을 남기면 답글에
+        "회복 N"이 두 줄로 찍혀 그만큼 더 회복한 것처럼 보인다."""
+        curse = make_curse_data()
+        skill = SkillData(
+            id="재앙 나눔",
+            target_rule="SkillTargetRuleNamed",
+            target_count=1,
+            cost=3,
+            effects=[
+                SkillEffectHealAndFillBuffStack(
+                    value_source=None,
+                    value=500,
+                    value_type=ValueType.PERCENT,
+                    buff_id="재앙",
+                    buff_add_timing=None,
+                )
+            ],
+            description="",
+        )
+        ctx = BattlefieldContext(
+            buff_dict={"재앙": curse}, skill_dict={"재앙 나눔": skill}
+        )
+        manager = setup_ally_phase(ctx)
+        caster = CharacterId("Catastrophe")
+        ctx.add_character(
+            get_test_preset(
+                "Catastrophe", skill_1_id="재앙 나눔", initial_hp=95, max_hp=100
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+
+        # space = 10-0=10 -> heal_amount = 50이지만 부족분은 5뿐이다.
+        manager.process_command(
+            parse_character_command(caster, "[재앙 나눔/Catastrophe]", ctx)
+        )
+
+        assert ctx.characters[caster].status.curr_hp == 100
+        heal_entries = [
+            entry
+            for result in ctx.results
+            for entry in result.log_entries
+            if entry.kind == BattleLogEntryKind.HEAL
+        ]
+        assert [entry.result for entry in heal_entries] == ["회복 5"]
 
 
 class TestBuffCatastropheBattleEnd:

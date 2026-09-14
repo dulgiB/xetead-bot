@@ -66,6 +66,12 @@ class BaseValueIndicator:
     # CONSUMED_BUFF_STACK/REFERENCED_BUFF_STACK 전용. 계산식에서 수치를
     # "{값}[{buff_id}]"로 라벨링해 어느 버프에서 왔는지 보여주는 데 쓴다.
     consumed_buff_id: Optional[str] = None
+    # True면 FIXED 값과 똑같이 주는/받는 대미지 버프의 영향을 받지 않는다
+    # (m_res·부활 페널티처럼 applies_to_fixed=True인 게임 메커니즘은 그대로
+    # 적용된다). value_source를 FIXED로 바꾸는 것과 다른 점은 스킬 계수가
+    # 살아 있다는 것 — "런타임에 정해지는 수치 × 계수"를 고정 대미지로
+    # 내야 할 때 쓴다(예: 소모한 스택 수 × 스택당 고정 대미지).
+    ignores_value_modifiers: bool = False
 
     def get_value(
         self,
@@ -152,14 +158,14 @@ class BaseValueIndicator:
 
 
 def _bucket_modifiers(
-    modifiers: list[ValueModifierBase], is_fixed: bool
+    modifiers: list[ValueModifierBase], ignores_modifiers: bool
 ) -> tuple[list[IntValueModifier], list[FloatValueModifier]]:
-    """0이 아닌 modifier를 int/float로 나눈다. is_fixed면 applies_to_fixed=False인
-    (버프 유래) modifier는 걸러낸다."""
+    """0이 아닌 modifier를 int/float로 나눈다. ignores_modifiers면
+    applies_to_fixed=False인 (버프 유래) modifier는 걸러낸다."""
     int_modifiers: list[IntValueModifier] = []
     float_modifiers: list[FloatValueModifier] = []
     for modifier in modifiers:
-        if is_fixed and not modifier.applies_to_fixed:
+        if ignores_modifiers and not modifier.applies_to_fixed:
             continue
         if isinstance(modifier, IntValueModifier):
             if modifier.value != 0:
@@ -194,9 +200,15 @@ class ValueWithModifiers:
         self.roll_result = None
         self.base_display_value = None
 
-        is_fixed = (
+        is_fixed_source = (
             isinstance(self.base_value, BaseValueIndicator)
             and self.base_value.value_source == ValueSourceType.FIXED
+        )
+        # 계수는 살리되 버프 배율만 떼는 경우(ignores_value_modifiers)가 있어
+        # "계수를 적용할지"와 "버프 배율을 받을지"를 따로 판단한다.
+        ignores_modifiers = is_fixed_source or (
+            isinstance(self.base_value, BaseValueIndicator)
+            and self.base_value.ignores_value_modifiers
         )
 
         # 스킬 자체의 계수(백분율, 230 → ×2.3). 버프성 배율과 동일 취급이라
@@ -204,17 +216,17 @@ class ValueWithModifiers:
         # 적용해야 계산식에 드러난다.
         self.base_coefficient = None
         if (
-            not is_fixed
+            not is_fixed_source
             and isinstance(self.base_value, BaseValueIndicator)
             and self.base_value.coefficient is not None
         ):
             self.base_coefficient = self.base_value.coefficient
 
         self.given_int_modifiers, self.given_float_modifiers = _bucket_modifiers(
-            given_modifiers, is_fixed
+            given_modifiers, ignores_modifiers
         )
         self.received_int_modifiers, self.received_float_modifiers = _bucket_modifiers(
-            received_modifiers, is_fixed
+            received_modifiers, ignores_modifiers
         )
 
     def get_value(

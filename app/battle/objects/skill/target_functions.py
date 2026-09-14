@@ -8,6 +8,7 @@ from battle.exceptions import (
     error_column_target_required,
     error_invalid_command_format,
     error_invalid_move_destination,
+    error_self_target_not_allowed,
 )
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
@@ -189,6 +190,27 @@ class SkillTargetRuleNamed(SkillTargetRule):
         if not all(isinstance(target, CharacterId) for target in targets):
             raise CommandValidationError(error_character_target_required())
         return cast(list[CharacterId], targets)
+
+
+@dataclass(frozen=True)
+class SkillTargetRuleNamedExcludingSelf(SkillTargetRuleNamed):
+    """
+    SkillTargetRuleNamed와 같지만 시전자 자신은 대상으로 지정할 수 없다.
+    - "자신 외의 아군을 지정한다"처럼 자기 지정이 설계상 성립하지 않는 스킬용.
+      조용히 걸러내지 않고 입력 오류로 돌려주는 이유는, 자기 지정이 통과하면
+      본인에게 걸린 버프가 다른 버프와 맞물려 의도하지 않은 자기 콤보가
+      되기 때문이다(지정했는데 아무 일도 안 일어나는 것도 혼란스럽다).
+
+    ex. 사거리 내의 자신 외 아군을 지정해 표식을 부여
+    """
+
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
+    ) -> list[CharacterId]:
+        character_targets = super().get_targets(targets)
+        if self.skill_holder_id in character_targets:
+            raise CommandValidationError(error_self_target_not_allowed())
+        return character_targets
 
 
 @dataclass(frozen=True)

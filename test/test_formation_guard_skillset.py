@@ -419,6 +419,39 @@ class TestPassiveSkill:
         assert not self._has_formation(ctx, ally1)
         assert not self._has_formation(ctx, ally2)
 
+    def test_companion_does_not_count_toward_the_ally_threshold(self):
+        """동료(소환수)는 슬롯을 차지하지 않고 소환자의 위치를 그대로 따르는
+        종속 개체라, "사거리 내 아군 N명" 조건에 세면 소환자 한 명이 두 명으로
+        잡힌다. 버프를 받는 쪽(전체 아군)에서는 이미 제외되므로, 세는 쪽만
+        포함하면 "아무도 못 받는 인원수로 전원이 받는" 상태가 된다."""
+        ctx = _make_context()
+        manager = RoundManager(ctx)
+        caster = CharacterId("Formation")
+        ally1 = CharacterId("Ally1")
+        ally2 = CharacterId("Ally2")
+        ctx.add_character(
+            get_test_preset(
+                "Formation", attack_range=10, passive_skill_id="PassiveSkill"
+            ),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("Ally1"), FactionType.ALLY, BattlefieldColumnIndex(1)
+        )
+        ctx.add_character(
+            get_test_preset("Ally2"), FactionType.ALLY, BattlefieldColumnIndex(2)
+        )
+        # 실제 아군은 2명뿐인데 동료까지 세면 3명이 되어 조건이 충족돼 버린다.
+        ctx.spawn_companion_if_absent(ally1, "동료_테스트", 20)
+        assert ctx.find_companion_id(ally1) is not None
+
+        manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
+
+        assert not self._has_formation(ctx, caster)
+        assert not self._has_formation(ctx, ally1)
+        assert not self._has_formation(ctx, ally2)
+
 
 class TestCost2Skill:
     """코스트 2 스킬: 공격 굴림 180% 대미지 + 대상에게 1턴간 [도발] 부여.

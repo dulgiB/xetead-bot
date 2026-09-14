@@ -59,6 +59,10 @@ def error_character_target_required() -> str:
     )
 
 
+def error_self_target_not_allowed() -> str:
+    return "이 스킬은 자신을 대상으로 지정할 수 없습니다."
+
+
 def error_item_does_not_exist(item_id: str) -> str:
     return f"지정한 아이템({item_id})이 등록되어 있지 않아 사용할 수 없습니다."
 

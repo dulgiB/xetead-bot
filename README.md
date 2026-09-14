@@ -562,6 +562,7 @@ SSH로 붙어 체크아웃을 갱신하고 `bot` 컨테이너를 재빌드·재�
 |---------------------------------|--------------------------------------------------|
 | `SkillTargetRuleSelf`           | 항상 자기 자신 (입력 무시)                                |
 | `SkillTargetRuleNamed`          | 이름으로 지정한 캐릭터                                    |
+| `SkillTargetRuleNamedExcludingSelf` | 이름으로 지정한 캐릭터, 단 시전자 자신은 지정 불가(지정하면 오류)        |
 | `SkillTargetRuleNamedWithColumn`| 캐릭터 1명 + 인접 열 1개(생략 가능) — 열을 지정하면 그 캐릭터를 이동시킴  |
 | `SkillTargetRuleColumn`         | 열 번호로 지정, 해당 열의 **적군** 전원                       |
 | `SkillTargetRuleAllyColumn`     | 열 번호로 지정, 해당 열의 **아군** 전원                       |

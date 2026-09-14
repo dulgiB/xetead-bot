@@ -163,15 +163,57 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 ### 버프 이벤트 vs 대상 오버라이드
 
 - **`BuffEvent.apply()`**: `CommandPartCalculator`를 받아 대미지/힐 수치를 변경하는 계산 시점 훅.
-- **`BuffBase.get_target_override()`**: `None` 반환이 기본값. `None`이 아니면 `expand_character_command()`에서 대상을 교체한다 (도발 등).
+- **`BuffBase.get_target_override()`**: `None` 반환이 기본값. `None`이 아니면
+  도발 리다이렉트 대상이 된다 (도발 등).
 
-대상 교체가 필요한 버프는 `get_target_override()`를 오버라이드하고, `ON_ACTION` 타이밍을 유지하면 버프 횟수 차감(`deduct_count`)이 자동으로 동작한다.
+대상 교체가 필요한 버프는 `get_target_override()`를 오버라이드하고,
+`ON_ACTION` 타이밍을 유지하면 버프 횟수 차감(`deduct_count`)이 자동으로
+동작한다.
+
+전개(`expand_character_command()`)는 커맨드에 적힌 대상 그대로 펼치고,
+실제 치환은 `CommandPartCalculator`가 맡는다:
+
+1. `taunt_redirect.assign_taunt_redirects()`가 한 캐릭터가 이번에 선언한
+   **공격 인스턴스 전체**를 한 배치로 보고, 도발자마다 인스턴스를 하나씩
+   무작위로 배정해 각 계산기의 `precomputed_taunt_redirects`에 채운다 —
+   그래서 도발은 그 캐릭터의 공격을 전부가 아니라 **1개만** 끌어온다.
+   이미 도발자를 직접 겨냥한 인스턴스는 재추첨 풀에서 빠지고, 풀이 먼저
+   바닥나면 남은 도발자는 이번 라운드에 유도하지 못한다.
+2. `CommandPartCalculator._prepare_redirects()`가 그 결과(+ 대리 수령
+   `get_sacrifice_override()`)를 대미지 `target_id`에 반영하고 `redirect_map`에
+   기록하며, 같은 커맨드의 `buff_add` 부가 효과도 `_redirect_applied_to()`로
+   함께 옮긴다(이동은 옮기지 않는다 — 목적지가 원래 대상 기준으로 검증된다).
+
+`ignores_taunt` 대미지(열 광역기 등)는 1단계의 배치 대상에서 빠진다.
 
 ### 지속 시간
 
 - `remaining_turns`: 라운드 종료 시 차감
 - `remaining_count`: 공격 또는 피격 시 차감 (`BuffCountDeductCondition`)
 - 둘 다 `None`이면 패시브 (영구)
+- 적층 버프는 스택이 0이 되는 순간에도 제거된다
+  (`CommandPartCalculator._process_buff_remove()`). 스택 0짜리 인스턴스를
+  남기면 `TargetHasDebuffCondition`·`reference_buff_id` 조회가 여전히
+  "보유 중"으로 답해 수치가 0인데도 효과가 붙고, 필드 요약에도
+  `[버프] (N턴/0스택)`이 뜬다. 답글에 찍을 "최종 스택"은 제거 전에
+  `BuffRemoveCalculateData.remaining_stack`으로 빼 둔 값을 쓴다.
+- 스택 차감은 기본적으로 같은 effect의 대미지보다 **먼저** 일어난다
+  (`ValueSourceType.CONSUMED_BUFF_STACK`이 차감량을 읽어야 하므로).
+  `BuffRemoveData.after_damage=True`인 항목만 대미지 뒤로 미뤄, 스택을
+  터뜨리는 그 일격 자신이 아직 그 버프가 걸린 상태를 보고 계산되게 한다
+  (`SkillEffectDamageByDebuffStackTier`의 최대 스택 분기). 둘은 함께 쓸 수
+  없다 — 미룬 차감은 대미지 계산 시점에 `result_value`가 아직 없다.
+
+**"지난 라운드에 X였으면 이번 라운드 동안 버프"는 라운드 종료가 아니라
+라운드 시작 트리거로 표현한다.** `on_round_end()`는 `ON_ROUND_END` 이벤트를
+돌린 **직후** 같은 호출에서 전체 턴을 차감하므로, 거기서 부여한 버프는 그
+자리에서 1턴을 잃는다. 지속시간을 1 크게 적어 보정할 수는 있지만, 그 차감을
+유예하는 대련/결투/상시전투(`skip_applied_after`)에서는 같은 데이터가 한
+라운드 더 오래 가 모드마다 결과가 갈린다. 대신
+`BattlefieldContext.prev_damaged_this_round`(`on_start_round()`이 지우기 전에
+떠 두는 직전 라운드 스냅샷)를 읽는 조건
+(`OtherAllyInRangeWasAttackedLastRoundCondition` 등) + `라운드 시작` 트리거로
+쓰면 지속시간을 설명 그대로 적을 수 있고 어느 모드에서나 같게 동작한다.
 
 **대련/상시전투/결투에는 "마지막 행동 차례 유예"가 붙는다.** 이 구조는 양
 팀이 한 라운드 안에서 각자 한 번씩 행동하므로, 라운드의 마지막 차례에
@@ -202,8 +244,36 @@ Condition들은 `_characters_in_holder_scope()` 헬퍼로 캐릭터 순회·필�
 공유한다. 새 범위 기반 Condition을 추가할 때는 이 헬퍼에 predicate만
 넘기는 방식을 우선 검토한다.
 
+이 훅들은 대미지 항목이 아니라 **"한 번의 타격"당 한 번** 발동한다
+(`CommandPartCalculator._reactive_hooks_fired`, ON_ATTACK/ON_HIT와 같은 기준).
+effect를 여러 개 써서 같은 대상을 때리는 스킬에서 반격·추가 대미지가 구성요소
+수만큼 붙지 않게 하기 위함이다. 묶는 단위는 (공격자, 대상) 쌍이라, 한 effect가
+아군 여럿을 동시에 때리는 광역기는 피격자마다 정상 발동한다.
+
+**동료(소환수)는 "아군" 범위 판정에서 일관되게 제외한다** —
+`_characters_in_holder_scope()`, `SkillTargetRuleAllAllies`,
+`PassiveSkill._resolve_targets()`, `SkillEffectAddBuffPerDamagedColumn`이
+모두 `context.companion_owners`를 건너뛴다. 동료는 슬롯을 차지하지 않고
+소환자의 위치를 그대로 따르는 종속 개체라, 세면 소환자 한 명이 두 명으로
+잡히고(예: "사거리 내 아군 3명" 조건) 소환자가 스스로 동료 체력을 대가로
+지불한 것까지 "아군 피격"으로 잡힌다.
+
+`BuffEvent.is_pure_damage_modifier = True`(수치만 바꾸고 부수효과가 없는
+이벤트)는 두 경로에서 따로 재실행된다. 둘 다 "부수효과 이벤트는 한 번만,
+배율은 빠짐없이"라는 같은 규칙의 구현이므로, 새 이벤트를 만들 때 이 플래그를
+정확히 세워야 한다:
+
+- `CommandPartCalculator._apply_pure_modifier_events()`: ON_ATTACK/ON_HIT
+  디스패치는 커맨드당 공격자/대상별 1회지만(반격·반사·지속 횟수 차감이
+  effect마다 중복되면 안 되므로), 수치 수정자는 effect마다 다시 얹어야 한다
+  — 안 그러면 두 번째 이후 effect의 대미지(돌진 스킬의 경로 광역 등)만
+  조용히 배율을 못 받는다. 중복은 `(effect_seq_number, 보유자)`로 막는다.
+- `reactive_damage.apply_pure_damage_modifiers_to()`: 반격/추가 대미지처럼
+  버프가 나중에 끼워 넣는 대미지 항목에 양쪽 배율을 반영한다.
+
 "ATK 굴림/스택 수 × 계수%" 형태의 대미지 항목(반격, 스택 비례 대미지 등)을
-새로 만들 때는 `damage_factory.make_coefficient_damage_calc()`를 쓴다.
+새로 만들 때는 `damage_factory.make_coefficient_damage_calc()`를 쓰고,
+그 항목에도 배율이 붙어야 하면 `apply_pure_damage_modifiers_to()`로 감싼다.
 FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverTime`,
 `BuffReflect`)는 형태가 달라 이 팩토리 대상이 아니다.
 
@@ -223,13 +293,16 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 |-------------------------------|---------------------------------------------|--------------------------|
 | `SkillTargetRuleSelf`         | 시전자 자신 고정                                    | `True`                   |
 | `SkillTargetRuleNamed`        | 이름 지정 대상 (시전자 사거리 제한 적용)                     | `False`                  |
+| `SkillTargetRuleNamedExcludingSelf` | `SkillTargetRuleNamed`와 동일하되 시전자 자신을 지정하면 검증 실패 | `False`             |
 | `SkillTargetRuleNamedWithColumn` | 캐릭터 1명 + 그 캐릭터에 인접한 열 1개(생략 가능) 동시 지정      | `False`                  |
 | `SkillTargetRuleColumn`       | 열(column) 기준 광역, 항상 시전자의 `foe_faction`(적 진영)  | `False`                  |
 | `SkillTargetRuleAllyColumn`   | 열 기준 광역, 항상 시전자와 같은 진영(아군)                  | `False`                  |
 | `SkillTargetRuleColumnRange`  | 열 1개 지정 → ±2열(최대 5열) 광역, 항상 시전자의 `foe_faction`(적 진영) | `False`                  |
 | `SkillTargetRuleAllAllies`    | 입력 무시, 시전자와 같은 진영 전원(시전자 자신·동료 제외)         | `True`                   |
 
-`ignores_input_targets=True`인 규칙은 도발 등의 대상 오버라이드를 적용하지 않는다.
+`ignores_input_targets`는 커맨드에 적힌 대상 입력을 규칙이 무시하는지만
+뜻한다 — `fate_config_error()`가 "대상 추가" 모드를 걸러내는 데만 쓰고,
+도발 리다이렉트 여부와는 무관하다(그쪽은 `ignores_taunt`가 정한다).
 `SkillTargetRuleColumn`/`SkillTargetRuleAllyColumn`/`SkillTargetRuleColumnRange`는 입력이 열 번호일 뿐 대상
 진영은 입력값과 무관하게 규칙이 고정한다는 점에 주의 — 반대로 **기본 공격
 (`ActionType.ATTACK`)은 이 규칙 자체를 타지 않는 별도의 하드코딩된 분기**라서

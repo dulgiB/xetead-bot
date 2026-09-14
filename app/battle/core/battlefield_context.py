@@ -85,6 +85,13 @@ class BattlefieldContext:
         self.prev_round_results: list[CommandPartProcessResult] = []
         self.moved_this_round: set[CharacterId] = set()
         self.damaged_this_round: set[CharacterId] = set()
+        # 직전 라운드의 damaged_this_round 스냅샷. 라운드 시작 시점에 "지난
+        # 라운드에 누가 맞았는가"를 읽어야 하는 조건용이다 — 라운드 종료
+        # 트리거로 버프를 걸면 같은 on_round_end()가 곧바로 턴을 차감해
+        # 지속시간이 1턴 짧아지므로(모드별로 유예 규칙이 달라 결과도 갈린다),
+        # 그런 패시브는 "라운드 시작 시 지난 라운드 결과로 판정"하는 쪽으로
+        # 표현한다.
+        self.prev_damaged_this_round: set[CharacterId] = set()
 
     def __str__(self):
         return self.format_field_text()
@@ -238,6 +245,7 @@ class BattlefieldContext:
         self.prev_round_results = []
         self.moved_this_round = set()
         self.damaged_this_round = set()
+        self.prev_damaged_this_round = set()
 
     def add_character(
         self,
@@ -429,6 +437,9 @@ class BattlefieldContext:
 
     def on_start_round(self):
         self.moved_this_round = set()
+        # 지우기 전에 스냅샷해 둬야 ON_ROUND_START 조건이 지난 라운드의
+        # 피격 기록을 읽을 수 있다.
+        self.prev_damaged_this_round = self.damaged_this_round
         self.damaged_this_round = set()
         # 코스트 회복이 ON_ROUND_START 버프보다 먼저여야 "다음 라운드 코스트
         # 감소" 버프가 덮어써지지 않는다.
