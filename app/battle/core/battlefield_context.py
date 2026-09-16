@@ -88,9 +88,8 @@ class BattlefieldContext:
         # 직전 라운드의 damaged_this_round 스냅샷. 라운드 시작 시점에 "지난
         # 라운드에 누가 맞았는가"를 읽어야 하는 조건용이다 — 라운드 종료
         # 트리거로 버프를 걸면 같은 on_round_end()가 곧바로 턴을 차감해
-        # 지속시간이 1턴 짧아지므로(모드별로 유예 규칙이 달라 결과도 갈린다),
-        # 그런 패시브는 "라운드 시작 시 지난 라운드 결과로 판정"하는 쪽으로
-        # 표현한다.
+        # 지속시간이 1턴 짧아지므로, 그런 패시브는 "라운드 시작 시 지난 라운드
+        # 결과로 판정"하는 쪽으로 표현한다.
         self.prev_damaged_this_round: set[CharacterId] = set()
 
     def __str__(self):
@@ -449,14 +448,8 @@ class BattlefieldContext:
             ]
         self.buff_container.on_round_start()
 
-    def on_finish_round(
-        self, skip_applied_after: Optional[int] = None
-    ) -> tuple[list[BattleLogEntry], list[CharacterId]]:
-        """`skip_applied_after`는 지속시간 차감에서 제외할 기준 일련번호다
-        (`BuffContainer.on_round_end()` 참고). 본 전투는 넘기지
-        않는다 — 적 후행 정산이 아군 행동 뒤에 오도록 페이즈가 고정돼 있어
-        마지막 차례에 걸린 효과가 그냥 사라지는 문제가 없다."""
-        log_entries, _ = self.buff_container.on_round_end(skip_applied_after)
+    def on_finish_round(self) -> tuple[list[BattleLogEntry], list[CharacterId]]:
+        log_entries, _ = self.buff_container.on_round_end()
         eliminated = self._remove_eliminated_characters()
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []

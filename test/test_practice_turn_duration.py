@@ -1,13 +1,13 @@
-"""대련/상시전투에서 1턴짜리 효과가 순서 추첨 때문에 무효가 되지 않는지 검증한다.
+"""대련/결투/상시전투의 지속시간 차감이 본 전투와 같은 규칙인지 검증한다.
 
-이 구조는 양 팀이 한 라운드 안에서 각자 한 번씩 행동하고, 지속시간은 라운드
-종료에 차감된다. 그래서 라운드의 마지막 차례에 상대에게 건 1턴 효과(도발·약화
-등)는 상대가 그 상태로 행동할 기회를 한 번도 얻지 못한 채 사라졌다 — 코스트를
-쓴 행동이 통째로 무효가 되는데, 순서는 플레이어가 고를 수 없다.
+이 구조는 양 팀이 한 라운드 안에서 각자 한 번씩 행동하고, 지속시간은 본 전투와
+똑같이 라운드 종료에 차감된다 — 부여가 선공 차례였는지 후공 차례였는지는 보지
+않는다. 대련은 본 전투 규칙에 익숙해지는 자리이기도 해서, 같은 데이터가 모드마다
+다르게 보이지 않는 편을 택했다.
 
-해결은 "그 페이즈 중에 걸린 효과는 이번 라운드 종료 차감에서 건너뛴다"는
-유예다. 선공에 걸든 후공에 걸든 상대의 행동 기회가 정확히 한 번 보장되고,
-그 다음 라운드 종료에는 정상적으로 사라진다.
+그 결과 라운드의 마지막 차례에 상대에게 건 1턴짜리 효과는 상대가 그 상태로
+행동할 기회를 얻지 못한 채 사라진다. 상대의 행동에 걸리기를 기대하는 효과는
+데이터 쪽에서 2턴 이상으로 적어 해결한다(아래 2턴 케이스).
 """
 
 from battle.core.battlefield_context import BattlefieldContext
@@ -25,12 +25,12 @@ CASTER = CharacterId("Caster")
 FOE = CharacterId("Foe")
 
 
-def _one_turn_debuff() -> BuffData:
+def _debuff(duration_turn_value: int) -> BuffData:
     return BuffData.from_dict(
         {
             "id": DEBUFF_ID,
             "buff_name": "BuffGivenDamage",
-            "duration_turn_value": 1,
+            "duration_turn_value": duration_turn_value,
             "duration_count_value": "",
             "duration_count_deduct_condition": "",
             "value_0": -50,
@@ -47,9 +47,9 @@ def _one_turn_debuff() -> BuffData:
     )
 
 
-def _practice_context() -> PracticeBattlefieldContext:
+def _practice_context(duration_turn_value: int = 1) -> PracticeBattlefieldContext:
     ctx = PracticeBattlefieldContext(
-        buff_dict={DEBUFF_ID: _one_turn_debuff()}, skill_dict={}
+        buff_dict={DEBUFF_ID: _debuff(duration_turn_value)}, skill_dict={}
     )
     ctx.add_character(
         get_test_preset(CASTER.name), SideType.SIDE_1, BattlefieldColumnIndex(0)
@@ -60,7 +60,7 @@ def _practice_context() -> PracticeBattlefieldContext:
     return ctx
 
 
-def _cast_debuff_on_foe(ctx: PracticeBattlefieldContext) -> None:
+def _cast_debuff_on_foe(ctx: BattlefieldContext) -> None:
     ctx.buff_container.add(
         BuffAddData(given_by=CASTER, applied_to=FOE, buff_id=DEBUFF_ID)
     )
@@ -80,9 +80,29 @@ def _start_round(manager: PracticeRoundManager, caster_side_first: bool) -> None
     )
 
 
-def test_debuff_cast_in_the_last_phase_survives_into_the_next_round():
-    """후공(마지막 차례)에 건 1턴 디버프는 상대가 행동할 다음 라운드까지 남는다."""
-    ctx = _practice_context()
+def test_one_turn_debuff_expires_with_the_round_whichever_phase_cast_it():
+    """1턴 효과는 선공에 걸든 후공에 걸든 그 라운드 종료에 사라진다 —
+    부여 차례에 따라 지속시간이 갈리지 않는다."""
+    for caster_side_first in (True, False):
+        ctx = _practice_context()
+        manager = PracticeRoundManager(ctx)
+
+        _start_round(manager, caster_side_first=caster_side_first)
+        if caster_side_first:
+            _cast_debuff_on_foe(ctx)
+            manager.to_phase(PracticeRoundPhase.SECOND_MOVER_ACTION)
+        else:
+            manager.to_phase(PracticeRoundPhase.SECOND_MOVER_ACTION)
+            _cast_debuff_on_foe(ctx)
+        manager.end_round()
+
+        assert not _has_debuff(ctx)
+
+
+def test_two_turn_debuff_reaches_the_next_round_from_the_last_phase():
+    """상대의 행동에 걸려야 하는 효과는 2턴으로 적어 해결한다 — 라운드의 마지막
+    차례에 걸어도 상대가 행동할 다음 라운드까지 남는다."""
+    ctx = _practice_context(duration_turn_value=2)
     manager = PracticeRoundManager(ctx)
 
     _start_round(manager, caster_side_first=False)  # 상대가 먼저 행동
@@ -100,41 +120,9 @@ def test_debuff_cast_in_the_last_phase_survives_into_the_next_round():
     assert not _has_debuff(ctx)
 
 
-def test_debuff_cast_in_the_first_phase_still_expires_with_the_round():
-    """선공에 걸면 같은 라운드 후공에 이미 값을 다 했으므로 기존대로 사라진다."""
-    ctx = _practice_context()
-    manager = PracticeRoundManager(ctx)
-
-    _start_round(manager, caster_side_first=True)
-    _cast_debuff_on_foe(ctx)
-    manager.to_phase(PracticeRoundPhase.SECOND_MOVER_ACTION)
-    assert _has_debuff(ctx)  # 상대가 이 상태로 행동한다
-    manager.end_round()
-
-    assert not _has_debuff(ctx)
-
-
-def test_effect_applied_before_the_last_phase_is_not_granted_the_grace():
-    """라운드 시작 훅이 건 버프("적 후행 시" 패시브의 방어 버프 등)는 유예
-    대상이 아니다 — 그 라운드를 지키라고 걸린 것이므로 라운드와 함께 끝나야
-    한다. 유예 기준을 페이즈 시작 시점으로 잡는 이유다(같은 훅이 실제
-    패시브로 도는 경로는 test_practice_enemy_post_action_timing.py)."""
-    ctx = _practice_context()
-    manager = PracticeRoundManager(ctx)
-
-    # 라운드 시작 훅과 같은 순서(페이즈 진입 전)로 건다.
-    _cast_debuff_on_foe(ctx)
-    manager.to_phase(PracticeRoundPhase.FIRST_MOVER_ACTION)
-    manager.to_phase(PracticeRoundPhase.SECOND_MOVER_ACTION)
-    manager.end_round()
-
-    assert not _has_debuff(ctx)
-
-
-def test_main_battle_duration_is_unchanged():
-    """본 전투는 유예를 쓰지 않는다 — 아군 행동 뒤에 적 후행 정산이 오도록
-    페이즈가 고정돼 있어 마지막 차례에 걸린 효과가 사라지는 문제가 없다."""
-    ctx = BattlefieldContext(buff_dict={DEBUFF_ID: _one_turn_debuff()}, skill_dict={})
+def test_main_battle_duration_matches():
+    """본 전투도 같다 — 같은 데이터가 모드에 따라 다르게 동작하지 않는다."""
+    ctx = BattlefieldContext(buff_dict={DEBUFF_ID: _debuff(1)}, skill_dict={})
     ctx.add_character(
         get_test_preset(CASTER.name), FactionType.ALLY, BattlefieldColumnIndex(0)
     )
@@ -142,9 +130,7 @@ def test_main_battle_duration_is_unchanged():
         get_test_preset(FOE.name), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
     ctx.on_start_round()
-    ctx.buff_container.add(
-        BuffAddData(given_by=CASTER, applied_to=FOE, buff_id=DEBUFF_ID)
-    )
+    _cast_debuff_on_foe(ctx)
 
     ctx.on_finish_round()
 

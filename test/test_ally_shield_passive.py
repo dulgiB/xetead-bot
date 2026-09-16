@@ -115,8 +115,7 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
     부여해야 한다. 자신이 맞은 것만으로는 발동하지 않는다.
 
     라운드 종료 트리거로 부여하면 같은 on_round_end()가 곧바로 턴을 차감해
-    지속시간을 2로 적어 보정해야 하는데, 그 차감을 유예하는
-    대련/상시전투에서는 같은 데이터가 2라운드 지속돼 모드별로 갈린다.
+    지속시간을 2로 적어 보정해야 하고, 그러면 시트 값이 설명과 한 턴 어긋난다.
     그래서 "라운드 시작 시 지난 라운드 결과로 판정"하는 형태로 표현한다."""
 
     REWARD_BUFF_ID = "RewardBuff"
@@ -266,9 +265,8 @@ class TestNextRoundGivenDamageBuffOnAllyInRangeDamaged:
         assert not self._has_reward(ctx, holder_id)
 
     def test_practice_mode_grants_the_same_single_round_duration(self):
-        """대련/상시전투는 라운드 종료 차감에 "마지막 행동 차례 유예"가 붙어,
-        라운드 종료 트리거로 버프를 걸면 본 전투보다 1라운드 더 오래 간다.
-        라운드 시작 트리거로 표현하면 두 모드가 같아진다."""
+        """대련/상시전투도 본 전투와 같은 라운드 종료 차감을 쓰므로, 라운드
+        시작 트리거로 표현한 이 버프는 두 모드에서 같은 1라운드를 간다."""
         ctx = PracticeBattlefieldContext(
             buff_dict={self.REWARD_BUFF_ID: self._make_reward_buff()},
             skill_dict={},
