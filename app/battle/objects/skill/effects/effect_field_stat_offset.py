@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import CombatStatType, ValueSourceType
@@ -30,6 +30,8 @@ class SkillEffectFieldStatOffset(SkillEffectBase):
     때문이다. FieldEffectContainer가 필드 효과를 올리고 걷을 때, 그리고 전투
     도중 참전한 캐릭터에게 이 선언을 직접 읽어 반영한다.
     """
+
+    requires_holder_character: ClassVar[bool] = False
 
     @property
     def stat_type(self) -> Optional[CombatStatType]:

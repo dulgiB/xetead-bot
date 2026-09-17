@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import ValueSourceType
@@ -30,6 +30,8 @@ class SkillEffectFieldDamage(SkillEffectBase):
     스탯인데 필드 효과에는 대응할 시전자가 없어, 마법으로 두면 마법 저항
     보유자만 전장 자체의 피해를 덜 받는 납득하기 어려운 상태가 된다.
     """
+
+    requires_holder_character: ClassVar[bool] = False
 
     def _expand(
         self,

@@ -75,6 +75,12 @@ class SkillEffectBase(abc.ABC):
     # 켠다 — PassiveSkillWrapperBuff가 평가 시점을 고르는 데 쓴다.
     requires_round_resolved: ClassVar[bool] = False
 
+    # False면 시전자가 전장에 없어도 동작한다 — 필드 효과에 쓸 수 있다는 뜻이다.
+    # 기본값 True는 안전한 쪽이다: 시전자의 스탯·위치·진영을 읽는 효과를 필드
+    # 효과에 걸면 KeyError가 나거나(대미지 계열) 항목이 조용히 버려진다(회복
+    # 계열 — 처리부가 시전자가 전장에 있는지로 유효성을 가린다).
+    requires_holder_character: ClassVar[bool] = True
+
     # True면 expand()가 target_condition으로 대상을 거르지 않고 전체 목록을
     # 그대로 넘긴다. 조건을 만족하지 못한 대상에게도 할 일이 있는 효과
     # (조건에서 벗어나면 버프를 회수하는 등) 전용이다.

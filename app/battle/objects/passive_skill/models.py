@@ -138,3 +138,48 @@ class PassiveSkillData:
             buff_mod_event=buff_mod_event,
             description=str(data.get("description", "")),
         )
+
+
+def field_effect_config_error(data: PassiveSkillData) -> Optional[str]:
+    """ "스킬_패시브" 시트 한 행의 필드 효과 설정 중 조용히 어긋나는 조합을
+    찾아 경고 문구를 만든다. 문제가 없으면 None.
+
+    "스킬_패시브" 시트 하나를 캐릭터 패시브와 필드 효과가 함께 쓰므로, 한쪽
+    전용 값이 다른 쪽에 들어가도 로드는 성공한다. 그 어긋남은 전투 중에야
+    드러나고, 그때는 아무 일도 일어나지 않거나(대상이 안 잡힘) 커맨드가
+    죽는 형태라 원인을 짚기 어렵다.
+    """
+    if not data.is_field_effect:
+        return None
+
+    holder_dependent = [
+        type(effect).__name__
+        for effect in data.effects
+        if effect.requires_holder_character
+    ]
+    if holder_dependent:
+        return (
+            f"필드 효과 '{data.id}'의 효과 {', '.join(holder_dependent)}은(는)"
+            " 시전자가 전장에 있어야 동작합니다. 필드 효과에는 시전자가 없으므로"
+            " 대미지는 커맨드를 실패시키고 회복은 조용히 사라집니다."
+        )
+
+    if data.buff_mod_event is not None:
+        return (
+            f"필드 효과 '{data.id}'의 buff_id는 적용되지 않습니다 — 버프"
+            " 모디파이어는 보유자에게만 걸리는데 필드 효과의 보유자는 전장에"
+            " 없는 자리이기 때문입니다. effect_N으로 실제 버프를 부여하세요."
+        )
+
+    return None
+
+
+def character_passive_config_error(data: PassiveSkillData) -> Optional[str]:
+    """캐릭터/에너미의 passive_skill_id가 필드 효과 행을 가리킬 때의 경고."""
+    if not data.is_field_effect:
+        return None
+    return (
+        f"패시브 '{data.id}'는 필드 범위 대상({data.target_type.value})이라"
+        " 캐릭터 패시브로 쓸 수 없습니다 — 보유자의 진영과 무관하게 대상이"
+        " 정해집니다. [필드효과] 커맨드나 스킬로 거세요."
+    )

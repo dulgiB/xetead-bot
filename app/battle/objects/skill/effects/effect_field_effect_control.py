@@ -17,6 +17,7 @@ class _FieldEffectControlBase(SkillEffectBase):
     get_field_effect_ops()로 나간다.
     """
 
+    requires_holder_character: ClassVar[bool] = False
     _REMOVE: ClassVar[bool] = False
 
     def get_field_effect_ops(

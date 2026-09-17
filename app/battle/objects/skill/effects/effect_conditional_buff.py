@@ -25,6 +25,7 @@ class SkillEffectConditionalBuff(SkillEffectBase):
     없고, 매 라운드 도는 이 평가에서 "소모" 로그를 남길 일도 아니다.
     """
 
+    requires_holder_character: ClassVar[bool] = False
     applies_target_condition_itself: ClassVar[bool] = True
 
     def _expand(

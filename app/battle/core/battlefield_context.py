@@ -660,6 +660,16 @@ class BattlefieldContext:
         buff = self.buff_container.get_buff(char_id, buff_id)
         return buff.stack_count if buff is not None else 0
 
+    def all_passive_skill_data(self) -> list[PassiveSkillData]:
+        """이 전투가 들고 있는 "스킬_패시브" 시트 데이터 전체. 시트 설정
+        검증(봇 계층)이 읽는다."""
+        return list(self._passive_skill_dictionary.values())
+
+    def get_passive_skill_data_by_id(
+        self, passive_id: str
+    ) -> Optional[PassiveSkillData]:
+        return self._passive_skill_dictionary.get(passive_id)
+
     def get_skill_data_by_id(self, skill_id: str) -> SkillData:
         return self._skill_dictionary[skill_id]
 

@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import BuffType
@@ -19,6 +19,9 @@ def _clearable_debuffs(context: "BattlefieldContext", target: CharacterId) -> li
 
 class SkillEffectRemoveDebuffs(SkillEffectBase):
     """대상에게 걸린 패시브가 아닌 디버프를 전부 제거한다."""
+
+    # 홀더를 given_by로 실어 나르기만 하고 스탯·위치를 읽지 않는다.
+    requires_holder_character: ClassVar[bool] = False
 
     def get_debuff_clear_targets(
         self, context: "BattlefieldContext", targets: list[CharacterId]
