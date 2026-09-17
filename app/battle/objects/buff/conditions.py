@@ -28,7 +28,7 @@ def _characters_in_holder_scope(
     동료(소환수, context.companion_owners)는 제외한다 — 슬롯을 차지하지 않고
     소환자의 위치를 그대로 따르는 종속 개체라 "진형에 아군이 몇 명 있는가"를
     세는 데 끼면 소환자 한 명이 두 명으로 잡힌다.
-    SkillTargetRuleAllAllies/PassiveSkill._resolve_targets()의 아군 범위와
+    SkillTargetRuleAllAllies/PassiveSkill.resolve_passive_targets()의 아군 범위와
     같은 기준이다."""
     holder_char = context.characters.get(holder)
     if holder_char is None:

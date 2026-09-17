@@ -35,6 +35,25 @@ class PassiveSkillTargetType(str, Enum):
     ATTACKER_OR_TARGET = "공격자 또는 대상"
     LOWEST_HP_ALLY = "체력 최저 아군"
 
+    # 필드 효과 전용. 위의 값들이 홀더를 기준으로 상대적인 범위를 잡는 것과
+    # 달리, 이 셋은 홀더를 보지 않고 진영을 절대 기준으로 지정한다 — 필드
+    # 효과는 캐릭터가 아니라 전장에 붙으므로 기준이 될 홀더가 없다. 그래서
+    # 보스가 자기 진영을 강화하는 필드 효과는 FIELD_ENEMY_SIDE다.
+    FIELD_ALLY_SIDE = "필드 아군 진영"
+    FIELD_ENEMY_SIDE = "필드 적군 진영"
+    FIELD_ALL = "필드 전원"
+
+
+# 홀더 없이 해석되는 대상 범위. 필드 효과에 쓸 수 있는 값이자, 캐릭터
+# 패시브에는 쓰면 안 되는 값이기도 하다(홀더 진영이 무시되므로).
+FIELD_SCOPE_TARGET_TYPES: frozenset[PassiveSkillTargetType] = frozenset(
+    {
+        PassiveSkillTargetType.FIELD_ALLY_SIDE,
+        PassiveSkillTargetType.FIELD_ENEMY_SIDE,
+        PassiveSkillTargetType.FIELD_ALL,
+    }
+)
+
 
 @dataclass(frozen=True)
 class PassiveSkillData:
@@ -45,6 +64,12 @@ class PassiveSkillData:
     description: str
     # 버프 모디파이어 경로. effects와 동시에 채워질 수 있다(상호 배타적이지 않음).
     buff_mod_event: Optional[BuffEvent] = None
+
+    @property
+    def is_field_effect(self) -> bool:
+        """이 행이 캐릭터 패시브가 아니라 필드 효과인지. "스킬_패시브" 시트
+        하나를 둘이 함께 쓰므로 target_type이 구분자 역할을 한다."""
+        return self.target_type in FIELD_SCOPE_TARGET_TYPES
 
     @classmethod
     def from_dict(

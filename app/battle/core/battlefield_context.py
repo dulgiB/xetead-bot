@@ -9,11 +9,14 @@ from utils.logging import print_apply_damage, print_apply_heal
 from utils.name_matching import resolve_matching_key
 
 from battle.core.buff_container import BuffContainer
+from battle.core.field_effect_container import FieldEffectContainer
 from battle.core.command_calculator import CommandPartCalculator
 from battle.core.commands.models import BattleLogEntry, CommandPartProcessResult
 from battle.exceptions import (
     CommandValidationError,
     error_character_already_defeated,
+    error_field_effect_not_found,
+    error_not_a_field_effect,
     error_target_does_not_exist,
     error_too_many_characters,
 )
@@ -30,6 +33,7 @@ from battle.objects.define import (
     FactionType,
     MagicResistanceType,
 )
+from battle.objects.field_effect.models import FieldEffect, FieldEffectSource
 from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.passive_skill.models import PassiveSkillData
@@ -76,6 +80,10 @@ class BattlefieldContext:
         }
 
         self.buff_container: BuffContainer = BuffContainer(self)
+
+        # 전장 전체에 걸린 효과. 캐릭터가 아니라 전장에 붙으며, 명시적으로
+        # 해제하기 전까지 유지된다.
+        self.field_effects: FieldEffectContainer = FieldEffectContainer(self)
 
         # 슬롯(position_map)을 차지하지 않는 동료 캐릭터: companion_id -> owner_id.
         # characters에는 있지만 position_map에는 없고, 위치는 owner를 따른다.
@@ -308,6 +316,10 @@ class BattlefieldContext:
 
         self.position_map[faction][column_idx][maybe_empty_slot] = char_id
         self.characters[char_id] = character
+
+        # 전투 도중 참전한 캐릭터도 이미 걸린 필드 효과를 즉시 받는다.
+        # 배치 단계에서는 아직 필드 효과가 없어 비용이 들지 않는다.
+        self.field_effects.apply_to_newcomer(char_id)
 
     def _remove_from_position_map(self, char_id: CharacterId) -> None:
         char = self.characters[char_id]
@@ -616,6 +628,43 @@ class BattlefieldContext:
     @property
     def allow_item_usage(self) -> bool:
         return True
+
+    @property
+    def allow_field_effects(self) -> bool:
+        """이 전장에서 필드 효과를 쓸 수 있는지 여부."""
+        return True
+
+    def add_field_effect(
+        self,
+        passive_skill_id: str,
+        source: FieldEffectSource,
+        source_detail: str = "",
+    ) -> Optional[FieldEffect]:
+        """필드 효과를 전장에 올린다. 이미 걸려 있거나 이 전장이 필드 효과를
+        쓰지 않으면 None을 반환한다.
+
+        passive_skill_id가 "스킬_패시브" 시트에 없거나 필드 범위 대상
+        타입이 아니면 CommandValidationError를 낸다 — 캐릭터 패시브를 필드
+        효과로 올리면 홀더 없는 전장에서 대상이 하나도 잡히지 않아 조용히
+        아무 일도 일어나지 않기 때문에, 부르는 쪽에서 바로 알아야 한다.
+        """
+        if not self.allow_field_effects:
+            return None
+
+        data = self._passive_skill_dictionary.get(passive_skill_id)
+        if data is None:
+            raise CommandValidationError(error_field_effect_not_found(passive_skill_id))
+        if not data.is_field_effect:
+            raise CommandValidationError(
+                error_not_a_field_effect(passive_skill_id, data.target_type.value)
+            )
+
+        return self.field_effects.add(data, source, source_detail)
+
+    def remove_field_effect(self, passive_skill_id: str) -> Optional[FieldEffect]:
+        """필드 효과를 걷는다. 그 효과가 부여한 버프도 함께 회수된다.
+        걸려 있지 않으면 None을 반환한다."""
+        return self.field_effects.remove(passive_skill_id)
 
     @property
     def allow_fate_intervention(self) -> bool:

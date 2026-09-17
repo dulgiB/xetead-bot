@@ -82,6 +82,13 @@ class BuffContainer:
                 self._buffs.remove(buff)
                 return
 
+    def remove_buffs_given_by(self, given_by: CharacterId) -> None:
+        """given_by가 부여한 버프를 전부 제거한다(그 자신에게 등록된 패시브
+        래퍼 포함). 필드 효과를 걷을 때 그 효과가 뿌려 둔 버프까지 함께
+        회수하는 용도다 — 필드 효과의 홀더 센티넬은 효과마다 고유하므로
+        given_by만으로 자기 것과 남의 것이 갈린다."""
+        self._buffs = {buff for buff in self._buffs if buff.given_by != given_by}
+
     def clear(self):
         self._buffs = set()
 
