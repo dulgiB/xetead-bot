@@ -1,4 +1,5 @@
 import copy
+import logging
 import math
 from dataclasses import replace
 from datetime import date
@@ -31,6 +32,7 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     CombatStatType,
     FactionType,
+    ItemType,
     MagicResistanceType,
 )
 from battle.objects.field_effect.models import FieldEffect, FieldEffectSource
@@ -40,6 +42,8 @@ from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import SkillData
 from spreadsheets.inventory import Inventory
+
+logger = logging.getLogger(__name__)
 
 
 class BattlefieldContext:
@@ -523,7 +527,49 @@ class BattlefieldContext:
         return removed
 
     def on_battle_start(self) -> None:
+        # 부적 등록이 버프 트리거보다 먼저여야 "전투 시작" 트리거 필드 효과가
+        # 이번 호출에서 발동한다. 여기 한 곳이면 신규 전투(BattleSession.start)와
+        # 봇 재기동 복원(field_restore)이 함께 커버된다.
+        self._register_charm_field_effects()
         self.buff_container.on_battle_start()
+
+    def _register_charm_field_effects(self) -> None:
+        """인벤토리에 있는 "부적" 아이템의 필드 효과를 전장에 올린다.
+
+        소지자가 이 전투에 참여하는지는 보지 않는다 — 참여를 강요하는 압력이
+        되지 않도록, 누군가 지니고 있기만 하면 발동한다. 인벤토리는 캐릭터
+        이름 기준이고 에너미는 인벤토리에 없으므로, 자연히 아군 쪽 소지품만
+        대상이 된다.
+
+        종류당 1개라는 전제가 시트에서 깨져도(두 명이 같은 부적을 들고 있는
+        등) 필드 효과 id 단위로 한 번만 걸린다 — add()가 이미 걸린 효과를
+        무시하기 때문이다.
+        """
+        if not self.allow_field_effects:
+            return
+
+        for item_id, item_data in self._item_dictionary.items():
+            if item_data.item_type is not ItemType.CHARM:
+                continue
+            if not item_data.passive_skill_id:
+                continue
+            if not self.inventory.is_owned_by_anyone(item_id):
+                continue
+            try:
+                self.add_field_effect(
+                    item_data.passive_skill_id,
+                    FieldEffectSource.CHARM,
+                    item_id,
+                )
+            except CommandValidationError as e:
+                # 시트 설정 오류로 전투가 서지 않게 하지 않는다 — 부적 하나가
+                # 빠질 뿐이므로 로그만 남기고 진행한다.
+                logger.warning(
+                    "부적 '%s'의 필드 효과 '%s'를 걸지 못했습니다: %s",
+                    item_id,
+                    item_data.passive_skill_id,
+                    e,
+                )
 
     def on_battle_end(self) -> list[BattleLogEntry]:
         return self.buff_container.on_battle_end()

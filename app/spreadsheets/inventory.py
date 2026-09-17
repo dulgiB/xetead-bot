@@ -49,6 +49,15 @@ class Inventory:
             if name == char_name and count > 0
         }
 
+    def is_owned_by_anyone(self, item_id: str) -> bool:
+        """이 아이템을 1개 이상 가진 캐릭터가 있는지. 소지자가 누구인지는
+        묻지 않는 부적 판정용이다 — 소지자의 전투 참여를 요구하지 않는다."""
+        return any(
+            count > 0
+            for (_, owned_id), count in self._counts.items()
+            if owned_id == item_id
+        )
+
     def consume(self, char_name: str, item_id: str, amount: int = 1) -> None:
         """아이템을 amount만큼 소비한다. 메모리 개수를 차감한 뒤 시트에 반영한다."""
         new_count = max(0, self.get_count(char_name, item_id) - amount)
