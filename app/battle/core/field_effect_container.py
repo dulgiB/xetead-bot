@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Iterator, Optional
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.field_effect.models import FieldEffect, FieldEffectSource
 from battle.objects.models import CharacterId
+from battle.objects.skill.effects import SkillEffectFieldStatOffset
 from battle.objects.passive_skill.models import (
     PassiveSkillData,
     PassiveSkillTrigger,
@@ -77,6 +78,9 @@ class FieldEffectContainer:
         for wrapper in PassiveSkillWrapperBuff.create(effect.holder_id, data):
             self._context.buff_container.add_passive_wrapper(wrapper)
 
+        for char_id in self._targets_of(effect):
+            self._apply_stat_offsets(effect, char_id, revert=False)
+
         return effect
 
     def remove(self, effect_id: str) -> Optional[FieldEffect]:
@@ -86,6 +90,9 @@ class FieldEffectContainer:
         effect = self._effects.pop(effect_id, None)
         if effect is None:
             return None
+
+        for char_id in self._targets_of(effect):
+            self._apply_stat_offsets(effect, char_id, revert=True)
 
         self._context.buff_container.remove_buffs_given_by(effect.holder_id)
         return effect
@@ -99,16 +106,47 @@ class FieldEffectContainer:
         반영한다. 이게 없으면 "전투 시작" 트리거 효과는 영영 못 받고
         "라운드 시작" 트리거 효과는 한 라운드 늦게 받는다."""
         for effect in self._effects.values():
-            if effect.data.trigger not in _STANDING_TRIGGERS:
-                continue
             # 진영 범위 판정은 정규 경로와 똑같은 함수를 거쳐야 한다 —
             # 참전 경로가 따로 진영을 따지면 두 경로의 규칙이 갈린다.
-            in_scope = resolve_passive_targets(
-                self._context, effect.holder_id, None, effect.data.target_type
-            )
-            if char_id not in in_scope:
+            if char_id not in self._targets_of(effect):
+                continue
+
+            # 스탯 증감은 트리거와 무관하게 걸려 있는 동안 유지되는 상태다.
+            self._apply_stat_offsets(effect, char_id, revert=False)
+
+            if effect.data.trigger not in _STANDING_TRIGGERS:
                 continue
             self._apply_effects_to(effect, [char_id])
+
+    def _targets_of(self, effect: FieldEffect) -> list[CharacterId]:
+        return resolve_passive_targets(
+            self._context, effect.holder_id, None, effect.data.target_type
+        )
+
+    def _apply_stat_offsets(
+        self, effect: FieldEffect, char_id: CharacterId, *, revert: bool
+    ) -> None:
+        """이 필드 효과가 선언한 스탯 증감을 한 캐릭터에게 얹거나 되돌린다."""
+        character = self._context.characters.get(char_id)
+        if character is None:
+            return
+
+        for skill_effect in effect.data.effects:
+            if not isinstance(skill_effect, SkillEffectFieldStatOffset):
+                continue
+            stat_type = skill_effect.stat_type
+            if stat_type is None:
+                logger.warning(
+                    "필드 효과 '%s'의 스탯 증감이 지원하지 않는 대상 스탯을"
+                    " 가리켜 건너뜁니다 (value_source=%s)",
+                    effect.id,
+                    skill_effect.value_source,
+                )
+                continue
+            if revert:
+                character.status.remove_stat_offset(stat_type, skill_effect.offset)
+            else:
+                character.status.add_stat_offset(stat_type, skill_effect.offset)
 
     def _apply_effects_to(
         self, effect: FieldEffect, targets: list[CharacterId]
