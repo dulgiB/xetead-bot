@@ -22,6 +22,7 @@ from utils.spreadsheet_row import SpreadsheetRow
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.buff.conditions import Condition
+    from battle.objects.field_effect.models import FieldEffectOp
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,8 @@ class SkillEffectBase(abc.ABC):
     # 대상이 이미 보유하고 있어야 하는 버프 id(선행 디버프 존재를 요구하는
     # 콤보용 게이트). buff_id(이 효과가 부여/조회하는 버프)와는 별개다.
     required_target_buff_id: Optional[str] = None
+    # 이 효과가 전장에 올리거나 걷는 필드 효과의 id("스킬_패시브" 시트).
+    field_effect_id: Optional[str] = None
     # 열 광역 target_rule은 command_expanders.py가 따로 True를 강제하므로,
     # 이 필드는 개체 지정 효과에서 도발을 무시해야 할 때만 켠다(둘은 OR).
     ignores_taunt: bool = False
@@ -151,6 +154,17 @@ class SkillEffectBase(abc.ABC):
 
         return self._expand(context, holder, effective_targets, raw_targets)
 
+    def get_field_effect_ops(
+        self, context: "BattlefieldContext", holder: CharacterId
+    ) -> list["FieldEffectOp"]:
+        """필드 효과를 올리거나 걷는 효과만 오버라이드한다.
+
+        expand()의 5-튜플에는 필드 효과가 들어갈 자리가 없어, 디버프 일괄
+        제거(get_debuff_clear_targets)와 같이 expand() 옆에서 따로 불리는
+        훅으로 둔다 — 튜플을 넓히면 기존 효과 구현체가 전부 바뀐다.
+        """
+        return []
+
     def get_debuff_clear_targets(
         self,
         context: "BattlefieldContext",
@@ -209,6 +223,10 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
     target_condition_raw = data.get(f"target_condition_{index}") or None
     target_condition_class_name = (
         str(target_condition_raw) if target_condition_raw is not None else None
+    )
+    field_effect_id_raw = data.get(f"field_effect_id_{index}") or None
+    field_effect_id = (
+        str(field_effect_id_raw) if field_effect_id_raw is not None else None
     )
     target_condition_value_raw = data.get(f"target_condition_value_{index}") or None
     target_condition_value = (
@@ -279,6 +297,7 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
         gate_value=gate_value,
         reference_buff_id=reference_buff_id,
         required_target_buff_id=required_target_buff_id,
+        field_effect_id=field_effect_id,
         ignores_defensive_buffs=ignores_defensive_buffs,
         ignores_taunt=ignores_taunt,
     )

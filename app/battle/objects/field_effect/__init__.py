@@ -1,5 +1,6 @@
 from battle.objects.field_effect.models import (
     FieldEffect,
+    FieldEffectOp,
     FieldEffectSource,
     field_effect_holder_id,
     is_field_effect_holder,
@@ -7,6 +8,7 @@ from battle.objects.field_effect.models import (
 
 __all__ = [
     "FieldEffect",
+    "FieldEffectOp",
     "FieldEffectSource",
     "field_effect_holder_id",
     "is_field_effect_holder",

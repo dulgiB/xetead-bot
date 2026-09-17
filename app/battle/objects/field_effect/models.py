@@ -37,6 +37,19 @@ class FieldEffectSource(str, Enum):
 
 
 @dataclass(frozen=True)
+class FieldEffectOp:
+    """스킬이 선언한 필드 효과 부여/해제 요청.
+
+    전개(expand) 시점에는 요청만 만들고 실제 반영은 처리 시점에 한다 —
+    커맨드가 검증에서 막히면 전장이 바뀌면 안 되고, 답글에 무엇이 일어났는지
+    적으려면 처리 결과가 필요하기 때문이다.
+    """
+
+    effect_id: str
+    remove: bool = False
+
+
+@dataclass(frozen=True)
 class FieldEffect:
     """전장 전체에 걸린 효과. 캐릭터가 아니라 BattlefieldContext에 붙는다.
 

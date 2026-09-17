@@ -263,6 +263,9 @@ def expand_character_command(
                 debuff_clear_list = skill_effect.get_debuff_clear_targets(
                     context, target_characters
                 )
+                field_effect_ops = skill_effect.get_field_effect_ops(
+                    context, command.user_id
+                )
                 move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
                     skill_effect.expand(
                         context, command.user_id, target_characters, raw_targets
@@ -279,6 +282,7 @@ def expand_character_command(
                         buff_add_list=buff_add_list,
                         buff_remove_list=buff_remove_list,
                         debuff_clear_list=debuff_clear_list,
+                        field_effect_ops=field_effect_ops,
                         apply_timing=skill_effect.apply_timing,
                     )
                 )
@@ -304,6 +308,9 @@ def expand_character_command(
             debuff_clear_list = item_used.data.effect.get_debuff_clear_targets(
                 context, target_characters
             )
+            field_effect_ops = item_used.data.effect.get_field_effect_ops(
+                context, command.user_id
+            )
             move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
                 item_used.data.effect.expand(
                     context, command.user_id, target_characters
@@ -324,6 +331,7 @@ def expand_character_command(
                             buff_add_list=buff_add_list,
                             buff_remove_list=buff_remove_list,
                             debuff_clear_list=debuff_clear_list,
+                            field_effect_ops=field_effect_ops,
                             apply_timing=item_used.data.effect.apply_timing,
                         ),
                     ),
