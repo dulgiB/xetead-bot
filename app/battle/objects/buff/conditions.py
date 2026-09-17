@@ -153,6 +153,57 @@ class SelfHpBelowCondition(Condition):
 
 
 @dataclass(frozen=True)
+class SelfHpAtLeastCondition(Condition):
+    """holder의 현재 체력 비율이 value% 이상일 때 True."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        char = context.characters.get(holder)
+        if char is None:
+            return False
+        max_hp = char.status[CombatStatType.MAX_HP]
+        if max_hp == 0:
+            return False
+        return (char.status.curr_hp / max_hp * 100) >= self.value
+
+
+@dataclass(frozen=True)
+class SelfHpValueBelowCondition(Condition):
+    """holder의 현재 체력이 value 미만일 때 True (비율이 아니라 절대 수치)."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        char = context.characters.get(holder)
+        if char is None:
+            return False
+        return char.status.curr_hp < (self.value or 0)
+
+
+@dataclass(frozen=True)
+class SelfHpValueAtLeastCondition(Condition):
+    """holder의 현재 체력이 value 이상일 때 True (비율이 아니라 절대 수치)."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        char = context.characters.get(holder)
+        if char is None:
+            return False
+        return char.status.curr_hp >= (self.value or 0)
+
+
+@dataclass(frozen=True)
 class HolderHasBuffCondition(Condition):
     """holder에게 패시브가 아닌 버프가 1개 이상 있을 때 True."""
 

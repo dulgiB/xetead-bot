@@ -14,6 +14,7 @@ from .effect_add_buff_per_damaged_column import (  # noqa: F401
 from .effect_add_buff_with_referenced_stack_value import (  # noqa: F401
     SkillEffectAddBuffWithReferencedStackValue,
 )
+from .effect_conditional_buff import SkillEffectConditionalBuff  # noqa: F401
 from .effect_consume_stack_for_damage import (  # noqa: F401
     SkillEffectConsumeStackForDamage,
 )

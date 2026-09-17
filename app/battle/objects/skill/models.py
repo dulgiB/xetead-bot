@@ -61,9 +61,21 @@ class SkillEffectBase(abc.ABC):
     # DamageData.triggers_holder_action_buffs로 전달된다.
     ignores_defensive_buffs: bool = False
 
+    # 대상마다 따로 평가하는 조건. `condition`이 효과 전체를 켜고 끄는 것과
+    # 달리, 이쪽은 이미 정해진 대상 목록에서 조건을 만족하지 않는 대상을
+    # 걸러낸다("체력 50% 이하인 아군에게만" 등). 조건 클래스는 그대로
+    # 재사용하며, holder 자리에 각 대상을 넣어 평가한다.
+    target_condition_class_name: Optional[str] = None
+    target_condition_value: Optional[int] = None
+
     # 조건이 아니라 효과 본체가 damaged_this_round 같은 데이터를 직접 읽을 때
     # 켠다 — PassiveSkillWrapperBuff가 평가 시점을 고르는 데 쓴다.
     requires_round_resolved: ClassVar[bool] = False
+
+    # True면 expand()가 target_condition으로 대상을 거르지 않고 전체 목록을
+    # 그대로 넘긴다. 조건을 만족하지 못한 대상에게도 할 일이 있는 효과
+    # (조건에서 벗어나면 버프를 회수하는 등) 전용이다.
+    applies_target_condition_itself: ClassVar[bool] = False
 
     @property
     def condition(self) -> Optional["Condition"]:
@@ -74,6 +86,25 @@ class SkillEffectBase(abc.ABC):
             condition_module, self.condition_class_name
         )
         return condition_class(value=self.condition_value)
+
+    @property
+    def target_condition(self) -> Optional["Condition"]:
+        if not self.target_condition_class_name:
+            return None
+        condition_module = importlib.import_module("battle.objects.buff.conditions")
+        condition_class: Type["Condition"] = getattr(
+            condition_module, self.target_condition_class_name
+        )
+        return condition_class(value=self.target_condition_value)
+
+    def passes_target_condition(
+        self, context: "BattlefieldContext", target: CharacterId
+    ) -> bool:
+        """대상별 조건을 그 대상 기준으로 평가한다. 조건이 없으면 항상 True."""
+        condition = self.target_condition
+        if condition is None:
+            return True
+        return condition.is_applied(context, target, None)
 
     @abc.abstractmethod
     def _expand(
@@ -105,12 +136,20 @@ class SkillEffectBase(abc.ABC):
         list[BuffRemoveData],
     ]:
         if self.target_override is None:
-            return self._expand(context, holder, targets, raw_targets)
+            effective_targets = list(targets)
+        elif self.target_override == SkillTargetOverrideType.SELF:
+            effective_targets = [holder]
+        else:
+            raise ValueError(self.target_override)
 
-        if self.target_override == SkillTargetOverrideType.SELF:
-            return self._expand(context, holder, [holder], raw_targets)
+        if not self.applies_target_condition_itself:
+            effective_targets = [
+                target
+                for target in effective_targets
+                if self.passes_target_condition(context, target)
+            ]
 
-        raise ValueError(self.target_override)
+        return self._expand(context, holder, effective_targets, raw_targets)
 
     def get_debuff_clear_targets(
         self,
@@ -165,6 +204,16 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
     target_override = (
         SkillTargetOverrideType(data[f"target_override_{index}"])
         if data.get(f"target_override_{index}")
+        else None
+    )
+    target_condition_raw = data.get(f"target_condition_{index}") or None
+    target_condition_class_name = (
+        str(target_condition_raw) if target_condition_raw is not None else None
+    )
+    target_condition_value_raw = data.get(f"target_condition_value_{index}") or None
+    target_condition_value = (
+        int(target_condition_value_raw)
+        if target_condition_value_raw is not None
         else None
     )
     apply_timing_raw = data.get(f"effect_apply_timing_{index}")
@@ -224,6 +273,8 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
         buff_stack_cap=buff_stack_cap,
         condition_class_name=condition_class_name,
         condition_value=condition_value,
+        target_condition_class_name=target_condition_class_name,
+        target_condition_value=target_condition_value,
         gate_value_source=gate_value_source,
         gate_value=gate_value,
         reference_buff_id=reference_buff_id,
