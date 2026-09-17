@@ -20,6 +20,13 @@ def field_effect_holder_id(effect_id: str) -> CharacterId:
     return CharacterId(f"{_HOLDER_ID_PREFIX}{effect_id}")
 
 
+def is_field_effect_holder(char_id: CharacterId) -> bool:
+    """이 id가 필드 효과의 센티넬 홀더인지. 전장에 없는 공격자/부여자를
+    "죽은 캐릭터"로 오해하고 버리지 않으려면 대미지 파이프라인이 이 둘을
+    구분할 수 있어야 한다."""
+    return char_id.name.startswith(_HOLDER_ID_PREFIX)
+
+
 class FieldEffectSource(str, Enum):
     """이 필드 효과가 어떻게 전장에 올라왔는지. 답글·필드 시트 표시용이며,
     제거 권한을 가르지는 않는다 — 어느 출처든 admin이 해제할 수 있다."""

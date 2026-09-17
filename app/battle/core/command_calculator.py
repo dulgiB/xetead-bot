@@ -13,6 +13,7 @@ from battle.core.commands.models import (
 )
 from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffRemoveData
 from battle.objects.character.buffed_stats import BuffedStats
+from battle.objects.field_effect.models import is_field_effect_holder
 from battle.objects.define import (
     FATE_INTERVENTION_ATTACK_BONUS,
     ActionType,
@@ -494,10 +495,12 @@ class CommandPartCalculator:
     def _is_live_damage_calc(
         context: "BattlefieldContext", damage_calc: "DamageCalculateData"
     ) -> bool:
-        return (
-            damage_calc.base.attacker_id in context.characters
-            and damage_calc.base.target_id in context.characters
+        # 필드 효과의 공격자는 전장에 없는 센티넬이다 — characters 조회만으로
+        # 가리면 "이미 사망한 공격자"로 오인해 항목을 통째로 버린다.
+        attacker_is_live = damage_calc.base.attacker_id in context.characters or (
+            is_field_effect_holder(damage_calc.base.attacker_id)
         )
+        return attacker_is_live and damage_calc.base.target_id in context.characters
 
     def _process_damage(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         # 리다이렉트로도 구제되지 않은, 이미 사망한 공격자/대상 항목은 건너뛴다.
@@ -600,14 +603,16 @@ class CommandPartCalculator:
         ):
             if not self._is_live_damage_calc(self.context, damage_calc):
                 continue
-            attacker = self.context.characters[damage_calc.base.attacker_id]
+            # 공격자가 필드 효과면 전장에 없다. 그런 항목은 속성을 스스로
+            # 정해서 오므로 시전자 속성을 볼 일이 없다.
+            attacker = self.context.characters.get(damage_calc.base.attacker_id)
             target = self.context.characters[damage_calc.base.target_id]
 
-            is_magic_attack = (
-                damage_calc.base.is_magic_attack
-                if damage_calc.base.is_magic_attack is not None
-                else attacker.status.is_magic_attacker
-            )
+            if damage_calc.base.is_magic_attack is not None:
+                is_magic_attack = damage_calc.base.is_magic_attack
+            else:
+                assert attacker is not None
+                is_magic_attack = attacker.status.is_magic_attacker
             if is_magic_attack:
                 damage_calc.received_modifiers.append(target.status.m_res)
 

@@ -24,6 +24,7 @@ from .effect_damage_by_debuff_stack_tier import (  # noqa: F401
 from .effect_damage_or_taunt_if_companion_absent import (  # noqa: F401
     SkillEffectDamageOrTauntIfCompanionAbsent,
 )
+from .effect_field_damage import SkillEffectFieldDamage  # noqa: F401
 from .effect_field_stat_offset import SkillEffectFieldStatOffset  # noqa: F401
 from .effect_heal import SkillEffectHeal  # noqa: F401
 from .effect_heal_and_fill_buff_stack import (  # noqa: F401
