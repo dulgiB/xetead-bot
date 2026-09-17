@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, Literal, Optional
 from battle.core.commands.models import DamageCalculateData, HealCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
-from battle.objects.define import BuffApplyTiming, FactionType, ValueSourceType
+from battle.objects.define import BuffApplyTiming, ValueSourceType
 from battle.objects.models import BuffUid, CharacterId
 from battle.objects.passive_skill.models import (
+    FIELD_SCOPE_FACTIONS,
     FIELD_SCOPE_TARGET_TYPES,
     PassiveSkillData,
     PassiveSkillTargetType,
@@ -17,14 +18,6 @@ from battle.objects.skill.models import SkillEffectBase
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.core.command_calculator import CommandPartCalculator
-
-
-# 필드 범위 대상 타입 → 대상 진영. None이면 진영을 가리지 않는다.
-_FIELD_SCOPE_FACTIONS: dict[PassiveSkillTargetType, Optional[FactionType]] = {
-    PassiveSkillTargetType.FIELD_ALLY_SIDE: FactionType.ALLY,
-    PassiveSkillTargetType.FIELD_ENEMY_SIDE: FactionType.ENEMY,
-    PassiveSkillTargetType.FIELD_ALL: None,
-}
 
 
 def resolve_passive_targets(
@@ -42,8 +35,11 @@ def resolve_passive_targets(
     # 필드 범위는 홀더를 보지 않는다 — 필드 효과의 홀더는 전장에 없는
     # 센티넬이라 아래 characters.get(holder)에서 걸러지기 때문에, 홀더
     # 조회보다 먼저 처리해야 한다.
+    if target_type == PassiveSkillTargetType.FIELD_SUBJECT:
+        return [attacker_or_target] if attacker_or_target else []
+
     if target_type in FIELD_SCOPE_TARGET_TYPES:
-        wanted = _FIELD_SCOPE_FACTIONS[target_type]
+        wanted = FIELD_SCOPE_FACTIONS[target_type]
         return [
             char_id
             for char_id, char in context.characters.items()
@@ -272,6 +268,15 @@ class PassiveSkillWrapperBuff(BuffBase):
         obj._passive_data = passive_data
         obj._role = role
         return obj
+
+    @property
+    def is_field_effect(self) -> bool:
+        """이 래퍼가 캐릭터 패시브가 아니라 필드 효과를 감싸고 있는지."""
+        return self._passive_data.is_field_effect
+
+    @property
+    def passive_target_type(self) -> PassiveSkillTargetType:
+        return self._passive_data.target_type
 
     def get_description(self, context: "BattlefieldContext") -> str:
         """패시브 스킬은 "버프" 시트가 아니라 "스킬_패시브" 시트에서 온

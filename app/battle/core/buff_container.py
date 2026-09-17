@@ -16,6 +16,19 @@ if TYPE_CHECKING:
 from battle.objects.buff.buff_base import BuffDurationCounter
 from battle.objects.define import BuffApplyTiming, CombatStatType, FactionType
 from battle.objects.models import BuffUid, CharacterId
+from battle.objects.passive_skill.models import (
+    PassiveSkillTargetType,
+    field_scope_includes,
+)
+from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
+
+
+def _field_scope_of(buff: "BuffBase") -> Optional[PassiveSkillTargetType]:
+    """이 버프가 필드 효과의 래퍼면 그 필드 범위를, 아니면 None을 반환한다."""
+    if not isinstance(buff, PassiveSkillWrapperBuff):
+        return None
+    target_type = buff.passive_target_type
+    return target_type if buff.is_field_effect else None
 
 
 class BuffContainer:
@@ -144,20 +157,38 @@ class BuffContainer:
         timing: BuffApplyTiming,
         required_faction: FactionType,
         in_scope: Callable[[CharacterId], bool],
+        *,
+        subject_faction: FactionType,
     ) -> list[tuple["BuffEvent", CharacterId]]:
         """timing이 일치하고, holder의 진영이 required_faction과 같으며,
         in_scope(holder_id)가 True인 버프들의 (event, holder_id) 목록을
         priority 순으로 정렬해 반환한다. "같은 열"/"사거리 내" 등 범위
-        판정 방식만 다른 반응형 트리거들(on_character_damaged 등)이 공유한다."""
-        event_pairs = [
-            (buff.create_event(), buff.applied_to)
-            for buff in self._buffs
-            if buff.timing == timing
-            and (holder_char := self._context.characters.get(buff.applied_to))
-            is not None
-            and holder_char.faction == required_faction
-            and in_scope(buff.applied_to)
-        ]
+        판정 방식만 다른 반응형 트리거들(on_character_damaged 등)이 공유한다.
+
+        필드 효과는 이 판정을 탈 홀더가 없다(전장에 없는 센티넬이다). 대신
+        효과의 필드 범위가 **사건 당사자**(subject_faction)의 진영을 포함하는지로
+        가린다 — required_faction은 "반응하는 쪽"의 진영이라 훅마다 의미가
+        달라(이동은 foe_faction, 피격은 당사자 진영) 필드 효과 기준으로는 쓸 수
+        없다. 위치가 없으므로 in_scope도 적용하지 않는다.
+        """
+        event_pairs: list[tuple["BuffEvent", CharacterId]] = []
+        for buff in self._buffs:
+            if buff.timing != timing:
+                continue
+
+            field_scope = _field_scope_of(buff)
+            if field_scope is not None:
+                if field_scope_includes(field_scope, subject_faction):
+                    event_pairs.append((buff.create_event(), buff.applied_to))
+                continue
+
+            holder_char = self._context.characters.get(buff.applied_to)
+            if holder_char is None or holder_char.faction != required_faction:
+                continue
+            if not in_scope(buff.applied_to):
+                continue
+            event_pairs.append((buff.create_event(), buff.applied_to))
+
         event_pairs.sort(key=lambda x: x[0].priority.value)
         return event_pairs
 
@@ -200,7 +231,10 @@ class BuffContainer:
             return
 
         event_pairs = self._collect_reactive_event_pairs(
-            BuffApplyTiming.ON_ENEMY_MOVE, moved_char.foe_faction, lambda _: True
+            BuffApplyTiming.ON_ENEMY_MOVE,
+            moved_char.foe_faction,
+            lambda _: True,
+            subject_faction=moved_char.faction,
         )
         if not event_pairs:
             return
@@ -237,6 +271,7 @@ class BuffContainer:
             lambda holder_id: (
                 self._context.find_character_position(holder_id) == damaged_pos
             ),
+            subject_faction=damaged_char.faction,
         )
         self._apply_reactive_events(
             event_pairs, damaged_char_id, calculator, effect_seq_number
@@ -266,6 +301,7 @@ class BuffContainer:
             BuffApplyTiming.ALLY_IN_RANGE_DAMAGED,
             damaged_char.faction,
             lambda holder_id: self._is_in_range_of(holder_id, damaged_pos),
+            subject_faction=damaged_char.faction,
         )
         self._apply_reactive_events(
             event_pairs, attacker_id, calculator, effect_seq_number
@@ -295,6 +331,7 @@ class BuffContainer:
             BuffApplyTiming.ALLY_IN_RANGE_ATTACKED,
             attacker_char.faction,
             lambda holder_id: self._is_in_range_of(holder_id, attacker_pos),
+            subject_faction=attacker_char.faction,
         )
         self._apply_reactive_events(
             event_pairs, target_id, calculator, effect_seq_number

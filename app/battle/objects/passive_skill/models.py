@@ -5,7 +5,7 @@ from typing import Optional
 
 from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.buff.models import PassiveBuffData
-from battle.objects.define import MAX_PASSIVE_EFFECT_COUNT
+from battle.objects.define import MAX_PASSIVE_EFFECT_COUNT, FactionType
 from battle.objects.models import BuffUid, CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
 from utils.spreadsheet_row import SpreadsheetRow
@@ -36,12 +36,15 @@ class PassiveSkillTargetType(str, Enum):
     LOWEST_HP_ALLY = "체력 최저 아군"
 
     # 필드 효과 전용. 위의 값들이 홀더를 기준으로 상대적인 범위를 잡는 것과
-    # 달리, 이 셋은 홀더를 보지 않고 진영을 절대 기준으로 지정한다 — 필드
-    # 효과는 캐릭터가 아니라 전장에 붙으므로 기준이 될 홀더가 없다. 그래서
-    # 보스가 자기 진영을 강화하는 필드 효과는 FIELD_ENEMY_SIDE다.
+    # 달리, 이 넷은 홀더를 보지 않는다 — 필드 효과는 캐릭터가 아니라 전장에
+    # 붙으므로 기준이 될 홀더가 없다. 앞의 셋은 진영을 절대 기준으로 지정하며,
+    # 그래서 보스가 자기 진영을 강화하는 필드 효과는 FIELD_ENEMY_SIDE다.
     FIELD_ALLY_SIDE = "필드 아군 진영"
     FIELD_ENEMY_SIDE = "필드 적군 진영"
     FIELD_ALL = "필드 전원"
+    # 반응형 트리거(이동 시·피격 시 등)에서 그 사건을 일으킨 당사자만 대상으로
+    # 삼는다. 진영을 가리지 않으므로 양쪽 진영의 사건에 모두 반응한다.
+    FIELD_SUBJECT = "필드 사건 당사자"
 
 
 # 홀더 없이 해석되는 대상 범위. 필드 효과에 쓸 수 있는 값이자, 캐릭터
@@ -51,8 +54,30 @@ FIELD_SCOPE_TARGET_TYPES: frozenset[PassiveSkillTargetType] = frozenset(
         PassiveSkillTargetType.FIELD_ALLY_SIDE,
         PassiveSkillTargetType.FIELD_ENEMY_SIDE,
         PassiveSkillTargetType.FIELD_ALL,
+        PassiveSkillTargetType.FIELD_SUBJECT,
     }
 )
+
+# 필드 범위 → 그 범위가 가리키는 진영. None이면 진영을 가리지 않는다.
+# 대상을 고르는 데도, 반응형 트리거에서 "누구의 사건에 반응하는가"를 가리는
+# 데도 같은 표를 쓴다 — 둘이 갈리면 "아군 진영 효과인데 적의 이동에 반응"
+# 같은 상태가 생긴다.
+FIELD_SCOPE_FACTIONS: dict[PassiveSkillTargetType, Optional[FactionType]] = {
+    PassiveSkillTargetType.FIELD_ALLY_SIDE: FactionType.ALLY,
+    PassiveSkillTargetType.FIELD_ENEMY_SIDE: FactionType.ENEMY,
+    PassiveSkillTargetType.FIELD_ALL: None,
+    PassiveSkillTargetType.FIELD_SUBJECT: None,
+}
+
+
+def field_scope_includes(
+    target_type: PassiveSkillTargetType, faction: FactionType
+) -> bool:
+    """필드 범위가 그 진영을 포함하는지. 필드 범위가 아닌 값은 항상 False."""
+    if target_type not in FIELD_SCOPE_TARGET_TYPES:
+        return False
+    wanted = FIELD_SCOPE_FACTIONS[target_type]
+    return wanted is None or wanted == faction
 
 
 @dataclass(frozen=True)
