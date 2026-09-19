@@ -41,6 +41,9 @@ class ItemData:
     effect: Optional[SkillEffectBase]
     description: str = ""
     item_type: ItemType = ItemType.BATTLE_CONSUMABLE
+    # 부적 전용: 이 아이템을 누군가 지니고 있으면 본 전투에 걸리는 필드 효과
+    # ("스킬_패시브" 시트의 id). 다른 item_type에서는 쓰이지 않는다.
+    passive_skill_id: str = ""
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "ItemData":
@@ -67,6 +70,7 @@ class ItemData:
             effect=effect,
             description=str(data.get("description", "") or ""),
             item_type=item_type,
+            passive_skill_id=str(data.get("passive_skill_id", "") or ""),
         )
 
     def to_item_instance(

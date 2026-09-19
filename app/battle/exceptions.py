@@ -130,3 +130,17 @@ def error_fate_not_enough_hp(hp_cost: int, curr_hp: int) -> str:
         f"키워드 보정은 체력 {hp_cost}을 소모하므로 체력이 그보다 많아야"
         f" 합니다. (현재 체력: {curr_hp})"
     )
+
+
+def error_field_effect_not_found(effect_id: str) -> str:
+    return f"지정한 필드 효과({effect_id})가 '스킬_패시브' 시트에 없습니다."
+
+
+def error_not_a_field_effect(effect_id: str, target_type: str) -> str:
+    return (
+        f"지정한 패시브({effect_id})는 필드 효과가 아닙니다. (대상 범위: {target_type})"
+    )
+
+
+def error_field_effects_not_available_here() -> str:
+    return "이 전투에서는 필드 효과를 사용할 수 없습니다."

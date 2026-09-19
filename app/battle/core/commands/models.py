@@ -5,6 +5,7 @@ from typing import Literal, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import MAX_EFFECT_COUNT, ActionType, BattlefieldColumnIndex
+from battle.objects.field_effect.models import FieldEffectOp
 from battle.objects.models import (
     BuffUid,
     CharacterId,
@@ -47,6 +48,8 @@ class CommandPartDataPerEffect:
     buff_remove_list: list[BuffRemoveData] = field(default_factory=list)
     # SkillEffectRemoveDebuffs가 디버프를 일괄 제거한 대상 (답글 표시용).
     debuff_clear_list: list[CharacterId] = field(default_factory=list)
+    # 이 effect가 전장에 올리거나 걷기를 요청한 필드 효과.
+    field_effect_ops: list[FieldEffectOp] = field(default_factory=list)
     # 에너미 스킬 전용: None이면 페이즈별 기본값(이동→PRE, 대미지/힐→POST) 사용.
     apply_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
@@ -94,6 +97,7 @@ class CommandPartData:
                         buff_add_list=data.buff_add_list,
                         buff_remove_list=data.buff_remove_list,
                         debuff_clear_list=data.debuff_clear_list,
+                        field_effect_ops=data.field_effect_ops,
                     )
                 )
         return CommandPartData(
@@ -149,6 +153,7 @@ class BattleLogEntryKind(str, Enum):
     BUFF_ADD = "buff_add"
     BUFF_REMOVE = "buff_remove"
     DEBUFF_CLEAR = "debuff_clear"
+    FIELD_EFFECT = "field_effect"
     # 방어막/반사 등이 항목 자체를 없앴을 때 "왜 대미지가 안 보이는지"를
     # 답글에 남기기 위한 종류.
     NO_EFFECT = "no_effect"

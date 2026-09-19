@@ -82,6 +82,11 @@ class PracticeBattlefieldContext(BattlefieldContext):
         return False
 
     @property
+    def allow_field_effects(self) -> bool:
+        """대련/결투/상시전투에서는 필드 효과를 쓰지 않는다."""
+        return False
+
+    @property
     def allow_fate_intervention(self) -> bool:
         """결투에서만 허용한다 — 대가를 임시 체력이 아니라 시트의 실제
         체력에서 빼므로(`pay_fate_cost_hp()`), 대련/상시전투를 막는 이유인

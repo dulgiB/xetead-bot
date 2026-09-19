@@ -5,7 +5,7 @@ from typing import Optional
 
 from battle.objects.buff.buff_events import BuffEvent
 from battle.objects.buff.models import PassiveBuffData
-from battle.objects.define import MAX_PASSIVE_EFFECT_COUNT
+from battle.objects.define import MAX_PASSIVE_EFFECT_COUNT, FactionType
 from battle.objects.models import BuffUid, CharacterId
 from battle.objects.skill.models import SkillEffectBase, parse_skill_effect
 from utils.spreadsheet_row import SpreadsheetRow
@@ -35,6 +35,50 @@ class PassiveSkillTargetType(str, Enum):
     ATTACKER_OR_TARGET = "공격자 또는 대상"
     LOWEST_HP_ALLY = "체력 최저 아군"
 
+    # 필드 효과 전용. 위의 값들이 홀더를 기준으로 상대적인 범위를 잡는 것과
+    # 달리, 이 넷은 홀더를 보지 않는다 — 필드 효과는 캐릭터가 아니라 전장에
+    # 붙으므로 기준이 될 홀더가 없다. 앞의 셋은 진영을 절대 기준으로 지정하며,
+    # 그래서 보스가 자기 진영을 강화하는 필드 효과는 FIELD_ENEMY_SIDE다.
+    FIELD_ALLY_SIDE = "필드 아군 진영"
+    FIELD_ENEMY_SIDE = "필드 적군 진영"
+    FIELD_ALL = "필드 전원"
+    # 반응형 트리거(이동 시·피격 시 등)에서 그 사건을 일으킨 당사자만 대상으로
+    # 삼는다. 진영을 가리지 않으므로 양쪽 진영의 사건에 모두 반응한다.
+    FIELD_SUBJECT = "필드 사건 당사자"
+
+
+# 홀더 없이 해석되는 대상 범위. 필드 효과에 쓸 수 있는 값이자, 캐릭터
+# 패시브에는 쓰면 안 되는 값이기도 하다(홀더 진영이 무시되므로).
+FIELD_SCOPE_TARGET_TYPES: frozenset[PassiveSkillTargetType] = frozenset(
+    {
+        PassiveSkillTargetType.FIELD_ALLY_SIDE,
+        PassiveSkillTargetType.FIELD_ENEMY_SIDE,
+        PassiveSkillTargetType.FIELD_ALL,
+        PassiveSkillTargetType.FIELD_SUBJECT,
+    }
+)
+
+# 필드 범위 → 그 범위가 가리키는 진영. None이면 진영을 가리지 않는다.
+# 대상을 고르는 데도, 반응형 트리거에서 "누구의 사건에 반응하는가"를 가리는
+# 데도 같은 표를 쓴다 — 둘이 갈리면 "아군 진영 효과인데 적의 이동에 반응"
+# 같은 상태가 생긴다.
+FIELD_SCOPE_FACTIONS: dict[PassiveSkillTargetType, Optional[FactionType]] = {
+    PassiveSkillTargetType.FIELD_ALLY_SIDE: FactionType.ALLY,
+    PassiveSkillTargetType.FIELD_ENEMY_SIDE: FactionType.ENEMY,
+    PassiveSkillTargetType.FIELD_ALL: None,
+    PassiveSkillTargetType.FIELD_SUBJECT: None,
+}
+
+
+def field_scope_includes(
+    target_type: PassiveSkillTargetType, faction: FactionType
+) -> bool:
+    """필드 범위가 그 진영을 포함하는지. 필드 범위가 아닌 값은 항상 False."""
+    if target_type not in FIELD_SCOPE_TARGET_TYPES:
+        return False
+    wanted = FIELD_SCOPE_FACTIONS[target_type]
+    return wanted is None or wanted == faction
+
 
 @dataclass(frozen=True)
 class PassiveSkillData:
@@ -45,6 +89,12 @@ class PassiveSkillData:
     description: str
     # 버프 모디파이어 경로. effects와 동시에 채워질 수 있다(상호 배타적이지 않음).
     buff_mod_event: Optional[BuffEvent] = None
+
+    @property
+    def is_field_effect(self) -> bool:
+        """이 행이 캐릭터 패시브가 아니라 필드 효과인지. "스킬_패시브" 시트
+        하나를 둘이 함께 쓰므로 target_type이 구분자 역할을 한다."""
+        return self.target_type in FIELD_SCOPE_TARGET_TYPES
 
     @classmethod
     def from_dict(
@@ -88,3 +138,48 @@ class PassiveSkillData:
             buff_mod_event=buff_mod_event,
             description=str(data.get("description", "")),
         )
+
+
+def field_effect_config_error(data: PassiveSkillData) -> Optional[str]:
+    """ "스킬_패시브" 시트 한 행의 필드 효과 설정 중 조용히 어긋나는 조합을
+    찾아 경고 문구를 만든다. 문제가 없으면 None.
+
+    "스킬_패시브" 시트 하나를 캐릭터 패시브와 필드 효과가 함께 쓰므로, 한쪽
+    전용 값이 다른 쪽에 들어가도 로드는 성공한다. 그 어긋남은 전투 중에야
+    드러나고, 그때는 아무 일도 일어나지 않거나(대상이 안 잡힘) 커맨드가
+    죽는 형태라 원인을 짚기 어렵다.
+    """
+    if not data.is_field_effect:
+        return None
+
+    holder_dependent = [
+        type(effect).__name__
+        for effect in data.effects
+        if effect.requires_holder_character
+    ]
+    if holder_dependent:
+        return (
+            f"필드 효과 '{data.id}'의 효과 {', '.join(holder_dependent)}은(는)"
+            " 시전자가 전장에 있어야 동작합니다. 필드 효과에는 시전자가 없으므로"
+            " 대미지는 커맨드를 실패시키고 회복은 조용히 사라집니다."
+        )
+
+    if data.buff_mod_event is not None:
+        return (
+            f"필드 효과 '{data.id}'의 buff_id는 적용되지 않습니다 — 버프"
+            " 모디파이어는 보유자에게만 걸리는데 필드 효과의 보유자는 전장에"
+            " 없는 자리이기 때문입니다. effect_N으로 실제 버프를 부여하세요."
+        )
+
+    return None
+
+
+def character_passive_config_error(data: PassiveSkillData) -> Optional[str]:
+    """캐릭터/에너미의 passive_skill_id가 필드 효과 행을 가리킬 때의 경고."""
+    if not data.is_field_effect:
+        return None
+    return (
+        f"패시브 '{data.id}'는 필드 범위 대상({data.target_type.value})이라"
+        " 캐릭터 패시브로 쓸 수 없습니다 — 보유자의 진영과 무관하게 대상이"
+        " 정해집니다. [필드효과] 커맨드나 스킬로 거세요."
+    )

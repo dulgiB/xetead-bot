@@ -19,10 +19,18 @@ from battle.objects.passive_skill.models import (
 )
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.effects import SkillEffectAddBuff, SkillEffectDamage
+from battle.objects.field_effect.models import FieldEffectSource
 from bot.field_sheet_renderer import (
+    EXPORT_BOTTOM_ROW,
+    _ALLY_BLOCK_BOTTOM,
     _ALLY_MAIN_ROW_START,
+    _ENEMY_BLOCK_BOTTOM,
+    _ENEMY_BLOCK_TOP,
+    _ENEMY_MAIN_ROW_START,
+    _HEADER_ROW,
     _build_faction_block,
     _format_buff_cell,
+    _format_field_effect_cell,
 )
 from helpers import get_test_preset
 
@@ -239,3 +247,91 @@ def test_build_faction_block_joins_declared_commands_into_single_text():
     assert len(lines) == 5
     assert lines[0] == "적0 [공격/아군 1]"
     assert lines[4] == "적4 [공격/아군 1]"
+
+
+def _context_with_field_effect(description: str = "전장이 불타오른다.") -> tuple:
+    """필드 효과 하나가 걸린 전장과 그 효과 id를 돌려준다."""
+    effect_id = "FieldEffect"
+    ctx = BattlefieldContext(
+        buff_dict={},
+        skill_dict={},
+        passive_skill_dict={
+            effect_id: PassiveSkillData(
+                id=effect_id,
+                trigger=PassiveSkillTrigger.ROUND_START,
+                target_type=PassiveSkillTargetType.FIELD_ALL,
+                effects=[],
+                description=description,
+            )
+        },
+    )
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    return ctx, effect_id
+
+
+def test_field_effect_cell_says_none_when_nothing_is_active():
+    """빈 칸으로 두면 "아직 렌더링되지 않은 것"과 구분되지 않는다."""
+    ctx, _ = _context_with_field_effect()
+
+    display_text, note_text = _format_field_effect_cell(ctx)
+
+    assert display_text == "없음"
+    assert note_text == ""
+
+
+def test_field_effect_cell_lists_active_effects_with_source():
+    ctx, effect_id = _context_with_field_effect()
+    ctx.add_field_effect(effect_id, FieldEffectSource.CHARM, "행운의 부적")
+
+    display_text, _ = _format_field_effect_cell(ctx)
+
+    assert display_text == f"{effect_id}[행운의 부적]"
+
+
+def test_field_effect_cell_joins_several_on_one_line():
+    """한 행짜리 칸이라 줄을 나누면 두 번째부터 잘린다."""
+    ctx, effect_id = _context_with_field_effect()
+    other_id = "FieldEffect2"
+    ctx._passive_skill_dictionary[other_id] = PassiveSkillData(
+        id=other_id,
+        trigger=PassiveSkillTrigger.ROUND_START,
+        target_type=PassiveSkillTargetType.FIELD_ALL,
+        effects=[],
+        description="두 번째 효과 설명",
+    )
+    ctx.add_field_effect(effect_id, FieldEffectSource.ADMIN)
+    ctx.add_field_effect(other_id, FieldEffectSource.CHARM, "가시 부적")
+
+    display_text, note_text = _format_field_effect_cell(ctx)
+
+    assert display_text == f"{effect_id}[시스템] · {other_id}[가시 부적]"
+    assert "\n" not in display_text
+    # 설명은 줄을 나눠 메모에 담는다 — 메모에는 높이 제약이 없다.
+    assert note_text.count("\n") == 1
+
+
+def test_field_effect_description_goes_to_the_note():
+    """그리드가 좁아 본문에 설명까지 넣으면 이름이 밀린다 — 버프 칸과 같이
+    설명은 셀 메모에 담는다."""
+    ctx, effect_id = _context_with_field_effect("전장이 불타오른다.")
+    ctx.add_field_effect(effect_id, FieldEffectSource.ADMIN)
+
+    display_text, note_text = _format_field_effect_cell(ctx)
+
+    assert "전장이 불타오른다." not in display_text
+    assert note_text == f"[{effect_id}] 전장이 불타오른다."
+
+
+def test_layout_rows_follow_the_header_row():
+    """시트 위쪽에 행이 늘고 줄 때 _HEADER_ROW 하나만 맞추면 되도록 나머지
+    행 상수는 전부 여기서 파생된다 — 실제 시트와 어긋나면 격자가 통째로
+    한 칸씩 밀려 쓰인다."""
+    assert _ENEMY_BLOCK_TOP == _HEADER_ROW - 9
+    assert _ENEMY_MAIN_ROW_START == _HEADER_ROW - 3
+    assert _ENEMY_BLOCK_BOTTOM == _HEADER_ROW - 1
+    assert _ALLY_MAIN_ROW_START == _HEADER_ROW + 1
+    assert _ALLY_BLOCK_BOTTOM == _HEADER_ROW + 9
+    # 이미지 캡처가 아군 블록 아래(“아군” 띠 + 여백)까지 담는지.
+    assert EXPORT_BOTTOM_ROW > _ALLY_BLOCK_BOTTOM

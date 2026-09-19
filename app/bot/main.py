@@ -41,7 +41,11 @@ from bot.battle_reply_text import (
 )
 from bot.commands import admin as admin_commands
 from bot.commands import noncombat as noncombat_commands
-from bot.commands.admin import AdminCommandResult, handle_admin_command
+from bot.commands.admin import (
+    AdminCommandResult,
+    build_field_meta,
+    handle_admin_command,
+)
 from bot.commands.character import handle_character_command, mark_fate_used_if_needed
 from bot.commands.noncombat import (
     finalize_daily_quest_mid,
@@ -353,7 +357,7 @@ def _persist_battle_log(
                     state.session.context, include_hp=False
                 ),
                 meta={
-                    "name": state.session.name,
+                    **build_field_meta(state),
                     "active_phase_post_id": state.active_phase_post_id,
                 },
                 cache=state.sheet_cache,

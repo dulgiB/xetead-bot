@@ -1,4 +1,5 @@
 import copy
+import logging
 import math
 from dataclasses import replace
 from datetime import date
@@ -9,11 +10,14 @@ from utils.logging import print_apply_damage, print_apply_heal
 from utils.name_matching import resolve_matching_key
 
 from battle.core.buff_container import BuffContainer
+from battle.core.field_effect_container import FieldEffectContainer
 from battle.core.command_calculator import CommandPartCalculator
 from battle.core.commands.models import BattleLogEntry, CommandPartProcessResult
 from battle.exceptions import (
     CommandValidationError,
     error_character_already_defeated,
+    error_field_effect_not_found,
+    error_not_a_field_effect,
     error_target_does_not_exist,
     error_too_many_characters,
 )
@@ -28,14 +32,18 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     CombatStatType,
     FactionType,
+    ItemType,
     MagicResistanceType,
 )
+from battle.objects.field_effect.models import FieldEffect, FieldEffectSource
 from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import SkillData
 from spreadsheets.inventory import Inventory
+
+logger = logging.getLogger(__name__)
 
 
 class BattlefieldContext:
@@ -77,6 +85,10 @@ class BattlefieldContext:
 
         self.buff_container: BuffContainer = BuffContainer(self)
 
+        # 전장 전체에 걸린 효과. 캐릭터가 아니라 전장에 붙으며, 명시적으로
+        # 해제하기 전까지 유지된다.
+        self.field_effects: FieldEffectContainer = FieldEffectContainer(self)
+
         # 슬롯(position_map)을 차지하지 않는 동료 캐릭터: companion_id -> owner_id.
         # characters에는 있지만 position_map에는 없고, 위치는 owner를 따른다.
         self.companion_owners: dict[CharacterId, CharacterId] = {}
@@ -113,10 +125,28 @@ class BattlefieldContext:
             ally_first=ally_first,
             compact_columns=compact_columns,
         )
+        blocks = [board]
+        # 필드 효과를 버프 요약보다 먼저 둔다 — 캐릭터별 버프 중 일부가
+        # 여기서 온 것이라, 무엇이 전장에 걸려 있는지를 먼저 보여야 읽힌다.
+        field_effect_summary = self._format_field_effect_summary()
+        if field_effect_summary:
+            blocks.append(field_effect_summary)
         buff_summary = self._format_buff_summary()
-        if not buff_summary:
-            return board
-        return f"{board}\n\n{buff_summary}"
+        if buff_summary:
+            blocks.append(buff_summary)
+        return "\n\n".join(blocks)
+
+    def _format_field_effect_summary(self) -> str:
+        """전장에 걸려 있는 필드 효과 목록. 걸린 것이 없으면 빈 문자열이다."""
+        effects = self.field_effects.as_list()
+        if not effects:
+            return ""
+        lines = ["**[필드 효과]**"]
+        for effect in effects:
+            lines.append(f"▸ {effect.display_label()}")
+            if effect.description:
+                lines.append(f"　↳ {effect.description}")
+        return "\n".join(lines)
 
     def format_position_board(
         self,
@@ -308,6 +338,10 @@ class BattlefieldContext:
 
         self.position_map[faction][column_idx][maybe_empty_slot] = char_id
         self.characters[char_id] = character
+
+        # 전투 도중 참전한 캐릭터도 이미 걸린 필드 효과를 즉시 받는다.
+        # 배치 단계에서는 아직 필드 효과가 없어 비용이 들지 않는다.
+        self.field_effects.apply_to_newcomer(char_id)
 
     def _remove_from_position_map(self, char_id: CharacterId) -> None:
         char = self.characters[char_id]
@@ -511,7 +545,49 @@ class BattlefieldContext:
         return removed
 
     def on_battle_start(self) -> None:
+        # 부적 등록이 버프 트리거보다 먼저여야 "전투 시작" 트리거 필드 효과가
+        # 이번 호출에서 발동한다. 여기 한 곳이면 신규 전투(BattleSession.start)와
+        # 봇 재기동 복원(field_restore)이 함께 커버된다.
+        self._register_charm_field_effects()
         self.buff_container.on_battle_start()
+
+    def _register_charm_field_effects(self) -> None:
+        """인벤토리에 있는 "부적" 아이템의 필드 효과를 전장에 올린다.
+
+        소지자가 이 전투에 참여하는지는 보지 않는다 — 참여를 강요하는 압력이
+        되지 않도록, 누군가 지니고 있기만 하면 발동한다. 인벤토리는 캐릭터
+        이름 기준이고 에너미는 인벤토리에 없으므로, 자연히 아군 쪽 소지품만
+        대상이 된다.
+
+        종류당 1개라는 전제가 시트에서 깨져도(두 명이 같은 부적을 들고 있는
+        등) 필드 효과 id 단위로 한 번만 걸린다 — add()가 이미 걸린 효과를
+        무시하기 때문이다.
+        """
+        if not self.allow_field_effects:
+            return
+
+        for item_id, item_data in self._item_dictionary.items():
+            if item_data.item_type is not ItemType.CHARM:
+                continue
+            if not item_data.passive_skill_id:
+                continue
+            if not self.inventory.is_owned_by_anyone(item_id):
+                continue
+            try:
+                self.add_field_effect(
+                    item_data.passive_skill_id,
+                    FieldEffectSource.CHARM,
+                    item_id,
+                )
+            except CommandValidationError as e:
+                # 시트 설정 오류로 전투가 서지 않게 하지 않는다 — 부적 하나가
+                # 빠질 뿐이므로 로그만 남기고 진행한다.
+                logger.warning(
+                    "부적 '%s'의 필드 효과 '%s'를 걸지 못했습니다: %s",
+                    item_id,
+                    item_data.passive_skill_id,
+                    e,
+                )
 
     def on_battle_end(self) -> list[BattleLogEntry]:
         return self.buff_container.on_battle_end()
@@ -602,6 +678,16 @@ class BattlefieldContext:
         buff = self.buff_container.get_buff(char_id, buff_id)
         return buff.stack_count if buff is not None else 0
 
+    def all_passive_skill_data(self) -> list[PassiveSkillData]:
+        """이 전투가 들고 있는 "스킬_패시브" 시트 데이터 전체. 시트 설정
+        검증(봇 계층)이 읽는다."""
+        return list(self._passive_skill_dictionary.values())
+
+    def get_passive_skill_data_by_id(
+        self, passive_id: str
+    ) -> Optional[PassiveSkillData]:
+        return self._passive_skill_dictionary.get(passive_id)
+
     def get_skill_data_by_id(self, skill_id: str) -> SkillData:
         return self._skill_dictionary[skill_id]
 
@@ -616,6 +702,43 @@ class BattlefieldContext:
     @property
     def allow_item_usage(self) -> bool:
         return True
+
+    @property
+    def allow_field_effects(self) -> bool:
+        """이 전장에서 필드 효과를 쓸 수 있는지 여부."""
+        return True
+
+    def add_field_effect(
+        self,
+        passive_skill_id: str,
+        source: FieldEffectSource,
+        source_detail: str = "",
+    ) -> Optional[FieldEffect]:
+        """필드 효과를 전장에 올린다. 이미 걸려 있거나 이 전장이 필드 효과를
+        쓰지 않으면 None을 반환한다.
+
+        passive_skill_id가 "스킬_패시브" 시트에 없거나 필드 범위 대상
+        타입이 아니면 CommandValidationError를 낸다 — 캐릭터 패시브를 필드
+        효과로 올리면 홀더 없는 전장에서 대상이 하나도 잡히지 않아 조용히
+        아무 일도 일어나지 않기 때문에, 부르는 쪽에서 바로 알아야 한다.
+        """
+        if not self.allow_field_effects:
+            return None
+
+        data = self._passive_skill_dictionary.get(passive_skill_id)
+        if data is None:
+            raise CommandValidationError(error_field_effect_not_found(passive_skill_id))
+        if not data.is_field_effect:
+            raise CommandValidationError(
+                error_not_a_field_effect(passive_skill_id, data.target_type.value)
+            )
+
+        return self.field_effects.add(data, source, source_detail)
+
+    def remove_field_effect(self, passive_skill_id: str) -> Optional[FieldEffect]:
+        """필드 효과를 걷는다. 그 효과가 부여한 버프도 함께 회수된다.
+        걸려 있지 않으면 None을 반환한다."""
+        return self.field_effects.remove(passive_skill_id)
 
     @property
     def allow_fate_intervention(self) -> bool:

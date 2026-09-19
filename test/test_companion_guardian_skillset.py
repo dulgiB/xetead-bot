@@ -37,7 +37,7 @@ from battle.objects.define import (
 )
 from battle.objects.models import BuffUid, CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData, PassiveSkillTargetType
-from battle.objects.passive_skill.passive_skill import _resolve_targets
+from battle.objects.passive_skill.passive_skill import resolve_passive_targets
 from battle.objects.skill.effects import SkillEffectAddBuff, SkillEffectDamage
 from battle.objects.skill.models import SkillData
 from bot.battle_reply_text import format_battle_reply
@@ -862,10 +862,10 @@ class TestCompanionCannotBeDeclaredAsTarget:
             PassiveSkillTargetType.SELF_AND_SAME_COLUMN_ALLIES,
             PassiveSkillTargetType.ALL_ALLIES,
         ):
-            targets = _resolve_targets(ctx, OWNER, None, target_type)
+            targets = resolve_passive_targets(ctx, OWNER, None, target_type)
             assert companion_id not in targets
 
-        lowest_hp_targets = _resolve_targets(
+        lowest_hp_targets = resolve_passive_targets(
             ctx, OWNER, None, PassiveSkillTargetType.LOWEST_HP_ALLY
         )
         assert companion_id not in lowest_hp_targets

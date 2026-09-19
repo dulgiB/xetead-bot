@@ -20,6 +20,7 @@ app/
       command_processors.py     # 전개 전 검증 + 실제 효과 적용
       command_calculator.py     # 이동/대미지/힐/버프 개별 처리 + 버프 이벤트 적용
       buff_container.py         # 버프 생명주기 (추가/제거/라운드 훅/반응형 트리거)
+      field_effect_container.py # 필드 효과 생명주기 (등록/해제/스탯 오프셋/중간 참전)
       commands/
         define.py               # RoundPhaseType enum
         models.py               # CharacterCommand, CommandPart, CommandPartData, DamageCalculateData 등
@@ -48,8 +49,10 @@ app/
       passive_skill/
         models.py                # PassiveSkillData ("스킬_패시브"/"버프_패시브" 시트 대응)
         passive_skill.py         # PassiveSkillWrapperBuff/Event — BuffBase 인터페이스로 감싸 BuffContainer에 등록
+      field_effect/
+        models.py                # FieldEffect, FieldEffectOp, FieldEffectSource, 센티넬 홀더
       item/
-        models.py                # Item, ItemData (소비형 아이템 슬롯)
+        models.py                # Item, ItemData (소비형 아이템 슬롯, 부적의 passive_skill_id)
       character/
         combat_character.py      # CombatCharacter
         combat_stats.py          # CombatStats
@@ -374,6 +377,137 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 홀더 본인에게만 적용된다(`target_type`이 무시된다). 범위 경감은 `effect_N`으로
 "버프" 시트의 실제 경감 버프를 매 라운드 대상들에게 부여하는 방식으로 만든다.
 
+### 대상별 조건 (`target_condition_N`)
+
+`condition_N`이 효과 전체를 켜고 끄는 것과 달리, `target_condition_N`은 이미
+정해진 대상 목록에서 조건을 만족하지 않는 대상을 걸러낸다("체력 50% 이하인
+아군에게만" 등). 조건 클래스는 그대로 재사용하며 `holder` 자리에 각 대상을
+넣어 평가하므로, `SelfHpBelowCondition`이 "그 대상의 체력이 N% 미만"이 된다.
+`SkillEffectBase.expand()`가 거르므로 스킬·패시브·필드 효과 어디에나 붙는다.
+
+**조건에서 벗어났을 때 버프를 걷어야 하면 `SkillEffectConditionalBuff`를
+쓴다.** `SkillEffectAddBuff` + `target_condition_N`은 부여만 하므로 조건을
+벗어나도 지속시간이 끝날 때까지 남는다. 조건부 버프 효과만
+`applies_target_condition_itself`를 켜서 필터를 끄고 전체 목록을 받는다 —
+조건을 만족하지 못한 대상에게도 할 일(회수)이 있기 때문이다. 회수는 그
+효과가 `given_by`로 건 인스턴스만 지운다.
+
+---
+
+## 필드 효과 (`FieldEffect`)
+
+캐릭터가 아니라 **전장에** 걸리는 효과다. 지속 턴수가 없고 명시적으로
+해제하기 전까지 유지되며, 본 전투에서만 쓴다(`allow_field_effects`).
+
+### 데이터는 "스킬_패시브" 시트를 공유한다
+
+필드 효과 전용 시트는 없다. 효과 본체는 `PassiveSkillData`를 그대로 쓰고,
+**홀더를 보지 않는 필드 범위 `target_type`이 그 행을 캐릭터 패시브와
+구분한다**(`PassiveSkillData.is_field_effect`).
+
+| 값 | 대상 |
+|---|---|
+| `필드 아군 진영` | 아군 전원 |
+| `필드 적군 진영` | 적군 전원 |
+| `필드 전원` | 양 진영 전원 |
+| `필드 사건 당사자` | 반응형 트리거에서 그 사건을 일으킨 캐릭터 |
+
+앞의 셋은 **절대 진영** 기준이다 — 보스가 자기 진영을 강화하는 필드 효과는
+`필드 적군 진영`이다. 반응형 트리거에서는 이 값이 "누구의 사건에 반응하는가"도
+함께 정한다(`필드 사건 당사자`는 진영을 가리지 않는다).
+
+### 수치 반영은 BuffContainer에 위임한다
+
+필드 효과는 전장에 없는 **센티넬 홀더**(`__field__{id}`)로 래퍼 버프를
+등록해 두고, 트리거가 오면 기존 패시브 파이프라인이 그대로 대상들에게 실제
+버프를 부여한다. 계산 경로를 새로 만들지 않으므로 `buffed_stats`와
+`_apply_buff_events()`는 필드 효과를 알지 못한다.
+
+센티넬은 **효과마다 고유**하다 — 걷을 때 `given_by`로 자기가 부여한 버프만
+정확히 회수하기 위해서다.
+
+홀더가 전장에 없다는 사실이 세 곳에서 특별 취급을 요구한다:
+
+- `resolve_passive_targets()`는 필드 범위를 `characters.get(holder)` **앞에서**
+  처리한다. 뒤에 두면 홀더가 없어 대상이 하나도 안 잡힌다.
+- `BuffContainer._collect_reactive_event_pairs()`는 홀더의 진영 대신 **사건
+  당사자의 진영**(`subject_faction`)으로 가린다. `required_faction`은 훅마다
+  의미가 달라(이동은 `foe_faction`, 피격은 당사자 진영) 쓸 수 없다.
+- `CommandPartCalculator._is_live_damage_calc()`는 센티넬 공격자를 통과시킨다.
+  `characters` 조회만으로 가리면 "이미 사망한 공격자"로 오인해 항목을 통째로
+  버린다.
+
+### 효과에 쓸 수 있는 것
+
+`SkillEffectBase.requires_holder_character`가 `False`인 효과만 쓸 수 있다.
+기본값은 `True`(시전자 필요)이므로, 새 효과를 만들 때 표시를 빠뜨리면 필드
+효과에서 거부될 뿐 조용히 깨지지는 않는다.
+
+| 효과 | 쓰임 |
+|---|---|
+| `SkillEffectAddBuff` / `SkillEffectConditionalBuff` | 범위에 버프/디버프 부여 |
+| `SkillEffectFieldDamage` | 시전자 없는 고정 대미지 (물리 고정, 계수 미지원) |
+| `SkillEffectFieldStatOffset` | 공격력·사거리·턴당 코스트 증감 |
+| `SkillEffectAddFieldEffect` / `SkillEffectRemoveFieldEffect` | 다른 필드 효과 부여·해제 |
+
+**스탯 증감은 `CombatStats.__getitem__`에 직접 얹는다.** 버프(`BuffedStats`)로는
+안 되는데, `BuffedStats`는 `CommandPartCalculator` 안에서만 살기 때문에 사거리
+검증·범위 조건·필드 시트 표시처럼 `CombatStats`를 직접 읽는 지점에 반영되지
+않기 때문이다. 최대 체력은 지원하지 않는다.
+
+### 부여·제거 경로 셋
+
+- **admin**: `[필드효과/이름]` / `[필드효과해제/이름]`. 디스패치에서 해제를
+  먼저 본다 — "필드효과해제"가 "필드효과" 패턴에도 걸리기 때문이다.
+- **스킬**: `SkillEffectAddFieldEffect`/`SkillEffectRemoveFieldEffect` +
+  `field_effect_id_N`. `expand()`의 5-튜플에 자리가 없어
+  `get_field_effect_ops()`로 따로 받는다(디버프 일괄 제거와 같은 방식).
+- **부적**: "아이템" 시트에서 `item_type`이 `부적`인 항목의
+  `passive_skill_id`. **인벤토리에 가진 캐릭터가 있기만 하면 발동하며, 그
+  소지자가 전투에 참여하는지는 보지 않는다** — 요구하면 전투 참여 압력이 되기
+  때문이다.
+
+### 등록 시점과 영속화
+
+등록은 `BattlefieldContext.on_battle_start()` 한 곳에서, **버프 트리거보다
+먼저** 한다("전투 시작" 트리거가 같은 호출에서 발동해야 하므로). 이 한 곳이면
+신규 전투와 봇 재기동 복원이 함께 커버된다.
+
+전투 도중 참전한 캐릭터는 `add_character()` 말미의
+`FieldEffectContainer.apply_to_newcomer()`로 즉시 받는다 — 진영 판정은 정규
+경로와 같은 `resolve_passive_targets()`를 거친다.
+
+영속화는 "필드" 시트에 컬럼을 늘리지 않고 `meta_json`에 싣는다. 복원은
+캐릭터 배치 뒤·`on_battle_start()` 전이어야 한다.
+
+### 표시
+
+필드 효과는 센티넬 홀더에 붙어 있어 **캐릭터별 버프 목록에는 잡히지
+않는다** — 따로 보여주지 않으면 어디에도 드러나지 않는다.
+
+표시 라벨은 `FieldEffect.display_label()`이 만드는 `이름[출처]`로 통일한다.
+대괄호 안은 출처를 특정할 수 있으면 그 이름(부적 이름 등), 아니면 출처
+종류(`시스템`/`스킬`/`부적`)다 — 어느 부적이 걸었는지가 종류보다 쓸모 있다.
+admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부르는 기존
+이름(`commands/admin.py`의 `ADMIN_ID`)과 맞추기 위해서다.
+
+나가는 곳은 셋이다.
+
+- **공개 "필드" 시트**의 필드 효과 칸(`_FIELD_EFFECT_CELL`): 한 행짜리라
+  줄을 나누면 두 번째부터 잘리므로 가운뎃점으로 이어 한 줄에 담고, 설명은
+  버프 칸과 같이 셀 메모에 넣는다. 걸린 게 없으면 `없음` — 빈 칸으로 두면
+  아직 렌더링되지 않은 것과 구분되지 않는다.
+- **필드 텍스트**(`_format_field_effect_summary()`): 버프 요약보다 앞에 두고
+  효과마다 한 줄씩, 설명을 아래에 붙인다.
+- **답글 결과 줄**: `BattleLogEntryKind.FIELD_EFFECT`. 대상이 캐릭터가
+  아니므로 "이름 | 결과"가 아니라 "필드 효과 발생: 이름"으로 나간다.
+
+**"필드" 시트의 행 좌표는 `_HEADER_ROW` 하나에서 파생된다.** 시트 위쪽에
+행이 늘고 줄면 그 값만 맞추면 진영 격자와 선언 내용 병합 범위가 함께
+따라온다. 이미지 캡처 범위(`field_sheet_image._EXPORT_RANGE`)도 같은
+상수에서 끝 행을 가져오므로 따로 고칠 필요가 없다 — 예전에는 리터럴이라
+위쪽에 행이 늘면 아래가 조용히 잘렸다.
+
 ---
 
 ## 운명간섭 · 부활 횟수
@@ -624,3 +758,19 @@ DM으로 경고한다. 전투를 세우지는 않는다 — 잘못 설정된 스
    `target_type`(`PassiveSkillTargetType`), (버프 모디파이어 경로라면)
    `buff_id`, (스킬 효과 경로라면) `effect_0`/`effect_1` 등을 등록한다.
 4. 캐릭터/에너미 시트의 `passive_skill_id` 컬럼에 등록한 id를 채운다.
+
+### 필드 효과 추가
+
+1. 새 효과 구현체가 필요하면 위 "스킬 효과 추가" 순서로 만들되,
+   **`requires_holder_character: ClassVar[bool] = False`를 반드시 켠다** —
+   기본값은 "시전자 필요"라 켜지 않으면 필드 효과에서 거부된다. 시전자의
+   스탯·위치·진영을 읽는 효과라면 켜면 안 된다.
+2. "스킬_패시브" 시트에 행을 추가하고 `target_type`을 필드 범위 값
+   (`필드 아군 진영`/`필드 적군 진영`/`필드 전원`/`필드 사건 당사자`) 중
+   하나로 채운다. 이 값이 그 행을 필드 효과로 만든다.
+3. 거는 방법을 정한다: admin 전용이면 여기까지, 스킬로 걸면 스킬 시트의
+   `field_effect_id_N`에, 부적으로 걸면 "아이템" 시트의 `passive_skill_id`에
+   이 id를 채운다.
+
+설정이 어긋나면 `[전투개시]` 시점에 admin DM으로 경고가 간다 — 전투를
+세우지는 않으므로 경고를 놓치면 그 효과만 조용히 빠진다.

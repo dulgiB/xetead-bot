@@ -22,6 +22,7 @@ from utils.spreadsheet_row import SpreadsheetRow
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.buff.conditions import Condition
+    from battle.objects.field_effect.models import FieldEffectOp
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,8 @@ class SkillEffectBase(abc.ABC):
     # 대상이 이미 보유하고 있어야 하는 버프 id(선행 디버프 존재를 요구하는
     # 콤보용 게이트). buff_id(이 효과가 부여/조회하는 버프)와는 별개다.
     required_target_buff_id: Optional[str] = None
+    # 이 효과가 전장에 올리거나 걷는 필드 효과의 id("스킬_패시브" 시트).
+    field_effect_id: Optional[str] = None
     # 열 광역 target_rule은 command_expanders.py가 따로 True를 강제하므로,
     # 이 필드는 개체 지정 효과에서 도발을 무시해야 할 때만 켠다(둘은 OR).
     ignores_taunt: bool = False
@@ -61,9 +64,27 @@ class SkillEffectBase(abc.ABC):
     # DamageData.triggers_holder_action_buffs로 전달된다.
     ignores_defensive_buffs: bool = False
 
+    # 대상마다 따로 평가하는 조건. `condition`이 효과 전체를 켜고 끄는 것과
+    # 달리, 이쪽은 이미 정해진 대상 목록에서 조건을 만족하지 않는 대상을
+    # 걸러낸다("체력 50% 이하인 아군에게만" 등). 조건 클래스는 그대로
+    # 재사용하며, holder 자리에 각 대상을 넣어 평가한다.
+    target_condition_class_name: Optional[str] = None
+    target_condition_value: Optional[int] = None
+
     # 조건이 아니라 효과 본체가 damaged_this_round 같은 데이터를 직접 읽을 때
     # 켠다 — PassiveSkillWrapperBuff가 평가 시점을 고르는 데 쓴다.
     requires_round_resolved: ClassVar[bool] = False
+
+    # False면 시전자가 전장에 없어도 동작한다 — 필드 효과에 쓸 수 있다는 뜻이다.
+    # 기본값 True는 안전한 쪽이다: 시전자의 스탯·위치·진영을 읽는 효과를 필드
+    # 효과에 걸면 KeyError가 나거나(대미지 계열) 항목이 조용히 버려진다(회복
+    # 계열 — 처리부가 시전자가 전장에 있는지로 유효성을 가린다).
+    requires_holder_character: ClassVar[bool] = True
+
+    # True면 expand()가 target_condition으로 대상을 거르지 않고 전체 목록을
+    # 그대로 넘긴다. 조건을 만족하지 못한 대상에게도 할 일이 있는 효과
+    # (조건에서 벗어나면 버프를 회수하는 등) 전용이다.
+    applies_target_condition_itself: ClassVar[bool] = False
 
     @property
     def condition(self) -> Optional["Condition"]:
@@ -74,6 +95,25 @@ class SkillEffectBase(abc.ABC):
             condition_module, self.condition_class_name
         )
         return condition_class(value=self.condition_value)
+
+    @property
+    def target_condition(self) -> Optional["Condition"]:
+        if not self.target_condition_class_name:
+            return None
+        condition_module = importlib.import_module("battle.objects.buff.conditions")
+        condition_class: Type["Condition"] = getattr(
+            condition_module, self.target_condition_class_name
+        )
+        return condition_class(value=self.target_condition_value)
+
+    def passes_target_condition(
+        self, context: "BattlefieldContext", target: CharacterId
+    ) -> bool:
+        """대상별 조건을 그 대상 기준으로 평가한다. 조건이 없으면 항상 True."""
+        condition = self.target_condition
+        if condition is None:
+            return True
+        return condition.is_applied(context, target, None)
 
     @abc.abstractmethod
     def _expand(
@@ -105,12 +145,31 @@ class SkillEffectBase(abc.ABC):
         list[BuffRemoveData],
     ]:
         if self.target_override is None:
-            return self._expand(context, holder, targets, raw_targets)
+            effective_targets = list(targets)
+        elif self.target_override == SkillTargetOverrideType.SELF:
+            effective_targets = [holder]
+        else:
+            raise ValueError(self.target_override)
 
-        if self.target_override == SkillTargetOverrideType.SELF:
-            return self._expand(context, holder, [holder], raw_targets)
+        if not self.applies_target_condition_itself:
+            effective_targets = [
+                target
+                for target in effective_targets
+                if self.passes_target_condition(context, target)
+            ]
 
-        raise ValueError(self.target_override)
+        return self._expand(context, holder, effective_targets, raw_targets)
+
+    def get_field_effect_ops(
+        self, context: "BattlefieldContext", holder: CharacterId
+    ) -> list["FieldEffectOp"]:
+        """필드 효과를 올리거나 걷는 효과만 오버라이드한다.
+
+        expand()의 5-튜플에는 필드 효과가 들어갈 자리가 없어, 디버프 일괄
+        제거(get_debuff_clear_targets)와 같이 expand() 옆에서 따로 불리는
+        훅으로 둔다 — 튜플을 넓히면 기존 효과 구현체가 전부 바뀐다.
+        """
+        return []
 
     def get_debuff_clear_targets(
         self,
@@ -165,6 +224,20 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
     target_override = (
         SkillTargetOverrideType(data[f"target_override_{index}"])
         if data.get(f"target_override_{index}")
+        else None
+    )
+    target_condition_raw = data.get(f"target_condition_{index}") or None
+    target_condition_class_name = (
+        str(target_condition_raw) if target_condition_raw is not None else None
+    )
+    field_effect_id_raw = data.get(f"field_effect_id_{index}") or None
+    field_effect_id = (
+        str(field_effect_id_raw) if field_effect_id_raw is not None else None
+    )
+    target_condition_value_raw = data.get(f"target_condition_value_{index}") or None
+    target_condition_value = (
+        int(target_condition_value_raw)
+        if target_condition_value_raw is not None
         else None
     )
     apply_timing_raw = data.get(f"effect_apply_timing_{index}")
@@ -224,10 +297,13 @@ def parse_skill_effect(data: SpreadsheetRow, index: int) -> Optional[SkillEffect
         buff_stack_cap=buff_stack_cap,
         condition_class_name=condition_class_name,
         condition_value=condition_value,
+        target_condition_class_name=target_condition_class_name,
+        target_condition_value=target_condition_value,
         gate_value_source=gate_value_source,
         gate_value=gate_value,
         reference_buff_id=reference_buff_id,
         required_target_buff_id=required_target_buff_id,
+        field_effect_id=field_effect_id,
         ignores_defensive_buffs=ignores_defensive_buffs,
         ignores_taunt=ignores_taunt,
     )

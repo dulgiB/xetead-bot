@@ -528,6 +528,14 @@ def _format_entry(
             None,
             None,
         )
+    if entry.kind == BattleLogEntryKind.FIELD_EFFECT:
+        # 대상이 캐릭터가 아니라 전장이므로 "이름 | 결과" 형식이 맞지 않는다.
+        # target_name에는 필드 효과 이름이 들어 있다.
+        return (
+            f"▹ {escape_markdown(entry.result)}: {escape_markdown(entry.target_name)}",
+            None,
+            None,
+        )
     # 나머지 종류는 build_log_entries()가 만들어 둔 result를 그대로 쓴다.
     return (
         f"▹ {escape_markdown(entry.target_name)} | {escape_markdown(entry.result)}",

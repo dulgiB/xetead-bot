@@ -28,7 +28,7 @@ def _characters_in_holder_scope(
     동료(소환수, context.companion_owners)는 제외한다 — 슬롯을 차지하지 않고
     소환자의 위치를 그대로 따르는 종속 개체라 "진형에 아군이 몇 명 있는가"를
     세는 데 끼면 소환자 한 명이 두 명으로 잡힌다.
-    SkillTargetRuleAllAllies/PassiveSkill._resolve_targets()의 아군 범위와
+    SkillTargetRuleAllAllies/PassiveSkill.resolve_passive_targets()의 아군 범위와
     같은 기준이다."""
     holder_char = context.characters.get(holder)
     if holder_char is None:
@@ -150,6 +150,57 @@ class SelfHpBelowCondition(Condition):
         if max_hp == 0:
             return False
         return (char.status.curr_hp / max_hp * 100) < self.value
+
+
+@dataclass(frozen=True)
+class SelfHpAtLeastCondition(Condition):
+    """holder의 현재 체력 비율이 value% 이상일 때 True."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        char = context.characters.get(holder)
+        if char is None:
+            return False
+        max_hp = char.status[CombatStatType.MAX_HP]
+        if max_hp == 0:
+            return False
+        return (char.status.curr_hp / max_hp * 100) >= self.value
+
+
+@dataclass(frozen=True)
+class SelfHpValueBelowCondition(Condition):
+    """holder의 현재 체력이 value 미만일 때 True (비율이 아니라 절대 수치)."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        char = context.characters.get(holder)
+        if char is None:
+            return False
+        return char.status.curr_hp < (self.value or 0)
+
+
+@dataclass(frozen=True)
+class SelfHpValueAtLeastCondition(Condition):
+    """holder의 현재 체력이 value 이상일 때 True (비율이 아니라 절대 수치)."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        char = context.characters.get(holder)
+        if char is None:
+            return False
+        return char.status.curr_hp >= (self.value or 0)
 
 
 @dataclass(frozen=True)

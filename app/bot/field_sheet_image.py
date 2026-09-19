@@ -26,10 +26,13 @@ import fitz
 import gspread
 from PIL import Image, ImageChops
 
+from bot.field_sheet_renderer import EXPORT_BOTTOM_ROW
 from bot.sheet_cache import SheetCache
 
 _FIELD_SHEET = "필드"
-_EXPORT_RANGE = "A1:M32"
+# 시트 위쪽에 행이 늘면 아래 내용이 밀려 잘리므로, 레이아웃 상수에서
+# 끝 행을 가져온다 — 리터럴로 두면 잘린 사실이 이미지에서만 드러난다.
+_EXPORT_RANGE = f"A1:M{EXPORT_BOTTOM_ROW}"
 _RASTER_DPI = 200
 _CROP_PADDING = 0
 

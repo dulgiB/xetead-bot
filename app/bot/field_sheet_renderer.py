@@ -79,20 +79,32 @@ _BATTLEFIELD_COLUMNS = [
 _BATTLE_NAME_CELL = "B3"
 _ROUND_CELL = "B4"
 _PHASE_CELL = "D6"
+_FIELD_EFFECT_CELL = "D7"
+
+# 전장에 걸린 필드 효과가 없을 때 그 칸에 적는 문구. 빈 칸으로 두면 "아직
+# 렌더링되지 않은 것"과 구분되지 않는다.
+_NO_FIELD_EFFECT_TEXT = "없음"
 
 # 진영 블록 하나의 높이 (슬롯 3개 x 캐릭터당 3줄)
 _FACTION_BLOCK_HEIGHT = CHARACTER_PER_COLUMN * 3  # 9
 
-_HEADER_ROW = 18  # 1~7 열 번호 / "아군 선언 내용" 헤더가 있는 행 (고정 텍스트)
+# 1~7 열 번호 / "아군 선언 내용" 헤더가 있는 행 (고정 텍스트). 아래 행
+# 상수가 전부 여기서 파생되므로, 시트 위쪽에 행이 늘고 줄 때는 이 값만
+# 맞추면 격자와 병합 범위가 함께 따라온다.
+_HEADER_ROW = 19
 
-_ENEMY_BLOCK_TOP = _HEADER_ROW - _FACTION_BLOCK_HEIGHT  # 9
-_ENEMY_MAIN_ROW_START = _HEADER_ROW - 3  # 15 (슬롯0, 헤더에 바로 인접)
-_ENEMY_BLOCK_BOTTOM = _HEADER_ROW - 1  # 17
+_ENEMY_BLOCK_TOP = _HEADER_ROW - _FACTION_BLOCK_HEIGHT  # 10
+_ENEMY_MAIN_ROW_START = _HEADER_ROW - 3  # 16 (슬롯0, 헤더에 바로 인접)
+_ENEMY_BLOCK_BOTTOM = _HEADER_ROW - 1  # 18
 
-_ALLY_MAIN_ROW_START = _HEADER_ROW + 1  # 19 (슬롯0, 헤더에 바로 인접)
-_ALLY_BLOCK_BOTTOM = _HEADER_ROW + _FACTION_BLOCK_HEIGHT  # 27
+_ALLY_MAIN_ROW_START = _HEADER_ROW + 1  # 20 (슬롯0, 헤더에 바로 인접)
+_ALLY_BLOCK_BOTTOM = _HEADER_ROW + _FACTION_BLOCK_HEIGHT  # 28
 
-_DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J9:K17 / J19:K27)
+_DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J10:K18 / J20:K28)
+
+# 이미지로 캡처할 마지막 행(field_sheet_image). 아군 블록 아래로 "아군"
+# 띠와 여백이 붙으므로 그만큼 더 잡는다.
+EXPORT_BOTTOM_ROW = _ALLY_BLOCK_BOTTOM + 4  # 32
 
 
 def render_public_field_sheet(
@@ -131,6 +143,9 @@ def render_public_field_sheet(
     )
     notes.update(ally_notes)
 
+    field_effect_text, field_effect_note = _format_field_effect_cell(context)
+    notes[_FIELD_EFFECT_CELL] = field_effect_note
+
     updates = []
     if battle_name is not None:
         updates.append({"range": _BATTLE_NAME_CELL, "values": [[battle_name]]})
@@ -139,6 +154,7 @@ def render_public_field_sheet(
         [
             {"range": _ROUND_CELL, "values": [[f"ROUND {round_n}"]]},
             {"range": _PHASE_CELL, "values": [[phase]]},
+            {"range": _FIELD_EFFECT_CELL, "values": [[field_effect_text]]},
             {
                 "range": f"B{_ENEMY_BLOCK_TOP}:H{_ENEMY_BLOCK_BOTTOM}",
                 "values": enemy_grid,
@@ -285,6 +301,25 @@ def _strip_lines_for_already_present_buffs(
         )
     ]
     return "\n".join(kept_lines)
+
+
+def _format_field_effect_cell(context: "BattlefieldContext") -> tuple[str, str]:
+    """ "필드 효과" 칸에 넣을 (표시 텍스트, 메모 텍스트).
+
+    필드 효과는 캐릭터가 아니라 전장에 붙어 있어 캐릭터별 버프 칸에는 잡히지
+    않으므로(센티넬 홀더에 등록된다) 따로 보여주지 않으면 어디에도 드러나지
+    않는다. 설명은 버프 칸과 같은 방식으로 셀 메모에 담는다 — 그리드가
+    좁아 본문에 설명까지 넣으면 이름이 밀린다.
+    """
+    effects = context.field_effects.as_list()
+    if not effects:
+        return _NO_FIELD_EFFECT_TEXT, ""
+
+    # 한 행짜리 칸이라 줄을 나누면 두 번째부터 잘린다 — 가운뎃점으로 이어
+    # 붙여 한 줄에 담는다.
+    display_text = " · ".join(effect.display_label() for effect in effects)
+    note_lines = [f"[{effect.id}] {effect.description}" for effect in effects]
+    return display_text, "\n".join(note_lines)
 
 
 def _format_buff_cell(

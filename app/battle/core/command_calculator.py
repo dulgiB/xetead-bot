@@ -13,6 +13,11 @@ from battle.core.commands.models import (
 )
 from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffRemoveData
 from battle.objects.character.buffed_stats import BuffedStats
+from battle.objects.field_effect.models import (
+    FieldEffectOp,
+    FieldEffectSource,
+    is_field_effect_holder,
+)
 from battle.objects.define import (
     FATE_INTERVENTION_ATTACK_BONUS,
     ActionType,
@@ -49,6 +54,7 @@ class CalculatorMutableData:
         buff_remove_list: Optional[list[BuffRemoveData]] = None,
         apply_timing: Optional[RoundPhaseType] = None,
         debuff_clear_list: Optional[list[CharacterId]] = None,
+        field_effect_ops: Optional[list[FieldEffectOp]] = None,
     ):
         self.move_list: list[MoveData] = move_list
         self.damage_data_list: list[DamageCalculateData] = [
@@ -64,6 +70,11 @@ class CalculatorMutableData:
         ]
         self.apply_timing: Optional[RoundPhaseType] = apply_timing
         self.debuff_clear_list: list[CharacterId] = debuff_clear_list or []
+        self.field_effect_ops: list[FieldEffectOp] = field_effect_ops or []
+        # 실제로 반영된 필드 효과의 (표시 이름, 걷었는지). 답글 표시용이며,
+        # 이미 걸려 있어 무시됐거나 걸려 있지 않아 걷을 게 없었던 요청은
+        # 남기지 않는다.
+        self.field_effect_results: list[tuple[str, bool]] = []
         # 무효화된 대미지·회복의 (대상, 표시 메시지). NoDataEvent/ReflectEvent가 채운다.
         self.nullified_effect_list: list[tuple[CharacterId, str]] = []
         # 별도 계산기에서 이미 확정된 반응(ON_ENEMY_MOVE 반격 등)의 로그만
@@ -194,6 +205,7 @@ class CommandPartCalculator:
                 data_per_effect.buff_remove_list,
                 data_per_effect.apply_timing,
                 data_per_effect.debuff_clear_list,
+                data_per_effect.field_effect_ops,
             )
             for data_per_effect in data.data_per_effect
             if data_per_effect is not None
@@ -262,6 +274,13 @@ class CommandPartCalculator:
     ):
         self._prepare_redirects(phase)
 
+        # 필드 효과 부여/해제는 대상이 없어 페이즈별 분기가 따로 필요 없다.
+        # 적용 시점만 대미지와 같은 규칙으로 맞춘다 — 에너미 커맨드가 PRE와
+        # POST에서 두 번 처리되므로, 기준이 없으면 두 번 반영된다.
+        for i, mutable in enumerate(self.data_by_effect):
+            if self._damage_processed_in_phase(mutable.apply_timing, phase):
+                self._process_field_effect_ops(i)
+
         if phase == RoundPhaseType.ENEMY_PRE_ACTION:
             for i in range(len(self.data_by_effect)):
                 timing = self.data_by_effect[i].apply_timing
@@ -303,6 +322,21 @@ class CommandPartCalculator:
                 self._process_move(i)
                 self._consume_stacks_and_process_damage(i)
                 self._process_heal(i)
+
+    def _process_field_effect_ops(
+        self: "CommandPartCalculator", effect_seq_number: int
+    ) -> None:
+        mutable = self.data_by_effect[effect_seq_number]
+        for op in mutable.field_effect_ops:
+            if op.remove:
+                removed = self.context.remove_field_effect(op.effect_id)
+                if removed is not None:
+                    mutable.field_effect_results.append((removed.id, True))
+                continue
+
+            added = self.context.add_field_effect(op.effect_id, FieldEffectSource.SKILL)
+            if added is not None:
+                mutable.field_effect_results.append((added.id, False))
 
     def _process_move(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         for move_data in self.data_by_effect[effect_seq_number].move_list:
@@ -494,10 +528,12 @@ class CommandPartCalculator:
     def _is_live_damage_calc(
         context: "BattlefieldContext", damage_calc: "DamageCalculateData"
     ) -> bool:
-        return (
-            damage_calc.base.attacker_id in context.characters
-            and damage_calc.base.target_id in context.characters
+        # 필드 효과의 공격자는 전장에 없는 센티넬이다 — characters 조회만으로
+        # 가리면 "이미 사망한 공격자"로 오인해 항목을 통째로 버린다.
+        attacker_is_live = damage_calc.base.attacker_id in context.characters or (
+            is_field_effect_holder(damage_calc.base.attacker_id)
         )
+        return attacker_is_live and damage_calc.base.target_id in context.characters
 
     def _process_damage(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         # 리다이렉트로도 구제되지 않은, 이미 사망한 공격자/대상 항목은 건너뛴다.
@@ -600,14 +636,16 @@ class CommandPartCalculator:
         ):
             if not self._is_live_damage_calc(self.context, damage_calc):
                 continue
-            attacker = self.context.characters[damage_calc.base.attacker_id]
+            # 공격자가 필드 효과면 전장에 없다. 그런 항목은 속성을 스스로
+            # 정해서 오므로 시전자 속성을 볼 일이 없다.
+            attacker = self.context.characters.get(damage_calc.base.attacker_id)
             target = self.context.characters[damage_calc.base.target_id]
 
-            is_magic_attack = (
-                damage_calc.base.is_magic_attack
-                if damage_calc.base.is_magic_attack is not None
-                else attacker.status.is_magic_attacker
-            )
+            if damage_calc.base.is_magic_attack is not None:
+                is_magic_attack = damage_calc.base.is_magic_attack
+            else:
+                assert attacker is not None
+                is_magic_attack = attacker.status.is_magic_attacker
             if is_magic_attack:
                 damage_calc.received_modifiers.append(target.status.m_res)
 
@@ -974,6 +1012,17 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     target_name=target_id.name,
                     kind=BattleLogEntryKind.DEBUFF_CLEAR,
                     result="모든 디버프 제거",
+                )
+            )
+        for effect_id, removed in effect_data.field_effect_results:
+            # 필드 효과는 캐릭터가 아니라 전장에 걸리므로 대상 이름 자리에
+            # 효과 이름을 넣는다. 답글 포매터가 kind로 분기해 "대상: 결과"가
+            # 아닌 전용 문구로 내보낸다.
+            entries.append(
+                BattleLogEntry(
+                    target_name=effect_id,
+                    kind=BattleLogEntryKind.FIELD_EFFECT,
+                    result="필드 효과 해제" if removed else "필드 효과 발생",
                 )
             )
         entries.extend(effect_data.extra_log_entries)

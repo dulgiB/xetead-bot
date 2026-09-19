@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
@@ -9,6 +9,9 @@ if TYPE_CHECKING:
 
 
 class SkillEffectAddBuff(SkillEffectBase):
+    # 홀더를 given_by로 실어 나르기만 하고 스탯·위치를 읽지 않는다.
+    requires_holder_character: ClassVar[bool] = False
+
     def _expand(
         self,
         context: "BattlefieldContext",

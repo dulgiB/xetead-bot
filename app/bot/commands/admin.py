@@ -19,7 +19,12 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     FactionType,
 )
+from battle.objects.field_effect.models import FieldEffectSource
 from battle.objects.models import CharacterId
+from battle.objects.passive_skill.models import (
+    character_passive_config_error,
+    field_effect_config_error,
+)
 from battle.objects.skill.models import fate_config_error
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeBattleMode, SideType
@@ -81,6 +86,12 @@ _RE_MANUAL_PLACE = re.compile(
 )
 _RE_FORCE_ELIMINATE = re.compile(
     rf"\[{whitespace_tolerant_literal('탈락')}\s*/\s*([^/\]]+?)]"
+)
+_RE_FIELD_EFFECT_ADD = re.compile(
+    rf"\[{whitespace_tolerant_literal('필드효과')}\s*/\s*([^/\]]+?)]"
+)
+_RE_FIELD_EFFECT_REMOVE = re.compile(
+    rf"\[{whitespace_tolerant_literal('필드효과해제')}\s*/\s*([^/\]]+?)]"
 )
 _RE_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투개시')}]")
 _RE_BATTLE_NAME = re.compile(r"「(.+?)」")
@@ -211,6 +222,21 @@ def handle_admin_command(
         replies = [
             _cmd_force_eliminate(m.group(1).strip(), state)
             for m in force_eliminate_matches
+        ]
+        return AdminCommandResult("\n".join(replies))
+
+    # "필드효과해제"는 "필드효과" 패턴에도 걸리므로 해제를 먼저 본다.
+    if remove_matches := list(_RE_FIELD_EFFECT_REMOVE.finditer(text)):
+        replies = [
+            _cmd_field_effect(m.group(1).strip(), state, remove=True)
+            for m in remove_matches
+        ]
+        return AdminCommandResult("\n".join(replies))
+
+    if add_matches := list(_RE_FIELD_EFFECT_ADD.finditer(text)):
+        replies = [
+            _cmd_field_effect(m.group(1).strip(), state, remove=False)
+            for m in add_matches
         ]
         return AdminCommandResult("\n".join(replies))
 
@@ -351,7 +377,7 @@ def _cmd_manual_place(
                 characters=build_field_characters(
                     state.session.context, include_hp=False
                 ),
-                meta={"name": state.session.name},
+                meta=build_field_meta(state),
                 cache=state.sheet_cache,
             )
         except Exception:
@@ -398,7 +424,7 @@ def _cmd_force_eliminate(name: str, state: "BotState") -> str:
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             characters=build_field_characters(state.session.context, include_hp=False),
-            meta={"name": state.session.name},
+            meta=build_field_meta(state),
             cache=state.sheet_cache,
         )
     except Exception:
@@ -418,6 +444,88 @@ def _cmd_force_eliminate(name: str, state: "BotState") -> str:
         _log_system_error("공개 필드 시트 실시간 갱신")
 
     return format_eliminated_characters(removed)
+
+
+def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
+    """`[필드효과/이름]` / `[필드효과해제/이름]` — 전장 전체에 걸리는 효과를
+    admin이 직접 올리거나 걷는다. 이름은 "스킬_패시브" 시트의 id다.
+
+    필드 효과는 지속 턴수가 없어 해제하기 전까지 유지되므로, 올리는 것과
+    걷는 것이 한 쌍으로 필요하다."""
+    if state.session is None or not state.session.started:
+        return "◊ 진행 중인 전투가 없습니다."
+
+    context = state.session.context
+    # 필드 효과 id에 밑줄이 섞이면 마크다운 답글에서 강조로 먹히므로
+    # 화면에 내보내는 이름은 반드시 이스케이프한다(escape_markdown 참고).
+    if remove:
+        removed = context.remove_field_effect(name)
+        if removed is None:
+            return f"◊ 필드 효과({escape_markdown(name)})는 전장에 걸려 있지 않습니다."
+        reply = f"◊ 필드 효과 해제: {escape_markdown(removed.id)}"
+    else:
+        try:
+            added = context.add_field_effect(name, FieldEffectSource.ADMIN)
+        except CommandValidationError as e:
+            # 메시지에 사용자가 입력한 id가 그대로 들어 있다.
+            return f"◊ {escape_markdown(str(e))}"
+        if added is None:
+            return f"◊ 필드 효과({escape_markdown(name)})는 이미 전장에 걸려 있습니다."
+        reply = f"◊ 필드 효과 발생: {escape_markdown(added.id)}"
+
+    _sync_field_sheets(state)
+    return reply
+
+
+def _sync_field_sheets(state: "BotState") -> None:
+    """필드 상태를 바꾼 admin 커맨드가 공통으로 하는 시트 반영. 실패해도
+    전투 진행을 막지 않도록 각각 따로 감싼다."""
+    assert state.session is not None
+    try:
+        upsert_field_row(
+            state.spreadsheet,
+            str(state.preparation_status_id),
+            battle_type=FieldBattleType.MAIN,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            characters=build_field_characters(state.session.context, include_hp=False),
+            meta=build_field_meta(state),
+            cache=state.sheet_cache,
+        )
+    except Exception:
+        _log_system_error("필드 시트 저장")
+
+    try:
+        render_public_field_sheet(
+            state.field_spreadsheet,
+            state.session.context,
+            round_n=state.session.round_n,
+            phase=state.session.current_phase.value,
+            enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            battle_name=state.session.name,
+            cache=state.field_sheet_cache,
+        )
+    except Exception:
+        _log_system_error("공개 필드 시트 실시간 갱신")
+
+
+def build_field_meta(state: "BotState") -> dict:
+    """ "필드" 시트 meta_json에 실을 본 전투 부가 상태.
+
+    필드 효과는 전용 컬럼 없이 여기에 실린다 — 봇이 재기동해도 전장에 걸려
+    있던 효과가 살아남아야 하기 때문이다."""
+    assert state.session is not None
+    return {
+        "name": state.session.name,
+        "field_effects": [
+            {
+                "id": effect.id,
+                "source": effect.source.value,
+                "source_detail": effect.source_detail,
+            }
+            for effect in state.session.context.field_effects.as_list()
+        ],
+    }
 
 
 def _check_enemy_skill_timing_config(state: "BotState") -> Optional[str]:
@@ -487,6 +595,44 @@ def _check_fate_boost_config(state: "BotState") -> Optional[str]:
     )
 
 
+def _check_field_effect_config(state: "BotState") -> Optional[str]:
+    """ "스킬_패시브" 시트에서 필드 효과와 캐릭터 패시브가 서로의 자리에 잘못
+    들어간 조합을 찾아 admin에게만 보낼 경고를 만든다.
+
+    _check_fate_boost_config()와 같은 이유로 전투를 세우지는 않는다 — 어긋난
+    행 하나가 빠질 뿐인데 전투 전체를 막으면 손해가 크다. 다만 그 어긋남은
+    전투 중에 "아무 일도 일어나지 않음"으로 드러나 원인을 짚기 어려우므로,
+    개시 시점에 알려 둔다.
+    """
+    if state.session is None:
+        return None
+    context = state.session.context
+
+    problems = [
+        error
+        for data in context.all_passive_skill_data()
+        if (error := field_effect_config_error(data)) is not None
+    ]
+
+    # 이 전투에 실제로 배치된 캐릭터가 필드 효과 행을 패시브로 달고 있는 경우.
+    placed_passive_ids = {
+        character_data.passive_skill_id
+        for name, _, _ in state.pending_placements
+        if (character_data := state.name_dict.get(name)) is not None
+        and character_data.passive_skill_id
+    }
+    for passive_id in sorted(placed_passive_ids):
+        data = context.get_passive_skill_data_by_id(passive_id)
+        if data is not None and (error := character_passive_config_error(data)):
+            problems.append(error)
+
+    if not problems:
+        return None
+
+    lines = "\n".join(f"- {problem}" for problem in problems)
+    return f"◊ '스킬_패시브' 시트의 필드 효과 설정에 문제가 있습니다.\n{lines}"
+
+
 def _cmd_battle_start(
     state: "BotState", battle_name: Optional[str] = None
 ) -> AdminCommandResult:
@@ -511,6 +657,7 @@ def _cmd_battle_start(
     # 키워드 보정 설정 오류는 전투를 세우지 않고, 아래에서 개시 결과와 함께
     # admin DM으로만 보낸다.
     fate_config_warning = _check_fate_boost_config(state)
+    field_effect_warning = _check_field_effect_config(state)
 
     # 1. 수동 배치 처리 (pending_placements)
     errors: list[str] = []
@@ -562,7 +709,7 @@ def _cmd_battle_start(
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             characters=build_field_characters(state.session.context, include_hp=False),
-            meta={"name": state.session.name},
+            meta=build_field_meta(state),
             cache=state.sheet_cache,
         )
     except Exception:
@@ -602,7 +749,12 @@ def _cmd_battle_start(
         game_post,
         attach_field_image=True,
         game_post_calc_text=game_post_calc,
-        admin_dm_text=fate_config_warning,
+        admin_dm_text="\n\n".join(
+            warning
+            for warning in (fate_config_warning, field_effect_warning)
+            if warning
+        )
+        or None,
     )
 
 
@@ -622,7 +774,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             round_n=state.session.round_n,
             phase=new_phase.value,
             characters=build_field_characters(state.session.context, include_hp=False),
-            meta={"name": state.session.name},
+            meta=build_field_meta(state),
             cache=state.sheet_cache,
         )
     except Exception:
@@ -725,7 +877,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             round_n=state.session.round_n,
             phase=new_phase.value,
             characters=build_field_characters(state.session.context, include_hp=False),
-            meta={"name": state.session.name},
+            meta=build_field_meta(state),
             cache=state.sheet_cache,
         )
     except Exception:
@@ -811,7 +963,7 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
             phase=state.session.current_phase.value,
             characters=build_field_characters(context, include_hp=False),
             ended=True,
-            meta={"name": state.session.name},
+            meta=build_field_meta(state),
             cache=state.sheet_cache,
         )
     except Exception:
