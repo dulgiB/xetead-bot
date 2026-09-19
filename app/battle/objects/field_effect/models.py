@@ -29,11 +29,15 @@ def is_field_effect_holder(char_id: CharacterId) -> bool:
 
 class FieldEffectSource(str, Enum):
     """이 필드 효과가 어떻게 전장에 올라왔는지. 답글·필드 시트 표시용이며,
-    제거 권한을 가르지는 않는다 — 어느 출처든 admin이 해제할 수 있다."""
+    제거 권한을 가르지는 않는다 — 어느 출처든 admin이 해제할 수 있다.
+
+    admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부르는 기존
+    이름과 맞추기 위해서다(commands/admin.py의 ADMIN_ID).
+    """
 
     CHARM = "부적"
     SKILL = "스킬"
-    ADMIN = "관리자"
+    ADMIN = "시스템"
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,9 @@ class FieldEffect:
         return self.data.description
 
     def display_label(self) -> str:
-        if self.source_detail:
-            return f"{self.id} ({self.source.value}: {self.source_detail})"
-        return f"{self.id} ({self.source.value})"
+        """`이름[출처]` 형태의 표시 라벨.
+
+        대괄호 안은 출처를 특정할 수 있으면 그 이름(부적 이름 등), 아니면
+        출처 종류다 — 어느 부적이 걸었는지가 종류보다 쓸모 있는 정보다.
+        """
+        return f"{self.id}[{self.source_detail or self.source.value}]"
