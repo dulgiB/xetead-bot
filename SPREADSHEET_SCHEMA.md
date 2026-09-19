@@ -184,6 +184,7 @@
 | `TargetAttackedHolderLastRoundCondition`| 직전 라운드에 대상이 holder를 공격함                                            | (없음)              |
 | `HolderDidNotMoveThisTurnCondition`     | 이번 라운드 holder가 이동하지 않음                                              | (없음)              |
 | `SameTargetAsLastRoundCondition`        | 직전 라운드에도 holder가 같은 대상을 공격함                                        | (없음)              |
+| `SameTargetAsPreviousAttackCondition`   | 직전 라운드 또는 이번 라운드에 holder가 이미 그 대상을 공격함                            | (없음)              |
 | `HealedNonSelfCondition`                | holder가 자신 외 대상에게 회복을 부여하는 상황                                      | (없음)              |
 | `EnemyInRangeCountCondition`            | holder 사거리 내 적 수가 `value`명 이상                                       | 명수                |
 | `AllyInRangeCountCondition`             | holder 사거리 내 아군(자신 제외) 수가 `value`명 이상                              | 명수                |

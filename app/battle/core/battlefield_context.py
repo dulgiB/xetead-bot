@@ -97,6 +97,10 @@ class BattlefieldContext:
         self.prev_round_results: list[CommandPartProcessResult] = []
         self.moved_this_round: set[CharacterId] = set()
         self.damaged_this_round: set[CharacterId] = set()
+        # 이번 라운드에 대미지가 실제로 적용된 (공격자, 대상) 조합.
+        # results는 커맨드 하나가 끝나야 채워지므로, 같은 커맨드 안에서
+        # "방금 때린 대상을 또 때렸는가"를 보려면 이 집합이 필요하다.
+        self.attacked_this_round: set[tuple[CharacterId, CharacterId]] = set()
         # 직전 라운드의 damaged_this_round 스냅샷. 라운드 시작 시점에 "지난
         # 라운드에 누가 맞았는가"를 읽어야 하는 조건용이다 — 라운드 종료
         # 트리거로 버프를 걸면 같은 on_round_end()가 곧바로 턴을 차감해
@@ -275,6 +279,7 @@ class BattlefieldContext:
         self.moved_this_round = set()
         self.damaged_this_round = set()
         self.prev_damaged_this_round = set()
+        self.attacked_this_round = set()
 
     def add_character(
         self,
@@ -447,6 +452,7 @@ class BattlefieldContext:
             calculator, attacker_id, target_id, effect_seq_number
         )
         target.status.curr_hp = max(0, target.status.curr_hp - final_value)
+        self.attacked_this_round.add((attacker_id, target_id))
         print_apply_damage(attacker_id, target_id, damage_value, final_value)
         return final_value
 
@@ -470,6 +476,7 @@ class BattlefieldContext:
 
     def on_start_round(self):
         self.moved_this_round = set()
+        self.attacked_this_round = set()
         # 지우기 전에 스냅샷해 둬야 ON_ROUND_START 조건이 지난 라운드의
         # 피격 기록을 읽을 수 있다.
         self.prev_damaged_this_round = self.damaged_this_round
