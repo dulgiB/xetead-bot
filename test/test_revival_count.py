@@ -88,7 +88,7 @@ def test_revival_increases_received_damage():
     _run(revived, f"[Cost2Skill/{_TARGET.name}]")
     revived_damage = 100 - revived.characters[_TARGET].status.curr_hp
 
-    # 고정 대미지에도 적용되어야 한다 (마법 저항과 같은 게임 메커니즘).
+    # 버프가 아니라 상시로 붙는 메커니즘이므로 고정 대미지에도 적용된다.
     assert plain_damage == _FIXED_DAMAGE
     assert revived_damage == 36  # 30 × (1 + 0.2)
 

@@ -9,6 +9,7 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.core.commands.models import CommandPartProcessResult
     from battle.objects.character.combat_character import CombatCharacter
 
 
@@ -71,6 +72,22 @@ def _any_damaged_in_holder_scope(
             context, holder, same_faction=True, include_self=include_self, in_range=True
         )
     )
+
+
+def _attacked_in_results(
+    results: list["CommandPartProcessResult"],
+    attacker: CharacterId,
+    target: CharacterId,
+) -> bool:
+    """기록된 커맨드 결과 안에 attacker가 target에게 넣은 대미지 항목이 있는지."""
+    for part_result in results:
+        for data in part_result.expanded_part.data_per_effect:
+            if data is None:
+                continue
+            for damage in data.damage_list:
+                if damage.attacker_id == attacker and damage.target_id == target:
+                    return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -304,17 +321,34 @@ class SameTargetAsLastRoundCondition(Condition):
     ) -> bool:
         if attacker_or_target is None:
             return False
-        for part_result in context.prev_round_results:
-            for data in part_result.expanded_part.data_per_effect:
-                if data is None:
-                    continue
-                for damage in data.damage_list:
-                    if (
-                        damage.attacker_id == holder
-                        and damage.target_id == attacker_or_target
-                    ):
-                        return True
-        return False
+        return _attacked_in_results(
+            context.prev_round_results, holder, attacker_or_target
+        )
+
+
+@dataclass(frozen=True)
+class SameTargetAsPreviousAttackCondition(Condition):
+    """holder가 attacker_or_target을 직전 라운드에 공격했거나, 이번 라운드에
+    이미 한 번 공격했을 때 True.
+
+    이번 라운드분은 `context.results`가 아니라 `attacked_this_round`로 본다 —
+    results는 커맨드 하나가 끝나야 채워지므로, `공격-공격`처럼 한 커맨드 안에서
+    같은 대상을 거듭 때리는 경우를 results로 보면 두 번째 타격에서도 거짓이
+    된다."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if attacker_or_target is None:
+            return False
+        if (holder, attacker_or_target) in context.attacked_this_round:
+            return True
+        return _attacked_in_results(
+            context.prev_round_results, holder, attacker_or_target
+        )
 
 
 @dataclass(frozen=True)

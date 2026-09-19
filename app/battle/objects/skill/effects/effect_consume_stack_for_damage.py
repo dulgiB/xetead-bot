@@ -24,8 +24,9 @@ class SkillEffectConsumeStackForDamage(SkillEffectBase):
     고정 대미지 — 주는/받는 대미지 버프의 배율을 받지 않는다. "(소모한
     스택 수)×N만큼 최종 대미지가 고정으로 증가한다"처럼 같은 스킬의 굴림
     대미지와 달리 배율 밖에 있어야 하는 항목을 위한 효과이기 때문이다.
-    (m_res·부활 페널티·희생 방어 경감처럼 버프가 아닌 게임 메커니즘
-    — applies_to_fixed=True — 은 다른 고정 대미지와 마찬가지로 적용된다.)
+    (부활 페널티·희생 방어 경감처럼 버프가 아닌 게임 메커니즘
+    — applies_to_fixed=True — 은 다른 고정 대미지와 마찬가지로 적용된다.
+    마법 저항은 고정 대미지에 관여하지 않는다.)
     값 자체를 ValueSourceType.FIXED로 둘 수는 없어 배율만 떼어낸다
     (BaseValueIndicator.ignores_value_modifiers): 소모량은 실제 차감 시점에야
     확정되므로, 전개 시점에 미리 계산하면 한 커맨드가 같은 스킬을 두 번

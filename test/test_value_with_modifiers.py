@@ -133,9 +133,7 @@ def test_format_calculation_matches_given_received_group_example():
         ],
         received_modifiers=[
             FloatValueModifier(source_name="받는 대미지 감소", value=-10),
-            FloatValueModifier(
-                source_name="마법 저항", value=15, applies_to_fixed=True
-            ),
+            FloatValueModifier(source_name="마법 저항", value=15),
         ],
     )
     value.roll_result = DiceRollResult(bonus_list=[4], n_sides=6, rolls=[3])
