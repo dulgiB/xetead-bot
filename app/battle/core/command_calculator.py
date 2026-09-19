@@ -649,7 +649,8 @@ class CommandPartCalculator:
             if is_magic_attack:
                 damage_calc.received_modifiers.append(target.status.m_res)
 
-            # m_res와 같은 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
+            # 버프가 아니라 캐릭터에 상시로 붙는 게임 메커니즘이므로 FIXED
+            # 대미지에도 적용된다.
             revival_penalty = target.status.revival_penalty
             if revival_penalty is not None:
                 damage_calc.received_modifiers.append(revival_penalty)

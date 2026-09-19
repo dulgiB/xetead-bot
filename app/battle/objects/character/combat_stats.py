@@ -88,20 +88,16 @@ class CombatStats:
 
     @property
     def m_res(self) -> FloatValueModifier:
-        # 버프가 아니라 게임 메커니즘이므로 FIXED 대미지에도 적용된다.
+        # 고정 대미지(FIXED)에는 적용되지 않는다 — "N만큼 고정 대미지"라고 적은
+        # 스킬이 대상의 저항에 따라 다른 값을 내면 시트에 적은 수치와 실제가
+        # 어긋나기 때문이다. 배율이 붙는 대미지에만 관여한다.
         # value는 퍼센트 포인트 단위다(15 → ±15%).
         if self._m_res == MagicResistanceType.WEAK:
-            return FloatValueModifier(
-                source_name="마법 저항", value=15, applies_to_fixed=True
-            )
+            return FloatValueModifier(source_name="마법 저항", value=15)
         elif self._m_res == MagicResistanceType.NORMAL:
-            return FloatValueModifier(
-                source_name="마법 저항", value=0, applies_to_fixed=True
-            )
+            return FloatValueModifier(source_name="마법 저항", value=0)
         elif self._m_res == MagicResistanceType.STRONG:
-            return FloatValueModifier(
-                source_name="마법 저항", value=-15, applies_to_fixed=True
-            )
+            return FloatValueModifier(source_name="마법 저항", value=-15)
         else:
             raise ValueError(f"Unknown MagicResistanceType: {self._m_res}")
 
@@ -119,8 +115,10 @@ class CombatStats:
         """부활 횟수만큼 받는 대미지가 늘어나는 상시 페널티. 부활한 적이 없으면
         None을 반환한다.
 
-        m_res와 마찬가지로 버프가 아니라 게임 메커니즘이므로 FIXED 대미지에도
-        적용된다. value는 퍼센트 포인트 단위다(1회 → +10%).
+        버프가 아니라 캐릭터에 상시로 붙는 게임 메커니즘이므로 FIXED 대미지에도
+        적용된다(수치를 고정으로 적은 스킬에 대상의 저항을 얹지 않으려고
+        FIXED에서 빠지는 m_res와는 다르다). value는 퍼센트 포인트 단위다
+        (1회 → +10%).
         """
         if self._revival_count <= 0:
             return None

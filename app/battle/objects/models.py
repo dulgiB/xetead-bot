@@ -38,8 +38,10 @@ class BuffUid:
 @dataclass(frozen=True)
 class ValueModifierBase:
     source_name: str
-    # True면 FIXED 값에도 적용된다 — m_res·희생 방어 경감처럼 버프가 아닌
-    # 게임 메커니즘용이고, 버프 유래 modifier는 기본값 False를 그대로 쓴다.
+    # True면 FIXED 값에도 적용된다 — 부활 페널티·희생 방어 경감처럼 버프가
+    # 아닌 게임 메커니즘용이고, 버프 유래 modifier는 기본값 False를 그대로
+    # 쓴다. 마법 저항은 게임 메커니즘이지만 여기 들지 않는다(CombatStats.m_res
+    # 참고).
     # kw_only는 서브클래스가 추가하는 필수 필드 value가 기본값 있는 필드
     # 뒤에 오게 되는 dataclass 순서 제약을 피하기 위함이다.
     applies_to_fixed: bool = field(default=False, kw_only=True)
@@ -67,7 +69,7 @@ class BaseValueIndicator:
     # "{값}[{buff_id}]"로 라벨링해 어느 버프에서 왔는지 보여주는 데 쓴다.
     consumed_buff_id: Optional[str] = None
     # True면 FIXED 값과 똑같이 주는/받는 대미지 버프의 영향을 받지 않는다
-    # (m_res·부활 페널티처럼 applies_to_fixed=True인 게임 메커니즘은 그대로
+    # (부활 페널티처럼 applies_to_fixed=True인 게임 메커니즘은 그대로
     # 적용된다). value_source를 FIXED로 바꾸는 것과 다른 점은 스킬 계수가
     # 살아 있다는 것 — "런타임에 정해지는 수치 × 계수"를 고정 대미지로
     # 내야 할 때 쓴다(예: 소모한 스택 수 × 스택당 고정 대미지).
