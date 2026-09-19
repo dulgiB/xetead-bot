@@ -701,6 +701,67 @@ class MastodonBotListener(StreamListener):
                 return ps
         return None
 
+    def _resolve_practice_for_proxy(
+        self,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        state: "BotState",
+        *,
+        require_investigation: bool,
+    ) -> Optional[PracticeBattleState]:
+        """admin/world의 프록시 게시물이 어느 대련/상시전투 스레드에 속하는지
+        찾는다. 어디에도 속하지 않으면 None.
+
+        _resolve_practice()(캐릭터 본인 답글)와 같은 규칙을 프록시에도
+        적용하기 위한 것이다. 프록시는 발신자가 admin/world라
+        `expected_accts` 기준으로 걸러낼 수 없어 별도 경로로 둔다.
+
+        **이름만으로 세션을 고르면 안 된다.** 종료되지 않은 세션에 같은
+        이름이 남아 있으면 다른 전장(본 전투 등)으로 보낸 프록시를 그쪽이
+        조용히 가져간다 — 오류도 로그도 없이 엉뚱한 세션의 페이즈 안내만
+        돌아온다. 동시에 여러 대련을 진행할 수 있으므로(state.practices가
+        dict) 이름이 겹칠 여지는 상시 존재한다.
+        """
+        if in_reply_to_id is None:
+            return None
+
+        def _eligible(ps: PracticeBattleState) -> bool:
+            if ps.active_post_id is None:
+                return False
+            return ps.is_investigation if require_investigation else True
+
+        direct = state.practices.get(in_reply_to_id)
+        if direct is not None and _eligible(direct):
+            return direct
+
+        candidates = [ps for ps in state.practices.values() if _eligible(ps)]
+        if not candidates:
+            return None
+
+        # 진행 중인 세션이 있을 때만 스레드를 조회한다 — 대련과 무관한
+        # 고빈도 admin 멘션까지 매번 API를 한 번 더 쓰지 않도록.
+        try:
+            context = self._mastodon.status_context(status_id)
+        except Exception:
+            logger.exception(
+                "스레드 대련 세션 조회 실패 (프록시, status_id=%s)", status_id
+            )
+            return None
+        ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
+        if not ancestor_ids:
+            return None
+
+        for ps in candidates:
+            # field_id(전투 개시 게시물)는 세션 내내 고정이라 스레드 어느
+            # 위치에서든 조상으로 잡힌다. 페이즈가 막 넘어간 직후를 위해
+            # prep/active 게시물도 함께 본다.
+            posts = {ps.active_post_id, ps.prep_post_id}
+            if ps.field_id.isdigit():
+                posts.add(int(ps.field_id))
+            if posts & ancestor_ids:
+                return ps
+        return None
+
     def _resolve_investigation_session(
         self,
         acct: str,
@@ -768,6 +829,9 @@ class MastodonBotListener(StreamListener):
         # 대신 입력) — admin 라우팅보다 먼저 처리해야 캐릭터 본인 답글과
         # 똑같이 처리 직후 자동으로 다음 페이즈로 넘어간다. 대련은 참가자
         # 전원이 실제 계정이라 world에게는 상시전투만 허용한다.
+        # 이 분기가 admin 라우팅보다 먼저인 만큼 대상 세션을 스레드로
+        # 좁힌다 — 이름만 보면 종료되지 않은 세션이 본 전투 프록시를
+        # 가로챈다.
         if is_admin or is_world:
             (
                 proxy_reply,
@@ -777,7 +841,15 @@ class MastodonBotListener(StreamListener):
                 proxy_ended,
                 proxy_ps,
             ) = _handle_practice_proxy_command(
-                text, state, acct, require_investigation=not is_admin
+                text,
+                state,
+                acct,
+                session=self._resolve_practice_for_proxy(
+                    status_id,
+                    in_reply_to_id,
+                    state,
+                    require_investigation=not is_admin,
+                ),
             )
             if proxy_ps is not None:
                 assert proxy_reply is not None
@@ -1759,7 +1831,11 @@ def _apply_duel_fate_cost(
 
 
 def _handle_practice_proxy_command(
-    text: str, state: "BotState", acct: str, *, require_investigation: bool
+    text: str,
+    state: "BotState",
+    acct: str,
+    *,
+    session: Optional[PracticeBattleState],
 ) -> tuple[
     Optional[str],
     str,
@@ -1770,23 +1846,26 @@ def _handle_practice_proxy_command(
 ]:
     """대련/상시전투 중 admin/world가 계정이 없는 캐릭터(주로 에너미)의
     커맨드를 프록시로 대신 입력한다. text에서 "(◊ )이름 [커맨드]" 패턴을
-    모두 찾아, 조건에 맞는 활성 대련/상시전투 참가자로 해석되는 줄을 위에서부터
-    차례로 처리한다 — 한 페이즈는 그 팀 전원이 선언해야 넘어가므로, 계정 없는
+    모두 찾아, `session`의 참가자로 해석되는 줄을 위에서부터 차례로
+    처리한다 — 한 페이즈는 그 팀 전원이 선언해야 넘어가므로, 계정 없는
     에너미가 여럿이면 한 게시물에 줄을 나눠 한꺼번에 넣을 수 있어야 한다.
 
-    require_investigation이 True면(world 계정) 상시전투가 아닌 대련
-    참가자는 대상에서 제외한다 — world는 상시전투 맥락에서만 프록시가
-    허용된다.
+    `session`은 호출측이 **스레드로** 정해서 넘긴다
+    (_resolve_practice_for_proxy). None이면 이 게시물이 어느 대련/상시전투
+    스레드에도 속하지 않는다는 뜻이라 아무 줄도 처리하지 않는다 — 이름만으로
+    세션을 고르면 종료되지 않은 세션이 다른 전장의 프록시를 조용히 가져간다.
+    한 게시물이 서로 다른 세션을 동시에 진행시킬 수 없는 것도 같은 이유다
+    (어느 쪽 active_post_id로 정산 게시물을 이을지 정할 수 없다).
 
     캐릭터 본인 답글 경로(_handle_practice_command)와 동일하게, 각 커맨드
     처리 직후 _finalize_practice_phase로 페이즈 전환을 판정한다(그 팀 전원이
     선언을 마쳤을 때만 실제로 넘어간다).
 
     반환값: (reply_text_or_None, calc_text, game_post_text_or_None,
-    battle_logs, ended, ps_or_None). ps가 None이면 이 text에서 조건에 맞는
-    대상을 찾지 못했다는 뜻 — 호출측은 기존 admin 라우팅(본 전투 프록시 등)
-    으로 넘어가야 한다. 여러 줄을 처리한 경우 reply/calc는 빈 줄로 이어
-    붙이고 battle_logs에는 줄마다 하나씩 담긴다."""
+    battle_logs, ended, ps_or_None). ps가 None이면 처리한 줄이 없다는 뜻 —
+    호출측은 기존 admin 라우팅(본 전투 프록시 등)으로 넘어가야 한다. 여러
+    줄을 처리한 경우 reply/calc는 빈 줄로 이어 붙이고 battle_logs에는
+    줄마다 하나씩 담긴다."""
     ps: Optional[PracticeBattleState] = None
     reply_parts: list[str] = []
     calc_parts: list[str] = []
@@ -1813,25 +1892,16 @@ def _handle_practice_proxy_command(
             ps,
         )
 
+    if session is None:
+        return _result()
+
     for m in admin_commands._RE_PROXY.finditer(text):
         char_name, cmd_str = m.group(1).strip(), m.group(2).strip()
-        char_id = None
-        for candidate in state.practices.values():
-            if candidate.active_post_id is None:
-                continue
-            if require_investigation and not candidate.is_investigation:
-                continue
-            # 이미 어느 세션을 처리 중이면 그 세션의 참가자만 이어서 받는다 —
-            # 한 게시물이 서로 다른 대련 두 개를 동시에 진행시키면 어느 쪽
-            # active_post_id로 정산 게시물을 이어야 할지 정할 수 없다.
-            if ps is not None and candidate is not ps:
-                continue
-            resolved = candidate.context.resolve_character_id(CharacterId(char_name))
-            if resolved in candidate.context.characters:
-                ps, char_id = candidate, resolved
-                break
-        if ps is None or char_id is None:
+        resolved = session.context.resolve_character_id(CharacterId(char_name))
+        if resolved not in session.context.characters:
+            # 이 스레드의 참가자가 아닌 이름은 이 세션의 커맨드가 아니다.
             continue
+        ps, char_id = session, resolved
         if ended:
             # 앞선 줄에서 전투가 이미 끝났다 — 남은 줄은 처리할 대상이 없다.
             reply_parts.append(f"◊ {char_id.name}: 전투가 이미 종료되었습니다.")
