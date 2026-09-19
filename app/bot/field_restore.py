@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex, FactionType
+from battle.objects.field_effect.models import FieldEffectSource
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeBattleMode, PracticeRoundPhase, SideType
@@ -117,6 +118,29 @@ def _restore_characters_full(
     return restored
 
 
+def _restore_field_effects(session: "BattleSession", row: FieldRow) -> None:
+    """전장에 걸려 있던 필드 효과를 "필드" 시트 meta_json에서 되살린다.
+
+    필드 효과는 지속 턴수가 없어 해제하기 전까지 유지되므로, 복원하지 않으면
+    봇 재기동만으로 조용히 사라진다. 한 항목이 잘못돼도(시트에서 지워진 id 등)
+    복원 전체를 막지 않는다.
+    """
+    for entry in row.meta.get("field_effects", []) or []:
+        effect_id = str(entry.get("id", "") or "")
+        if not effect_id:
+            continue
+        try:
+            source = FieldEffectSource(entry.get("source", FieldEffectSource.ADMIN))
+        except ValueError:
+            source = FieldEffectSource.ADMIN
+        try:
+            session.context.add_field_effect(
+                effect_id, source, str(entry.get("source_detail", "") or "")
+            )
+        except CommandValidationError as e:
+            logger.warning("필드 효과 '%s' 복원 실패, 건너뜁니다: %s", effect_id, e)
+
+
 def _restore_main_battle(
     state: "BotState",
     row: FieldRow,
@@ -146,6 +170,10 @@ def _restore_main_battle(
             row.field_id,
         )
         return None
+
+    # 캐릭터 배치 뒤, on_battle_start() 전에 되살린다 — 뒤로 미루면 "전투
+    # 시작" 트리거 필드 효과가 이번 복원에서 발동하지 못한다.
+    _restore_field_effects(session, row)
 
     session.context.on_battle_start()
     session.restore_progress(row.round_n, phase)
