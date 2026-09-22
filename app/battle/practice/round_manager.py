@@ -1,7 +1,11 @@
 import random
 
 from battle.core.command_processors import process_ally_command
-from battle.core.commands.models import CharacterCommand, CommandProcessResult
+from battle.core.commands.models import (
+    BattleLogEntry,
+    CharacterCommand,
+    CommandProcessResult,
+)
 from battle.exceptions import CommandValidationError
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
@@ -28,6 +32,19 @@ class PracticeRoundManager:
         self._first_mover: SideType | None = None
         self._second_mover: SideType | None = None
         self._declared_this_phase: set[CharacterId] = set()
+        # 직전 end_round()의 결과. 본 전투의 RoundManager와 같은 형태로 들고
+        # 있는다 — 라운드 종료 DoT/HoT와 자동 탈락은 커맨드 답글이 아니라
+        # 라운드 전환 게시물에 실려야 하므로, 호출측이 나중에 꺼내 쓴다.
+        self._last_round_end_log_entries: list[BattleLogEntry] = []
+        self._last_eliminated_characters: list[CharacterId] = []
+
+    def get_last_round_end_log_entries(self) -> list[BattleLogEntry]:
+        """직전 end_round()에서 발동한 라운드 종료 버프의 로그 엔트리."""
+        return self._last_round_end_log_entries
+
+    def get_last_eliminated_characters(self) -> list[CharacterId]:
+        """직전 end_round()에서 체력 0으로 필드에서 제거된 캐릭터."""
+        return self._last_eliminated_characters
 
     @property
     def first_mover(self) -> SideType | None:
@@ -146,7 +163,10 @@ class PracticeRoundManager:
         행동할 기회를 얻지 못한 채 사라진다. 상대의 행동에 걸리기를 기대하는
         효과는 데이터 쪽에서 2턴 이상으로 적어 해결한다."""
         self._context.buff_container.on_enemy_post_action_resolved()
-        self._context.on_finish_round()
+        (
+            self._last_round_end_log_entries,
+            self._last_eliminated_characters,
+        ) = self._context.on_finish_round()
         self._phase = None
         self._declared_this_phase = set()
 
