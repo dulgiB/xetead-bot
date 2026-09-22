@@ -3,7 +3,7 @@
 결투는 대련과 진행이 같고 세 가지만 다르다:
   1. 임시 체력이 최대 체력의 절반이 아니라 최대 체력 그대로다.
   2. 라운드 상한이 없다 — 한쪽이 전멸할 때까지 계속된다.
-  3. 패배한 팀은 임시 체력이 아니라 시트의 실제 체력을 20 잃는다.
+  3. 패배한 팀은 임시 체력이 아니라 시트의 실제 체력을 최대 체력의 50% 잃는다.
 그리고 그 대가 구조 덕에 키워드 보정만은 허용된다(실제 체력에서 빠진다).
 
 대련/상시전투와 공유하는 진행 규칙 자체는 test_practice_* 다른 파일에서
@@ -30,7 +30,7 @@ from battle.objects.skill.effects import SkillEffectDamage  # noqa: E402
 from battle.objects.skill.models import SkillData  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import (  # noqa: E402
-    DUEL_DEFEAT_HP_PENALTY,
+    DUEL_DEFEAT_HP_PENALTY_PERCENT,
     PracticeBattleMode,
     PracticeRoundPhase,
     SideType,
@@ -62,10 +62,17 @@ class _FakeWorksheet:
 class _FakeSpreadsheet:
     """ "캐릭터" 시트만 가진 최소 스프레드시트."""
 
-    def __init__(self, hp_by_name: dict[str, int], max_hp: int = 100):
-        rows: list[list] = [["name", "curr_hp", "max_hp"]]
+    def __init__(
+        self,
+        hp_by_name: dict[str, int],
+        max_hp: int = 100,
+        *,
+        include_max_hp: bool = True,
+    ):
+        header = ["name", "curr_hp"] + (["max_hp"] if include_max_hp else [])
+        rows: list[list] = [header]
         for name, hp in hp_by_name.items():
-            rows.append([name, hp, max_hp])
+            rows.append([name, hp] + ([max_hp] if include_max_hp else []))
         self._sheets = {"캐릭터": _FakeWorksheet("캐릭터", rows)}
 
     def worksheet(self, name: str) -> _FakeWorksheet:
@@ -241,11 +248,24 @@ def test_defeated_side_loses_real_hp(monkeypatch):
 
     post = main_module._finish_practice_battle(state, ps, "후공 행동")
 
-    assert state.spreadsheet.hp_of(_B.name) == 80 - DUEL_DEFEAT_HP_PENALTY
+    assert state.spreadsheet.hp_of(_B.name) == 30
     assert state.spreadsheet.hp_of(_A.name) == 100
     assert "**【결투 패배 처리】**" in post
-    assert f"▹ {_B.name} | -{DUEL_DEFEAT_HP_PENALTY} → 60/100※" in post
+    assert f"▹ {_B.name} | -50 → 30/100※" in post
     assert "※ 실제 체력" in post
+
+
+def test_defeat_penalty_scales_with_each_max_hp(monkeypatch):
+    """대가는 고정값이 아니라 캐릭터별 최대 체력의 절반이다. 최대 체력이
+    홀수면 다른 절반 계산(max_hp // 2)과 같이 내림한다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 101, _B.name: 101}, max_hp=101)
+    ctx.characters[_B].status.curr_hp = 0
+
+    main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_B.name) == 101 - 101 // 2
+    assert state.spreadsheet.hp_of(_A.name) == 101
 
 
 def test_defeat_penalty_footnote_is_the_last_line_of_its_block(monkeypatch):
@@ -297,7 +317,25 @@ def test_retired_participant_still_pays_the_defeat_penalty(monkeypatch):
 
     main_module._finish_practice_battle(state, ps, "후공 행동")
 
-    assert state.spreadsheet.hp_of(_B.name) == 80 - DUEL_DEFEAT_HP_PENALTY
+    penalty = 100 * DUEL_DEFEAT_HP_PENALTY_PERCENT // 100
+    assert state.spreadsheet.hp_of(_B.name) == 80 - penalty
+
+
+def test_defeat_penalty_reports_failure_when_max_hp_is_unreadable(monkeypatch):
+    """최대 체력을 읽을 수 없으면 대가를 정할 수 없다. 0을 적용해 조용히
+    넘기지 않고 admin에게 확인을 요청한다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    state.spreadsheet = _FakeSpreadsheet(
+        {_A.name: 100, _B.name: 80}, include_max_hp=False
+    )
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_B.name) == 80
+    assert "실제 체력 반영에 실패했습니다" in post
+    assert _B.name in post.split("실제 체력 반영에 실패했습니다")[1]
 
 
 def test_practice_mode_never_touches_real_hp(monkeypatch):

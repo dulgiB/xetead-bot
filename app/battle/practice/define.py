@@ -1,8 +1,13 @@
 from enum import Enum
 
 # 결투에서 패배한 팀의 캐릭터가 잃는 실제 체력(임시 체력이 아니라 "캐릭터"
-# 시트의 체력).
-DUEL_DEFEAT_HP_PENALTY = 20
+# 시트의 체력)을 최대 체력에 대한 백분율로 적는다. 고정값으로 두면 최대
+# 체력이 큰 캐릭터일수록 대가가 가벼워져, 결투를 거는 쪽이 유리한 상대를
+# 고르는 것으로 대가를 줄일 수 있다.
+#
+# 깎는 양은 내림한다 — 절반 계산을 `max_hp // 2`로 두는 다른 지점
+# (PracticeBattleMode.uses_full_hp가 아닌 임시 체력 등)과 같은 기준이다.
+DUEL_DEFEAT_HP_PENALTY_PERCENT = 50
 
 
 class SideType(str, Enum):

@@ -21,7 +21,7 @@ from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 from battle.practice.define import (
-    DUEL_DEFEAT_HP_PENALTY,
+    DUEL_DEFEAT_HP_PENALTY_PERCENT,
     PracticeBattleMode,
     PracticeRoundPhase,
     SideType,
@@ -1619,7 +1619,8 @@ def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
 def _apply_duel_defeat_penalty(
     state: "BotState", ps: PracticeBattleState, winner: Optional[SideType]
 ) -> str:
-    """결투에서 패배한 팀 전원의 실제 체력을 깎고, 그 결과를 전투 중 결과 줄과
+    """결투에서 패배한 팀 전원의 실제 체력을 각자의 최대 체력
+    DUEL_DEFEAT_HP_PENALTY_PERCENT%만큼 깎고, 그 결과를 전투 중 결과 줄과
     같은 형식의 블록으로 반환한다(결투가 아니거나 무승부면 빈 문자열).
 
     대상은 필드에 남은 캐릭터가 아니라 시작 시점의 명부다 — 자진 기권한
@@ -1636,7 +1637,7 @@ def _apply_duel_defeat_penalty(
     changes, failed = log_sheets.apply_persistent_hp_delta(
         state.spreadsheet,
         names,
-        -DUEL_DEFEAT_HP_PENALTY,
+        -DUEL_DEFEAT_HP_PENALTY_PERCENT,
         cache=state.sheet_cache,
     )
 
