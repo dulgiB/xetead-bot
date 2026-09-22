@@ -206,6 +206,80 @@ def _maybe_side(value: object) -> Optional[SideType]:
         return None
 
 
+def _parse_declared_positions(
+    raw: dict,
+) -> dict[str, tuple[SideType, BattlefieldColumnIndex]]:
+    """필드 메타의 포지션 선언({acct: [진영, 열]})을 되돌린다. 인식할 수 없는
+    항목은 그 항목만 버린다 — 한 명의 값이 깨졌다고 세션 전체를 포기하면
+    손해가 더 크다(그 참가자만 다시 선언하면 된다)."""
+    positions: dict[str, tuple[SideType, BattlefieldColumnIndex]] = {}
+    for acct, value in raw.items():
+        try:
+            side_value, column_value = value
+            positions[acct] = (
+                SideType(side_value),
+                BattlefieldColumnIndex(column_value),
+            )
+        except (TypeError, ValueError):
+            logger.warning("포지션 선언 복원 실패, 건너뜁니다: %s=%r", acct, value)
+    return positions
+
+
+def _restore_practice_prep(
+    state: "BotState",
+    row: FieldRow,
+    buff_dict: dict,
+    skill_dict: dict,
+    passive_skill_dict: dict,
+    item_dict: dict,
+) -> Optional[str]:
+    """아직 라운드가 열리지 않은(포지션 선언 단계) 대련/결투/상시전투를
+    복원한다. 캐릭터도 페이즈도 없으므로 메타에 실어 둔 참여 대상과 지금까지
+    들어온 선언만 되살리면, 남은 참가자가 같은 준비 게시물에 이어서 선언해
+    그대로 전투를 시작할 수 있다."""
+    meta = row.meta
+    prep_post_id = meta.get("prep_post_id")
+    expected_accts = list(meta.get("expected_accts") or [])
+    if not prep_post_id or not expected_accts:
+        logger.warning(
+            "대련/상시전투 준비 단계 복원 실패: prep_post_id/참여 대상 메타가"
+            " 없습니다 (field_id=%s)",
+            row.field_id,
+        )
+        return None
+
+    mode = _PRACTICE_MODE_BY_FIELD_TYPE.get(
+        row.battle_type, PracticeBattleMode.PRACTICE
+    )
+    context = PracticeBattlefieldContext(
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        mode=mode,
+    )
+    # 게시물 id는 메타에 실린 값을 그대로 쓴다 — mastodon.py가 돌려주는 id가
+    # 문자열이라 state.practices의 키도 문자열이다. 여기서만 int로 바꾸면
+    # 복원된 세션이 어떤 답글과도 매칭되지 않는다(진행 중인 전투를 복원하는
+    # _restore_practice_battle도 active_post_id를 그대로 쓴다).
+    ps = PracticeBattleState(
+        context=context,
+        manager=PracticeRoundManager(context),
+        mode=mode,
+        prep_post_id=prep_post_id,
+        field_id=row.field_id,
+        visibility=meta.get("visibility", "public"),
+        expected_accts=expected_accts,
+        declared=_parse_declared_positions(meta.get("positions") or {}),
+    )
+    state.practices[prep_post_id] = ps
+
+    return (
+        f"{mode.value} 포지션 선언 단계 — 참여 대상 {len(expected_accts)}명 중 "
+        f"{len(ps.declared)}명 선언 완료 (field_id={row.field_id})"
+    )
+
+
 def _restore_practice_battle(
     state: "BotState",
     row: FieldRow,
@@ -214,6 +288,12 @@ def _restore_practice_battle(
     passive_skill_dict: dict,
     item_dict: dict,
 ) -> Optional[str]:
+    if row.round_n < 1:
+        # 라운드가 한 번도 열리지 않은 행 = 포지션 선언 단계.
+        return _restore_practice_prep(
+            state, row, buff_dict, skill_dict, passive_skill_dict, item_dict
+        )
+
     active_post_id = row.meta.get("active_post_id")
     if active_post_id is None:
         logger.warning(

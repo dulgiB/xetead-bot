@@ -215,6 +215,14 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         # 결투 패배 대가 대상. 자진 기권한 캐릭터는 필드 스냅샷에 남지 않아
         # 복원 후 명부를 다시 만들면 대가에서 빠져 버린다.
         "roster": {side.value: names for side, names in ps.roster_by_side.items()},
+        # 아래 둘은 포지션 선언 단계를 복원하기 위한 값이다. 라운드가 열린
+        # 뒤에는 캐릭터 스냅샷으로 대신할 수 있지만, 선언 단계의 행에는
+        # 배치된 캐릭터가 하나도 없어 이 둘이 유일한 복원 근거다.
+        "expected_accts": list(ps.expected_accts),
+        "positions": {
+            acct: [side.value, column.value]
+            for acct, (side, column) in ps.declared.items()
+        },
     }
 
 
@@ -240,6 +248,21 @@ def _upsert_practice_field_row(
         )
     except Exception:
         logger.exception("필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.field_id)
+
+
+def _persist_practice_prep(state: "BotState", ps: PracticeBattleState) -> None:
+    """포지션 선언 단계의 대련/결투/상시전투를 "필드" 시트에 기록한다.
+
+    라운드가 열리기 전에도 행을 남겨야 재기동이 선언 단계를 통째로 날리지
+    않는다 — 이 행이 없으면 그 상태는 메모리(state.practices)에만 있어,
+    봇을 다시 올리는 순간 참가자가 [대련]부터 다시 시작해야 한다.
+
+    field_id를 준비 게시물 id로 미리 고정하므로, 라운드가 열린 뒤에도
+    _begin_practice_rounds()가 같은 값을 쓰고 같은 행이 이어서 갱신된다."""
+    if not ps.prep_post_id:
+        return
+    ps.field_id = str(ps.prep_post_id)
+    _upsert_practice_field_row(state, ps, phase_value="")
 
 
 def _register_practice(
@@ -298,6 +321,7 @@ def _apply_game_post_side_effects(
         and result.practice_to_register is not None
     ):
         _register_practice(state, result.practice_to_register, new_post_id, prep=True)
+        _persist_practice_prep(state, result.practice_to_register)
     if state.session is not None and state.session.started:
         state.active_phase_post_id = (
             new_post_id if state.session.current_phase in _COMMAND_PHASES else None
@@ -960,6 +984,8 @@ class MastodonBotListener(StreamListener):
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
+                    else:
+                        _persist_practice_prep(state, ps)
             else:
                 # 대련: [N팀/N열] 포지션 선언
                 m = _RE_DECLARATION.search(text)
@@ -1004,6 +1030,10 @@ class MastodonBotListener(StreamListener):
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
+                    else:
+                        # 아직 전원이 선언하지 않았거나 한 팀이 비어 있다 —
+                        # 다음 선언을 기다리는 동안에도 상태를 남겨 둔다.
+                        _persist_practice_prep(state, ps)
             return
 
         # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)

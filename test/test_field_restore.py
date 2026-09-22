@@ -6,7 +6,11 @@ os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 import logging  # noqa: E402
 
 from battle.core.commands.define import RoundPhaseType  # noqa: E402
-from battle.objects.define import CombatStatType, FactionType  # noqa: E402
+from battle.objects.define import (  # noqa: E402
+    BattlefieldColumnIndex,
+    CombatStatType,
+    FactionType,
+)
 from battle.objects.models import CharacterId  # noqa: E402
 from battle.practice.define import (  # noqa: E402
     PracticeBattleMode,
@@ -413,3 +417,86 @@ def test_restore_all_skips_unrestorable_rows(monkeypatch):
 
     assert len(summaries) == 1
     assert state.session is not None
+
+
+def test_restore_practice_prep_stage_keeps_declared_positions():
+    """포지션 선언 단계(라운드가 아직 안 열린 행)도 복원된다.
+
+    이 행이 없던 시절에는 [대련] 직후의 상태가 메모리에만 있어, 봇을 다시
+    올리는 순간 참가자가 [대련]부터 다시 시작해야 했다."""
+    state = _make_state({})
+    row = FieldRow(
+        field_id="prep-9",
+        battle_type=FieldBattleType.DUEL,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={
+            # mastodon.py가 돌려주는 게시물 id는 문자열이다 — 복원도 같은
+            # 형태로 키를 만들어야 답글이 매칭된다.
+            "prep_post_id": "9001",
+            "active_post_id": None,
+            "visibility": "unlisted",
+            "expected_accts": ["acct_a", "acct_b"],
+            "positions": {"acct_a": [SideType.SIDE_1.value, 2]},
+        },
+    )
+
+    summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
+
+    assert summary is not None
+    assert "9001" in state.practices
+    ps = state.practices["9001"]
+    assert ps.mode == PracticeBattleMode.DUEL
+    assert ps.prep_post_id == "9001"
+    assert ps.active_post_id is None
+    assert ps.field_id == "prep-9"
+    assert ps.visibility == "unlisted"
+    assert ps.expected_accts == ["acct_a", "acct_b"]
+    assert ps.declared == {"acct_a": (SideType.SIDE_1, BattlefieldColumnIndex(2))}
+    # 아직 한 명이 남았으므로 전투를 시작할 수 있는 상태가 아니다.
+    assert ps.all_declared() is False
+
+
+def test_restore_practice_prep_stage_skips_broken_position_entries(caplog):
+    """포지션 한 건이 깨졌다고 세션 전체를 포기하지는 않는다 — 그 참가자만
+    다시 선언하면 된다."""
+    state = _make_state({})
+    row = FieldRow(
+        field_id="prep-9",
+        battle_type=FieldBattleType.PRACTICE,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={
+            "prep_post_id": "9002",
+            "expected_accts": ["acct_a", "acct_b"],
+            "positions": {
+                "acct_a": [SideType.SIDE_1.value, 0],
+                "acct_b": ["없는팀", 99],
+            },
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
+
+    assert summary is not None
+    assert set(state.practices["9002"].declared) == {"acct_a"}
+
+
+def test_restore_practice_prep_stage_fails_without_participants():
+    """참여 대상 메타가 없으면 누가 선언할 수 있는지 알 수 없어 복원을
+    포기한다 — 빈 명부로 살려 두면 아무도 진행할 수 없는 세션이 남는다."""
+    state = _make_state({})
+    row = FieldRow(
+        field_id="prep-9",
+        battle_type=FieldBattleType.PRACTICE,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={"prep_post_id": "9003"},
+    )
+
+    assert field_restore._restore_practice_battle(state, row, {}, {}, {}, {}) is None
+    assert not state.practices
