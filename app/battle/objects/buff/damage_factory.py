@@ -23,6 +23,7 @@ def make_coefficient_damage_calc(
     triggers_given_damage_passives: bool = True,
     triggers_received_damage_passives: bool = True,
     source_label: Optional[str] = None,
+    ignores_value_modifiers: bool = False,
 ) -> DamageCalculateData:
     """value_source × coefficient_value% 형태의 대미지 항목 하나를 만든다.
     반격/추가 대미지 계열 버프(BuffCounterDamageOn*, BuffCompanionGuardian,
@@ -41,7 +42,12 @@ def make_coefficient_damage_calc(
     triggers_received_damage_passives=False로 넘기면 이 대미지가
     "대미지를 맞았을 때" 반응하는 버프를 재유발하지 않는다 — DoT/반격류
     자신이 만들어내는 파생 대미지처럼, 이미 어떤 반응의 결과물인 대미지에
-    쓴다(연쇄 반응 방지)."""
+    쓴다(연쇄 반응 방지).
+
+    ignores_value_modifiers=True는 스킬 설명이 "고정" 대미지라고 밝힌
+    항목에 쓴다 — 계수는 살린 채 주는/받는 대미지 버프의 배율만 뗀다
+    (BaseValueIndicator.ignores_value_modifiers 참고). 부활 페널티처럼
+    버프가 아닌 게임 메커니즘은 그대로 적용된다."""
     return DamageCalculateData(
         base=DamageData(
             attacker_id=attacker_id,
@@ -54,6 +60,7 @@ def make_coefficient_damage_calc(
                     display_factors=display_factors,
                 ),
                 consumed_buff_id=consumed_buff_id,
+                ignores_value_modifiers=ignores_value_modifiers,
             ),
             is_magic_attack=is_magic_attack,
             triggers_given_damage_passives=triggers_given_damage_passives,

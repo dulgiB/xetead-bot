@@ -97,6 +97,25 @@ def _buff_dict() -> dict[str, BuffData]:
                 "reference_buff_id": "Mark",
             }
         ),
+        # [MarkDrain]이 "고정" 대미지임을 확인하기 위한 대조군. 실제 스킬셋에는
+        # 없지만, 배율 버프가 걸린 상태와 걸리지 않은 상태를 비교하려면 이런
+        # 버프가 하나 필요하다.
+        "DamageWard": BuffData.from_dict(
+            {
+                "id": "DamageWard",
+                "buff_name": "BuffReceivedDamage",
+                "duration_turn_value": 2,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value_0": -50,
+                "value_type_0": "퍼센트",
+                "condition": "",
+                "condition_value": "",
+                "description": "버프. 받는 대미지가 50% 감소한다.",
+                "type": "버프",
+                "max_stack": "",
+            }
+        ),
     }
 
 
@@ -490,6 +509,41 @@ class TestMarkDrainBuff:
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
         hp_after = ctx.characters[target].status.curr_hp
 
+        assert hp_before - hp_after == 15
+
+    def test_damage_ignores_received_damage_buffs(self):
+        """[MarkDrain]은 "고정" 대미지이므로 받는 대미지 버프의 배율을 받지
+        않는다 — 같은 스킬 설명을 읽고 고정이라고 이해한 플레이어가 버프
+        하나로 수치가 달라지는 것을 설명할 수 없기 때문이다. 부활 페널티처럼
+        버프가 아닌 게임 메커니즘은 그대로 걸린다(test_revival_count 참고)."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        target = CharacterId("적군")
+        ctx.add_character(
+            get_test_preset("MarkStacker"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=1000),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.buff_container.add(
+            _buff_add(
+                given_by="MarkStacker", applied_to="적군", buff_id="Mark", stack=3
+            )
+        )
+        ctx.buff_container.add(
+            _buff_add(given_by="MarkStacker", applied_to="적군", buff_id="MarkDrain")
+        )
+        ctx.buff_container.add(
+            _buff_add(given_by="적군", applied_to="적군", buff_id="DamageWard")
+        )
+
+        hp_before = ctx.characters[target].status.curr_hp
+        manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+        hp_after = ctx.characters[target].status.curr_hp
+
+        # 배율을 받았다면 floor(15 × 0.5) = 7이 됐을 것이다.
         assert hp_before - hp_after == 15
 
     def test_still_deals_damage_on_the_final_turn_before_expiry(self):
