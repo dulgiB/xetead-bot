@@ -27,6 +27,7 @@ from gspread.utils import ValueInputOption
 
 from battle.core.commands.models import BattleLogEntry
 from battle.objects.models import CharacterId
+from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 
 from bot.noncombat_state import InvestigationSession
 from bot.sheet_cache import SheetCache
@@ -167,6 +168,46 @@ def _get_or_create_worksheet(
 # ---------------------------------------------------------------------------
 
 
+def build_field_buffs(
+    context: "BattlefieldContext", char_id: CharacterId
+) -> list[dict]:
+    """캐릭터 한 명이 보유한 버프의 복원용 스냅샷.
+
+    패시브 스킬 래퍼(PassiveSkillWrapperBuff)는 "버프" 시트에 등록된 버프가
+    아니라 캐릭터 고유 특성이고 복원 시 on_battle_start()이 다시 등록하므로
+    담지 않는다. 같은 이유로 "버프" 시트에서 사라진 id도 건너뛴다 — 복원
+    시점에 조회가 실패할 값을 미리 남기지 않는다.
+
+    남은 턴/횟수·스택·부여 일련번호까지 담는 이유는 복원이 "다시 부여"가
+    아니라 "그 상태 그대로 이어받기"여야 하기 때문이다. 값이 기본값과 같은
+    항목은 빼서, 사람이 시트에서 직접 고칠 때 읽을 것이 적도록 한다.
+    """
+    rows = []
+    buffs = sorted(
+        context.buff_container.get_buffs_by(char_id, None),
+        key=lambda buff: buff.applied_at,
+    )
+    for buff in buffs:
+        if isinstance(buff, PassiveSkillWrapperBuff):
+            continue
+        buff_data = context.get_buff_data_by_id_or_none(buff.id)
+        if buff_data is None:
+            continue
+        row: dict = {"id": buff.id, "given_by": buff.given_by.name}
+        if buff.max_stack is not None:
+            row["stack"] = buff.stack_count
+        if buff.duration.remaining_turns is not None:
+            row["turns"] = buff.duration.remaining_turns
+        if buff.duration.remaining_count is not None:
+            row["count"] = buff.duration.remaining_count
+        if buff.value != buff_data.value:
+            row["value"] = buff.value
+        if buff.applied_at:
+            row["seq"] = buff.applied_at
+        rows.append(row)
+    return rows
+
+
 def build_field_characters(
     context: "BattlefieldContext", include_hp: bool
 ) -> list[dict]:
@@ -175,6 +216,9 @@ def build_field_characters(
     본 전투(include_hp=False)는 체력을 넣지 않는다 — 대신 "캐릭터" 시트의
     curr_hp가 진실 공급원이라 그쪽에서 복구한다. 대련/상시전투는 half-HP
     임시 캐릭터라 원본 캐릭터 시트에 쓸 수 없으므로 체력까지 필드에 담는다.
+
+    버프는 진영과 무관하게 담는다 — 체력과 달리 어느 시트에도 진실 공급원이
+    없어, 여기 남기지 않으면 재기동 시 통째로 사라진다.
     """
     rows = []
     for char_id, char in context.characters.items():
@@ -187,6 +231,9 @@ def build_field_characters(
         }
         if include_hp:
             row["curr_hp"] = char.status.curr_hp
+        buffs = build_field_buffs(context, char_id)
+        if buffs:
+            row["buffs"] = buffs
         rows.append(row)
     return rows
 

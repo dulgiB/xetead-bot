@@ -5,18 +5,23 @@
 재시작되면 통째로 사라진다 — 이 모듈은 그 상태를 최대한 되살리되, 다음은
 복원 대상이 아니다:
 
-- 버프/디버프, 스킬 사용 이력, 인벤토리 소비 내역: 캐릭터 시트의 최신 상태를
-  그대로 신뢰한다(요구사항: 재기동 시점의 값 우선).
+- 스킬 사용 이력, 인벤토리 소비 내역: 캐릭터 시트의 최신 상태를 그대로
+  신뢰한다(요구사항: 재기동 시점의 값 우선).
 - 소환수(동료): "캐릭터"/"에너미" 시트에 행이 없어 이름만으로 원본 스탯을
   다시 불러올 수 없다. 조용히 건너뛴다 — 필요하면 아군이 다시 소환한다.
 - 적이 PRE_ACTION에 선언했지만 아직 POST_ACTION에서 정산되지 않은 커맨드:
   RoundManager 인스턴스에만 존재했던 정보라 애초에 스냅샷 대상이 아니다.
   크래시가 정확히 이 구간에서 나면 적이 다시 선언해야 한다.
+
+버프/디버프는 캐릭터 스냅샷의 "buffs"에 남은 턴/횟수·스택까지 담겨 복원된다
+(_restore_buffs). 어느 시트에도 진실 공급원이 없는 상태라, 남기지 않으면
+재기동 때마다 통째로 사라지기 때문이다.
 """
 
 import logging
 from typing import TYPE_CHECKING, Optional
 
+from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.define import RoundPhaseType
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex, FactionType
@@ -141,6 +146,52 @@ def _restore_field_effects(session: "BattleSession", row: FieldRow) -> None:
             logger.warning("필드 효과 '%s' 복원 실패, 건너뜁니다: %s", effect_id, e)
 
 
+def _restore_buffs(context: "BattlefieldContext", characters: list[dict]) -> int:
+    """캐릭터 스냅샷에 담긴 버프를 되살리고, 되살린 개수를 반환한다.
+
+    **반드시 on_battle_start() 뒤에 불러야 한다.** 앞에 두면 "전투 시작"
+    트리거가 같은 버프를 다시 걸면서 지속시간을 시트 값으로 리셋해, 남은 턴이
+    스냅샷보다 늘어난다.
+
+    한 항목이 깨졌다고 전투 복원을 포기하지는 않는다 — 그 버프만 빠지는 편이
+    전투가 통째로 사라지는 것보다 낫다. "버프" 시트에서 사라진 id, 필드에 없는
+    대상도 같은 이유로 건너뛴다.
+    """
+    restored = 0
+    for entry in characters:
+        applied_to = CharacterId(entry.get("name", ""))
+        if applied_to not in context.characters:
+            continue
+        for raw in entry.get("buffs") or []:
+            try:
+                buff_id = raw["id"]
+                given_by = CharacterId(raw.get("given_by") or applied_to.name)
+                if context.get_buff_data_by_id_or_none(buff_id) is None:
+                    logger.warning(
+                        "'버프' 시트에 없는 id(%s)라 복원에서 건너뜁니다: %s",
+                        buff_id,
+                        applied_to.name,
+                    )
+                    continue
+                context.buff_container.restore(
+                    buff_id=buff_id,
+                    given_by=given_by,
+                    applied_to=applied_to,
+                    stack_count=raw.get("stack", 1),
+                    remaining_turns=raw.get("turns"),
+                    remaining_count=raw.get("count"),
+                    value_override=raw.get("value"),
+                    applied_at=raw.get("seq"),
+                )
+            except Exception:
+                logger.exception(
+                    "버프 복원 실패, 건너뜁니다: %s %r", applied_to.name, raw
+                )
+                continue
+            restored += 1
+    return restored
+
+
 def _restore_main_battle(
     state: "BotState",
     row: FieldRow,
@@ -176,6 +227,7 @@ def _restore_main_battle(
     _restore_field_effects(session, row)
 
     session.context.on_battle_start()
+    _restore_buffs(session.context, row.characters)
     session.restore_progress(row.round_n, phase)
     session.name = row.meta.get("name")
 
@@ -385,6 +437,7 @@ def _restore_practice_battle(
     # 다시 태운다 — 소환수처럼 시트에 행이 없는 캐릭터는 필드 스냅샷에서
     # 복원되지 않으므로, 이 호출이 없으면 재기동 이후 영영 사라진다.
     context.on_battle_start()
+    _restore_buffs(context, row.characters)
 
     declared = {
         CharacterId(name)

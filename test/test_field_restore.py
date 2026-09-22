@@ -500,3 +500,144 @@ def test_restore_practice_prep_stage_fails_without_participants():
 
     assert field_restore._restore_practice_battle(state, row, {}, {}, {}, {}) is None
     assert not state.practices
+
+
+def _buff_snapshot_context(buff_dict: dict):
+    """버프 스냅샷/복원 테스트용 최소 전장 — 캐릭터 둘을 1열에 세운다."""
+    from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.define import BattlefieldColumnIndex
+
+    ctx = BattlefieldContext(buff_dict=buff_dict, skill_dict={})
+    ctx.add_character(
+        get_test_preset("아군1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("적1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    return ctx
+
+
+def _stacking_buff_dict() -> dict:
+    from battle.objects.buff.models import BuffData
+
+    return {
+        "적층표식": BuffData.from_dict(
+            {
+                "id": "적층표식",
+                "buff_name": "BuffStackingMark",
+                "duration_turn_value": 3,
+                "duration_count_value": "",
+                "duration_count_deduct_condition": "",
+                "value_0": "",
+                "value_type_0": "",
+                "condition": "",
+                "condition_value": "",
+                "description": "",
+                "type": "디버프",
+                "max_stack": 3,
+            }
+        ),
+    }
+
+
+def test_field_snapshot_carries_buff_state():
+    """캐릭터 스냅샷에 남은 턴과 스택까지 담겨야 복원이 "다시 부여"가 아니라
+    "그 상태 그대로 이어받기"가 된다."""
+    from battle.objects.buff.buff_base import BuffAddData
+    from bot.log_sheets import build_field_characters
+
+    ctx = _buff_snapshot_context(_stacking_buff_dict())
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=CharacterId("아군1"),
+            applied_to=CharacterId("적1"),
+            buff_id="적층표식",
+            stack_value=2,
+        )
+    )
+    ctx.buff_container.get_buffs_by(CharacterId("적1"), None)[
+        0
+    ].duration.remaining_turns = 1
+
+    rows = build_field_characters(ctx, include_hp=True)
+    enemy_row = next(r for r in rows if r["name"] == "적1")
+    ally_row = next(r for r in rows if r["name"] == "아군1")
+
+    assert enemy_row["buffs"] == [
+        {"id": "적층표식", "given_by": "아군1", "stack": 2, "turns": 1, "seq": 1}
+    ]
+    assert "buffs" not in ally_row
+
+
+def test_restore_buffs_keeps_remaining_turns_and_stack():
+    """복원은 남은 턴을 시트 값(3턴)으로 리셋하지 않고 스냅샷 값을 쓴다."""
+    ctx = _buff_snapshot_context(_stacking_buff_dict())
+    characters = [
+        {
+            "name": "적1",
+            "buffs": [{"id": "적층표식", "given_by": "아군1", "stack": 2, "turns": 1}],
+        }
+    ]
+
+    assert field_restore._restore_buffs(ctx, characters) == 1
+
+    buffs = ctx.buff_container.get_buffs_by(CharacterId("적1"), None)
+    assert len(buffs) == 1
+    assert buffs[0].id == "적층표식"
+    assert buffs[0].given_by == CharacterId("아군1")
+    assert buffs[0].stack_count == 2
+    assert buffs[0].duration.remaining_turns == 1
+
+
+def test_restore_buffs_skips_unknown_id_and_absent_target(caplog):
+    """시트에서 사라진 버프 id나 필드에 없는 대상은 그 항목만 건너뛴다 —
+    전투 복원 전체를 포기하지 않는다."""
+    ctx = _buff_snapshot_context(_stacking_buff_dict())
+    characters = [
+        {"name": "적1", "buffs": [{"id": "없는버프", "given_by": "아군1"}]},
+        {"name": "필드에없음", "buffs": [{"id": "적층표식", "given_by": "아군1"}]},
+    ]
+
+    with caplog.at_level(logging.WARNING):
+        assert field_restore._restore_buffs(ctx, characters) == 0
+
+    assert not ctx.buff_container.get_buffs_by(CharacterId("적1"), None)
+
+
+def test_restore_buffs_overwrites_a_buff_reapplied_by_battle_start():
+    """ "전투 시작" 트리거가 복원보다 먼저 같은 버프를 걸어 두었어도, 인스턴스를
+    새로 만들지 않고 스냅샷 값으로 맞춘다 — 그러지 않으면 지속시간이 시트 값
+    그대로 남아 남은 턴이 스냅샷보다 늘어난다."""
+    from battle.objects.buff.buff_base import BuffAddData
+
+    ctx = _buff_snapshot_context(_stacking_buff_dict())
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=CharacterId("아군1"),
+            applied_to=CharacterId("적1"),
+            buff_id="적층표식",
+        )
+    )
+    assert (
+        ctx.buff_container.get_buffs_by(CharacterId("적1"), None)[
+            0
+        ].duration.remaining_turns
+        == 3
+    )
+
+    field_restore._restore_buffs(
+        ctx,
+        [
+            {
+                "name": "적1",
+                "buffs": [
+                    {"id": "적층표식", "given_by": "아군1", "stack": 3, "turns": 1}
+                ],
+            }
+        ],
+    )
+
+    buffs = ctx.buff_container.get_buffs_by(CharacterId("적1"), None)
+    assert len(buffs) == 1
+    assert buffs[0].stack_count == 3
+    assert buffs[0].duration.remaining_turns == 1

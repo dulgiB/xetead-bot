@@ -673,6 +673,11 @@ class BattlefieldContext:
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]
 
+    def get_buff_data_by_id_or_none(self, buff_id: str) -> Optional[BuffData]:
+        """ "버프" 시트에 없는 id면 None. 시트에 등록되지 않은 버프(패시브 래퍼
+        등)를 섞어 순회하는 쪽에서 KeyError 대신 건너뛸 수 있게 한다."""
+        return self._buff_dictionary.get(buff_id)
+
     def get_buff_instance(
         self,
         char_id: CharacterId,
