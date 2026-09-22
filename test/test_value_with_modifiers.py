@@ -179,3 +179,41 @@ class _FakeConsumedStackCalculator:
                 self.buff_remove_data_list = [_RemoveCalc(result_value=amount)]
 
         self.data_by_effect = [_EffectData(consumed_amount)]
+
+
+def test_int_modifier_sum_is_parenthesised_before_a_multiplier():
+    """정수 보정 뒤에 계수/배율이 붙으면 합 전체를 괄호로 묶어야 한다.
+
+    get_value()는 정수 보정을 먼저 더하고 그 합에 계수를 곱한다
+    ((8 + 10) × 2 = 36). 묶지 않으면 계산식이 "8 + (+10[...]) × 2[계수]"로
+    나가 "8 + 20 = 28"로 읽혀, 표시된 식이 실제 값과 어긋난다.
+    """
+    value = ValueWithModifiers(
+        BaseValueIndicator(ValueSourceType.FIXED, 8),
+        given_modifiers=[
+            IntValueModifier(source_name="키워드 보정", value=10, applies_to_fixed=True)
+        ],
+        received_modifiers=[],
+    )
+    value.base_coefficient = FloatValueModifier(source_name="계수", value=200)
+
+    assert value.get_value(None, _USER, _TARGET, 0) == 36
+    calculation = value.format_calculation()
+    assert calculation is not None
+    assert calculation.startswith("(8 + (+10[키워드 보정]))")
+    assert "× 2[계수]" in calculation
+
+
+def test_int_modifier_sum_is_not_parenthesised_without_a_multiplier():
+    """뒤에 곱셈이 없으면 괄호를 덧씌우지 않는다 — 읽는 순서가 이미 맞다."""
+    value = ValueWithModifiers(
+        BaseValueIndicator(ValueSourceType.FIXED, 8),
+        given_modifiers=[
+            IntValueModifier(source_name="키워드 보정", value=10, applies_to_fixed=True)
+        ],
+        received_modifiers=[],
+    )
+
+    # 계산식은 get_value()가 채워 둔 표시값을 쓰므로 먼저 한 번 계산한다.
+    assert value.get_value(None, _USER, _TARGET, 0) == 18
+    assert value.format_calculation() == "8 + (+10[키워드 보정])"
