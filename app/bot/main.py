@@ -190,6 +190,13 @@ _PRACTICE_MODE_TO_FIELD_TYPE: dict[PracticeBattleMode, log_sheets.FieldBattleTyp
     PracticeBattleMode.DUEL: log_sheets.FieldBattleType.DUEL,
 }
 
+# 위 매핑에서 파생한다 — 모드를 하나 더 늘렸을 때 "필드" 행을 갱신할 종류를
+# 따로 나열해 두면 거기만 빠뜨리고, 그 모드는 커맨드마다 스냅샷이 갱신되지
+# 않아 재기동 복원이 전투 시작 시점으로 되돌아간다.
+_PRACTICE_FIELD_TYPES: frozenset[log_sheets.FieldBattleType] = frozenset(
+    _PRACTICE_MODE_TO_FIELD_TYPE.values()
+)
+
 
 def _practice_battle_type(ps: PracticeBattleState) -> log_sheets.FieldBattleType:
     return _PRACTICE_MODE_TO_FIELD_TYPE[ps.mode]
@@ -386,10 +393,7 @@ def _persist_battle_log(
                 },
                 cache=state.sheet_cache,
             )
-        elif battle_log.battle_type in (
-            log_sheets.FieldBattleType.PRACTICE,
-            log_sheets.FieldBattleType.INVESTIGATION,
-        ):
+        elif battle_log.battle_type in _PRACTICE_FIELD_TYPES:
             ps = admin_commands.find_practice_by_field_id(state, battle_log.field_id)
             if ps is not None:
                 phase = ps.phase
