@@ -316,6 +316,15 @@ class ValueWithModifiers:
             for modifier in int_modifiers:
                 result_str += f"{'' if modifier.value < 0 else '+'}{modifier.value}[{modifier.source_name}]"
             result_str += ")"
+            # get_value()는 정수 보정을 더한 뒤에 계수와 배율을 곱한다. 뒤에
+            # 곱셈이 붙는데 합을 묶지 않으면 "A + B × C"로 읽혀 표시된 식이
+            # 실제 값보다 작게 계산된다(키워드 보정 + 계수 스킬이 대표적).
+            if (
+                self.base_coefficient is not None
+                or self.given_float_modifiers
+                or self.received_float_modifiers
+            ):
+                result_str = f"({result_str})"
 
         if self.base_coefficient is not None:
             if self.base_coefficient.display_factors is not None:

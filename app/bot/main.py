@@ -190,6 +190,13 @@ _PRACTICE_MODE_TO_FIELD_TYPE: dict[PracticeBattleMode, log_sheets.FieldBattleTyp
     PracticeBattleMode.DUEL: log_sheets.FieldBattleType.DUEL,
 }
 
+# 위 매핑에서 파생한다 — 모드를 하나 더 늘렸을 때 "필드" 행을 갱신할 종류를
+# 따로 나열해 두면 거기만 빠뜨리고, 그 모드는 커맨드마다 스냅샷이 갱신되지
+# 않아 재기동 복원이 전투 시작 시점으로 되돌아간다.
+_PRACTICE_FIELD_TYPES: frozenset[log_sheets.FieldBattleType] = frozenset(
+    _PRACTICE_MODE_TO_FIELD_TYPE.values()
+)
+
 
 def _practice_battle_type(ps: PracticeBattleState) -> log_sheets.FieldBattleType:
     return _PRACTICE_MODE_TO_FIELD_TYPE[ps.mode]
@@ -215,6 +222,14 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         # 결투 패배 대가 대상. 자진 기권한 캐릭터는 필드 스냅샷에 남지 않아
         # 복원 후 명부를 다시 만들면 대가에서 빠져 버린다.
         "roster": {side.value: names for side, names in ps.roster_by_side.items()},
+        # 아래 둘은 포지션 선언 단계를 복원하기 위한 값이다. 라운드가 열린
+        # 뒤에는 캐릭터 스냅샷으로 대신할 수 있지만, 선언 단계의 행에는
+        # 배치된 캐릭터가 하나도 없어 이 둘이 유일한 복원 근거다.
+        "expected_accts": list(ps.expected_accts),
+        "positions": {
+            acct: [side.value, column.value]
+            for acct, (side, column) in ps.declared.items()
+        },
     }
 
 
@@ -240,6 +255,21 @@ def _upsert_practice_field_row(
         )
     except Exception:
         logger.exception("필드 시트 저장 실패 (대련/상시전투 field_id=%s)", ps.field_id)
+
+
+def _persist_practice_prep(state: "BotState", ps: PracticeBattleState) -> None:
+    """포지션 선언 단계의 대련/결투/상시전투를 "필드" 시트에 기록한다.
+
+    라운드가 열리기 전에도 행을 남겨야 재기동이 선언 단계를 통째로 날리지
+    않는다 — 이 행이 없으면 그 상태는 메모리(state.practices)에만 있어,
+    봇을 다시 올리는 순간 참가자가 [대련]부터 다시 시작해야 한다.
+
+    field_id를 준비 게시물 id로 미리 고정하므로, 라운드가 열린 뒤에도
+    _begin_practice_rounds()가 같은 값을 쓰고 같은 행이 이어서 갱신된다."""
+    if not ps.prep_post_id:
+        return
+    ps.field_id = str(ps.prep_post_id)
+    _upsert_practice_field_row(state, ps, phase_value="")
 
 
 def _register_practice(
@@ -298,6 +328,7 @@ def _apply_game_post_side_effects(
         and result.practice_to_register is not None
     ):
         _register_practice(state, result.practice_to_register, new_post_id, prep=True)
+        _persist_practice_prep(state, result.practice_to_register)
     if state.session is not None and state.session.started:
         state.active_phase_post_id = (
             new_post_id if state.session.current_phase in _COMMAND_PHASES else None
@@ -362,10 +393,7 @@ def _persist_battle_log(
                 },
                 cache=state.sheet_cache,
             )
-        elif battle_log.battle_type in (
-            log_sheets.FieldBattleType.PRACTICE,
-            log_sheets.FieldBattleType.INVESTIGATION,
-        ):
+        elif battle_log.battle_type in _PRACTICE_FIELD_TYPES:
             ps = admin_commands.find_practice_by_field_id(state, battle_log.field_id)
             if ps is not None:
                 phase = ps.phase
@@ -960,6 +988,8 @@ class MastodonBotListener(StreamListener):
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
+                    else:
+                        _persist_practice_prep(state, ps)
             else:
                 # 대련: [N팀/N열] 포지션 선언
                 m = _RE_DECLARATION.search(text)
@@ -1004,6 +1034,10 @@ class MastodonBotListener(StreamListener):
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
+                    else:
+                        # 아직 전원이 선언하지 않았거나 한 팀이 비어 있다 —
+                        # 다음 선언을 기다리는 동안에도 상태를 남겨 둔다.
+                        _persist_practice_prep(state, ps)
             return
 
         # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)
@@ -1553,6 +1587,25 @@ def _pending_actors_text(ps: PracticeBattleState) -> str:
     return "\n\n◊ 남은 선언: " + ", ".join(char_id.name for char_id in pending)
 
 
+def _practice_round_end_text(ps: PracticeBattleState) -> str:
+    """직전 ps.end_round()에서 일어난 라운드 종료 처리(DoT/HoT, 자동 탈락)를
+    라운드 전환/종료 게시물에 실을 텍스트로 만든다. 발동한 게 없으면 빈 문자열.
+
+    대련 계열 게시물에는 계산식을 접어 둘 CW 후속 게시물이 없으므로, 전투
+    종료 정산과 같은 형식(format_log_entry_block)으로 계산식까지 본문에 함께
+    담는다. 이 줄이 없으면 플레이어는 라운드가 넘어갈 때 체력이 줄어든 것만
+    보고 이유를 알 수 없다."""
+    blocks = [
+        format_log_entry_block(
+            ps.context,
+            ps.manager.get_last_round_end_log_entries(),
+            "라운드 종료 처리",
+        ),
+        format_eliminated_characters(ps.manager.get_last_eliminated_characters()),
+    ]
+    return "\n\n".join(block for block in blocks if block)
+
+
 def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
     """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())을 처리하고,
     그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
@@ -1707,25 +1760,50 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
 
 
 def _finish_practice_battle(
-    state: "BotState", ps: PracticeBattleState, phase_value: str
+    state: "BotState",
+    ps: PracticeBattleState,
+    phase_value: str,
+    round_end_text: str = "",
 ) -> str:
     """대련/상시전투/결투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이
     함수가 끝나면 state.practices에서 제거된 상태다.
 
     전투 종료 훅(_apply_practice_battle_end_effects)은 반드시 winner() 앞에
-    와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다."""
+    와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다.
+
+    `round_end_text`는 이 전투가 정상적으로 라운드를 닫은 뒤(라운드 상한
+    도달 등) 끝났을 때 그 라운드 종료 처리 결과다 — 종료 게시물이 마지막
+    라운드의 정산을 삼켜 버리지 않도록 함께 싣는다."""
     assert ps.active_post_id is not None
-    battle_end_body = _apply_practice_battle_end_effects(ps)
+    # 전투 종료 처리(BuffBase.on_battle_end())는 양 팀이 모두 살아 있는 채로
+    # 전투가 끝났을 때만 한다. 한쪽이 쓰러져 승부가 이미 난 자리에서 남은 대가를
+    # 받아내면, 이긴 쪽이 그 대가로 함께 쓰러져 무승부가 되고 진 쪽마저
+    # 패배 대가를 치르지 않는다.
+    both_sides_alive = (
+        ps.total_hp_by_side(SideType.SIDE_1) > 0
+        and ps.total_hp_by_side(SideType.SIDE_2) > 0
+    )
+    battle_end_body = _apply_practice_battle_end_effects(ps) if both_sides_alive else ""
     winner = ps.winner()
-    winner_label = ps.side_label(winner)
     defeat_body = _apply_duel_defeat_penalty(state, ps, winner)
+    result_line = (
+        f"승자: {ps.side_label(winner)}{_winner_roster_text(ps, winner)}"
+        if winner is not None
+        else "결과: 무승부"
+    )
     body_blocks = [
-        block for block in (_field_board(ps), battle_end_body, defeat_body) if block
+        block
+        for block in (
+            round_end_text,
+            _field_board(ps),
+            battle_end_body,
+            defeat_body,
+        )
+        if block
     ]
     game_post = (
         f"◊ {ps.mode.value} 종료 ({ps.round_n}라운드)\n\n"
-        f"승자: {winner_label}{_winner_roster_text(ps, winner)}\n\n"
-        + "\n\n".join(body_blocks)
+        f"{result_line}\n\n" + "\n\n".join(body_blocks)
     )
     _upsert_practice_field_row(state, ps, phase_value=phase_value, ended=True)
     state.practices.pop(ps.active_post_id, None)
@@ -1761,7 +1839,9 @@ def _finalize_practice_phase(
 
     if current_phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
         if side_wiped:
-            ps.end_round()
+            # 한쪽이 쓰러져 끝난 라운드는 닫지 않는다 — end_round()를 돌리면
+            # 이긴 쪽이 자기에게 걸린 DoT에 함께 쓰러져 무승부가 되고, 그러면
+            # 진 쪽도 패배 대가를 치르지 않는다.
             return _finish_practice_battle(state, ps, current_phase.value), True
 
         ps.advance_to_second_mover()
@@ -1774,7 +1854,12 @@ def _finalize_practice_phase(
         return game_post, False
 
     # SECOND_MOVER_ACTION
+    if side_wiped:
+        # 선공 페이즈와 같은 이유로, 승부가 난 라운드는 닫지 않는다.
+        return _finish_practice_battle(state, ps, current_phase.value), True
+
     ps.end_round()
+    round_end_text = _practice_round_end_text(ps)
     # end_round()에서 DoT나 탈락이 일어날 수 있어 HP를 다시 계산한다 —
     # 그 전 값을 쓰면 라운드 종료 시점의 전멸을 놓친다.
     hp1 = ps.total_hp_by_side(SideType.SIDE_1)
@@ -1782,7 +1867,10 @@ def _finalize_practice_phase(
 
     round_limit_reached = ps.round_limit is not None and ps.round_n >= ps.round_limit
     if hp1 == 0 or hp2 == 0 or round_limit_reached:
-        return _finish_practice_battle(state, ps, current_phase.value), True
+        return (
+            _finish_practice_battle(state, ps, current_phase.value, round_end_text),
+            True,
+        )
 
     ps.start_round()
     mover_label = _mover_label(ps, ps.first_mover)
@@ -1791,6 +1879,9 @@ def _finalize_practice_phase(
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
         f"{_field_text(ps)}"
     )
+    if round_end_text:
+        # 지난 라운드의 정산을 먼저 보여준 뒤 다음 라운드를 연다.
+        game_post = f"{round_end_text}\n\n{game_post}"
     return game_post, False
 
 

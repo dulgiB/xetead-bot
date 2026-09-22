@@ -12,6 +12,7 @@
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
+from battle.core.commands.models import BattleLogEntryKind
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
@@ -605,6 +606,40 @@ class TestCost2Skill:
         new_entries = [e for r in ctx.results[before:] for e in r.log_entries]
 
         assert not any("도발" in e.result for e in new_entries)
+
+    def test_zero_stack_component_is_left_out_of_the_calculation(self):
+        """소모할 스택이 없으면 "+ 0[재앙] × 5"를 계산식에 남기지 않는다 —
+        합계에 아무것도 더하지 않는 항목이라 계산식만 길어진다."""
+        ctx = _make_context(milestone_n=0)
+        manager = _setup_ally_phase(ctx)
+        caster = CharacterId("Catastrophe")
+        # milestone_n=0이면 굴림이 없어 공격 굴림값이 atk 그대로다 —
+        # effect_0이 0이 아닌 값을 내야 "0짜리 구성요소만 빠졌는지" 보인다.
+        ctx.add_character(
+            get_test_preset("Catastrophe", atk=10, skill_1_id="Cost2Skill"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("적군", max_hp=200),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+
+        before = len(ctx.results)
+        manager.process_command(
+            parse_character_command(caster, "[Cost2Skill/적군]", ctx)
+        )
+        damage_entries = [
+            e
+            for r in ctx.results[before:]
+            for e in r.log_entries
+            if e.kind == BattleLogEntryKind.DAMAGE
+        ]
+
+        assert len(damage_entries) == 1
+        assert damage_entries[0].value == 15
+        assert "재앙" not in (damage_entries[0].roll_display or "")
 
     def test_requested_consumption_clamps_to_available_stack(self):
         """cap 5보다 적게 보유(3스택)해도 실패 없이 있는 만큼만 소모된다."""

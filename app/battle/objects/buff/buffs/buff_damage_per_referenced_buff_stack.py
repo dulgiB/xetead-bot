@@ -16,6 +16,11 @@ class DamagePerReferencedBuffStackEvent(BuffEvent):
     """라운드 종료 시, holder에게 걸린 reference_buff_id 버프의 현재 스택
     수(턴 차감 전 기준) × coefficient 만큼 고정 대미지를 입힌다.
 
+    "고정"인 이상 주는/받는 대미지 버프의 배율은 받지 않는다
+    (ignores_value_modifiers) — 배율을 받게 두면 같은 스킬 설명에서
+    "고정"이라고 읽은 플레이어가 버프 하나에 수치가 달라지는 것을 설명할
+    수 없다. 부활 페널티처럼 버프가 아닌 게임 메커니즘은 그대로 걸린다.
+
     스택 수를 coefficient로 미리 곱해 FIXED 값으로 넘기면 계산식이 표시되지
     않으므로(FIXED는 coefficient를 적용/표시하지 않음), REFERENCED_BUFF_STACK
     value_source + coefficient 조합을 써서 "{스택}[{버프id}] × {배율}" 형태의
@@ -56,6 +61,7 @@ class DamagePerReferencedBuffStackEvent(BuffEvent):
                 triggers_given_damage_passives=False,
                 triggers_received_damage_passives=False,
                 source_label=f"{self.buff_label}: {attacker_or_target.name}",
+                ignores_value_modifiers=True,
             )
         )
 

@@ -85,6 +85,52 @@ class BuffContainer:
         new_buff.applied_at = self._next_apply_seq()
         self._buffs.add(new_buff)
 
+    def restore(
+        self,
+        *,
+        buff_id: str,
+        given_by: CharacterId,
+        applied_to: CharacterId,
+        stack_count: int = 1,
+        remaining_turns: Optional[int] = None,
+        remaining_count: Optional[int] = None,
+        value_override: Optional[int] = None,
+        applied_at: Optional[int] = None,
+    ) -> "BuffBase":
+        """스냅샷의 버프 인스턴스를 그대로 되살린다(봇 재기동 복원 전용).
+
+        add()로는 대신할 수 없다 — add()는 "지금 새로 부여한다"는 뜻이라
+        지속시간을 시트 값으로 리셋하고 스택을 더하는데, 복원은 남은 턴/횟수와
+        스택을 스냅샷 그대로 이어받아야 하기 때문이다.
+
+        이미 같은 uid의 인스턴스가 있으면("전투 시작" 트리거가 복원보다 먼저
+        걸어 둔 경우) 새로 만들지 않고 그 인스턴스를 스냅샷 값으로 맞춘다.
+        """
+        buff_data = self._context.get_buff_data_by_id(buff_id)
+        uid_value = value_override if value_override is not None else buff_data.value
+        target_uid = buff_data.get_buff_class().build_uid(
+            given_by, applied_to, buff_data.buff_class_name, uid_value
+        )
+        buff = next((b for b in self._buffs if b.uid == target_uid), None)
+        if buff is None:
+            buff = buff_data.to_buff_instance(
+                given_by, applied_to, stack_count, value_override=value_override
+            )
+            self._buffs.add(buff)
+        buff.stack_count = stack_count
+        buff.duration.remaining_turns = remaining_turns
+        buff.duration.remaining_count = remaining_count
+        if value_override is not None:
+            buff.value = value_override
+        # 일련번호도 스냅샷 값을 이어받되 컨테이너의 카운터를 함께 끌어올린다 —
+        # 그러지 않으면 복원 이후 새로 걸린 도발이 복원된 도발보다 오래된
+        # 것으로 잡혀 "가장 최근에 걸린 것이 우선"이 뒤집힌다.
+        buff.applied_at = (
+            applied_at if applied_at is not None else self._next_apply_seq()
+        )
+        self._apply_seq = max(self._apply_seq, buff.applied_at)
+        return buff
+
     def add_passive_wrapper(self, buff: "BuffBase") -> None:
         """PassiveSkillWrapperBuff 등록 전용. BuffData 없이 직접 생성된 인스턴스를 추가한다."""
         self._buffs.add(buff)

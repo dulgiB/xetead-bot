@@ -859,16 +859,22 @@ def _build_damage_entry(
     여러 번 대미지를 입혀도(예: 공격 굴림 대미지 + 스택 소모 대미지) 실제로는
     한 번의 타격이므로, HP도 순차적으로 두 줄 보여주지 않고 최종 결과 한 줄로
     보여준다. 계산식은 각 구성 요소의 계산식을 "+"로 이어붙인다(구성 요소가
-    하나뿐이면 그 계산식을 그대로 써서 기존 표시와 동일하게 유지한다)."""
+    하나뿐이면 그 계산식을 그대로 써서 기존 표시와 동일하게 유지한다).
+
+    0 대미지 구성 요소는 계산식에서 뺀다 — 소모할 스택이 없었던 스택 비례
+    항목처럼 합계에 아무것도 더하지 않는 항목이 "+ 0[버프] × 5"로 남으면
+    계산식만 길어진다. 전부 0일 때는 그대로 두어, 왜 0이 나왔는지 설명할
+    식이 통째로 사라지지 않게 한다."""
     calcs = _damage_calcs_for_target(calculator, target_id)
     total_value = sum(c.result_value for c in calcs if c.result_value is not None)
     last = calcs[-1]
-    if len(calcs) == 1:
-        roll_display = last.roll_display
+    display_calcs = [c for c in calcs if c.result_value] or calcs
+    if len(display_calcs) == 1:
+        roll_display = display_calcs[0].roll_display
     else:
         roll_display = " + ".join(
             c.roll_display if c.roll_display is not None else str(c.result_value)
-            for c in calcs
+            for c in display_calcs
         )
     # 같은 반응형 버프가 두 구성요소를 냈다면 라벨이 겹치므로 중복을 제거한다.
     source_labels = tuple(
