@@ -612,7 +612,7 @@ def upsert_investigation_session(
     게시물 id가 바뀔 때마다 매번 최신 상태로 덮어써야 한다. round/phase/
     characters는 상시조사에 의미가 없어 항상 기본값을 쓴다."""
     meta = {
-        "acct": session.acct,
+        "accts": session.accts,
         "menu_post_id": session.menu_post_id,
         "overview_post_id": session.overview_post_id,
         "quest_id": session.quest_id,

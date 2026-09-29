@@ -797,7 +797,7 @@ class MastodonBotListener(StreamListener):
         in_reply_to_id: Optional[int],
         state: "BotState",
     ) -> tuple[Optional[InvestigationSession], str, bool]:
-        """acct의 활성 상시조사 세션이 이 답글에 연관되는지 확인한다.
+        """이 답글이 acct가 참여 중인 상시조사 세션 중 어느 것에 속하는지 찾는다.
 
         직속 답글이 가장 흔하고 저렴한 경로라 먼저 확인하고, 아니면
         status_context()로 스레드 조상까지 거슬러 올라가 세션의 메뉴/개요
@@ -806,23 +806,25 @@ class MastodonBotListener(StreamListener):
         세션이 아예 없는 acct는 이 조상 조회 자체를 하지 않는다(고빈도
         메시지에서 불필요한 API 호출을 피하기 위함).
 
+        한 acct가 여러 세션을 병행할 수 있어, 조상에 여러 세션의 게시물이
+        걸리면(같은 스레드에서 [상시조사]를 다시 연 경우) 가장 최근 게시물의
+        세션을 고른다 — 답글에 가장 가까운 쪽이 지금 진행 중인 세션이다.
+
         반환값: (session_or_None, stage, is_direct). stage는
         "menu"|"overview". is_direct는 in_reply_to_id가 세션의 게시물을
         정확히 가리키는지(스레드 조상으로만 찾은 게 아닌지) 여부다 —
         사담(인식 가능한 커맨드가 없는 답글)에 대한 종결성 응답(장소
         미지정/미수락 안내)은 직속 답글에서만 트리거해야 하므로, 조상
         경유로만 찾은 경우와 구분해야 한다."""
-        session = state.noncombat.get_active_investigation(acct)
-        if session is None:
+        sessions = state.noncombat.active_investigations(acct)
+        if not sessions or in_reply_to_id is None:
             return None, "", False
 
-        if in_reply_to_id == session.overview_post_id:
-            return session, "overview", True
-        if in_reply_to_id == session.menu_post_id:
-            return session, "menu", True
-
-        if in_reply_to_id is None:
-            return None, "", False
+        for session in sessions:
+            if in_reply_to_id == session.overview_post_id:
+                return session, "overview", True
+            if in_reply_to_id == session.menu_post_id:
+                return session, "menu", True
 
         try:
             context = self._mastodon.status_context(status_id)
@@ -831,13 +833,19 @@ class MastodonBotListener(StreamListener):
             logger.exception("스레드 상시조사 세션 조회 실패 (status_id=%s)", status_id)
             return None, "", False
 
-        if session.overview_post_id is not None and (
-            session.overview_post_id in ancestor_ids
-        ):
-            return session, "overview", False
-        if session.menu_post_id in ancestor_ids:
-            return session, "menu", False
-        return None, "", False
+        best: Optional[tuple[int, InvestigationSession, str]] = None
+        for session in sessions:
+            for post_id, stage in (
+                (session.overview_post_id, "overview"),
+                (session.menu_post_id, "menu"),
+            ):
+                if post_id is None or post_id not in ancestor_ids:
+                    continue
+                if best is None or post_id > best[0]:
+                    best = (post_id, session, stage)
+        if best is None:
+            return None, "", False
+        return best[1], best[2], False
 
     def __dispatch(
         self,
@@ -1143,7 +1151,13 @@ class MastodonBotListener(StreamListener):
                 response, log_info = handle_investigation_venue_choice(
                     investigation_session, venue_name, state
                 )
-                post = self._reply(status_id, acct, visibility, response)
+                post = self._reply(
+                    status_id,
+                    acct,
+                    visibility,
+                    response,
+                    mention_accts=investigation_session.accts,
+                )
                 _persist_noncombat_log(state, log_info, str(post["id"]))
                 finalize_investigation_overview_post(
                     investigation_session, post["id"], state
@@ -1161,7 +1175,7 @@ class MastodonBotListener(StreamListener):
                 status_id, in_reply_to_id, mentions or [], acct
             )
             response, log_info = handle_investigation_accept(
-                investigation_session, thread_mentions, state
+                investigation_session, acct, thread_mentions, state
             )
             expected_accts = [acct] + thread_mentions
             reply_status = self._reply(
@@ -1190,12 +1204,26 @@ class MastodonBotListener(StreamListener):
             finalize_daily_quest_mid(acct, post["id"], state)
             return
 
-        # 11. [상시조사] — 상시조사 메뉴
+        # 11. [상시조사] — 상시조사 메뉴. 스레드에 이미 참여 중인 캐릭터
+        # 전원이 한 세션을 공유한다.
         if _RE_INVESTIGATION_START.search(text):
+            investigation_accts = [acct] + [
+                a
+                for a in self._thread_participants(
+                    status_id, in_reply_to_id, mentions or [], acct
+                )
+                if a in state.char_dict
+            ]
             response, log_info = handle_investigation_start(acct, state)
-            post = self._reply(status_id, acct, visibility, response)
+            post = self._reply(
+                status_id,
+                acct,
+                visibility,
+                response,
+                mention_accts=investigation_accts,
+            )
             _persist_noncombat_log(state, log_info, str(post["id"]))
-            finalize_investigation_menu_post(acct, post["id"], state)
+            finalize_investigation_menu_post(investigation_accts, post["id"], state)
             return
 
         # 12. [아이템명(/대상)(/개수)] — 비전투 아이템 사용. 접두어 없이
@@ -1248,7 +1276,13 @@ class MastodonBotListener(StreamListener):
             response, log_info = handle_investigation_decline(
                 investigation_session, state
             )
-            reply_status = self._reply(status_id, acct, visibility, response)
+            reply_status = self._reply(
+                status_id,
+                acct,
+                visibility,
+                response,
+                mention_accts=investigation_session.accts,
+            )
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 

@@ -840,21 +840,13 @@ def handle_investigation_start(
 
 
 def finalize_investigation_menu_post(
-    acct: str, post_id: int, state: "BotState"
+    accts: list[str], post_id: int, state: "BotState"
 ) -> InvestigationSession:
-    """새 상시조사 메뉴 게시물로 세션을 (재)시작한다. 그 acct에 이미 진행
-    중인 세션이 있으면(끝맺지 않고 다시 [상시조사]를 보낸 경우) 먼저
-    종료 처리해 시트에 반영한다."""
-    nc = state.noncombat
-    prior = nc.investigations.get(acct)
-    if prior is not None and not prior.ended:
-        prior.ended = True
-        upsert_investigation_session(state.spreadsheet, prior, cache=state.sheet_cache)
-
+    """새 상시조사 메뉴 게시물로 accts 전원이 참여하는 세션을 시작한다."""
     session = InvestigationSession(
-        field_id=str(post_id), acct=acct, menu_post_id=post_id
+        field_id=str(post_id), accts=list(accts), menu_post_id=post_id
     )
-    nc.investigations[acct] = session
+    state.noncombat.investigations[session.field_id] = session
     upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
     return session
 
@@ -956,10 +948,11 @@ def finalize_investigation_overview_post(
 
 def handle_investigation_accept(
     session: InvestigationSession,
+    acct: str,
     mentions: list[str],
     state: "BotState",
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[수락] → 답글에 멘션된 인원 전원(+ 발신자)을 참여자로 등록하고 '일반
+    """[수락] → 발신자(acct)와 답글에 멘션된 인원 전원을 참여자로 등록하고 '일반
     의뢰' 시트의 taken_by에 기록한다.
 
     같은 장소의 의뢰 3개(운반/탐사/전투)는 서로 다른 인원이 각각 독립적으로
@@ -967,7 +960,6 @@ def handle_investigation_accept(
     또 수주할 수는 없다(taken_by 기준으로 확인).
     """
     command_text = "[수락]"
-    acct = session.acct
     quest_id = session.quest_id
     if quest_id is None:
         msg = "◊ 수락할 의뢰가 없습니다. 먼저 [상시조사]로 의뢰를 확인해 주세요."
