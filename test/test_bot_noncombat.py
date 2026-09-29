@@ -276,7 +276,6 @@ def _quest(
     name: str = "광장 의뢰",
     description_quest: str = "어쩌구",
     description_normal: str = "이미 처리된 의뢰다.",
-    subtype: str = "상시",
     reward: str = "6G",
     available_until: str = "다음 스토리 진행 전까지",
     taken_by: str = "",
@@ -289,7 +288,6 @@ def _quest(
         description_quest=description_quest,
         description_normal=description_normal,
         type=quest_type,
-        subtype=subtype,
         reward=reward,
         available_until=available_until,
         taken_by=taken_by,
@@ -504,7 +502,7 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "어쩌구\n"
         "\n"
         "**[일반 의뢰] 광장 의뢰**\n"
-        "▸ 계열: 운반 - 상시\n"
+        "▸ 계열: 운반\n"
         "▸ 클리어 가능 기간: 다음 스토리 진행 전까지\n"
         "▸ 보상: 6G\n"
         "\n"

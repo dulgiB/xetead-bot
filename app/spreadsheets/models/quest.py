@@ -73,7 +73,6 @@ class QuestData:
     description_quest: str  # 미수주 상태에서 노출할 설명
     description_normal: str  # 수주된 이후 노출할 설명
     type: str  # 운반 / 탐사 / 전투
-    subtype: str  # 상시 / 일반
     reward: str
     available_until: str
     taken_by: str  # 이 의뢰를 수주한 캐릭터 acct들을 쉼표로 이어붙인 문자열 (없으면 "")
@@ -88,7 +87,6 @@ class QuestData:
             description_quest=str(raw.get("description_quest", "") or ""),
             description_normal=str(raw.get("description_normal", "") or ""),
             type=str(raw.get("type", "") or ""),
-            subtype=str(raw.get("subtype", "") or ""),
             reward=str(raw.get("reward", "") or ""),
             available_until=str(raw.get("available_until", "") or ""),
             taken_by=str(raw.get("taken_by", "") or ""),

@@ -924,7 +924,7 @@ def handle_investigation_venue_choice(
         quest.current_description(),
         "",
         f"**[일반 의뢰] {quest.name}**",
-        f"▸ 계열: {quest.type} - {quest.subtype}",
+        f"▸ 계열: {quest.type}",
         f"▸ 클리어 가능 기간: {quest.available_until}",
         f"▸ 보상: {reward_desc}",
         "",
