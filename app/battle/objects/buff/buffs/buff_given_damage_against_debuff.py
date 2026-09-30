@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class GivenDamageAgainstDebuffModEvent(BuffEvent):
     """condition(보통 TargetHasDebuffCondition)이 충족될 때 value만큼 주는 대미지를
     올리고, 공격 대상이 bonus_buff_id까지 보유하고 있으면 bonus_value를 추가로
-    더한다. bonus_buff_id가 None이면 추가분은 영영 붙지 않는다."""
+    더한다."""
 
     is_pure_damage_modifier: ClassVar[bool] = True
 

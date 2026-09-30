@@ -1399,9 +1399,8 @@ def _format_granted_buffs_info(
 ) -> str:
     """이번 정산에서 새로 부여된 버프들의 설명을 "【버프 정보】\n▹ [{버프
     이름}]: {설명}" 블록으로 모은다. 본문에는 어느 적이 부여했는지, 누구에게
-    적용됐는지 나오지 않으므로("적을 어느 이름을 표시하지 않는다"는 이
-    함수의 기존 방침과 같은 이유), 처음 보는 버프가 뭘 하는 버프인지
-    설명해 준다. 같은 버프(buff_id)가 여러 명에게 적용돼도 설명은 한 번만
+    적용됐는지 나오지 않으므로, 처음 보는 버프가 뭘 하는 버프인지 설명해
+    준다. 같은 버프(buff_id)가 여러 명에게 적용돼도 설명은 한 번만
     보여준다.
 
     설명은 버프 인스턴스의 get_description()으로 얻는다 —
@@ -1510,8 +1509,7 @@ def find_practice_by_field_id(
 ) -> Optional[PracticeBattleState]:
     """field_id(전투 개시 게시물 id 고정 값)로 진행 중인 PracticeBattleState를
     찾는다. state.practices는 진행 게시물(tip) id(페이즈 전환마다 바뀜)를
-    키로 쓰므로, 안정적인 field_id로 찾으려면 값들을 선형 탐색해야 한다 —
-    동시 진행되는 세션 수가 적어(수 개 이내) 성능에 문제되지 않는다."""
+    키로 쓰므로, 안정적인 field_id로 찾으려면 값들을 선형 탐색해야 한다."""
     return next(
         (ps for ps in state.practices.values() if ps.field_id == field_id), None
     )

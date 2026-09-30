@@ -27,9 +27,7 @@ def make_coefficient_damage_calc(
 ) -> DamageCalculateData:
     """value_source × coefficient_value% 형태의 대미지 항목 하나를 만든다.
     반격/추가 대미지 계열 버프(BuffCounterDamageOn*, BuffCompanionGuardian,
-    BuffBonusDamageOnHit, BuffDamageOverTimePerReferencedBuffStack)가
-    공유하던 DamageCalculateData/DamageData/BaseValueIndicator/
-    FloatValueModifier 조립 코드를 모아둔 것이다.
+    BuffBonusDamageOnHit, BuffDamageOverTimePerReferencedBuffStack)가 공유한다.
 
     FIXED 값 대미지(계수가 아닌 고정 수치)나 roll_display를 직접 지정해야
     하는 경우(BuffReflect 등)는 이 팩토리의 형태에 맞지 않으므로 그대로

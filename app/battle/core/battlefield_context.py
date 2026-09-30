@@ -166,9 +166,8 @@ class BattlefieldContext:
         들어온다) 헤더로 쓸 라벨만 갈아끼우면 대련처럼 "아군"/"적군" 대신
         "1팀"/"2팀" 등을 보여줄 수 있다.
 
-        `ally_first`는 두 블록 중 어느 쪽을 먼저 그릴지만 바꾼다 — 라벨과
-        실제 데이터(FactionType) 매핑 자체는 건드리지 않으므로 안전하다.
-        기본값 False(적군 먼저)는 본 전투 필드 이미지와 같은 순서다.
+        `ally_first`는 두 블록 중 어느 쪽을 먼저 그릴지만 바꾼다. 기본값
+        False(적군 먼저)는 본 전투 필드 이미지와 같은 순서다.
 
         `compact_columns=True`면 아무도 없는 열은 아예 줄을 그리지 않는다
         — 본 전투는 필드 이미지가 따로 있어 7열 전체를 텍스트로도 보여줘야
@@ -381,8 +380,8 @@ class BattlefieldContext:
     def resolve_character_id(self, raw: CharacterId) -> CharacterId:
         """공백 차이를 무시하고 전장에 등록된 캐릭터를 찾는다.
 
-        일치하는 항목이 없으면 raw를 그대로 반환한다 (호출측의 기존
-        '존재하지 않음' 처리 경로를 그대로 타도록 하기 위함).
+        일치하는 항목이 없으면 raw를 그대로 반환해, 호출측의 '존재하지
+        않음' 처리 경로를 타게 한다.
         """
         if raw in self.characters:
             return raw
@@ -501,8 +500,7 @@ class BattlefieldContext:
         도중이 아니라 라운드 종료 시점에 한 번만 처리한다 — 도중에 즉시
         제거하면 같은 라운드 안에서 그 캐릭터를 참조하는 다른 효과(광역기의
         나머지 대상, 반응형 버프의 사거리/위치 조회 등)가 예기치 않게
-        실패할 수 있다. 그동안 체력 0인 캐릭터는 지금처럼 필드에 남아 있는
-        채로 정상 처리된다.
+        실패할 수 있다.
 
         **아군은 체력이 0이 되어도 이 자동 탈락 대상이 아니다** — admin이
         `[탈락/이름]`으로 명시적으로 제거하기 전까지는 계속 필드에 남아
@@ -513,7 +511,7 @@ class BattlefieldContext:
         동료(소환수)의 생애주기는 소환자(owner)에게 종속된다:
         - 동료 자신의 체력이 0이 되는 것은 단독으로 탈락 처리하지 않는다 —
           companion_owners 등록을 유지한 채 남아 있다가 나중에
-          revive_companion()으로 재소환되는 기존 규칙을 그대로 따른다.
+          revive_companion()으로 재소환된다.
         - 반대로 소환자가 탈락하면, 그 순간부터 동료를 재소환할 주체 자체가
           없어지므로 동료의 현재 체력과 무관하게 함께 제거한다.
         """
@@ -522,10 +520,8 @@ class BattlefieldContext:
             if char.status.curr_hp > 0:
                 continue
             if char.faction != FactionType.ENEMY:
-                # 아군은 admin이 [탈락/이름]으로 직접 제거하기 전까지 유지된다.
                 continue
             if char_id in self.companion_owners:
-                # 동료 자신의 탈락 — 단독으로는 처리하지 않는다.
                 continue
 
             eliminated.append(char_id)
@@ -757,9 +753,9 @@ class BattlefieldContext:
         """이 전장에서 운명간섭("+" 접미사) 커맨드를 쓸 수 있는지 여부.
 
         운명간섭은 체력 20을 실제로 소모하고 "이번 진행에 사용함"을 캐릭터
-        시트에 영구 기록하는, 되돌릴 수 없는 자원 소비다. 대련/상시전투는
-        체력이 절반인 임시 캐릭터로 진행하고 체력 변동을 시트에 반영하지도
-        않으므로(PracticeBattlefieldContext 참고) 그런 소비를 걸 수 없다.
+        시트에 영구 기록하는, 되돌릴 수 없는 자원 소비다. 대련은 체력이
+        절반인 임시 캐릭터로 진행하고 체력 변동을 시트에 반영하지도 않으므로
+        그런 소비를 걸 수 없다(PracticeBattlefieldContext 참고).
         """
         return True
 
@@ -790,7 +786,7 @@ class BattlefieldContext:
     def resolve_item_id(self, raw_item_id: str) -> str:
         """공백 차이를 무시하고 등록된 아이템 id를 찾는다.
 
-        일치하는 항목이 없으면 raw_item_id를 그대로 반환한다 (호출측의
-        기존 '존재하지 않음' 처리 경로를 그대로 타도록 하기 위함).
+        일치하는 항목이 없으면 raw_item_id를 그대로 반환해, 호출측의
+        '존재하지 않음' 처리 경로를 타게 한다.
         """
         return resolve_matching_key(raw_item_id, self._item_dictionary.keys())

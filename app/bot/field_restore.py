@@ -96,7 +96,7 @@ def _restore_characters_full(
     """본 전투 캐릭터 스냅샷을 순서대로 재배치한다. 이름을 못
     찾으면(동료) 건너뛰고, 시트 상 이미 사망 처리된 캐릭터는
     add_character()가 거부하므로 그 역시 건너뛴다(라운드 종료 시 필드에서
-    자동 제거된 캐릭터를 다시 살려내지 않기 위한 기존 동작과 일관됨).
+    자동 제거된 캐릭터를 되살리지 않는다).
     반환값: 실제로 복원된 캐릭터 수."""
     restored = 0
     for entry in characters:
@@ -466,8 +466,8 @@ def _restore_practice_battle(
         manager=manager,
         mode=mode,
         round_n=row.round_n,
-        # 결투는 라운드 상한이 없다 — meta가 없는 행이어도 기본값 3이
-        # 들어가 첫 라운드에 바로 끝나는 일이 없어야 한다.
+        # 라운드 상한이 없는 모드는 meta가 없는 행이어도 기본값 3이 들어가
+        # 첫 라운드에 바로 끝나는 일이 없어야 한다.
         round_limit=(meta.get("round_limit", 3) if mode.has_round_limit else None),
         # "필드" 행은 start_round() 이후에만 만들어지므로, 복원 대상 행이
         # 있다는 것 자체가 선언 접수가 끝났다는 뜻이다(prep_post_id=0).

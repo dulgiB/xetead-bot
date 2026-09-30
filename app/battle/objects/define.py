@@ -143,7 +143,7 @@ class ItemType(str, Enum):
     # 전투 밖에서만 사용 가능. effect는 없으며(항상 None), 자신만을 대상으로
     # 아이템별 전용 로직(app/bot/commands/noncombat.py)으로 처리된다.
     NONCOMBAT_CONSUMABLE = "비전투 소모품"
-    # 전투 시 특수 효과를 내는 추가 패시브 스킬. 현재 미구현.
+    # 누군가 지니고 있기만 하면 본 전투에 필드 효과(passive_skill_id)를 건다.
     CHARM = "부적"
     # 소지 자체가 목적인 아이템 — 전투/비전투 어느 쪽으로도 쓸 수 없다.
     ETC = "기타"
@@ -196,9 +196,9 @@ class FateBoostMode(str, Enum):
     """운명간섭("+", 플레이어 표기 "키워드 보정")이 이 스킬에 무엇을 더해주는지.
 
     "스킬_캐릭터" 시트의 fate_mode 컬럼(enum 시트 FateBoostMode 드롭다운)에서
-    온다. 비워 두면 기존 동작 — 대미지가 나오는 스킬은 굴림에
+    온다. 비워 두면 기본 동작 — 대미지가 나오는 스킬은 굴림에
     FATE_INTERVENTION_SKILL_BONUS를 더하고, 대미지가 없는 스킬은 "+"를
-    거부한다. 값을 채우면 그 모드가 기존 동작을 대신한다.
+    거부한다. 값을 채우면 그 모드가 기본 동작을 대신한다.
 
     ROLL_BONUS/VALUE_BOOST는 대미지·회복 수치에 걸리므로 계산 시점
     (command_calculator)에, BUFF_*는 부여할 버프 자체를 바꾸므로 전개 시점

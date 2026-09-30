@@ -72,8 +72,8 @@ class BuffIgnite(BuffBase):
     지속시간이 끝나는(remaining_turns가 0이 되는) 라운드 종료 시점에 대상이
     그 열에 그대로 있으면 부여자의 공격 굴림 150%만큼 대미지를 입힌다. 서로
     다른 열로 부여되면 별개의 인스턴스로 동시에 유지된다
-    (PARTITION_UID_BY_VALUE=True). 같은 열로 재부여하면 기존과 동일하게
-    지속시간만 갱신된다.
+    (PARTITION_UID_BY_VALUE=True). 같은 열로 재부여하면 지속시간만
+    갱신된다.
     """
 
     PARTITION_UID_BY_VALUE: ClassVar[bool] = True

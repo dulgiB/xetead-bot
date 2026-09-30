@@ -482,10 +482,7 @@ class TargetIsAllyCondition(Condition):
 @dataclass(frozen=True)
 class AllyInRangeWasAttackedCondition(RoundResolvedCondition):
     """holder의 사거리 이내(자신 포함)·같은 진영인 캐릭터 중 이번 라운드
-    동안(damaged_this_round 기준) 대미지를 받은 자가 1명이라도 있으면 True.
-    "라운드 최종 위치 기준"은 별도 처리가 필요 없다 — 라운드 종료 시점에
-    find_character_position()을 호출하면 자연히 그 라운드의 최종 위치가
-    나온다."""
+    동안(damaged_this_round 기준) 대미지를 받은 자가 1명이라도 있으면 True."""
 
     def is_applied(
         self,
