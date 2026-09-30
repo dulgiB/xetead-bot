@@ -173,8 +173,7 @@ class BuffBase(abc.ABC):
     ) -> BuffUid:
         """BuffContainer.add()의 중복/재부여 판정과 __init__이 공유하는 uid
         계산. PARTITION_UID_BY_VALUE가 False인 대부분의 버프는 value를
-        무시해 기존과 동일하게 (given_by, applied_to, class_name) 기준으로
-        판정한다."""
+        무시하고 (given_by, applied_to, class_name) 기준으로 판정한다."""
         if cls.PARTITION_UID_BY_VALUE:
             return BuffUid(given_by, applied_to, f"{class_name}:{value}")
         return BuffUid(given_by, applied_to, class_name)

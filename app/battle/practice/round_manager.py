@@ -14,7 +14,7 @@ from battle.practice.define import PracticeRoundPhase, SideType
 
 class PracticeRoundManager:
     """
-    대련 턴 진행 관리자.
+    대련/결투/상시전투 턴 진행 관리자.
 
     턴 흐름:
       to_phase(FIRST_MOVER_ACTION)  — 라운드 시작 + 선공/후공 결정
@@ -152,16 +152,8 @@ class PracticeRoundManager:
           올바른 값이 나오므로 그 라운드의 모든 행동이 끝난 뒤여야 한다.
 
         _apply_round_events()가 버프 타이밍만 보고 진영을 가리지 않으므로
-        SIDE_1/SIDE_2 양쪽 모두에 대칭으로 적용된다.
-
-        지속시간 차감은 본 전투와 완전히 같은 규칙이다 — 부여 시점과 무관하게
-        필드의 모든 버프가 여기서 1턴씩 깎인다. 대련이 본 전투 규칙에 익숙해지는
-        자리이기도 하므로, 모드마다 지속시간이 달라 보이지 않는 편을 택했다.
-
-        그 대신 이 구조에서는 양 팀이 한 라운드 안에서 각자 한 번씩 행동하므로,
-        라운드의 마지막 차례에 상대에게 건 1턴짜리 효과는 상대가 그 상태로
-        행동할 기회를 얻지 못한 채 사라진다. 상대의 행동에 걸리기를 기대하는
-        효과는 데이터 쪽에서 2턴 이상으로 적어 해결한다."""
+        SIDE_1/SIDE_2 양쪽 모두에 대칭으로 적용된다. 지속시간 차감 규칙은
+        본 전투와 같다(BuffContainer.on_round_end 참고)."""
         self._context.buff_container.on_enemy_post_action_resolved()
         (
             self._last_round_end_log_entries,

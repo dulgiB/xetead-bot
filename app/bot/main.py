@@ -521,14 +521,12 @@ class MastodonBotListener(StreamListener):
         `on_abort`는 라이브러리가 연결 종료를 예외로 감지했을 때만 불린다.
         그런데 리버스 프록시의 idle 타임아웃 등으로 TCP 연결 자체는 살아있는
         채 서버 응답(하트비트 포함)만 완전히 멎는 경우, requests의 read
-        timeout(기본 300초)에만 기대면 재연결이 걸리지 않을 수 있다 — 실제로
-        정상적인 새 알림이 서버에 도착했는데도 봇이 30분 넘게 아무것도 처리
-        못한 채 멈춰 있던 장애가 있었다. 하트비트 최종 수신 시각을 직접
+        timeout(기본 300초)에만 기대면 재연결이 걸리지 않을 수 있다. 하트비트
+        최종 수신 시각을 직접
         추적해 임계값을 넘기면 현재 연결을 강제로 닫아, 라이브러리의 기존
         reconnect_async 경로(on_abort → 백그라운드 재연결)를 타게 만든다.
 
-        `on_notification`이 처리를 큐로 넘기고 즉시 반환하게 된 뒤로는,
-        이 스레드가 느려질 원인이 우리 쪽 처리 지연(스프레드시트/Mastodon
+        `on_notification`이 처리를 큐로 넘기고 즉시 반환하므로, 이 스레드가 느려질 원인이 우리 쪽 처리 지연(스프레드시트/Mastodon
         API 호출 등)일 수는 없다 — 순수하게 서버/네트워크 쪽 silent hang만
         이 워치독의 대상이다."""
         while handle.is_alive():
@@ -574,7 +572,7 @@ class MastodonBotListener(StreamListener):
         조회/기록, Mastodon API 호출 등)를 이 자리에서 하면, 그 호출이
         느려지거나 재시도에 걸리는 동안 이 스레드가 서버 하트비트를 읽지
         못해 watchdog(60초 무응답 시 강제 재연결, watchdog() 참고)가
-        개입하고 그 사이 도착한 다른 알림이 유실될 수 있었다. 처리 시간이
+        개입하고 그 사이 도착한 다른 알림이 유실될 수 있다. 처리 시간이
         읽기 스레드를 절대 막지 않도록, 실제 처리는 `_notification_worker`가
         도는 별도 스레드로 완전히 넘긴다."""
         self._notification_queue.put(notification)
@@ -1603,8 +1601,7 @@ def _mover_label(ps: PracticeBattleState, side: Optional[SideType]) -> str:
 
     팀 이름만 알리면 지금 누가 커맨드를 입력해야 하는지 각자 자기 팀을
     다시 확인해야 한다 — 특히 팀당 인원이 여럿이면 헷갈리므로 명단을
-    함께 붙인다. 명단을 만들 수 없으면(전멸 직후 등) 기존처럼 팀 이름만
-    쓴다. 동료(소환수)는 플레이어가 조작하지 않으므로 명단에서 뺀다."""
+    함께 붙인다. 명단을 만들 수 없으면(전멸 직후 등) 팀 이름만 쓴다. 동료(소환수)는 플레이어가 조작하지 않으므로 명단에서 뺀다."""
     label = ps.side_label(side)
     if side is None:
         return label
@@ -1767,8 +1764,6 @@ def _apply_duel_defeat_penalty(
     entries = []
     dead_names = []
     for change in changes:
-        # 라이브 세션의 실제 체력도 맞춰 둔다 — 같은 캐릭터가 이 전투 안에서
-        # 다시 조회될 일은 없지만, 어긋난 값을 남겨 둘 이유도 없다.
         persistent = ps.context.persistent_hp.get(CharacterId(change.name))
         if persistent is not None:
             persistent.curr_hp = change.curr_hp
@@ -2451,7 +2446,7 @@ def main() -> None:
     # run_async + reconnect_async를 켜면 연결이 끊겨도 백그라운드 스레드가
     # 재연결만 재시도하고 프로세스는 살아 있다. 기본값에는 재연결 로직이
     # 없어, 네트워크 순단 한 번에 프로세스가 죽고 시트 전체 재로드와
-    # 미종료 전투 복원을 거치는 콜드 재시작이 매번 일어났다.
+    # 미종료 전투 복원을 거치는 콜드 재시작을 한다.
     listener = MastodonBotListener(mastodon, state, me["acct"])
     handle = mastodon.stream_user(
         listener,

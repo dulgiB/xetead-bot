@@ -40,7 +40,7 @@ class ReceivedDamageModEvent(BuffEvent):
 
 
 class BuffReceivedDamage(BuffBase):
-    """주는 대미지 증가/감소"""
+    """받는 대미지 증가/감소"""
 
     @property
     def timing(self) -> BuffApplyTiming:

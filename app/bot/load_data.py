@@ -492,8 +492,7 @@ def update_character_quest_date(
 
     "daily_quest_status_id" 컬럼이 있으면 함께 비운다 — 의뢰가 완료돼
     더 이상 판정 답글을 기다리지 않는다는 뜻이라, 봇 재기동 복원 대상에서
-    빠져야 한다(update_character_daily_quest_status_id 참고). 이 컬럼은
-    선택 사항이라 없는 시트에서는 조용히 건너뛴다.
+    빠져야 한다(update_character_daily_quest_status_id 참고).
     """
     ws = _worksheet(spreadsheet, "캐릭터", cache)
     values = (
@@ -519,9 +518,9 @@ def update_character_quest_date(
     for idx, row in enumerate(rows, start=2):
         name = row[name_col] if name_col is not None and name_col < len(row) else None
         if name == char_name:
-            # update_cell()은 USER_ENTERED 고정이라 "YYYY-MM-DD"가 날짜
-            # 시리얼로 변환되고, 그러면 문자열 재비교가 영원히 거짓이 되어
-            # 1일 1회 제한이 무력화된다 — raw로 기록하는 update()를 쓴다.
+            # "YYYY-MM-DD"가 날짜 시리얼로 바뀌면 문자열 재비교가 영원히
+            # 거짓이 되어 1일 1회 제한이 무력화된다. raw로 기록하지만, 테이블
+            # 컬럼 타입이 DATE면 raw여도 변환되므로 컬럼 타입이 TEXT여야 한다.
             ws.update([[today]], gspread.utils.rowcol_to_a1(idx, date_col))
             if status_col is not None:
                 ws.update([[""]], gspread.utils.rowcol_to_a1(idx, status_col))
@@ -581,10 +580,8 @@ def update_character_daily_quest_status_id(
     이어서 진행할 수 있다(main()의 재기동 복원 참고). status_id=""로
     부르면 진행 중 표시를 지운다.
 
-    "daily_quest_status_id" 컬럼 자체가 없는 시트에서는 조용히 아무 것도
-    하지 않는다 — 이 컬럼은 선택 사항이라, 아직 추가하지 않은 캐릭터
-    시트에서도 기존 [의뢰] 흐름 자체는(재기동 복원 없이) 그대로 동작해야
-    한다.
+    "daily_quest_status_id" 컬럼이 없는 시트에서는 아무 것도 하지 않는다 —
+    그 경우에도 [의뢰] 흐름 자체는(재기동 복원 없이) 동작한다.
     """
     ws = _worksheet(spreadsheet, "캐릭터", cache)
     values = (
@@ -645,9 +642,8 @@ def update_character_fate_date(
 ) -> None:
     """캐릭터 시트에서 해당 캐릭터 행의 fate_date를 오늘 날짜로 갱신한다.
 
-    "fate_date" 컬럼 자체가 없는 시트에서는 경고만 남기고 조용히 넘어간다 —
-    운명간섭은 컬럼이 없으면 항상 "미사용"으로 읽혀 제한이 걸리지 않으므로,
-    컬럼을 아직 추가하지 않은 시트에서도 봇이 죽지는 않아야 한다.
+    "fate_date" 컬럼이 없는 시트에서는 경고만 남기고 넘어간다(그 경우
+    운명간섭은 항상 "미사용"으로 읽혀 제한이 걸리지 않는다).
     """
     ws, header, rows = _load_character_sheet(spreadsheet, cache)
     if "fate_date" not in header:
@@ -657,8 +653,8 @@ def update_character_fate_date(
         return
     fate_col = header.index("fate_date") + 1
     row_number = _find_character_row_number(header, rows, char_name)
-    # update_character_quest_date()와 같은 이유로 raw 기록이어야 한다 —
-    # USER_ENTERED로 쓰면 날짜 시리얼로 변환돼 문자열 비교가 깨진다.
+    # update_character_quest_date()와 같은 이유로 raw로 기록하고, 컬럼
+    # 타입도 TEXT여야 한다.
     ws.update([[today]], gspread.utils.rowcol_to_a1(row_number, fate_col))
     if cache is not None:
         cache.invalidate("캐릭터")
@@ -746,10 +742,8 @@ def _load_enemy_skill_sheet(
     spreadsheet: gspread.Spreadsheet,
     cache: Optional[SheetCache] = None,
 ) -> Optional[tuple[gspread.Worksheet, list[str], list[list]]]:
-    """'스킬_에너미' 시트의 (worksheet, header, rows)를 반환한다. 시트 자체가
-    없거나 is_revealed 컬럼이 아직 추가되지 않았으면 None을 반환한다 — 이
-    컬럼은 나중에 스프레드시트에 수동으로 추가되는 것을 전제하므로, 추가되기
-    전에도 호출측이 조용히 넘어갈 수 있어야 한다."""
+    """'스킬_에너미' 시트의 (worksheet, header, rows)를 반환한다. 시트나
+    is_revealed 컬럼이 없으면 None을 반환한다."""
     try:
         ws = _worksheet(spreadsheet, "스킬_에너미", cache)
     except gspread.exceptions.WorksheetNotFound:

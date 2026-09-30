@@ -549,7 +549,6 @@ def _format_damage_or_heal(
 ) -> tuple[str, Optional[str], Optional[str]]:
     # HP는 반드시 entry의 스냅샷을 쓴다 — 같은 대상이 한 커맨드에서 여러 번
     # 맞을 수 있어 context를 다시 조회하면 전부 최종 HP로 보인다.
-    # (아래 hide_hp 조회는 캐릭터 존재 여부만 보므로 무관하다.)
     final_value = f"{sign}{entry.value}"
     target_name = escape_markdown(entry.target_name)
     label_suffix = "".join(

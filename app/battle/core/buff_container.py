@@ -263,7 +263,7 @@ class BuffContainer:
     ) -> None:
         """이동 시(자발적/강제 모두) ON_ENEMY_MOVE 타이밍 패시브/버프를 발동한다.
 
-        대미지 적용은 지금처럼 별도의 즉시-확정 계산기로 처리해 이동 종류
+        대미지 적용은 별도의 즉시-확정 계산기로 처리해 이동 종류
         (PRE 선언/강제 이동 등)에 관계없이 항상 그 자리에서 HP에 반영되게
         하되, 그 결과 로그는 이동을 유발한 calculator/effect_seq_number의
         extra_log_entries에 실어 build_log_entries()가 같은 CommandPart의

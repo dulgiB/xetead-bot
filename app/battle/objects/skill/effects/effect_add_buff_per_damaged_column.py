@@ -46,10 +46,7 @@ class SkillEffectAddBuffPerDamagedColumn(SkillEffectBase):
         holder_column = context.find_character_position(holder).value
 
         # 동료(소환수)는 제외한다 — 같은 범위 판정을 하는
-        # _characters_in_holder_scope 계열과 기준을 맞춘다. 동료는 소환자의
-        # 위치를 그대로 따르므로, 동료가 맞았다면 대개 소환자도 함께 맞아
-        # 그 열은 어차피 잡힌다. 남는 것은 소환자가 스스로 동료의 체력을
-        # 대가로 지불한 경우뿐인데, 그건 "아군이 피격당했다"가 아니다.
+        # _characters_in_holder_scope 계열과 기준을 맞춘다.
         damaged_columns = {
             context.find_character_position(char_id).value
             for char_id in context.damaged_this_round

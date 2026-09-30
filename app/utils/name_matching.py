@@ -20,8 +20,8 @@ def resolve_matching_key(raw: str, candidates: Iterable[str]) -> str:
 
     정확히 일치하는 항목이 있으면 그대로 반환하고, 공백만 다르게 일치하는
     항목이 있으면 candidates 쪽 표기로 치환해 반환한다. 일치하는 항목이
-    없으면 raw를 그대로 반환한다 (호출측의 기존 '존재하지 않음' 처리 경로를
-    그대로 타도록 하기 위함).
+    없으면 raw를 그대로 반환해, 호출측의 '존재하지 않음' 처리 경로를 타게
+    한다.
     """
     candidates = list(candidates)
     if raw in candidates:

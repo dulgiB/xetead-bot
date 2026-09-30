@@ -58,10 +58,8 @@ def handle_character_command(
     mastodon acct를 char_dict로 캐릭터 ID로 변환 후 커맨드를 파싱·처리한다.
     검증 실패 시 오류 메시지 문자열을 반환한다.
 
-    `session`/`field_id`/`battle_type`은 호출측이 명시한다 — 이 함수 스스로
-    어떤 전투인지 구분할 방법이 없으므로 `battle_type`을 기본값 없이 반드시
-    caller가 넘기게 한다 — 기본값을 두면 넘기는 것을 잊은 경로가 조용히 본
-    전투로 기록된다.
+    `battle_type`은 기본값 없이 호출측이 넘긴다 — 기본값을 두면 넘기는 것을
+    잊은 경로가 조용히 본 전투로 기록된다.
 
     반환값: (reply_text_or_None, calc_text, battle_log_or_None). 두 번째
     요소(calc_text)는 계산식만 모은 텍스트로, 비어 있지 않으면 호출측이

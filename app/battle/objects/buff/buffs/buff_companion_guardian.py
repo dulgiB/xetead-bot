@@ -73,7 +73,7 @@ class CompanionGuardianEvent(BuffEvent):
                     continue
                 # 최종 수치를 한 번만 확정한 뒤 비율로 갈라 각자 FIXED
                 # 대미지로 만든다 — 각자 다시 modifier를 적용하면 증감이
-                # 한쪽에만 반영되는 비대칭이 재발한다.
+                # 한쪽에만 반영되는 비대칭이 생긴다.
                 final_calc = ValueWithModifiers(
                     damage_calc.base.value,
                     damage_calc.given_modifiers,
