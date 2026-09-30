@@ -8,7 +8,8 @@
    때 체력이 줄어든 것만 보고 이유를 알 수 없다.
 2. 한쪽이 쓰러져 승부가 난 라운드는 아예 닫지 않는다 — 닫으면 이긴 쪽이
    자기에게 걸린 DoT나 [재앙] 대가로 함께 쓰러져 무승부가 되고, 그러면
-   진 쪽마저 패배 대가를 치르지 않는다.
+   진 쪽마저 패배 대가를 치르지 않는다. 다만 상시전투는 전투 종료 대가가
+   실제 체력에 남아야 하므로 승자를 먼저 정한 뒤 전투 종료 처리만 한다.
 """
 
 import os
@@ -201,3 +202,26 @@ def test_battle_end_processing_runs_when_both_sides_survive():
     assert game_post is not None
     assert "전투 종료 처리" in game_post
     assert ctx.characters[holder].status.curr_hp == 50 - 3 * 5
+
+
+def test_investigation_applies_battle_end_even_when_a_side_is_wiped():
+    """상시전투는 전투 종료 대가가 실제 체력에 남아야 하므로 적을 전멸시켜
+    끝나도 전투 종료 처리를 한다. 승자는 대가를 치르기 전에 정해지므로, 그
+    대가로 아군이 쓰러져도 무승부가 되지 않는다."""
+    ctx, ps, state = _setup(
+        {"재앙": _catastrophe_buff()},
+        a_max_hp=40,
+        b_max_hp=2,
+        mode=PracticeBattleMode.INVESTIGATION,
+    )
+    ally = CharacterId("Catastrophe")
+    ctx.buff_container.add(
+        BuffAddData(given_by=ally, applied_to=ally, buff_id="재앙", stack_value=10)
+    )
+
+    game_post = _play_phase(state, ps, "[공격/Adversary]")
+
+    assert game_post is not None
+    assert "승자: 아군" in game_post
+    assert "전투 종료 처리" in game_post
+    assert ctx.characters[ally].status.curr_hp == 0

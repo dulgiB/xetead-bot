@@ -419,10 +419,17 @@ def test_duel_fate_boost_cost_is_written_back_to_the_sheet(monkeypatch):
     command = parse_character_command(_A, f"[공격+/{_B.name}]", ctx)
     assert command is not None
     process_ally_command(ctx, command)
-    warning = main_module._apply_duel_fate_cost(state, ps, _A, command)
+    warning = main_module._apply_practice_fate_cost(state, ps, _A, command)
 
     assert warning == ""
     assert state.spreadsheet.hp_of(_A.name) == 90 - FATE_INTERVENTION_HP_COST
+
+
+def test_investigation_allows_fate_boost():
+    ctx = PracticeBattlefieldContext(
+        buff_dict={}, skill_dict={}, mode=PracticeBattleMode.INVESTIGATION
+    )
+    assert ctx.allow_fate_intervention is True
 
 
 def test_practice_mode_still_rejects_fate_boost():

@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from collections.abc import Iterable
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
@@ -214,8 +215,8 @@ def build_field_characters(
     """필드 캐릭터 스냅샷을 만든다.
 
     본 전투(include_hp=False)는 체력을 넣지 않는다 — 대신 "캐릭터" 시트의
-    curr_hp가 진실 공급원이라 그쪽에서 복구한다. 대련/상시전투는 half-HP
-    임시 캐릭터라 원본 캐릭터 시트에 쓸 수 없으므로 체력까지 필드에 담는다.
+    curr_hp가 진실 공급원이라 그쪽에서 복구한다. 대련 계열은 시트에 없는
+    임시 체력으로 싸우는 모드가 있어 체력까지 필드에 담는다.
 
     버프는 진영과 무관하게 담는다 — 체력과 달리 어느 시트에도 진실 공급원이
     없어, 여기 남기지 않으면 재기동 시 통째로 사라진다.
@@ -391,7 +392,8 @@ def write_back_changed_hp(
 ) -> None:
     """entries 중 대미지/회복이 발생한 대상의 curr_hp를 "캐릭터" 시트에 반영한다.
 
-    본 전투 전용 — 대련/상시전투는 half-HP 임시 캐릭터라 호출하면 안 된다.
+    본 전투 전용 — 대련/결투는 임시 체력이라 호출하면 안 되고, 상시전투는
+    바뀐 캐릭터를 직접 골라 write_back_character_hp()로 쓴다.
 
     호출측(캐릭터 커맨드 처리, 페이즈 전환 등)은 이미 커맨드/버프 처리를
     마친 뒤 이 함수를 호출한다 — 여기서 예외가 위로 전파되면 이미 끝난
@@ -410,16 +412,32 @@ def write_back_changed_hp(
         for entry in entries
         if entry.result.startswith("대미지 ") or entry.result.startswith("회복 ")
     }
-    if not changed_names:
-        return
+    write_back_character_hp(spreadsheet, context, changed_names, cache=cache)
+
+
+def write_back_character_hp(
+    spreadsheet: gspread.Spreadsheet,
+    context: "BattlefieldContext",
+    names: Iterable[str],
+    cache: Optional[SheetCache] = None,
+) -> set[str]:
+    """names 캐릭터들의 전장 체력을 "캐릭터"/"에너미" 시트 curr_hp에 쓰고,
+    실제로 쓴 이름을 반환한다.
+
+    write_back_changed_hp()와 같은 이유로 예외를 위로 전파하지 않는다.
+    """
+    written: set[str] = set()
+    name_set = set(names)
+    if not name_set:
+        return written
 
     try:
         hp_rows = _load_hp_rows(spreadsheet, cache)
     except Exception:
         logger.exception("체력 시트 반영 대상 조회 실패")
-        return
+        return written
 
-    for name in changed_names:
+    for name in name_set:
         char_id = CharacterId(name)
         char = context.characters.get(char_id)
         # 여기서 찾을 수 없다는 것 자체가 탈락(체력 0)을 의미한다.
@@ -442,8 +460,10 @@ def write_back_changed_hp(
             continue
         try:
             hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, curr_hp)
+            written.add(name)
         except Exception:
             logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
+    return written
 
 
 # 동시에 최대 1개 슬롯만 진행되는 배틀타입 — field_id로 행을 못 찾으면 같은

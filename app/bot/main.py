@@ -1643,8 +1643,9 @@ def _practice_round_end_text(ps: PracticeBattleState) -> str:
 def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
     """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())을 처리하고,
     그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
-    없으면 빈 문자열). **반드시 ps.winner() 호출보다 먼저 불러야 한다** —
-    이 훅으로 바뀐 HP가 승패 판정에도 반영돼야 하기 때문이다."""
+    없으면 빈 문자열). 양 팀이 모두 살아 있을 때는 **반드시 ps.winner()
+    호출보다 먼저 불러야 한다** — 이 훅으로 바뀐 HP가 승패 판정에도 반영돼야
+    하기 때문이다."""
     battle_end_entries = ps.context.on_battle_end()
     body, _calc = format_battle_end_log_entries(ps.context, battle_end_entries)
     return body
@@ -1803,23 +1804,28 @@ def _finish_practice_battle(
     """대련/상시전투/결투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이
     함수가 끝나면 state.practices에서 제거된 상태다.
 
-    전투 종료 훅(_apply_practice_battle_end_effects)은 반드시 winner() 앞에
-    와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다.
 
     `round_end_text`는 이 전투가 정상적으로 라운드를 닫은 뒤(라운드 상한
     도달 등) 끝났을 때 그 라운드 종료 처리 결과다 — 종료 게시물이 마지막
     라운드의 정산을 삼켜 버리지 않도록 함께 싣는다."""
     assert ps.active_post_id is not None
-    # 전투 종료 처리(BuffBase.on_battle_end())는 양 팀이 모두 살아 있는 채로
-    # 전투가 끝났을 때만 한다. 한쪽이 쓰러져 승부가 이미 난 자리에서 남은 대가를
-    # 받아내면, 이긴 쪽이 그 대가로 함께 쓰러져 무승부가 되고 진 쪽마저
-    # 패배 대가를 치르지 않는다.
     both_sides_alive = (
         ps.total_hp_by_side(SideType.SIDE_1) > 0
         and ps.total_hp_by_side(SideType.SIDE_2) > 0
     )
-    battle_end_body = _apply_practice_battle_end_effects(ps) if both_sides_alive else ""
-    winner = ps.winner()
+    if both_sides_alive:
+        battle_end_body = _apply_practice_battle_end_effects(ps)
+        winner = ps.winner()
+    else:
+        # 한쪽이 쓰러져 승부가 이미 났다. 대련/결투는 전투 종료 처리를 하지
+        # 않는다 — 남은 대가를 받아내면 이긴 쪽이 그 대가로 함께 쓰러져
+        # 무승부가 되고, 결투에서는 진 쪽마저 패배 대가를 치르지 않는다.
+        # 상시전투는 그 대가가 실제 체력에 남아야 하므로 치르되, 승자는 대가를
+        # 치르기 전에 정해 둔다.
+        winner = ps.winner()
+        battle_end_body = (
+            _apply_practice_battle_end_effects(ps) if ps.mode.uses_sheet_hp else ""
+        )
     defeat_body = _apply_duel_defeat_penalty(state, ps, winner)
     result_line = (
         f"승자: {ps.side_label(winner)}{_winner_roster_text(ps, winner)}"
@@ -1846,6 +1852,31 @@ def _finish_practice_battle(
 
 
 def _finalize_practice_phase(
+    state: "BotState", ps: PracticeBattleState, current_phase: PracticeRoundPhase
+) -> tuple[Optional[str], bool]:
+    """_advance_practice_phase()로 페이즈를 넘긴 뒤, 상시전투라면 그
+    커맨드와 라운드/전투 종료 처리로 바뀐 체력을 시트에 반영한다."""
+    result = _advance_practice_phase(state, ps, current_phase)
+    _write_back_sheet_hp(state, ps)
+    return result
+
+
+def _write_back_sheet_hp(state: "BotState", ps: PracticeBattleState) -> None:
+    """상시전투 양 진영의 전장 체력을 "캐릭터"/"에너미" 시트에 쓴다."""
+    names = ps.sheet_hp_changes()
+    if not names:
+        return
+    written = log_sheets.write_back_character_hp(
+        state.spreadsheet, ps.context, names, cache=state.sheet_cache
+    )
+    # 쓰지 못한 캐릭터는 기록하지 않고 남겨, 다음 커맨드 때 다시 시도한다.
+    for name in written:
+        char = ps.context.characters.get(CharacterId(name))
+        # 필드에 없으면 체력 0으로 탈락한 것이다.
+        ps.written_sheet_hp[name] = char.status.curr_hp if char is not None else 0
+
+
+def _advance_practice_phase(
     state: "BotState", ps: PracticeBattleState, current_phase: PracticeRoundPhase
 ) -> tuple[Optional[str], bool]:
     """대련/상시전투에서 커맨드 하나(캐릭터 본인 답글 또는 admin/world
@@ -1920,21 +1951,28 @@ def _finalize_practice_phase(
     return game_post, False
 
 
-def _apply_duel_fate_cost(
+def _apply_practice_fate_cost(
     state: "BotState",
     ps: PracticeBattleState,
     char_id: CharacterId,
     command: CharacterCommand,
 ) -> str:
-    """결투에서 키워드 보정을 쓴 커맨드의 대가를 시트에 반영한다(실패 안내
-    문구를 반환하며, 반영할 게 없거나 성공하면 빈 문자열).
+    """결투/상시전투에서 키워드 보정을 쓴 커맨드의 대가와 사용 기록을 시트에
+    반영한다(실패 안내 문구를 반환하며, 반영할 게 없거나 성공하면 빈 문자열).
 
-    전장은 임시 체력 대신 실제 체력을 깎아 두기만 하므로
+    결투의 전장은 임시 체력 대신 실제 체력을 깎아 두기만 하므로
     (PracticeBattlefieldContext.pay_fate_cost_hp), 그 값을 시트에 옮기는 것은
-    봇 계층의 몫이다. 이미 커맨드가 처리된 뒤라 실패를 위로 던지면 답글
+    봇 계층의 몫이다. 상시전투는 대가가 전장 체력(=실제 체력)에서 빠지고
+    _write_back_sheet_hp()가 다른 체력 변동과 함께 시트에 쓰므로, 여기서는
+    사용 기록만 남긴다. 이미 커맨드가 처리된 뒤라 실패를 위로 던지면 답글
     자체가 사라지므로, write_back_changed_hp()와 같이 흡수하고 알리기만
     한다."""
-    if not ps.is_duel_match or not any(part.fate_boost for part in command.parts):
+    if not any(part.fate_boost for part in command.parts):
+        return ""
+    if ps.mode.uses_sheet_hp:
+        mark_fate_used_if_needed(state, char_id, command)
+        return ""
+    if not ps.is_duel_match:
         return ""
     persistent = ps.context.persistent_hp.get(char_id)
     if persistent is None:
@@ -2066,7 +2104,7 @@ def _handle_practice_proxy_command(
             reply_text, calc_text = format_battle_reply(
                 ps.context, char_id, result.part_results
             )
-            fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+            fate_warning = _apply_practice_fate_cost(state, ps, char_id, command)
             if fate_warning:
                 reply_text += f"\n{fate_warning}"
         except CommandValidationError as e:
@@ -2203,7 +2241,7 @@ def _handle_practice_command(
         reply_text, calc_text = format_battle_reply(
             ps.context, char_id, result.part_results
         )
-        fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+        fate_warning = _apply_practice_fate_cost(state, ps, char_id, command)
         if fate_warning:
             reply_text += f"\n{fate_warning}"
     except CommandValidationError as e:

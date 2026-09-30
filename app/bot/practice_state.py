@@ -19,7 +19,7 @@ class PracticeBattleState:
     mode: PracticeBattleMode = PracticeBattleMode.PRACTICE
 
     round_n: int = 0
-    # None이면 라운드 상한 없음(결투) — 한쪽이 전멸할 때까지 계속된다.
+    # None이면 라운드 상한 없음(결투/상시전투) — 한쪽이 전멸할 때까지 계속된다.
     round_limit: Optional[int] = 3
 
     prep_post_id: int = 0
@@ -59,9 +59,35 @@ class PracticeBattleState:
     # 붙잡아 두고 분모로 쓰면 "얼마나 잃었는가"가 그대로 비율에 남는다.
     initial_max_hp_by_side: dict[SideType, int] = field(default_factory=dict)
 
+    # 상시전투 전용: 마지막으로 시트에 쓴 체력. 커맨드마다 바뀐 캐릭터만
+    # 골라 써서 시트 쓰기 횟수를 줄인다.
+    written_sheet_hp: dict[str, int] = field(default_factory=dict)
+
     @property
     def is_investigation(self) -> bool:
         return self.mode == PracticeBattleMode.INVESTIGATION
+
+    def sheet_hp_changes(self) -> list[str]:
+        """상시전투에서 마지막 시트 반영 이후 체력이 바뀐 캐릭터 이름(양 진영).
+
+        직전 라운드 종료에 체력 0으로 필드에서 빠진 캐릭터도 포함한다 —
+        라운드 종료 DoT로 쓰러지면 쓰러진 체력을 시트에 쓸 기회 없이 필드에서
+        사라지기 때문이다."""
+        if not self.mode.uses_sheet_hp:
+            return []
+        changed = [
+            char.id.name
+            for side in SideType
+            for char in self.actable_characters(side)
+            if self.written_sheet_hp.get(char.id.name) != char.status.curr_hp
+        ]
+        changed += [
+            char_id.name
+            for char_id in self.manager.get_last_eliminated_characters()
+            if char_id not in self.context.characters
+            and self.written_sheet_hp.get(char_id.name) != 0
+        ]
+        return changed
 
     @property
     def is_duel_match(self) -> bool:

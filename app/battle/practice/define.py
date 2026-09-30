@@ -35,9 +35,17 @@ class PracticeBattleMode(str, Enum):
         return self == PracticeBattleMode.DUEL
 
     @property
+    def uses_sheet_hp(self) -> bool:
+        """임시 체력 없이 "캐릭터"/"에너미" 시트의 실제 체력으로 싸우고, 체력
+        변동을 시트에 반영하는지. 상시전투는 상시조사 도중 실제로 벌어지는
+        전투라 본 전투처럼 입은 피해가 남아야 한다."""
+        return self == PracticeBattleMode.INVESTIGATION
+
+    @property
     def has_round_limit(self) -> bool:
-        """라운드 상한이 있는지. 결투는 한쪽이 전멸할 때까지 계속된다."""
-        return self != PracticeBattleMode.DUEL
+        """라운드 상한이 있는지. 결투와 상시전투는 한쪽이 전멸할 때까지
+        계속된다."""
+        return self == PracticeBattleMode.PRACTICE
 
 
 class PracticeRoundPhase(Enum):

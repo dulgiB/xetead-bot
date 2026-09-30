@@ -41,7 +41,9 @@ class PersistentHp:
 class PracticeBattlefieldContext(BattlefieldContext):
     """
     대련/상시전투/결투 전용 전장 컨텍스트.
-    - 캐릭터 체력은 실제 max_hp의 절반으로 초기화된다 (결투는 max_hp 그대로).
+    - 대련은 실제 max_hp의 절반, 결투는 max_hp 그대로인 임시 체력으로 싸운다.
+      상시전투는 본 전투처럼 양 진영 모두 시트의 실제 체력을 그대로 쓴다
+      (`PracticeBattleMode.uses_sheet_hp`).
     - 아군/적군 구분 대신 SIDE_1/SIDE_2를 사용한다 (내부적으로는 ALLY/ENEMY에 매핑).
     - `is_duel`로 대등한 PvP(대련·결투)와 상시전투(아군 vs 적군)를 가른다.
       진영에 따라 다르게 동작하는 규칙이 대등한 PvP에서는 비대칭이 되기
@@ -88,11 +90,11 @@ class PracticeBattlefieldContext(BattlefieldContext):
 
     @property
     def allow_fate_intervention(self) -> bool:
-        """결투에서만 허용한다 — 대가를 임시 체력이 아니라 시트의 실제
-        체력에서 빼므로(`pay_fate_cost_hp()`), 대련/상시전투를 막는 이유인
-        "되돌릴 수 없는 자원을 임시 캐릭터에게 걸 수 없다"가 결투에는
-        해당하지 않는다."""
-        return self.mode == PracticeBattleMode.DUEL
+        """결투와 상시전투에서 허용한다 — 대련을 막는 이유인 "되돌릴 수 없는
+        자원을 임시 캐릭터에게 걸 수 없다"가 둘에는 해당하지 않는다. 결투는
+        대가를 시트의 실제 체력에서 따로 빼고(`pay_fate_cost_hp()`), 상시전투는
+        애초에 실제 체력으로 싸운다."""
+        return self.mode != PracticeBattleMode.PRACTICE
 
     def fate_cost_hp(self, character: CombatCharacter) -> int:
         if self.mode != PracticeBattleMode.DUEL:
@@ -132,10 +134,13 @@ class PracticeBattlefieldContext(BattlefieldContext):
         side: SideType,
         column_idx: BattlefieldColumnIndex,
     ) -> None:
-        practice_hp = data.max_hp if self.mode.uses_full_hp else data.max_hp // 2
-        practice_data = dataclasses.replace(
-            data, max_hp=practice_hp, curr_hp=practice_hp
-        )
+        if self.mode.uses_sheet_hp:
+            practice_data = data
+        else:
+            practice_hp = data.max_hp if self.mode.uses_full_hp else data.max_hp // 2
+            practice_data = dataclasses.replace(
+                data, max_hp=practice_hp, curr_hp=practice_hp
+            )
         super().add_character(practice_data, _SIDE_TO_FACTION[side], column_idx)
         if self.mode == PracticeBattleMode.DUEL:
             self.persistent_hp[CharacterId(data.name)] = PersistentHp(
