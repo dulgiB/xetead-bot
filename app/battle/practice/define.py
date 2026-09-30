@@ -42,6 +42,12 @@ class PracticeBattleMode(str, Enum):
         return self == PracticeBattleMode.INVESTIGATION
 
     @property
+    def stakes_sheet_hp(self) -> bool:
+        """전투 결과가 시트의 실제 체력에 남는지. 대련만 아무것도 남기지 않는
+        연습이다."""
+        return self != PracticeBattleMode.PRACTICE
+
+    @property
     def has_round_limit(self) -> bool:
         """라운드 상한이 있는지. 결투와 상시전투는 한쪽이 전멸할 때까지
         계속된다."""

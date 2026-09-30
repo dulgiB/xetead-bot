@@ -19,7 +19,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
@@ -340,17 +340,53 @@ def apply_persistent_hp_delta(
     양을 정할 수 없으므로 0을 적용하지 않고 실패로 돌린다 — 조용히 넘기면
     대가를 치르지 않은 캐릭터가 성공한 것으로 보고된다.
     """
-    if not names:
+
+    def percent_of_max(hp_row: _HpRow) -> Optional[int]:
+        if hp_row.max_hp is None:
+            return None
+        sign = -1 if max_hp_percent < 0 else 1
+        return sign * (hp_row.max_hp * abs(max_hp_percent) // 100)
+
+    return _apply_persistent_hp(
+        spreadsheet, {name: percent_of_max for name in names}, cache
+    )
+
+
+def apply_persistent_hp_amounts(
+    spreadsheet: gspread.Spreadsheet,
+    amounts: dict[str, int],
+    cache: Optional[SheetCache] = None,
+) -> tuple[list[PersistentHpChange], list[str]]:
+    """apply_persistent_hp_delta()와 같되, 캐릭터별로 정해진 양(음수면 깎고
+    양수면 회복)을 시트의 실제 체력에 반영한다. 결투의 전투 종료 처리처럼
+    전장에서 이미 수치가 정해진 변동을 실제 체력으로 옮길 때 쓴다."""
+
+    def fixed(amount: int) -> Callable[[_HpRow], Optional[int]]:
+        return lambda _hp_row: amount
+
+    return _apply_persistent_hp(
+        spreadsheet, {name: fixed(amount) for name, amount in amounts.items()}, cache
+    )
+
+
+def _apply_persistent_hp(
+    spreadsheet: gspread.Spreadsheet,
+    delta_by_name: "dict[str, Callable[[_HpRow], Optional[int]]]",
+    cache: Optional[SheetCache],
+) -> tuple[list[PersistentHpChange], list[str]]:
+    """시트를 다시 읽어 캐릭터별 delta를 실제 체력에 반영한다. delta 함수가
+    None을 돌려주면(양을 정할 수 없으면) 그 캐릭터는 실패로 돌린다."""
+    if not delta_by_name:
         return [], []
     try:
         hp_rows = _load_hp_rows(spreadsheet, cache)
     except Exception:
         logger.exception("실제 체력 정산 대상 조회 실패")
-        return [], list(names)
+        return [], list(delta_by_name)
 
     applied: list[PersistentHpChange] = []
     failed: list[str] = []
-    for name in names:
+    for name, delta_for in delta_by_name.items():
         hp_row = hp_rows.get(name)
         if hp_row is None or hp_row.curr_hp is None:
             logger.error("'%s'의 시트 체력을 찾을 수 없어 실제 체력 정산 실패", name)
@@ -362,9 +398,11 @@ def apply_persistent_hp_delta(
             )
             failed.append(name)
             continue
-        sign = -1 if max_hp_percent < 0 else 1
-        delta = sign * (hp_row.max_hp * abs(max_hp_percent) // 100)
-        new_hp = max(0, hp_row.curr_hp + delta)
+        delta = delta_for(hp_row)
+        if delta is None:
+            failed.append(name)
+            continue
+        new_hp = max(0, min(hp_row.max_hp, hp_row.curr_hp + delta))
         try:
             hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, new_hp)
         except Exception:

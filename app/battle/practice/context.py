@@ -94,7 +94,7 @@ class PracticeBattlefieldContext(BattlefieldContext):
         자원을 임시 캐릭터에게 걸 수 없다"가 둘에는 해당하지 않는다. 결투는
         대가를 시트의 실제 체력에서 따로 빼고(`pay_fate_cost_hp()`), 상시전투는
         애초에 실제 체력으로 싸운다."""
-        return self.mode != PracticeBattleMode.PRACTICE
+        return self.mode.stakes_sheet_hp
 
     def fate_cost_hp(self, character: CombatCharacter) -> int:
         if self.mode != PracticeBattleMode.DUEL:

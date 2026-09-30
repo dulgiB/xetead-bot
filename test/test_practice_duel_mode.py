@@ -5,6 +5,7 @@
   2. 라운드 상한이 없다 — 한쪽이 전멸할 때까지 계속된다.
   3. 패배한 팀은 임시 체력이 아니라 시트의 실제 체력을 최대 체력의 50% 잃는다.
 그리고 그 대가 구조 덕에 키워드 보정만은 허용된다(실제 체력에서 빠진다).
+전투 종료 처리([재앙] 등)도 이긴 쪽에게 남는 대가라 실제 체력에서 빠진다.
 
 대련/상시전투와 공유하는 진행 규칙 자체는 test_practice_* 다른 파일에서
 다루므로 여기서는 위 차이점만 확인한다.
@@ -38,8 +39,10 @@ from battle.practice.define import (  # noqa: E402
 from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
 from bot import main as main_module  # noqa: E402
 from bot.main import BotState  # noqa: E402
+from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
+from test_practice_round_end_report import _catastrophe_buff  # noqa: E402
 
 _A = CharacterId("Catastrophe")
 _B = CharacterId("Adversary")
@@ -96,10 +99,13 @@ def _duel_state(
     skill_dict: dict | None = None,
     fate_date: str = "",
     revival_count: int = 0,
+    buff_dict: dict | None = None,
 ) -> tuple[PracticeBattlefieldContext, PracticeBattleState, BotState]:
     """배치까지 끝난 1:1 결투(A=1팀, B=2팀)를 만든다."""
     ctx = PracticeBattlefieldContext(
-        buff_dict={}, skill_dict=skill_dict or {}, mode=PracticeBattleMode.DUEL
+        buff_dict=buff_dict or {},
+        skill_dict=skill_dict or {},
+        mode=PracticeBattleMode.DUEL,
     )
     char_dict = {
         "acct_a": get_test_preset(
@@ -239,6 +245,29 @@ def test_duel_ends_when_one_side_is_wiped(monkeypatch):
 
 
 # ── 3. 패배 대가 ─────────────────────────────────────────────────────────────
+
+
+def test_battle_end_effects_come_out_of_real_hp(monkeypatch):
+    """전투 종료 처리는 이긴 쪽에게도 남는 대가라 실제 체력에서 빠진다.
+    패배 대가와 함께 치러지고, 승패는 그 처리 전에 정해진 대로다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(
+        hp_by_name={_A.name: 100, _B.name: 80},
+        buff_dict={"재앙": _catastrophe_buff()},
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=_A, applied_to=_A, buff_id="재앙", stack_value=4)
+    )
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert "승자: 1팀" in post
+    assert "**【전투 종료 처리】**" in post
+    assert f"▹ {_A.name} | -20 → 80/100※" in post
+    assert state.spreadsheet.hp_of(_A.name) == 80
+    assert ctx.persistent_hp[_A].curr_hp == 80
+    assert state.spreadsheet.hp_of(_B.name) == 30
 
 
 def test_defeated_side_loses_real_hp(monkeypatch):

@@ -5,6 +5,7 @@ import re
 import threading
 import time
 import traceback
+import dataclasses
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Optional
@@ -1640,15 +1641,102 @@ def _practice_round_end_text(ps: PracticeBattleState) -> str:
     return "\n\n".join(block for block in blocks if block)
 
 
-def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
+def _apply_practice_battle_end_effects(
+    state: "BotState", ps: PracticeBattleState
+) -> str:
     """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())을 처리하고,
     그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
     없으면 빈 문자열). 양 팀이 모두 살아 있을 때는 **반드시 ps.winner()
     호출보다 먼저 불러야 한다** — 이 훅으로 바뀐 HP가 승패 판정에도 반영돼야
     하기 때문이다."""
     battle_end_entries = ps.context.on_battle_end()
+    notices: list[str] = []
+    if ps.is_duel_match:
+        battle_end_entries, notices = _move_battle_end_hp_to_sheet(
+            state, ps, battle_end_entries
+        )
     body, _calc = format_battle_end_log_entries(ps.context, battle_end_entries)
-    return body
+    return "\n\n".join(block for block in [body, *notices] if block)
+
+
+def _move_battle_end_hp_to_sheet(
+    state: "BotState", ps: PracticeBattleState, entries: list[BattleLogEntry]
+) -> tuple[list[BattleLogEntry], list[str]]:
+    """결투의 전투 종료 처리로 생긴 캐릭터별 대미지/회복을 실제 체력에
+    반영하고, 해당 엔트리를 실제 체력 기준(`※`)으로 바꿔 (엔트리, 안내 블록)을
+    반환한다.
+
+    결투에서 전투 종료 처리는 이긴 쪽에게도 남는 대가라, 임시 체력에서만
+    깎이면 전투가 끝나는 순간 흔적 없이 사라진다."""
+    amounts: dict[str, int] = {}
+    for entry in entries:
+        if entry.value is None or CharacterId(entry.target_name) in (
+            ps.context.companion_owners
+        ):
+            continue
+        if entry.kind == BattleLogEntryKind.DAMAGE:
+            sign = -1
+        elif entry.kind == BattleLogEntryKind.HEAL:
+            sign = 1
+        else:
+            continue
+        amounts[entry.target_name] = (
+            amounts.get(entry.target_name, 0) + sign * entry.value
+        )
+    if not amounts:
+        return entries, []
+
+    changes, failed = log_sheets.apply_persistent_hp_amounts(
+        state.spreadsheet, amounts, cache=state.sheet_cache
+    )
+    change_by_name = {change.name: change for change in changes}
+    # 한 캐릭터에게 효과가 여럿 붙었으면 줄마다 그 시점의 실제 체력을 보여준다.
+    running_hp = {
+        change.name: change.curr_hp - change.applied_delta for change in changes
+    }
+    moved: list[BattleLogEntry] = []
+    for entry in entries:
+        change = change_by_name.get(entry.target_name)
+        if (
+            change is None
+            or entry.value is None
+            or entry.kind
+            not in (
+                BattleLogEntryKind.DAMAGE,
+                BattleLogEntryKind.HEAL,
+            )
+        ):
+            moved.append(entry)
+            continue
+        sign = -1 if entry.kind == BattleLogEntryKind.DAMAGE else 1
+        running_hp[change.name] = max(
+            0, min(change.max_hp, running_hp[change.name] + sign * entry.value)
+        )
+        moved.append(
+            dataclasses.replace(
+                entry,
+                hp_after=running_hp[change.name],
+                max_hp=change.max_hp,
+                hp_is_persistent=True,
+            )
+        )
+        persistent = ps.context.persistent_hp.get(CharacterId(change.name))
+        if persistent is not None:
+            persistent.curr_hp = change.curr_hp
+
+    notices = [
+        f"◊ {escape_markdown(change.name)}의 체력이 0이 되어 사망 처리됩니다."
+        f" @{WORLD_MASTODON_ID}"
+        for change in changes
+        if change.curr_hp == 0
+    ]
+    if failed:
+        notices.append(
+            "⚠️ 다음 캐릭터의 전투 종료 처리를 실제 체력에 반영하지 못했습니다."
+            " 관리자가 직접 확인해 주세요: "
+            + ", ".join(escape_markdown(name) for name in failed)
+        )
+    return moved, notices
 
 
 def _apply_duel_defeat_penalty(
@@ -1814,17 +1902,17 @@ def _finish_practice_battle(
         and ps.total_hp_by_side(SideType.SIDE_2) > 0
     )
     if both_sides_alive:
-        battle_end_body = _apply_practice_battle_end_effects(ps)
+        battle_end_body = _apply_practice_battle_end_effects(state, ps)
         winner = ps.winner()
     else:
-        # 한쪽이 쓰러져 승부가 이미 났다. 대련/결투는 전투 종료 처리를 하지
-        # 않는다 — 남은 대가를 받아내면 이긴 쪽이 그 대가로 함께 쓰러져
-        # 무승부가 되고, 결투에서는 진 쪽마저 패배 대가를 치르지 않는다.
-        # 상시전투는 그 대가가 실제 체력에 남아야 하므로 치르되, 승자는 대가를
-        # 치르기 전에 정해 둔다.
+        # 한쪽이 쓰러져 승부가 이미 났다. 승자는 전투 종료 처리 전에 정해
+        # 둔다 — 뒤에 정하면 이긴 쪽이 남은 대가로 함께 쓰러져 무승부가 되고,
+        # 결투에서는 진 쪽마저 패배 대가를 치르지 않는다.
         winner = ps.winner()
         battle_end_body = (
-            _apply_practice_battle_end_effects(ps) if ps.mode.uses_sheet_hp else ""
+            _apply_practice_battle_end_effects(state, ps)
+            if ps.mode.stakes_sheet_hp
+            else ""
         )
     defeat_body = _apply_duel_defeat_penalty(state, ps, winner)
     result_line = (
