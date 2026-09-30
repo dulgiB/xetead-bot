@@ -15,6 +15,7 @@ from bot import commands as _  # noqa: E402, F401
 from bot.commands import noncombat as noncombat_module  # noqa: E402
 from bot.commands.noncombat import (  # noqa: E402
     finalize_daily_quest_mid,
+    finalize_investigation_menu_post,
     get_cached_item_names,
     handle_1d100,
     handle_bag,
@@ -82,7 +83,7 @@ def _investigation_session(
 ) -> InvestigationSession:
     return InvestigationSession(
         field_id=str(menu_post_id),
-        acct=acct,
+        accts=[acct],
         menu_post_id=menu_post_id,
         overview_post_id=overview_post_id,
         quest_id=quest_id,
@@ -276,7 +277,6 @@ def _quest(
     name: str = "광장 의뢰",
     description_quest: str = "어쩌구",
     description_normal: str = "이미 처리된 의뢰다.",
-    subtype: str = "상시",
     reward: str = "6G",
     available_until: str = "다음 스토리 진행 전까지",
     taken_by: str = "",
@@ -289,7 +289,6 @@ def _quest(
         description_quest=description_quest,
         description_normal=description_normal,
         type=quest_type,
-        subtype=subtype,
         reward=reward,
         available_until=available_until,
         taken_by=taken_by,
@@ -307,7 +306,7 @@ def test_handle_investigation_accept_returns_log_info(monkeypatch):
     )
     monkeypatch.setattr(noncombat_module, "update_quest_taken_by", lambda *a, **k: None)
 
-    result, log_info = handle_investigation_accept(session, [], state)
+    result, log_info = handle_investigation_accept(session, "user1", [], state)
 
     assert "의뢰를 받았다" in result
     assert log_info is not None
@@ -334,7 +333,9 @@ def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch
         ),
     )
 
-    result, log_info = handle_investigation_accept(session, ["user2", "user3"], state)
+    result, log_info = handle_investigation_accept(
+        session, "user1", ["user2", "user3"], state
+    )
 
     # 참여자 전원 멘션은 handle_investigation_accept 자체가 아니라 main.py의
     # _reply(mention_accts=...)가 게시물 맨 앞에 붙인다 — 여기서는 taken_by에
@@ -378,8 +379,8 @@ def test_investigation_accept_allows_different_quests_in_same_location(monkeypat
     monkeypatch.setattr(noncombat_module, "load_general_quest_sheet", fake_load)
     monkeypatch.setattr(noncombat_module, "update_quest_taken_by", fake_update)
 
-    result1, _log1 = handle_investigation_accept(session1, [], state)
-    result2, _log2 = handle_investigation_accept(session2, [], state)
+    result1, _log1 = handle_investigation_accept(session1, "user1", [], state)
+    result2, _log2 = handle_investigation_accept(session2, "user2", [], state)
 
     assert "의뢰를 받았다" in result1
     assert "의뢰를 받았다" in result2
@@ -399,7 +400,7 @@ def test_investigation_accept_rejects_already_taken_quest(monkeypatch):
         ),
     )
 
-    result, log_info = handle_investigation_accept(session, [], state)
+    result, log_info = handle_investigation_accept(session, "user1", [], state)
 
     assert "이미 다른 인원이 수주한 의뢰" in result
 
@@ -425,7 +426,7 @@ def test_investigation_accept_rejects_character_already_busy_in_same_location(
         ),
     )
 
-    result, log_info = handle_investigation_accept(session, [], state)
+    result, log_info = handle_investigation_accept(session, "user1", [], state)
 
     assert "이미 다른 의뢰를 수주한 캐릭터가 있어" in result
     assert "@user1" in result
@@ -504,7 +505,7 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "어쩌구\n"
         "\n"
         "**[일반 의뢰] 광장 의뢰**\n"
-        "▸ 계열: 운반 - 상시\n"
+        "▸ 계열: 운반\n"
         "▸ 클리어 가능 기간: 다음 스토리 진행 전까지\n"
         "▸ 보상: 6G\n"
         "\n"
@@ -1816,3 +1817,94 @@ def test_handle_1d100_rejects_unregistered_character():
 
     assert "등록된 캐릭터를 찾을 수 없습니다" in reply
     assert log_info is None
+
+
+def test_investigation_menu_post_shares_session_across_accts():
+    """여러 명이 참여한 스레드의 [상시조사]는 참여자 전원이 같은 세션에
+    들어가야 그중 누가 답글을 보내든 이어진다."""
+    state = _make_state("user1")
+
+    session = finalize_investigation_menu_post(["user1", "user2"], 100, state)
+
+    assert session.accts == ["user1", "user2"]
+    assert state.noncombat.active_investigations("user1") == [session]
+    assert state.noncombat.active_investigations("user2") == [session]
+
+
+def test_investigation_sessions_run_in_parallel():
+    """[상시조사]는 병행할 수 있다 — 새 세션을 열어도 같은 참여자의 이전
+    세션은 그대로 이어진다(겹치면 안 되는 것은 의뢰 수주뿐이다)."""
+    state = _make_state("user1")
+    shared = finalize_investigation_menu_post(["user1", "user2"], 100, state)
+
+    solo = finalize_investigation_menu_post(["user1"], 101, state)
+
+    assert shared.accts == ["user1", "user2"]
+    assert shared.ended is False
+    assert state.noncombat.active_investigations("user1") == [shared, solo]
+
+
+def test_investigation_accept_puts_sender_first_even_if_not_starter(monkeypatch):
+    """[상시조사]를 보낸 사람이 아니라 다른 참여자가 [수락]해도 그 발신자가
+    수주자로 기록돼야 한다."""
+    state = _make_state("user1")
+    session = InvestigationSession(
+        field_id="100",
+        accts=["user1", "user2"],
+        menu_post_id=100,
+        quest_id="항구 마을_운반",
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
+    )
+    calls = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_quest_taken_by",
+        lambda spreadsheet, quest_id, taken_by, cache=None: calls.append(taken_by),
+    )
+
+    handle_investigation_accept(session, "user2", ["user1"], state)
+
+    assert calls == ["user2,user1"]
+
+
+def test_investigation_start_in_shared_thread_tracks_all_characters(monkeypatch):
+    """이미 여러 캐릭터가 참여 중인 스레드에서 [상시조사]를 보내면 캐릭터
+    전원을 멘션하고 세션에 올려, 다른 참여자의 장소 선택도 반영돼야 한다.
+    world처럼 캐릭터가 아닌 계정은 참여자로 잡지 않는다."""
+    from bot import main as main_module
+    from test_bot_admin import _FakeMastodon
+
+    state = _make_state("user1")
+    state.char_dict["user2"] = get_test_preset("동료")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
+    )
+    monkeypatch.setattr(main_module, "_persist_noncombat_log", lambda *a, **k: None)
+    mastodon = _FakeMastodon(
+        ancestors=[
+            {"account": {"acct": "test-world"}, "mentions": []},
+            {"account": {"acct": "user2"}, "mentions": [{"acct": "user1"}]},
+        ]
+    )
+    listener = main_module.MastodonBotListener(mastodon, state, bot_acct="bot")
+    dispatch = listener._MastodonBotListener__dispatch  # type: ignore[attr-defined]
+
+    dispatch("user1", 1, 50, "[상시조사]", "public", [])
+
+    menu_post = mastodon.status_post_calls[-1]
+    assert menu_post["status"].startswith("@user1 @user2 ")
+    [session] = state.noncombat.active_investigations("user2")
+    assert session.accts == ["user1", "user2"]
+    assert state.noncombat.active_investigations("test-world") == []
+
+    dispatch("user2", 2, session.menu_post_id, "[광장]", "public", [])
+
+    overview_post = mastodon.status_post_calls[-1]
+    assert overview_post["status"].startswith("@user1 @user2 ")
+    assert session.quest_id == "항구 마을_운반"

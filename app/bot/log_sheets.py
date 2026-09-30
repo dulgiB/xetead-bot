@@ -19,6 +19,7 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
@@ -214,8 +215,8 @@ def build_field_characters(
     """필드 캐릭터 스냅샷을 만든다.
 
     본 전투(include_hp=False)는 체력을 넣지 않는다 — 대신 "캐릭터" 시트의
-    curr_hp가 진실 공급원이라 그쪽에서 복구한다. 대련/상시전투는 half-HP
-    임시 캐릭터라 원본 캐릭터 시트에 쓸 수 없으므로 체력까지 필드에 담는다.
+    curr_hp가 진실 공급원이라 그쪽에서 복구한다. 대련 계열은 시트에 없는
+    임시 체력으로 싸우는 모드가 있어 체력까지 필드에 담는다.
 
     버프는 진영과 무관하게 담는다 — 체력과 달리 어느 시트에도 진실 공급원이
     없어, 여기 남기지 않으면 재기동 시 통째로 사라진다.
@@ -339,17 +340,53 @@ def apply_persistent_hp_delta(
     양을 정할 수 없으므로 0을 적용하지 않고 실패로 돌린다 — 조용히 넘기면
     대가를 치르지 않은 캐릭터가 성공한 것으로 보고된다.
     """
-    if not names:
+
+    def percent_of_max(hp_row: _HpRow) -> Optional[int]:
+        if hp_row.max_hp is None:
+            return None
+        sign = -1 if max_hp_percent < 0 else 1
+        return sign * (hp_row.max_hp * abs(max_hp_percent) // 100)
+
+    return _apply_persistent_hp(
+        spreadsheet, {name: percent_of_max for name in names}, cache
+    )
+
+
+def apply_persistent_hp_amounts(
+    spreadsheet: gspread.Spreadsheet,
+    amounts: dict[str, int],
+    cache: Optional[SheetCache] = None,
+) -> tuple[list[PersistentHpChange], list[str]]:
+    """apply_persistent_hp_delta()와 같되, 캐릭터별로 정해진 양(음수면 깎고
+    양수면 회복)을 시트의 실제 체력에 반영한다. 결투의 전투 종료 처리처럼
+    전장에서 이미 수치가 정해진 변동을 실제 체력으로 옮길 때 쓴다."""
+
+    def fixed(amount: int) -> Callable[[_HpRow], Optional[int]]:
+        return lambda _hp_row: amount
+
+    return _apply_persistent_hp(
+        spreadsheet, {name: fixed(amount) for name, amount in amounts.items()}, cache
+    )
+
+
+def _apply_persistent_hp(
+    spreadsheet: gspread.Spreadsheet,
+    delta_by_name: "dict[str, Callable[[_HpRow], Optional[int]]]",
+    cache: Optional[SheetCache],
+) -> tuple[list[PersistentHpChange], list[str]]:
+    """시트를 다시 읽어 캐릭터별 delta를 실제 체력에 반영한다. delta 함수가
+    None을 돌려주면(양을 정할 수 없으면) 그 캐릭터는 실패로 돌린다."""
+    if not delta_by_name:
         return [], []
     try:
         hp_rows = _load_hp_rows(spreadsheet, cache)
     except Exception:
         logger.exception("실제 체력 정산 대상 조회 실패")
-        return [], list(names)
+        return [], list(delta_by_name)
 
     applied: list[PersistentHpChange] = []
     failed: list[str] = []
-    for name in names:
+    for name, delta_for in delta_by_name.items():
         hp_row = hp_rows.get(name)
         if hp_row is None or hp_row.curr_hp is None:
             logger.error("'%s'의 시트 체력을 찾을 수 없어 실제 체력 정산 실패", name)
@@ -361,9 +398,11 @@ def apply_persistent_hp_delta(
             )
             failed.append(name)
             continue
-        sign = -1 if max_hp_percent < 0 else 1
-        delta = sign * (hp_row.max_hp * abs(max_hp_percent) // 100)
-        new_hp = max(0, hp_row.curr_hp + delta)
+        delta = delta_for(hp_row)
+        if delta is None:
+            failed.append(name)
+            continue
+        new_hp = max(0, min(hp_row.max_hp, hp_row.curr_hp + delta))
         try:
             hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, new_hp)
         except Exception:
@@ -391,7 +430,8 @@ def write_back_changed_hp(
 ) -> None:
     """entries 중 대미지/회복이 발생한 대상의 curr_hp를 "캐릭터" 시트에 반영한다.
 
-    본 전투 전용 — 대련/상시전투는 half-HP 임시 캐릭터라 호출하면 안 된다.
+    본 전투 전용 — 대련/결투는 임시 체력이라 호출하면 안 되고, 상시전투는
+    바뀐 캐릭터를 직접 골라 write_back_character_hp()로 쓴다.
 
     호출측(캐릭터 커맨드 처리, 페이즈 전환 등)은 이미 커맨드/버프 처리를
     마친 뒤 이 함수를 호출한다 — 여기서 예외가 위로 전파되면 이미 끝난
@@ -410,16 +450,32 @@ def write_back_changed_hp(
         for entry in entries
         if entry.result.startswith("대미지 ") or entry.result.startswith("회복 ")
     }
-    if not changed_names:
-        return
+    write_back_character_hp(spreadsheet, context, changed_names, cache=cache)
+
+
+def write_back_character_hp(
+    spreadsheet: gspread.Spreadsheet,
+    context: "BattlefieldContext",
+    names: Iterable[str],
+    cache: Optional[SheetCache] = None,
+) -> set[str]:
+    """names 캐릭터들의 전장 체력을 "캐릭터"/"에너미" 시트 curr_hp에 쓰고,
+    실제로 쓴 이름을 반환한다.
+
+    write_back_changed_hp()와 같은 이유로 예외를 위로 전파하지 않는다.
+    """
+    written: set[str] = set()
+    name_set = set(names)
+    if not name_set:
+        return written
 
     try:
         hp_rows = _load_hp_rows(spreadsheet, cache)
     except Exception:
         logger.exception("체력 시트 반영 대상 조회 실패")
-        return
+        return written
 
-    for name in changed_names:
+    for name in name_set:
         char_id = CharacterId(name)
         char = context.characters.get(char_id)
         # 여기서 찾을 수 없다는 것 자체가 탈락(체력 0)을 의미한다.
@@ -442,8 +498,10 @@ def write_back_changed_hp(
             continue
         try:
             hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, curr_hp)
+            written.add(name)
         except Exception:
             logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
+    return written
 
 
 # 동시에 최대 1개 슬롯만 진행되는 배틀타입 — field_id로 행을 못 찾으면 같은
@@ -612,7 +670,7 @@ def upsert_investigation_session(
     게시물 id가 바뀔 때마다 매번 최신 상태로 덮어써야 한다. round/phase/
     characters는 상시조사에 의미가 없어 항상 기본값을 쓴다."""
     meta = {
-        "acct": session.acct,
+        "accts": session.accts,
         "menu_post_id": session.menu_post_id,
         "overview_post_id": session.overview_post_id,
         "quest_id": session.quest_id,

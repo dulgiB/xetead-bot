@@ -1,4 +1,4 @@
-"""대련/결투의 라운드 종료·전투 종료 정산을 "언제 돌리고 어떻게 보여주는지"
+"""대련/결투/상시전투의 라운드 종료·전투 종료 정산을 "언제 돌리고 어떻게 보여주는지"
 확인한다.
 
 두 가지 규칙이 얽혀 있다:
@@ -8,7 +8,8 @@
    때 체력이 줄어든 것만 보고 이유를 알 수 없다.
 2. 한쪽이 쓰러져 승부가 난 라운드는 아예 닫지 않는다 — 닫으면 이긴 쪽이
    자기에게 걸린 DoT나 [재앙] 대가로 함께 쓰러져 무승부가 되고, 그러면
-   진 쪽마저 패배 대가를 치르지 않는다.
+   진 쪽마저 패배 대가를 치르지 않는다. 다만 실제 체력이 걸린 결투/상시전투는
+   승자를 먼저 정한 뒤 전투 종료 처리만 한다.
 """
 
 import os
@@ -141,8 +142,8 @@ def test_round_end_processing_is_shown_in_the_next_round_post():
 
 
 def test_round_is_not_closed_when_a_side_is_knocked_out_in_the_first_phase():
-    """선공 페이즈에서 승부가 나면 라운드 종료 처리도 전투 종료 처리도 돌지
-    않는다 — 돌리면 이긴 쪽이 자기 DoT/[재앙] 대가에 함께 쓰러진다."""
+    """대련은 선공 페이즈에서 승부가 나면 라운드 종료 처리도 전투 종료 처리도
+    돌지 않는다 — 돌리면 이긴 쪽이 자기 DoT/[재앙] 대가에 함께 쓰러진다."""
     ctx, ps, state = _setup(
         {"맹독": _dot_buff(999), "재앙": _catastrophe_buff()}, b_max_hp=2
     )
@@ -201,3 +202,52 @@ def test_battle_end_processing_runs_when_both_sides_survive():
     assert game_post is not None
     assert "전투 종료 처리" in game_post
     assert ctx.characters[holder].status.curr_hp == 50 - 3 * 5
+
+
+def test_investigation_applies_battle_end_even_when_a_side_is_wiped():
+    """상시전투는 전투 종료 대가가 실제 체력에 남아야 하므로 적을 전멸시켜
+    끝나도 전투 종료 처리를 한다. 승자는 대가를 치르기 전에 정해지므로, 그
+    대가로 아군이 쓰러져도 무승부가 되지 않는다."""
+    ctx, ps, state = _setup(
+        {"재앙": _catastrophe_buff()},
+        a_max_hp=40,
+        b_max_hp=2,
+        mode=PracticeBattleMode.INVESTIGATION,
+    )
+    ally = CharacterId("Catastrophe")
+    ctx.buff_container.add(
+        BuffAddData(given_by=ally, applied_to=ally, buff_id="재앙", stack_value=10)
+    )
+
+    game_post = _play_phase(state, ps, "[공격/Adversary]")
+
+    assert game_post is not None
+    assert "승자: 아군" in game_post
+    assert "전투 종료 처리" in game_post
+    assert ctx.characters[ally].status.curr_hp == 0
+
+
+def test_duel_applies_battle_end_after_deciding_winner_when_a_side_is_wiped():
+    """결투도 실제 체력이 걸린 전투라 전멸로 끝나도 전투 종료 처리를 한다.
+    승자를 먼저 정하므로, 이긴 쪽이 그 대가로 쓰러져도 무승부가 되지 않는다."""
+    ctx, ps, state = _setup(
+        {"재앙": _catastrophe_buff()},
+        a_max_hp=40,
+        b_max_hp=2,
+        mode=PracticeBattleMode.DUEL,
+    )
+    winner_id = CharacterId("Catastrophe")
+    ctx.buff_container.add(
+        BuffAddData(
+            given_by=winner_id, applied_to=winner_id, buff_id="재앙", stack_value=10
+        )
+    )
+
+    if ps.context.get_side(ps.pending_actors()[0]) == SideType.SIDE_2:
+        _play_phase(state, ps, "[이동/2]")
+    game_post = _play_phase(state, ps, "[공격/Adversary]")
+
+    assert game_post is not None
+    assert "승자: 1팀" in game_post
+    assert "전투 종료 처리" in game_post
+    assert ctx.characters[winner_id].status.curr_hp == 0

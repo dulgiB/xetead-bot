@@ -496,18 +496,20 @@ def _restore_investigation_session(state: "BotState", row: FieldRow) -> Optional
     복원한다 — 전투와 달리 라운드/페이즈/캐릭터 배치 개념이 없어 meta만
     읽으면 된다."""
     meta = row.meta
-    acct = meta.get("acct")
+    accts = meta.get("accts")
+    if not accts and meta.get("acct"):
+        accts = [meta["acct"]]
     menu_post_id = meta.get("menu_post_id")
-    if not acct or menu_post_id is None:
+    if not accts or menu_post_id is None:
         logger.warning(
-            "상시조사 세션 복원 실패: acct/menu_post_id 메타가 없습니다 (field_id=%s)",
+            "상시조사 세션 복원 실패: accts/menu_post_id 메타가 없습니다 (field_id=%s)",
             row.field_id,
         )
         return None
 
     session = InvestigationSession(
         field_id=row.field_id,
-        acct=acct,
+        accts=list(accts),
         menu_post_id=int(menu_post_id),
         overview_post_id=(
             int(meta["overview_post_id"])
@@ -516,7 +518,10 @@ def _restore_investigation_session(state: "BotState", row: FieldRow) -> Optional
         ),
         quest_id=meta.get("quest_id"),
     )
-    state.noncombat.investigations[acct] = session
+    state.noncombat.investigations[session.field_id] = session
 
     stage = "의뢰 개요" if session.overview_post_id is not None else "메뉴"
-    return f"상시조사 {stage} 단계 — {acct} 복원 (field_id={row.field_id})"
+    return (
+        f"상시조사 {stage} 단계 — {', '.join(session.accts)} 복원 "
+        f"(field_id={row.field_id})"
+    )

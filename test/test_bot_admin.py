@@ -1843,8 +1843,8 @@ def test_investigation_menu_reply_extracts_venue_amid_chatter(monkeypatch):
     정확히 "[장소명]"이어야만 파싱되어, 사담이 조금이라도 섞이면 엉뚱한
     문자열로 깨졌다."""
     state = _make_state()
-    state.noncombat.investigations["user1"] = InvestigationSession(
-        field_id="100", acct="user1", menu_post_id=100
+    state.noncombat.investigations["100"] = InvestigationSession(
+        field_id="100", accts=["user1"], menu_post_id=100
     )
     monkeypatch.setattr(
         main_module,
@@ -1883,8 +1883,8 @@ def test_investigation_venue_choice_resolves_via_thread_ancestors(monkeypatch):
     중첩된 답글이어도 장소 커맨드가 있으면 스레드 조상을 거슬러 올라가
     같은 세션을 찾아 정상 처리해야 한다."""
     state = _make_state()
-    state.noncombat.investigations["user1"] = InvestigationSession(
-        field_id="100", acct="user1", menu_post_id=100
+    state.noncombat.investigations["100"] = InvestigationSession(
+        field_id="100", accts=["user1"], menu_post_id=100
     )
     monkeypatch.setattr(
         main_module,
@@ -1923,6 +1923,35 @@ def test_investigation_venue_choice_resolves_via_thread_ancestors(monkeypatch):
     assert "[광장](으)로 이동했다." in mastodon.status_post_calls[-1]["status"]
 
 
+def test_parallel_investigations_resolve_to_nearest_session_in_thread():
+    """같은 참여자가 여러 세션을 병행할 때, 조상에 두 세션의 게시물이 모두
+    걸리면 답글에 가장 가까운(가장 최근) 세션으로 이어진다. 스레드 밖의
+    세션은 고르지 않는다."""
+    state = _make_state()
+    older = InvestigationSession(field_id="100", accts=["user1"], menu_post_id=100)
+    newer = InvestigationSession(field_id="200", accts=["user1"], menu_post_id=200)
+    elsewhere = InvestigationSession(field_id="300", accts=["user1"], menu_post_id=300)
+    for session in (older, newer, elsewhere):
+        state.noncombat.investigations[session.field_id] = session
+    ancestors = [
+        {"id": 100, "account": {"acct": "bot"}, "mentions": []},
+        {"id": 150, "account": {"acct": "user1"}, "mentions": []},
+        {"id": 200, "account": {"acct": "bot"}, "mentions": []},
+        {"id": 250, "account": {"acct": "user1"}, "mentions": []},
+    ]
+    listener = MastodonBotListener(
+        _FakeMastodon(ancestors=ancestors), state, bot_acct="bot"
+    )
+
+    session, stage, is_direct = listener._resolve_investigation_session(
+        "user1", 1, 250, state
+    )
+
+    assert session is newer
+    assert stage == "menu"
+    assert is_direct is False
+
+
 def test_investigation_bare_chat_reply_does_nothing_and_keeps_session_open(
     monkeypatch,
 ):
@@ -1930,8 +1959,8 @@ def test_investigation_bare_chat_reply_does_nothing_and_keeps_session_open(
     (직속 답글이라도) 아무 응답도 남기지 않고 세션도 끝나지 않아야 한다 —
     [자율 탐사]를 명시적으로 입력해야만 world로 인계된다."""
     state = _make_state()
-    state.noncombat.investigations["user1"] = InvestigationSession(
-        field_id="100", acct="user1", menu_post_id=100
+    state.noncombat.investigations["100"] = InvestigationSession(
+        field_id="100", accts=["user1"], menu_post_id=100
     )
     monkeypatch.setattr(
         main_module,
@@ -1948,7 +1977,7 @@ def test_investigation_bare_chat_reply_does_nothing_and_keeps_session_open(
     listener._process_notification(_make_notification("user1", 1, 100, "그냥 둘러본다"))
 
     assert mastodon.status_post_calls == []
-    assert state.noncombat.investigations["user1"].ended is False
+    assert state.noncombat.investigations["100"].ended is False
 
 
 def test_investigation_explicit_free_explore_ends_session_and_stops_matching(
@@ -1958,8 +1987,8 @@ def test_investigation_explicit_free_explore_ends_session_and_stops_matching(
     그 뒤로는 같은 메뉴 게시물에 실제 장소 커맨드를 보내도 더 이상
     처리되지 않아야 한다."""
     state = _make_state()
-    state.noncombat.investigations["user1"] = InvestigationSession(
-        field_id="100", acct="user1", menu_post_id=100
+    state.noncombat.investigations["100"] = InvestigationSession(
+        field_id="100", accts=["user1"], menu_post_id=100
     )
     monkeypatch.setattr(
         main_module,
@@ -1986,7 +2015,7 @@ def test_investigation_explicit_free_explore_ends_session_and_stops_matching(
     listener._process_notification(_make_notification("user1", 1, 100, "[자율 탐사]"))
 
     assert "다른 곳에 가보기로 했다" in mastodon.status_post_calls[-1]["status"]
-    assert state.noncombat.investigations["user1"].ended is True
+    assert state.noncombat.investigations["100"].ended is True
 
     calls_before = len(mastodon.status_post_calls)
 
@@ -2000,8 +2029,8 @@ def test_investigation_nested_casual_chat_does_not_end_session(monkeypatch):
     끝내지 않고 아무 응답도 남기지 않아야 한다 — 뒤이어 실제 장소 커맨드가
     올 수 있으므로."""
     state = _make_state()
-    state.noncombat.investigations["user1"] = InvestigationSession(
-        field_id="100", acct="user1", menu_post_id=100
+    state.noncombat.investigations["100"] = InvestigationSession(
+        field_id="100", accts=["user1"], menu_post_id=100
     )
     monkeypatch.setattr(
         main_module,
@@ -2019,7 +2048,7 @@ def test_investigation_nested_casual_chat_does_not_end_session(monkeypatch):
     listener._process_notification(_make_notification("user1", 1, 555, "그냥 사담이다"))
 
     assert mastodon.status_post_calls == []
-    assert state.noncombat.investigations["user1"].ended is False
+    assert state.noncombat.investigations["100"].ended is False
 
 
 def test_world_account_can_start_investigation_battle(monkeypatch):

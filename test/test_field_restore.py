@@ -141,7 +141,7 @@ def test_restore_investigation_session_menu_stage():
     summary = field_restore._restore_investigation_session(state, row)
 
     assert summary is not None
-    session = state.noncombat.investigations["user1"]
+    session = state.noncombat.investigations["100"]
     assert session.field_id == "100"
     assert session.menu_post_id == 100
     assert session.overview_post_id is None
@@ -170,9 +170,28 @@ def test_restore_investigation_session_overview_stage():
     summary = field_restore._restore_investigation_session(state, row)
 
     assert summary is not None
-    session = state.noncombat.investigations["user1"]
+    session = state.noncombat.investigations["100"]
     assert session.overview_post_id == 200
     assert session.quest_id == "아도스_운반"
+
+
+def test_restore_investigation_session_maps_every_acct():
+    """여러 명이 참여한 세션은 참여자 전원이 같은 세션으로 복원돼야 한다."""
+    state = _make_state({})
+    row = FieldRow(
+        field_id="100",
+        battle_type=FieldBattleType.INVESTIGATION_QUEST,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={"accts": ["user1", "user2"], "menu_post_id": 100},
+    )
+
+    summary = field_restore._restore_investigation_session(state, row)
+
+    assert summary is not None
+    session = state.noncombat.investigations["100"]
+    assert session.accts == ["user1", "user2"]
 
 
 def test_restore_investigation_session_skips_when_meta_missing():

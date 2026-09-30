@@ -5,6 +5,7 @@ import re
 import threading
 import time
 import traceback
+import dataclasses
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Optional
@@ -797,7 +798,7 @@ class MastodonBotListener(StreamListener):
         in_reply_to_id: Optional[int],
         state: "BotState",
     ) -> tuple[Optional[InvestigationSession], str, bool]:
-        """acct의 활성 상시조사 세션이 이 답글에 연관되는지 확인한다.
+        """이 답글이 acct가 참여 중인 상시조사 세션 중 어느 것에 속하는지 찾는다.
 
         직속 답글이 가장 흔하고 저렴한 경로라 먼저 확인하고, 아니면
         status_context()로 스레드 조상까지 거슬러 올라가 세션의 메뉴/개요
@@ -806,23 +807,25 @@ class MastodonBotListener(StreamListener):
         세션이 아예 없는 acct는 이 조상 조회 자체를 하지 않는다(고빈도
         메시지에서 불필요한 API 호출을 피하기 위함).
 
+        한 acct가 여러 세션을 병행할 수 있어, 조상에 여러 세션의 게시물이
+        걸리면(같은 스레드에서 [상시조사]를 다시 연 경우) 가장 최근 게시물의
+        세션을 고른다 — 답글에 가장 가까운 쪽이 지금 진행 중인 세션이다.
+
         반환값: (session_or_None, stage, is_direct). stage는
         "menu"|"overview". is_direct는 in_reply_to_id가 세션의 게시물을
         정확히 가리키는지(스레드 조상으로만 찾은 게 아닌지) 여부다 —
         사담(인식 가능한 커맨드가 없는 답글)에 대한 종결성 응답(장소
         미지정/미수락 안내)은 직속 답글에서만 트리거해야 하므로, 조상
         경유로만 찾은 경우와 구분해야 한다."""
-        session = state.noncombat.get_active_investigation(acct)
-        if session is None:
+        sessions = state.noncombat.active_investigations(acct)
+        if not sessions or in_reply_to_id is None:
             return None, "", False
 
-        if in_reply_to_id == session.overview_post_id:
-            return session, "overview", True
-        if in_reply_to_id == session.menu_post_id:
-            return session, "menu", True
-
-        if in_reply_to_id is None:
-            return None, "", False
+        for session in sessions:
+            if in_reply_to_id == session.overview_post_id:
+                return session, "overview", True
+            if in_reply_to_id == session.menu_post_id:
+                return session, "menu", True
 
         try:
             context = self._mastodon.status_context(status_id)
@@ -831,13 +834,19 @@ class MastodonBotListener(StreamListener):
             logger.exception("스레드 상시조사 세션 조회 실패 (status_id=%s)", status_id)
             return None, "", False
 
-        if session.overview_post_id is not None and (
-            session.overview_post_id in ancestor_ids
-        ):
-            return session, "overview", False
-        if session.menu_post_id in ancestor_ids:
-            return session, "menu", False
-        return None, "", False
+        best: Optional[tuple[int, InvestigationSession, str]] = None
+        for session in sessions:
+            for post_id, stage in (
+                (session.overview_post_id, "overview"),
+                (session.menu_post_id, "menu"),
+            ):
+                if post_id is None or post_id not in ancestor_ids:
+                    continue
+                if best is None or post_id > best[0]:
+                    best = (post_id, session, stage)
+        if best is None:
+            return None, "", False
+        return best[1], best[2], False
 
     def __dispatch(
         self,
@@ -1143,7 +1152,13 @@ class MastodonBotListener(StreamListener):
                 response, log_info = handle_investigation_venue_choice(
                     investigation_session, venue_name, state
                 )
-                post = self._reply(status_id, acct, visibility, response)
+                post = self._reply(
+                    status_id,
+                    acct,
+                    visibility,
+                    response,
+                    mention_accts=investigation_session.accts,
+                )
                 _persist_noncombat_log(state, log_info, str(post["id"]))
                 finalize_investigation_overview_post(
                     investigation_session, post["id"], state
@@ -1161,7 +1176,7 @@ class MastodonBotListener(StreamListener):
                 status_id, in_reply_to_id, mentions or [], acct
             )
             response, log_info = handle_investigation_accept(
-                investigation_session, thread_mentions, state
+                investigation_session, acct, thread_mentions, state
             )
             expected_accts = [acct] + thread_mentions
             reply_status = self._reply(
@@ -1190,12 +1205,26 @@ class MastodonBotListener(StreamListener):
             finalize_daily_quest_mid(acct, post["id"], state)
             return
 
-        # 11. [상시조사] — 상시조사 메뉴
+        # 11. [상시조사] — 상시조사 메뉴. 스레드에 이미 참여 중인 캐릭터
+        # 전원이 한 세션을 공유한다.
         if _RE_INVESTIGATION_START.search(text):
+            investigation_accts = [acct] + [
+                a
+                for a in self._thread_participants(
+                    status_id, in_reply_to_id, mentions or [], acct
+                )
+                if a in state.char_dict
+            ]
             response, log_info = handle_investigation_start(acct, state)
-            post = self._reply(status_id, acct, visibility, response)
+            post = self._reply(
+                status_id,
+                acct,
+                visibility,
+                response,
+                mention_accts=investigation_accts,
+            )
             _persist_noncombat_log(state, log_info, str(post["id"]))
-            finalize_investigation_menu_post(acct, post["id"], state)
+            finalize_investigation_menu_post(investigation_accts, post["id"], state)
             return
 
         # 12. [아이템명(/대상)(/개수)] — 비전투 아이템 사용. 접두어 없이
@@ -1248,7 +1277,13 @@ class MastodonBotListener(StreamListener):
             response, log_info = handle_investigation_decline(
                 investigation_session, state
             )
-            reply_status = self._reply(status_id, acct, visibility, response)
+            reply_status = self._reply(
+                status_id,
+                acct,
+                visibility,
+                response,
+                mention_accts=investigation_session.accts,
+            )
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
@@ -1606,14 +1641,102 @@ def _practice_round_end_text(ps: PracticeBattleState) -> str:
     return "\n\n".join(block for block in blocks if block)
 
 
-def _apply_practice_battle_end_effects(ps: PracticeBattleState) -> str:
+def _apply_practice_battle_end_effects(
+    state: "BotState", ps: PracticeBattleState
+) -> str:
     """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())을 처리하고,
     그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
-    없으면 빈 문자열). **반드시 ps.winner() 호출보다 먼저 불러야 한다** —
-    이 훅으로 바뀐 HP가 승패 판정에도 반영돼야 하기 때문이다."""
+    없으면 빈 문자열). 양 팀이 모두 살아 있을 때는 **반드시 ps.winner()
+    호출보다 먼저 불러야 한다** — 이 훅으로 바뀐 HP가 승패 판정에도 반영돼야
+    하기 때문이다."""
     battle_end_entries = ps.context.on_battle_end()
+    notices: list[str] = []
+    if ps.is_duel_match:
+        battle_end_entries, notices = _move_battle_end_hp_to_sheet(
+            state, ps, battle_end_entries
+        )
     body, _calc = format_battle_end_log_entries(ps.context, battle_end_entries)
-    return body
+    return "\n\n".join(block for block in [body, *notices] if block)
+
+
+def _move_battle_end_hp_to_sheet(
+    state: "BotState", ps: PracticeBattleState, entries: list[BattleLogEntry]
+) -> tuple[list[BattleLogEntry], list[str]]:
+    """결투의 전투 종료 처리로 생긴 캐릭터별 대미지/회복을 실제 체력에
+    반영하고, 해당 엔트리를 실제 체력 기준(`※`)으로 바꿔 (엔트리, 안내 블록)을
+    반환한다.
+
+    결투에서 전투 종료 처리는 이긴 쪽에게도 남는 대가라, 임시 체력에서만
+    깎이면 전투가 끝나는 순간 흔적 없이 사라진다."""
+    amounts: dict[str, int] = {}
+    for entry in entries:
+        if entry.value is None or CharacterId(entry.target_name) in (
+            ps.context.companion_owners
+        ):
+            continue
+        if entry.kind == BattleLogEntryKind.DAMAGE:
+            sign = -1
+        elif entry.kind == BattleLogEntryKind.HEAL:
+            sign = 1
+        else:
+            continue
+        amounts[entry.target_name] = (
+            amounts.get(entry.target_name, 0) + sign * entry.value
+        )
+    if not amounts:
+        return entries, []
+
+    changes, failed = log_sheets.apply_persistent_hp_amounts(
+        state.spreadsheet, amounts, cache=state.sheet_cache
+    )
+    change_by_name = {change.name: change for change in changes}
+    # 한 캐릭터에게 효과가 여럿 붙었으면 줄마다 그 시점의 실제 체력을 보여준다.
+    running_hp = {
+        change.name: change.curr_hp - change.applied_delta for change in changes
+    }
+    moved: list[BattleLogEntry] = []
+    for entry in entries:
+        change = change_by_name.get(entry.target_name)
+        if (
+            change is None
+            or entry.value is None
+            or entry.kind
+            not in (
+                BattleLogEntryKind.DAMAGE,
+                BattleLogEntryKind.HEAL,
+            )
+        ):
+            moved.append(entry)
+            continue
+        sign = -1 if entry.kind == BattleLogEntryKind.DAMAGE else 1
+        running_hp[change.name] = max(
+            0, min(change.max_hp, running_hp[change.name] + sign * entry.value)
+        )
+        moved.append(
+            dataclasses.replace(
+                entry,
+                hp_after=running_hp[change.name],
+                max_hp=change.max_hp,
+                hp_is_persistent=True,
+            )
+        )
+        persistent = ps.context.persistent_hp.get(CharacterId(change.name))
+        if persistent is not None:
+            persistent.curr_hp = change.curr_hp
+
+    notices = [
+        f"◊ {escape_markdown(change.name)}의 체력이 0이 되어 사망 처리됩니다."
+        f" @{WORLD_MASTODON_ID}"
+        for change in changes
+        if change.curr_hp == 0
+    ]
+    if failed:
+        notices.append(
+            "⚠️ 다음 캐릭터의 전투 종료 처리를 실제 체력에 반영하지 못했습니다."
+            " 관리자가 직접 확인해 주세요: "
+            + ", ".join(escape_markdown(name) for name in failed)
+        )
+    return moved, notices
 
 
 def _apply_duel_defeat_penalty(
@@ -1769,23 +1892,28 @@ def _finish_practice_battle(
     """대련/상시전투/결투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이
     함수가 끝나면 state.practices에서 제거된 상태다.
 
-    전투 종료 훅(_apply_practice_battle_end_effects)은 반드시 winner() 앞에
-    와야 한다 — 그 훅으로 바뀐 체력이 승패 판정에도 반영돼야 하기 때문이다.
 
     `round_end_text`는 이 전투가 정상적으로 라운드를 닫은 뒤(라운드 상한
     도달 등) 끝났을 때 그 라운드 종료 처리 결과다 — 종료 게시물이 마지막
     라운드의 정산을 삼켜 버리지 않도록 함께 싣는다."""
     assert ps.active_post_id is not None
-    # 전투 종료 처리(BuffBase.on_battle_end())는 양 팀이 모두 살아 있는 채로
-    # 전투가 끝났을 때만 한다. 한쪽이 쓰러져 승부가 이미 난 자리에서 남은 대가를
-    # 받아내면, 이긴 쪽이 그 대가로 함께 쓰러져 무승부가 되고 진 쪽마저
-    # 패배 대가를 치르지 않는다.
     both_sides_alive = (
         ps.total_hp_by_side(SideType.SIDE_1) > 0
         and ps.total_hp_by_side(SideType.SIDE_2) > 0
     )
-    battle_end_body = _apply_practice_battle_end_effects(ps) if both_sides_alive else ""
-    winner = ps.winner()
+    if both_sides_alive:
+        battle_end_body = _apply_practice_battle_end_effects(state, ps)
+        winner = ps.winner()
+    else:
+        # 한쪽이 쓰러져 승부가 이미 났다. 승자는 전투 종료 처리 전에 정해
+        # 둔다 — 뒤에 정하면 이긴 쪽이 남은 대가로 함께 쓰러져 무승부가 되고,
+        # 결투에서는 진 쪽마저 패배 대가를 치르지 않는다.
+        winner = ps.winner()
+        battle_end_body = (
+            _apply_practice_battle_end_effects(state, ps)
+            if ps.mode.stakes_sheet_hp
+            else ""
+        )
     defeat_body = _apply_duel_defeat_penalty(state, ps, winner)
     result_line = (
         f"승자: {ps.side_label(winner)}{_winner_roster_text(ps, winner)}"
@@ -1812,6 +1940,31 @@ def _finish_practice_battle(
 
 
 def _finalize_practice_phase(
+    state: "BotState", ps: PracticeBattleState, current_phase: PracticeRoundPhase
+) -> tuple[Optional[str], bool]:
+    """_advance_practice_phase()로 페이즈를 넘긴 뒤, 상시전투라면 그
+    커맨드와 라운드/전투 종료 처리로 바뀐 체력을 시트에 반영한다."""
+    result = _advance_practice_phase(state, ps, current_phase)
+    _write_back_sheet_hp(state, ps)
+    return result
+
+
+def _write_back_sheet_hp(state: "BotState", ps: PracticeBattleState) -> None:
+    """상시전투 양 진영의 전장 체력을 "캐릭터"/"에너미" 시트에 쓴다."""
+    names = ps.sheet_hp_changes()
+    if not names:
+        return
+    written = log_sheets.write_back_character_hp(
+        state.spreadsheet, ps.context, names, cache=state.sheet_cache
+    )
+    # 쓰지 못한 캐릭터는 기록하지 않고 남겨, 다음 커맨드 때 다시 시도한다.
+    for name in written:
+        char = ps.context.characters.get(CharacterId(name))
+        # 필드에 없으면 체력 0으로 탈락한 것이다.
+        ps.written_sheet_hp[name] = char.status.curr_hp if char is not None else 0
+
+
+def _advance_practice_phase(
     state: "BotState", ps: PracticeBattleState, current_phase: PracticeRoundPhase
 ) -> tuple[Optional[str], bool]:
     """대련/상시전투에서 커맨드 하나(캐릭터 본인 답글 또는 admin/world
@@ -1886,21 +2039,28 @@ def _finalize_practice_phase(
     return game_post, False
 
 
-def _apply_duel_fate_cost(
+def _apply_practice_fate_cost(
     state: "BotState",
     ps: PracticeBattleState,
     char_id: CharacterId,
     command: CharacterCommand,
 ) -> str:
-    """결투에서 키워드 보정을 쓴 커맨드의 대가를 시트에 반영한다(실패 안내
-    문구를 반환하며, 반영할 게 없거나 성공하면 빈 문자열).
+    """결투/상시전투에서 키워드 보정을 쓴 커맨드의 대가와 사용 기록을 시트에
+    반영한다(실패 안내 문구를 반환하며, 반영할 게 없거나 성공하면 빈 문자열).
 
-    전장은 임시 체력 대신 실제 체력을 깎아 두기만 하므로
+    결투의 전장은 임시 체력 대신 실제 체력을 깎아 두기만 하므로
     (PracticeBattlefieldContext.pay_fate_cost_hp), 그 값을 시트에 옮기는 것은
-    봇 계층의 몫이다. 이미 커맨드가 처리된 뒤라 실패를 위로 던지면 답글
+    봇 계층의 몫이다. 상시전투는 대가가 전장 체력(=실제 체력)에서 빠지고
+    _write_back_sheet_hp()가 다른 체력 변동과 함께 시트에 쓰므로, 여기서는
+    사용 기록만 남긴다. 이미 커맨드가 처리된 뒤라 실패를 위로 던지면 답글
     자체가 사라지므로, write_back_changed_hp()와 같이 흡수하고 알리기만
     한다."""
-    if not ps.is_duel_match or not any(part.fate_boost for part in command.parts):
+    if not any(part.fate_boost for part in command.parts):
+        return ""
+    if ps.mode.uses_sheet_hp:
+        mark_fate_used_if_needed(state, char_id, command)
+        return ""
+    if not ps.is_duel_match:
         return ""
     persistent = ps.context.persistent_hp.get(char_id)
     if persistent is None:
@@ -2032,7 +2192,7 @@ def _handle_practice_proxy_command(
             reply_text, calc_text = format_battle_reply(
                 ps.context, char_id, result.part_results
             )
-            fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+            fate_warning = _apply_practice_fate_cost(state, ps, char_id, command)
             if fate_warning:
                 reply_text += f"\n{fate_warning}"
         except CommandValidationError as e:
@@ -2169,7 +2329,7 @@ def _handle_practice_command(
         reply_text, calc_text = format_battle_reply(
             ps.context, char_id, result.part_results
         )
-        fate_warning = _apply_duel_fate_cost(state, ps, char_id, command)
+        fate_warning = _apply_practice_fate_cost(state, ps, char_id, command)
         if fate_warning:
             reply_text += f"\n{fate_warning}"
     except CommandValidationError as e:
