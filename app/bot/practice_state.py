@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, CombatStatType
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
@@ -46,10 +47,14 @@ class PracticeBattleState:
     pending_participants: list[str] = field(default_factory=list)
     pending_placements: list[tuple] = field(default_factory=list)
 
-    # 전투 시작 시점의 팀별 참가자 이름. 결투 패배 대가는 자진 기권해
+    # 전투 시작 시점의 팀별 참가자 이름. 결투 피해 정산은 자진 기권해
     # 필드에서 빠진 캐릭터에게도 적용되므로, 현재 배치 상태가 아니라 시작
     # 시점의 명부를 봐야 한다.
     roster_by_side: dict[SideType, list[str]] = field(default_factory=dict)
+
+    # 자진 기권한 캐릭터가 그 시점까지 받은 임시 체력 피해. 필드에서 빠진
+    # 뒤에는 임시 체력이 남지 않아 결투 피해 정산 때 다시 계산할 수 없다.
+    retired_damage: dict[str, int] = field(default_factory=dict)
 
     # 전투 시작 시점의 팀별 최대 체력 합. 승패는 체력 "비율"로
     # 가르는데, 필드에서 빠진 캐릭터(상시전투의 0 체력 적군, 자진 기권한
@@ -112,6 +117,28 @@ class PracticeBattleState:
             side: [char.id.name for char in self.context.get_side_characters(side)]
             for side in SideType
         }
+
+    def record_retirement(self, char_id: CharacterId) -> None:
+        """자진 기권으로 필드에서 내리기 직전에 불러, 받은 피해를 남긴다."""
+        char = self.context.characters[char_id]
+        self.retired_damage[char_id.name] = _temp_damage(char)
+
+    def temp_damage_taken(self) -> tuple[dict[str, int], list[str]]:
+        """명부의 캐릭터별로 이 전투에서 받은 임시 체력 피해를 (피해, 알 수 없는
+        이름 목록)으로 돌려준다. 필드에 없고 기권 기록도 없는 캐릭터는 피해를
+        정할 수 없다."""
+        damage: dict[str, int] = {}
+        unknown: list[str] = []
+        for names in self.roster_by_side.values():
+            for name in names:
+                char = self.context.characters.get(CharacterId(name))
+                if char is not None:
+                    damage[name] = _temp_damage(char)
+                elif name in self.retired_damage:
+                    damage[name] = self.retired_damage[name]
+                else:
+                    unknown.append(name)
+        return damage, unknown
 
     def all_declared(self) -> bool:
         return bool(self.expected_accts) and all(
@@ -180,3 +207,8 @@ class PracticeBattleState:
                 return "적군"
             return "알 수 없음"
         return side.value if side else "알 수 없음"
+
+
+def _temp_damage(char: CombatCharacter) -> int:
+    # 회복은 최대 체력을 넘지 않으므로, 최대 체력에서 모자란 만큼이 받은 피해다.
+    return char.status[CombatStatType.MAX_HP] - char.status.curr_hp

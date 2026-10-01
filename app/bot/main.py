@@ -223,6 +223,7 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         # 결투 패배 대가 대상. 자진 기권한 캐릭터는 필드 스냅샷에 남지 않아
         # 복원 후 명부를 다시 만들면 대가에서 빠져 버린다.
         "roster": {side.value: names for side, names in ps.roster_by_side.items()},
+        "retired_damage": dict(ps.retired_damage),
         # 아래 둘은 포지션 선언 단계를 복원하기 위한 값이다. 라운드가 열린
         # 뒤에는 캐릭터 스냅샷으로 대신할 수 있지만, 선언 단계의 행에는
         # 배치된 캐릭터가 하나도 없어 이 둘이 유일한 복원 근거다.
@@ -2251,6 +2252,7 @@ def _handle_practice_command(
         # 검증(manager.process_command)을 거치지 않고 즉시 처리한다.
         retire_phase = ps.phase
         side = ps.context.get_side(char_id)
+        ps.record_retirement(char_id)
         removed = ps.context.force_remove_character(char_id)
         reply_text = format_eliminated_characters(removed)
         battle_log = log_sheets.BattleCommandLog(
