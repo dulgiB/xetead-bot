@@ -78,7 +78,7 @@ def with_persistent_hp_footnote(
 
 def _format_hp_fraction(character: "CombatCharacter") -> str:
     """공개 답글에 체력을 "N/M"으로 보여준다. character.hide_hp가 True면
-    ("에너미" 시트의 hide_hp 체크박스) 실제 숫자 대신 "?/?"로 가린다."""
+    ("캐릭터"/"에너미" 시트의 hide_hp 체크박스) 실제 숫자 대신 "?/?"로 가린다."""
     if character.hide_hp:
         return _HIDDEN_HP_TEXT
     return f"{character.status.curr_hp}/{character.status[CombatStatType.MAX_HP]}"
