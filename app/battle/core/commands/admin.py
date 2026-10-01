@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import CommandPart
@@ -36,11 +37,14 @@ class ForceHealCommand(AdminCommand):
     heal_value: int
 
 
+# given_by가 None이면 부여자는 ADMIN_ID다. 해제에서는 None이 "부여자 무관"이다.
 @dataclass(frozen=True)
 class ForceAddBuffByIdCommand(AdminCommand):
     buff_id: str
+    given_by: Optional[CharacterId] = None
 
 
 @dataclass(frozen=True)
 class ForceRemoveBuffByIdCommand(AdminCommand):
     buff_id: str
+    given_by: Optional[CharacterId] = None

@@ -669,6 +669,14 @@ class BattlefieldContext:
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]
 
+    def resolve_buff_id(self, raw_buff_id: str) -> str:
+        """공백 차이를 무시하고 "버프" 시트에 등록된 버프 id를 찾는다.
+
+        일치하는 항목이 없으면 raw_buff_id를 그대로 반환해, 호출측의
+        '존재하지 않음' 처리 경로를 타게 한다.
+        """
+        return resolve_matching_key(raw_buff_id, self._buff_dictionary.keys())
+
     def get_buff_data_by_id_or_none(self, buff_id: str) -> Optional[BuffData]:
         """ "버프" 시트에 없는 id면 None. 시트에 등록되지 않은 버프(패시브 래퍼
         등)를 섞어 순회하는 쪽에서 KeyError 대신 건너뛸 수 있게 한다."""
