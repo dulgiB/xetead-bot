@@ -234,3 +234,49 @@ def test_narration_and_command_split_across_paragraphs_still_parses(ctx):
         user_id=_USER,
         parts=[CommandPart(type_=ActionType.MOVE, targets=[BattlefieldColumnIndex(0)])],
     )
+
+
+_SYMBOL_NAME = CharacterId("◇◆")
+
+
+@pytest.mark.parametrize(
+    "input_str, expected_part",
+    [
+        (
+            "[공격/◇◆]",
+            CommandPart(type_=ActionType.ATTACK, targets=[_SYMBOL_NAME]),
+        ),
+        (
+            "[공격+/◇◆]",
+            CommandPart(
+                type_=ActionType.ATTACK, targets=[_SYMBOL_NAME], fate_boost=True
+            ),
+        ),
+        (
+            "[스킬1/◇◆/대상: 2]",
+            CommandPart(
+                type_=ActionType.SKILL,
+                skill_id="스킬1",
+                targets=[_SYMBOL_NAME, CharacterId("대상: 2")],
+            ),
+        ),
+    ],
+)
+def test_names_may_contain_any_symbol_except_syntax_delimiters(
+    input_str: str, expected_part: CommandPart, ctx
+):
+    """이름에는 문법 기호("/", "-", "+", 대괄호) 외의 어떤 기호가 들어가도
+    대상으로 지정할 수 있다."""
+    result = parse_character_command(_USER, input_str, ctx)
+    assert result == CharacterCommand(user_id=_USER, parts=[expected_part])
+
+
+def test_hyphen_still_separates_parts_next_to_symbol_names(ctx):
+    result = parse_character_command(_USER, "[공격/◇◆ - 이동/2]", ctx)
+    assert result == CharacterCommand(
+        user_id=_USER,
+        parts=[
+            CommandPart(type_=ActionType.ATTACK, targets=[_SYMBOL_NAME]),
+            CommandPart(type_=ActionType.MOVE, targets=[BattlefieldColumnIndex(1)]),
+        ],
+    )
