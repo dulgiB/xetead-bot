@@ -153,6 +153,8 @@ class PassiveSkillWrapperEvent(BuffEvent):
             )
             return
 
+        from battle.core.command_calculator import build_buff_add_log_entry
+
         effect_data = calculator.data_by_effect[effect_seq_number]
         for i, effect in _indexed_effects_for_role(self.passive_data, self.role):
             condition = effect.condition
@@ -185,6 +187,11 @@ class PassiveSkillWrapperEvent(BuffEvent):
             for buff_add in buff_add_list:
                 if calculator._buff_add_gate_passes(buff_add, effect_seq_number):
                     calculator.context.buff_container.add(buff_add)
+                    # 직접 add()한 부여는 일반 로그 경로(buff_add_data_list)를
+                    # 거치지 않아 답글에서 빠진다.
+                    effect_data.extra_log_entries.append(
+                        build_buff_add_log_entry(calculator.context, buff_add)
+                    )
             for damage in damage_list:
                 effect_data.damage_data_list.append(DamageCalculateData(damage))
             for heal in heal_list:

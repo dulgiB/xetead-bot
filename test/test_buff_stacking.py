@@ -633,3 +633,55 @@ class TestBuffCatastropheBattleEnd:
         assert buff is not None
         assert buff.stack_count == 3
         assert buff.buff_type == BuffType.NEUTRAL
+
+
+def _on_action_self_buff_context() -> BattlefieldContext:
+    passive = PassiveSkillData(
+        id="PassiveSkill",
+        trigger=PassiveSkillTrigger.ON_ACTION,
+        target_type=PassiveSkillTargetType.SELF,
+        effects=[
+            SkillEffectAddBuff(
+                value_source=None,
+                value=None,
+                value_type=None,
+                buff_id="재앙",
+                buff_add_timing=None,
+            )
+        ],
+        description="",
+    )
+    return BattlefieldContext(
+        buff_dict={"재앙": make_curse_data()},
+        skill_dict={},
+        passive_skill_dict={"PassiveSkill": passive},
+    )
+
+
+def test_on_action_passive_buff_grant_shows_in_command_log():
+    """행동 시 트리거 패시브의 효과가 직접 건 버프도 그 커맨드의 로그에 남는다 —
+    빠지면 답글의 "최종 N"이 실제 스택보다 작게 보인다."""
+    ctx = _on_action_self_buff_context()
+    manager = setup_ally_phase(ctx)
+    attacker = CharacterId("Catastrophe")
+    ctx.add_character(
+        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.on_battle_start()
+
+    manager.process_command(parse_character_command(attacker, "[공격/적군]", ctx))
+
+    buff_adds = [
+        entry
+        for result in ctx.results
+        for entry in result.log_entries
+        if entry.kind == BattleLogEntryKind.BUFF_ADD
+        and entry.target_name == attacker.name
+    ]
+    assert [entry.final_stack for entry in buff_adds] == [1]
+    assert ctx.get_buff_stack(attacker, "재앙") == 1
