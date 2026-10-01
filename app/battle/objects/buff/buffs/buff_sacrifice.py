@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
@@ -34,6 +34,8 @@ class BuffSacrifice(BuffBase):
     count 차감은 리다이렉트 시점에 수행되므로 스프레드시트에서
     duration_count_deduct_condition은 비워도 된다.
     """
+
+    REQUIRES_GIVER_CHARACTER: ClassVar[bool] = True
 
     @property
     def timing(self) -> BuffApplyTiming:

@@ -163,15 +163,19 @@ def expand_admin_command(
         )
     elif isinstance(command, ForceAddBuffByIdCommand):
         buff_add_targets = cast(list[CharacterId], command.targets)
+        buff_class = context.get_buff_data_by_id(command.buff_id).get_buff_class()
         return CommandPartData(
             original_part=command,
             data_per_effect=(
                 CommandPartDataPerEffect(
                     buff_add_list=[
                         BuffAddData(
-                            given_by=ADMIN_ID,
+                            given_by=command.given_by or ADMIN_ID,
                             applied_to=target,
                             buff_id=command.buff_id,
+                            value_override=buff_class.snapshot_value_on_add(
+                                context, target
+                            ),
                         )
                         for target in buff_add_targets
                     ]
@@ -183,7 +187,10 @@ def expand_admin_command(
         for target in cast(list[CharacterId], command.targets):
             target_buff_list = context.buff_container.get_buffs_by(target, None)
             buff_remove_list.extend(
-                buff.uid for buff in target_buff_list if buff.id == command.buff_id
+                buff.uid
+                for buff in target_buff_list
+                if buff.id == command.buff_id
+                and (command.given_by is None or buff.given_by == command.given_by)
             )
         return CommandPartData(
             original_part=command,

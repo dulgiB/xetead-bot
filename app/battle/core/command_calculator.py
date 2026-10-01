@@ -2,6 +2,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.admin import ADMIN_ID
 from battle.core.commands.models import (
     BattleLogEntry,
     BattleLogEntryKind,
@@ -528,12 +529,10 @@ class CommandPartCalculator:
     def _is_live_damage_calc(
         context: "BattlefieldContext", damage_calc: "DamageCalculateData"
     ) -> bool:
-        # 필드 효과의 공격자는 전장에 없는 센티넬이다 — characters 조회만으로
-        # 가리면 "이미 사망한 공격자"로 오인해 항목을 통째로 버린다.
-        attacker_is_live = damage_calc.base.attacker_id in context.characters or (
-            is_field_effect_holder(damage_calc.base.attacker_id)
+        return (
+            _is_live_source(context, damage_calc.base.attacker_id)
+            and damage_calc.base.target_id in context.characters
         )
-        return attacker_is_live and damage_calc.base.target_id in context.characters
 
     def _process_damage(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         # 리다이렉트로도 구제되지 않은, 이미 사망한 공격자/대상 항목은 건너뛴다.
@@ -636,16 +635,17 @@ class CommandPartCalculator:
         ):
             if not self._is_live_damage_calc(self.context, damage_calc):
                 continue
-            # 공격자가 필드 효과면 전장에 없다. 그런 항목은 속성을 스스로
-            # 정해서 오므로 시전자 속성을 볼 일이 없다.
+            # 공격자가 필드 효과나 시스템이면 전장에 없다. 속성을 정해 오지
+            # 않은 항목(시스템이 건 지속 대미지 등)은 필드 대미지와 같이 물리다.
             attacker = self.context.characters.get(damage_calc.base.attacker_id)
             target = self.context.characters[damage_calc.base.target_id]
 
             if damage_calc.base.is_magic_attack is not None:
                 is_magic_attack = damage_calc.base.is_magic_attack
-            else:
-                assert attacker is not None
+            elif attacker is not None:
                 is_magic_attack = attacker.status.is_magic_attacker
+            else:
+                is_magic_attack = False
             if is_magic_attack:
                 damage_calc.received_modifiers.append(target.status.m_res)
 
@@ -679,7 +679,7 @@ class CommandPartCalculator:
         context: "BattlefieldContext", heal_calc: "HealCalculateData"
     ) -> bool:
         return (
-            heal_calc.base.healer_id in context.characters
+            _is_live_source(context, heal_calc.base.healer_id)
             and heal_calc.base.target_id in context.characters
         )
 
@@ -888,6 +888,17 @@ def _build_damage_entry(
         hp_after=last.hp_after,
         max_hp=last.max_hp,
         source_labels=source_labels,
+    )
+
+
+def _is_live_source(context: "BattlefieldContext", source_id: CharacterId) -> bool:
+    # 필드 효과 센티넬과 admin("시스템")은 전장에 없는 부여자다 — characters
+    # 조회만으로 가리면 "이미 사망한 공격자"로 오인해 그들이 건 지속 대미지/
+    # 회복 항목을 통째로 버린다.
+    return (
+        source_id in context.characters
+        or is_field_effect_holder(source_id)
+        or source_id == ADMIN_ID
     )
 
 

@@ -436,9 +436,10 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 - `BuffContainer._collect_reactive_event_pairs()`는 홀더의 진영 대신 **사건
   당사자의 진영**(`subject_faction`)으로 가린다. `required_faction`은 훅마다
   의미가 달라(이동은 `foe_faction`, 피격은 당사자 진영) 쓸 수 없다.
-- `CommandPartCalculator._is_live_damage_calc()`는 센티넬 공격자를 통과시킨다.
-  `characters` 조회만으로 가리면 "이미 사망한 공격자"로 오인해 항목을 통째로
-  버린다.
+- `CommandPartCalculator._is_live_damage_calc()`/`_is_live_heal_calc()`는
+  센티넬 공격자를 통과시킨다(`_is_live_source()`). `characters` 조회만으로
+  가리면 "이미 사망한 공격자"로 오인해 항목을 통째로 버린다. admin이 부여자
+  없이 건 버프의 부여자(`ADMIN_ID`, "시스템")도 같은 이유로 통과시킨다.
 
 ### 효과에 쓸 수 있는 것
 
@@ -827,6 +828,15 @@ DM으로 경고한다. 전투를 세우지는 않는다 — 잘못 설정된 스
 `PARTITION_UID_BY_VALUE: ClassVar[bool] = True`를 오버라이드한다. 기본값
 `False`는 기존처럼 (given_by, applied_to, buff_class_name) 기준으로만
 재부여를 판정한다(값이 달라도 지속시간만 갱신하고 값을 덮어씀).
+
+부여자가 전장의 캐릭터여야 동작하는 버프(부여자에게 공격을 유도하거나
+부여자의 스탯으로 대미지를 굴리는 것 — `BuffTaunt`/`BuffSacrifice`/
+`BuffIgnite`)는 `REQUIRES_GIVER_CHARACTER: ClassVar[bool] = True`를 켠다.
+admin의 `[버프부여]`가 부여자 생략("시스템")을 거부하는 근거다 — 빠뜨리면
+공격이 전장에 없는 "시스템"으로 유도돼 조용히 사라진다. 부여 시점의 대상
+상태를 값으로 잡아 두는 버프(`BuffIgnite`의 열)는 `snapshot_value_on_add()`도
+오버라이드해야 admin 부여에서 그 값이 채워진다(스킬 경로는 효과 구현체가
+`value_override`로 채운다).
 
 ### 스킬 효과 추가
 
