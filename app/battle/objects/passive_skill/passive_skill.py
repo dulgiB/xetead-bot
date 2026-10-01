@@ -156,6 +156,13 @@ class PassiveSkillWrapperEvent(BuffEvent):
         from battle.core.command_calculator import build_buff_add_log_entry
 
         effect_data = calculator.data_by_effect[effect_seq_number]
+        # ON_ACTION은 피격·피회복 쪽에서도 호출되지만, 패시브의 "행동 시"는
+        # 보유자가 공격하거나 스킬을 쓸 때만이다.
+        if self.passive_data.trigger is PassiveSkillTrigger.ON_ACTION and not (
+            any(d.base.attacker_id == holder for d in effect_data.damage_data_list)
+            or any(h.base.healer_id == holder for h in effect_data.heal_data_list)
+        ):
+            return
         for i, effect in _indexed_effects_for_role(self.passive_data, self.role):
             condition = effect.condition
             if condition is not None and not condition.is_applied(
