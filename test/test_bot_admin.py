@@ -2928,6 +2928,29 @@ def _practice_state_with(names_by_side, **ps_kwargs):
     return ctx, ps, state
 
 
+def test_proxy_reply_that_closes_the_phase_has_no_pending_list():
+    """프록시 커맨드로 페이즈가 넘어가면 답글에 "남은 선언"을 붙이지 않는다 —
+    붙이면 방금 끝난 차례가 아니라 다음 차례 명단이 찍힌다."""
+    ctx, ps, state = _practice_state_with(
+        {SideType.SIDE_1: ["A"], SideType.SIDE_2: ["B"]}, round_limit=5
+    )
+    ps.manager._first_mover, ps.manager._second_mover = (
+        SideType.SIDE_1,
+        SideType.SIDE_2,
+    )
+    _handle_practice_command("acct_a", "[이동/2]", state, ps)
+
+    reply, _calc, game_post, _logs, ended, _ps = (
+        main_module._handle_practice_proxy_command(
+            "◊ B [이동/2]", state, "test-admin", session=ps
+        )
+    )
+
+    assert game_post is not None
+    assert not ended
+    assert reply is not None and "남은 선언" not in reply
+
+
 def test_practice_phase_waits_until_every_member_of_the_acting_side_declares():
     """한 페이즈는 그 팀 전원이 선언해야 넘어간다 — 커맨드 하나만 처리하고
     곧바로 넘기면 같은 팀의 나머지 캐릭터가 그 라운드에 행동할 수 없다."""

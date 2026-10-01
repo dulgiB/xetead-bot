@@ -2288,7 +2288,8 @@ def _handle_practice_proxy_command(
         if new_game_post is not None:
             game_post = new_game_post
 
-    if ps is not None and not ended:
+    # 페이즈가 넘어갔다면 pending_actors()는 다음 페이즈 명단이다.
+    if ps is not None and not ended and game_post is None:
         pending_text = _pending_actors_text(ps).strip()
         if pending_text:
             reply_parts.append(pending_text)
