@@ -25,6 +25,12 @@ class SkillTargetRule(abc.ABC):
     # 커맨드에 적힌 대상 입력을 무시하고 규칙이 스스로 대상을 정하는지.
     # ClassVar이라 인스턴스 없이도 판정할 수 있다 — fate_config_error가 쓴다.
     ignores_input_targets: ClassVar[bool] = False
+    # 시트의 target_count가 "입력할 수 있는 대상 수"가 아니라 규칙의 범위를
+    # 뜻하는지. 그런 규칙은 입력을 하나만 받으므로 대상 수 검증과 "대상 추가"
+    # 모드가 그 값을 쓰면 안 된다.
+    target_count_is_area: ClassVar[bool] = False
+
+    target_count: int = 1
 
     @abc.abstractmethod
     def get_targets(
@@ -78,16 +84,17 @@ class SkillTargetRuleColumn(SkillTargetRule):
 @dataclass(frozen=True)
 class SkillTargetRuleColumnRange(SkillTargetRule):
     """
-    사용자의 사거리 내 열 1개를 지정하면, 그 열을 중심으로 좌우 2열씩
-    확장한 최대 5개 열(총 5열) 전체를 대상으로 하는 스킬 효과.
+    사용자의 사거리 내 열 1개를 지정하면, 그 열을 중심으로 좌우
+    target_count열씩 확장한 열 전체를 대상으로 하는 스킬 효과
+    (target_count 1 → 3열, 2 → 5열).
     필드 경계를 넘어가는 열은 자연히 제외되어 5개 미만이 될 수 있다.
     - 대상 진영은 SkillTargetRuleColumn과 동일하게 항상 시전자의 적 진영.
     - 인원 상한 없음 (광역기 개념)
 
-    ex. 본인의 사거리 내 열 하나를 지정해 그 열 ±2열, 총 5열의 적 전체를 공격
+    ex. target_count가 2면 사거리 내 열 하나를 지정해 그 열 ±2열, 총 5열의 적 전체를 공격
     """
 
-    COLUMN_RANGE_RADIUS = 2
+    target_count_is_area: ClassVar[bool] = True
 
     def get_targets(
         self, targets: list[BattlefieldColumnIndex | CharacterId]
@@ -103,9 +110,7 @@ class SkillTargetRuleColumnRange(SkillTargetRule):
 
         expanded_column_values: set[int] = set()
         for column in columns:
-            for offset in range(
-                -self.COLUMN_RANGE_RADIUS, self.COLUMN_RANGE_RADIUS + 1
-            ):
+            for offset in range(-self.target_count, self.target_count + 1):
                 candidate = column.value + offset
                 if 0 <= candidate < BattlefieldColumnIndex.NONE.value:
                     expanded_column_values.add(candidate)

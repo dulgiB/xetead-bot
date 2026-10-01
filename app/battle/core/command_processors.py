@@ -280,12 +280,15 @@ def try_expansion_if_valid(
             if skill is None:
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
             # "대상 추가" 모드는 "+"를 붙였을 때만 대상을 더 지정할 수 있게 한다.
-            allowed_target_count = skill.data.target_count + (
-                skill.data.fate_boost_value
-                if part is fate_part
-                and skill.data.fate_mode is FateBoostMode.EXTRA_TARGET
-                else 0
-            )
+            if skill.target_rule.target_count_is_area:
+                allowed_target_count = 1
+            else:
+                allowed_target_count = skill.data.target_count + (
+                    skill.data.fate_boost_value
+                    if part is fate_part
+                    and skill.data.fate_mode is FateBoostMode.EXTRA_TARGET
+                    else 0
+                )
             if len(part.targets) > allowed_target_count:
                 raise CommandValidationError(
                     error_too_many_targets(
