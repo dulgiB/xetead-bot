@@ -72,10 +72,6 @@ class SkillTargetRuleColumn(SkillTargetRule):
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
             target_id_list += self.context.position_map[target_faction][column].values()
-
-        # 슬롯을 차지하지 않는 동료는 열 대상에 따로 넣지 않는다 — owner만
-        # 맞은 것으로 치고 가디언 버프가 그 1회분을 나눈다. 여기서 함께
-        # 넣으면 둘이 각자 전체 대미지를 맞아 실질 피해량이 2배가 된다.
         return target_id_list
 
 
@@ -151,8 +147,7 @@ class SkillTargetRuleAllyColumn(SkillTargetRule):
 class SkillTargetRuleAllAllies(SkillTargetRule):
     """
     시전자와 동일 진영의 모든 캐릭터를 대상으로 하는 스킬 효과. 시전자
-    자신과 동료(소환수 등, position_map 슬롯을 차지하지 않는 존재)는
-    대상에서 제외한다.
+    자신은 대상에서 제외한다.
     - 열/이름 입력을 받지 않는다(ignores_input_targets=True).
     - 인원 상한 없음 (광역기 개념)
 
@@ -168,9 +163,7 @@ class SkillTargetRuleAllAllies(SkillTargetRule):
         return [
             char_id
             for char_id, char in self.context.characters.items()
-            if char_id != self.skill_holder_id
-            and char_id not in self.context.companion_owners
-            and char.faction == holder.faction
+            if char_id != self.skill_holder_id and char.faction == holder.faction
         ]
 
 

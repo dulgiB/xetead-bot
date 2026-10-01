@@ -36,7 +36,6 @@ from battle.exceptions import (
     error_no_remaining_cost,
     error_skill_not_registered,
     error_target_does_not_exist,
-    error_target_is_companion,
     error_too_many_characters,
     error_too_many_targets,
 )
@@ -237,9 +236,7 @@ def try_expansion_if_valid(
       3. 코스트가 충분한지
       4. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
       5. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
-      6. 커맨드가 동료(소환수)를 명시적으로 대상 지정하지 않았는지 — 동료는
-         owner에게 종속된 실드 개념이라 직접 대상으로 선언할 수 없다.
-      7. 운명간섭("+")을 붙였다면 그 사용 조건을 만족하는지
+      6. 운명간섭("+")을 붙였다면 그 사용 조건을 만족하는지
     """
 
     if command.user_id not in context.characters:
@@ -256,8 +253,7 @@ def try_expansion_if_valid(
     attack_range = user.status[CombatStatType.RANGE]
 
     # 입력한 공백이 등록된 표기와 달라도("스킬_1" vs "스킬 _1") 등록된 표기로
-    # 치환해, 이후 검증·전개가 정확한 값을 보게 한다. 동료 여부 검사는 플레이어가
-    # 직접 타이핑한 대상에만 걸어야 하므로 이 시점이어야 한다.
+    # 치환해, 이후 검증·전개가 정확한 값을 보게 한다.
     command.parts[:] = [
         replace(
             part,
@@ -271,9 +267,7 @@ def try_expansion_if_valid(
                 if part.type_ == ActionType.USE_ITEM and part.item_id is not None
                 else part.item_id
             ),
-            targets=[
-                _resolve_and_reject_companion_target(context, t) for t in part.targets
-            ],
+            targets=[_resolve_target(context, t) for t in part.targets],
         )
         for part in command.parts
     ]
@@ -473,12 +467,9 @@ def _validate_fate_boost(
     return fate_part
 
 
-def _resolve_and_reject_companion_target(
+def _resolve_target(
     context: BattlefieldContext, target: "CharacterId | BattlefieldColumnIndex"
 ) -> "CharacterId | BattlefieldColumnIndex":
     if not isinstance(target, CharacterId):
         return target
-    resolved = context.resolve_character_id(target)
-    if resolved in context.companion_owners:
-        raise CommandValidationError(error_target_is_companion(resolved))
-    return resolved
+    return context.resolve_character_id(target)

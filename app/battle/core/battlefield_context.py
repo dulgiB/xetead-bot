@@ -1,6 +1,5 @@
 import copy
 import logging
-import math
 from dataclasses import replace
 from datetime import date
 from typing import Optional
@@ -32,7 +31,6 @@ from battle.objects.define import (
     CombatStatType,
     FactionType,
     ItemType,
-    MagicResistanceType,
 )
 from battle.objects.field_effect.models import FieldEffect, FieldEffectSource
 from battle.objects.item.models import ItemData
@@ -87,10 +85,6 @@ class BattlefieldContext:
         # 전장 전체에 걸린 효과. 캐릭터가 아니라 전장에 붙으며, 명시적으로
         # 해제하기 전까지 유지된다.
         self.field_effects: FieldEffectContainer = FieldEffectContainer(self)
-
-        # 슬롯(position_map)을 차지하지 않는 동료 캐릭터: companion_id -> owner_id.
-        # characters에는 있지만 position_map에는 없고, 위치는 owner를 따른다.
-        self.companion_owners: dict[CharacterId, CharacterId] = {}
 
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
@@ -246,7 +240,6 @@ class BattlefieldContext:
     def clear(self):
         self.characters.clear()
         self.buff_container.clear()
-        self.companion_owners.clear()
         self.position_map[FactionType.ALLY] = {
             index: {}
             for index in BattlefieldColumnIndex
@@ -346,10 +339,7 @@ class BattlefieldContext:
         for buff in self.buff_container.get_buffs_by(char_id, None):
             self.buff_container.remove(buff.uid)
 
-        # 슬롯을 차지하지 않는 동료는 애초에 position_map에 없다.
-        if char_id not in self.companion_owners:
-            self._remove_from_position_map(char_id)
-        self.companion_owners.pop(char_id, None)
+        self._remove_from_position_map(char_id)
         return self.characters.pop(char_id)
 
     def try_find_empty_slot(
@@ -380,25 +370,9 @@ class BattlefieldContext:
             return raw_skill_id
         return resolve_matching_key(raw_skill_id, (s.data.id for s in user.skills))
 
-    def find_companion_id(self, owner_id: CharacterId) -> Optional[CharacterId]:
-        """owner_id가 소환한 동료의 CharacterId. 아직 한 번도 소환된 적 없다면
-        None. 동료의 id는 최초 소환 시 결정된 이름을 그대로 쓰므로(죽어서
-        curr_hp가 0이 되어도 companion_owners 등록은 유지된다), 공식으로
-        재계산하지 않고 이 조회로 찾는다."""
-        for companion_id, owner in self.companion_owners.items():
-            if owner == owner_id:
-                return companion_id
-        return None
-
     def find_character_position(self, char_id: CharacterId) -> BattlefieldColumnIndex:
         if char_id not in self.characters.keys():
             raise CommandValidationError(error_target_does_not_exist(char_id))
-
-        # 동료는 owner의 위치를 그대로 따른다 — owner가 이동하면 동료도
-        # 같이 이동한 것으로 취급된다.
-        owner_id = self.companion_owners.get(char_id)
-        if owner_id is not None:
-            return self.find_character_position(owner_id)
 
         char = self.characters[char_id]
         for column_idx, characters in self.position_map[char.faction].items():
@@ -490,13 +464,6 @@ class BattlefieldContext:
         평소처럼 행동/피격당한다(부활 회복 등으로 다시 양수 체력이 될
         수도 있으므로). `force_remove_character()`가 그 명시적 제거
         경로다.
-
-        동료(소환수)의 생애주기는 소환자(owner)에게 종속된다:
-        - 동료 자신의 체력이 0이 되는 것은 단독으로 탈락 처리하지 않는다 —
-          companion_owners 등록을 유지한 채 남아 있다가 나중에
-          revive_companion()으로 재소환된다.
-        - 반대로 소환자가 탈락하면, 그 순간부터 동료를 재소환할 주체 자체가
-          없어지므로 동료의 현재 체력과 무관하게 함께 제거한다.
         """
         eliminated: list[CharacterId] = []
         for char_id, char in self.characters.items():
@@ -504,13 +471,7 @@ class BattlefieldContext:
                 continue
             if char.faction != FactionType.ENEMY:
                 continue
-            if char_id in self.companion_owners:
-                continue
-
             eliminated.append(char_id)
-            companion_id = self.find_companion_id(char_id)
-            if companion_id is not None and companion_id in self.characters:
-                eliminated.append(companion_id)
 
         for char_id in eliminated:
             self.remove_character(char_id)
@@ -520,15 +481,9 @@ class BattlefieldContext:
         """admin이 `[탈락/이름]`으로 명시적으로 캐릭터를 필드에서 제거한다.
 
         0 체력이어도 자동으로는 탈락하지 않는 아군을 admin이 직접 사망
-        처리할 때 쓴다. 소환자가 제거되면 동료도 함께 제거하는 규칙은
-        `_remove_eliminated_characters()`와 동일하게 따른다."""
-        removed = [char_id]
-        companion_id = self.find_companion_id(char_id)
-        if companion_id is not None and companion_id in self.characters:
-            removed.append(companion_id)
-        for target_id in removed:
-            self.remove_character(target_id)
-        return removed
+        처리할 때 쓴다."""
+        self.remove_character(char_id)
+        return [char_id]
 
     def on_battle_start(self) -> None:
         # 부적 등록이 버프 트리거보다 먼저여야 "전투 시작" 트리거 필드 효과가
@@ -577,77 +532,6 @@ class BattlefieldContext:
 
     def on_battle_end(self) -> list[BattleLogEntry]:
         return self.buff_container.on_battle_end()
-
-    def _spawn_companion_character(
-        self, owner: CombatCharacter, companion_id: CharacterId, hp_percent: int
-    ) -> None:
-        """일반 캐릭터와 달리 position_map 슬롯을 전혀 차지하지 않는다(진영당
-        열 3자리를 두고 아군과 경쟁하지 않는다) — companion_owners에 등록해
-        find_character_position()이 owner의 위치를 그대로 따르게 한다. 그래서
-        add_character()를 거치지 않고 CombatCharacter를 직접 만든다."""
-        companion_max_hp = math.floor(
-            owner.status[CombatStatType.MAX_HP] * hp_percent / 100
-        )
-        character = CombatCharacter(
-            self,
-            companion_id,
-            owner.faction,
-            CombatStats(
-                0,
-                companion_max_hp,
-                0,
-                MagicResistanceType.NORMAL,
-                False,
-                0,
-                None,
-            ),
-            skills=[],
-        )
-        self.characters[companion_id] = character
-        self.companion_owners[companion_id] = owner.id
-
-    def spawn_companion_if_absent(
-        self, owner_id: CharacterId, buff_name: str, hp_percent: int
-    ) -> None:
-        """owner_id의 소환수 성격의 동료를 처음 소환한다. 이미 살아 있으면
-        (존재 + 체력 1 이상) 아무 일도 하지 않는다 — 전투 시작 시 패시브가
-        중복 호출돼도 안전한 idempotent 헬퍼다.
-
-        동료의 CharacterId는 이 시점에 buff_name(owner에게 부여되는 가디언
-        버프의 id) 그대로 확정된다 — 가디언 버프 id는 해당 캐릭터 전용으로
-        유일하다는 전제이므로 owner 이름을 덧붙이지 않는다. 이후 재소환
-        (revive_companion)이나 조회(find_companion_id)는 이 이름을 다시
-        계산하지 않고 companion_owners 등록을 그대로 재사용한다.
-        """
-        existing_id = self.find_companion_id(owner_id)
-        if existing_id is not None:
-            existing = self.characters[existing_id]
-            if existing.status.curr_hp > 0:
-                return
-
-        owner = self.characters.get(owner_id)
-        if owner is None:
-            return
-
-        companion_id = existing_id or CharacterId(buff_name)
-        self._spawn_companion_character(owner, companion_id, hp_percent)
-
-    def revive_companion(self, owner_id: CharacterId, hp_percent: int) -> None:
-        """owner_id가 전투 중 최초 소환한 적 있는(companion_owners에 등록된)
-        동료를 낮은 체력으로 재소환한다. 패시브(spawn_companion_if_absent)가
-        전투 시작 시 항상 먼저 동료를 소환해 이름을 확정해 두므로, 재소환
-        스킬 효과는 그 이름을 다시 알 필요 없이 이 메서드로 위임한다."""
-        companion_id = self.find_companion_id(owner_id)
-        if companion_id is None:
-            raise ValueError(
-                f"{owner_id.name}의 동료가 아직 한 번도 소환되지 않았습니다."
-            )
-
-        owner = self.characters.get(owner_id)
-        if owner is None:
-            return
-
-        self._spawn_companion_character(owner, companion_id, hp_percent)
 
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]
