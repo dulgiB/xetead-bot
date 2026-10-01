@@ -446,9 +446,10 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 - `BuffContainer._collect_reactive_event_pairs()`는 홀더의 진영 대신 **사건
   당사자의 진영**(`subject_faction`)으로 가린다. `required_faction`은 훅마다
   의미가 달라(이동은 `foe_faction`, 피격은 당사자 진영) 쓸 수 없다.
-- `CommandPartCalculator._is_live_damage_calc()`는 센티넬 공격자를 통과시킨다.
-  `characters` 조회만으로 가리면 "이미 사망한 공격자"로 오인해 항목을 통째로
-  버린다.
+- `CommandPartCalculator._is_live_damage_calc()`/`_is_live_heal_calc()`는
+  센티넬 공격자를 통과시킨다(`_is_live_source()`). `characters` 조회만으로
+  가리면 "이미 사망한 공격자"로 오인해 항목을 통째로 버린다. admin이 부여자
+  없이 건 버프의 부여자(`ADMIN_ID`, "시스템")도 같은 이유로 통과시킨다.
 
 ### 효과에 쓸 수 있는 것
 
