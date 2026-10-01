@@ -4,7 +4,6 @@ from .buff_apply_debuff_on_dealing_damage import (  # noqa: F401
 from .buff_atk import BuffAtk  # noqa: F401
 from .buff_bonus_damage_on_hit import BuffBonusDamageOnHit  # noqa: F401
 from .buff_catastrophe import BuffCatastrophe  # noqa: F401
-from .buff_companion_guardian import BuffCompanionGuardian  # noqa: F401
 from .buff_conditional_damage import BuffConditionalDamage  # noqa: F401
 from .buff_counter_damage_on_ally_in_range_damaged import (  # noqa: F401
     BuffCounterDamageOnAllyInRangeDamaged,

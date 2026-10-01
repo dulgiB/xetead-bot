@@ -539,7 +539,6 @@ SSH로 붙어 체크아웃을 갱신하고 `bot` 컨테이너를 재빌드·재�
 | `BuffConditionalDamage`                   | 적 후행 시 조건이 만족되면 고정 대미지 부여 (Condition 조합 필수) |
 | `BuffApplyDebuffOnDealingDamage`          | 대미지를 줄 때마다 대상에게 지정 버프(디버프) 부여               |
 | `BuffBonusDamageOnHit`                    | 피격 시 공격력 기반 추가 대미지 부여                        |
-| `BuffCompanionGuardian`                   | 동료 생존 시 받는 대미지를 절반씩 분담 + 공격자에게 반격            |
 | `BuffCounterDamageOnAllyInRangeDamaged`   | 사거리 내 아군이 피격 시 공격자에게 반격 대미지                  |
 | `BuffCounterDamageOnMarkedAllyAttack`     | 사거리 내에서 특정 버프를 보유한 아군이 공격하면 같은 대상에게 추가 대미지  |
 | `BuffCounterDamageOnEnemyMove`            | 사거리 내 적이 이동할 때마다 반격 대미지 (대상 디버프 스택에 비례)     |

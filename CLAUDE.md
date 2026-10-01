@@ -57,7 +57,6 @@ app/
         combat_character.py      # CombatCharacter
         combat_stats.py          # CombatStats
         buffed_stats.py          # 버프 반영 후 최종 스탯 계산
-      companion.py                # 소환수(동료) 생존 여부 등 헬퍼 (is_companion_alive)
       extensions.py                # CommandPart 코스트 계산 (get_total_cost)
       models.py                    # CharacterId, DamageData, HealData, ValueWithModifiers 등
       define.py                    # 주요 enum (ActionType, BuffApplyTiming, CombatStatType 등)
