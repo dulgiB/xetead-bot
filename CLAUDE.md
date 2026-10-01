@@ -839,6 +839,15 @@ DM으로 경고한다. 전투를 세우지는 않는다 — 잘못 설정된 스
 `False`는 기존처럼 (given_by, applied_to, buff_class_name) 기준으로만
 재부여를 판정한다(값이 달라도 지속시간만 갱신하고 값을 덮어씀).
 
+부여자가 전장의 캐릭터여야 동작하는 버프(부여자에게 공격을 유도하거나
+부여자의 스탯으로 대미지를 굴리는 것 — `BuffTaunt`/`BuffSacrifice`/
+`BuffIgnite`)는 `REQUIRES_GIVER_CHARACTER: ClassVar[bool] = True`를 켠다.
+admin의 `[버프부여]`가 부여자 생략("시스템")을 거부하는 근거다 — 빠뜨리면
+공격이 전장에 없는 "시스템"으로 유도돼 조용히 사라진다. 부여 시점의 대상
+상태를 값으로 잡아 두는 버프(`BuffIgnite`의 열)는 `snapshot_value_on_add()`도
+오버라이드해야 admin 부여에서 그 값이 채워진다(스킬 경로는 효과 구현체가
+`value_override`로 채운다).
+
 ### 스킬 효과 추가
 
 1. `app/battle/objects/skill/effects/` 에 `SkillEffectBase` 상속 클래스 작성

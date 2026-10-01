@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, ClassVar, Optional
 
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
@@ -30,6 +30,8 @@ class TauntedByEvent(BuffEvent):
 
 class BuffTaunt(BuffBase):
     """도발"""
+
+    REQUIRES_GIVER_CHARACTER: ClassVar[bool] = True
 
     @property
     def timing(self) -> BuffApplyTiming:

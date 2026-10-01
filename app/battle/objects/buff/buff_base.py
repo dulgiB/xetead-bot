@@ -123,6 +123,11 @@ class BuffBase(abc.ABC):
     # 하나로 병합돼 지속시간만 갱신되고 값은 덮어쓰인다.
     PARTITION_UID_BY_VALUE: ClassVar[bool] = False
 
+    # True면 부여자가 전장의 캐릭터여야 동작한다 — 공격을 부여자에게 끌어오거나
+    # 부여자의 스탯으로 대미지를 굴리는 버프. admin이 부여자 없이("시스템")
+    # 걸면 공격이 전장에 없는 대상으로 유도돼 사라지는 식으로 조용히 깨진다.
+    REQUIRES_GIVER_CHARACTER: ClassVar[bool] = False
+
     def __init__(
         self,
         given_by: CharacterId,
@@ -224,6 +229,15 @@ class BuffBase(abc.ABC):
         return self.uid == other.uid
 
     def get_target_override(self) -> Optional[CharacterId]:
+        return None
+
+    @classmethod
+    def snapshot_value_on_add(
+        cls, context: "BattlefieldContext", applied_to: CharacterId
+    ) -> Optional[int]:
+        """부여 시점의 대상 상태를 수치로 잡아 두는 버프가, 그 수치를 정해
+        줄 스킬 효과 없이 부여될 때(admin 강제 부여) 쓸 값. None이면 시트의
+        value_0을 그대로 쓴다."""
         return None
 
     def display_id_label(self) -> str:

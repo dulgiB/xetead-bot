@@ -77,6 +77,13 @@ class BuffIgnite(BuffBase):
     """
 
     PARTITION_UID_BY_VALUE: ClassVar[bool] = True
+    REQUIRES_GIVER_CHARACTER: ClassVar[bool] = True
+
+    @classmethod
+    def snapshot_value_on_add(
+        cls, context: "BattlefieldContext", applied_to: CharacterId
+    ) -> Optional[int]:
+        return context.find_character_position(applied_to).value
 
     @property
     def timing(self) -> BuffApplyTiming:
