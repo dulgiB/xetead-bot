@@ -1,3 +1,5 @@
+from typing import Optional
+
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
     BattlefieldColumnIndex,
@@ -125,11 +127,12 @@ def error_fate_skill_without_damage(skill_id: str) -> str:
     )
 
 
-def error_fate_not_enough_hp(hp_cost: int, curr_hp: int) -> str:
-    return (
-        f"키워드 보정은 체력 {hp_cost}을 소모하므로 체력이 그보다 많아야"
-        f" 합니다. (현재 체력: {curr_hp})"
-    )
+def error_fate_not_enough_hp(hp_cost: int, curr_hp: Optional[int]) -> str:
+    """체력을 가리는 캐릭터는 curr_hp를 None으로 넘겨 현재 체력을 빼고 알린다."""
+    message = f"키워드 보정은 체력 {hp_cost}을 소모하므로 체력이 그보다 많아야 합니다."
+    if curr_hp is None:
+        return message
+    return f"{message} (현재 체력: {curr_hp})"
 
 
 def error_field_effect_not_found(effect_id: str) -> str:
