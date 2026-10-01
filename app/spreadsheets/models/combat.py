@@ -19,7 +19,7 @@ class CombatCharacterDataFromSpreadsheet:
     max_cost: int
     passive_skill_id: str
     skill_id_list: list[str]
-    # "에너미" 시트 전용 컬럼. 공개 노출 지점에서 체력을 "?/?"로 가린다.
+    # "캐릭터"/"에너미" 시트 공통 체크박스. 공개 노출 지점에서 체력을 "?/?"로 가린다.
     hide_hp: bool = False
     # "캐릭터" 시트 전용 컬럼이며 GM이 직접 관리한다. 컬럼이 없는 "에너미"는
     # 0으로 채워져 부활 관련 수치 효과가 전혀 붙지 않는다.

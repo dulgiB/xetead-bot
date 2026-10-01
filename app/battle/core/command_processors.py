@@ -462,7 +462,10 @@ def _validate_fate_boost(
     available_hp = context.fate_cost_hp(user)
     if available_hp <= FATE_INTERVENTION_HP_COST:
         raise CommandValidationError(
-            error_fate_not_enough_hp(FATE_INTERVENTION_HP_COST, available_hp)
+            error_fate_not_enough_hp(
+                FATE_INTERVENTION_HP_COST,
+                None if user.hide_hp else available_hp,
+            )
         )
     return fate_part
 
