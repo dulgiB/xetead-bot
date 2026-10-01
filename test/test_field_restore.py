@@ -19,8 +19,10 @@ from battle.practice.define import (  # noqa: E402
 )
 from bot import field_restore  # noqa: E402
 from bot.log_sheets import FieldBattleType, FieldRow  # noqa: E402
-from bot.main import BotState  # noqa: E402
+from bot.main import BotState, MastodonBotListener  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
+from mastodon.types_base import MaybeSnowflakeIdType  # noqa: E402
+from test_bot_admin import _FakeMastodon  # noqa: E402
 
 
 def _make_state(name_dict: dict) -> BotState:
@@ -192,6 +194,35 @@ def test_restore_investigation_session_maps_every_acct():
     assert summary is not None
     session = state.noncombat.investigations["100"]
     assert session.accts == ["user1", "user2"]
+
+
+def test_restored_investigation_session_matches_notification_ids():
+    menu_id = "117364518689834151"
+    state = _make_state({})
+    row = FieldRow(
+        field_id=menu_id,
+        battle_type=FieldBattleType.INVESTIGATION_QUEST,
+        round_n=0,
+        phase="",
+        characters=[],
+        meta={"accts": ["user1"], "menu_post_id": menu_id},
+    )
+    field_restore._restore_investigation_session(state, row)
+    mastodon = _FakeMastodon(
+        ancestors=[{"id": MaybeSnowflakeIdType(menu_id), "account": {"acct": "bot"}}]
+    )
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    direct = listener._resolve_investigation_session(
+        "user1", MaybeSnowflakeIdType("1"), MaybeSnowflakeIdType(menu_id), state
+    )
+    via_thread = listener._resolve_investigation_session(
+        "user1", MaybeSnowflakeIdType("2"), MaybeSnowflakeIdType("3"), state
+    )
+
+    session = state.noncombat.investigations[menu_id]
+    assert direct == (session, "menu", True)
+    assert via_thread == (session, "menu", False)
 
 
 def test_restore_investigation_session_skips_when_meta_missing():

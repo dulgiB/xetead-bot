@@ -512,12 +512,8 @@ def _restore_investigation_session(state: "BotState", row: FieldRow) -> Optional
     session = InvestigationSession(
         field_id=row.field_id,
         accts=list(accts),
-        menu_post_id=int(menu_post_id),
-        overview_post_id=(
-            int(meta["overview_post_id"])
-            if meta.get("overview_post_id") is not None
-            else None
-        ),
+        menu_post_id=menu_post_id,
+        overview_post_id=meta.get("overview_post_id"),
         quest_id=meta.get("quest_id"),
     )
     state.noncombat.investigations[session.field_id] = session
