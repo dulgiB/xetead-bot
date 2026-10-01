@@ -369,6 +369,23 @@ def test_fate_config_error_rejects_extra_target_on_self_rule():
     assert error is not None and "대상을 입력받지 않아" in error
 
 
+def test_fate_config_error_rejects_extra_target_on_area_rule():
+    error = fate_config_error(
+        _skill(
+            "Cost2Skill",
+            effects=[
+                SkillEffectDamage(
+                    ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None
+                )
+            ],
+            target_rule="SkillTargetRuleColumnRange",
+            fate_mode=FateBoostMode.EXTRA_TARGET,
+            fate_value=1,
+        )
+    )
+    assert error is not None and "범위로 쓰고" in error
+
+
 def test_fate_config_error_rejects_buff_mode_on_non_buff_effect():
     error = fate_config_error(
         _skill(

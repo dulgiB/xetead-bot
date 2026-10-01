@@ -388,7 +388,10 @@ class SkillData:
             "battle.objects.skill.target_functions"
         )
         rule: Type[SkillTargetRule] = getattr(target_rule_module, self.target_rule)
-        return Skill(target_rule=rule(context, holder), data=self)
+        return Skill(
+            target_rule=rule(context, holder, target_count=self.target_count),
+            data=self,
+        )
 
     @property
     def fate_effect(self) -> Optional[SkillEffectBase]:
@@ -435,6 +438,11 @@ def fate_config_error(data: SkillData) -> Optional[str]:
             return (
                 f"'{data.id}': target_rule({data.target_rule})은 대상을 입력받지 않아"
                 " '대상 추가'를 적용할 수 없습니다."
+            )
+        if rule.target_count_is_area:
+            return (
+                f"'{data.id}': target_rule({data.target_rule})은 target_count를"
+                " 범위로 쓰고 열을 하나만 입력받아 '대상 추가'를 적용할 수 없습니다."
             )
         return None
 
