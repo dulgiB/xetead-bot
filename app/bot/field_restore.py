@@ -480,6 +480,10 @@ def _restore_practice_battle(
         expected_accts=expected_accts,
         initial_max_hp_by_side=initial_max_hp,
         roster_by_side=roster,
+        retired_damage={
+            str(name): int(damage)
+            for name, damage in (meta.get("retired_damage") or {}).items()
+        },
     )
     state.practices[active_post_id] = ps
 
