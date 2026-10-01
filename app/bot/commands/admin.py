@@ -1145,6 +1145,16 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
     return result, battle_end_calc
 
 
+def _participant_names(accts: list[str], state: "BotState") -> str:
+    """준비 게시물의 참여 대상 줄. 계정은 봇이 게시물 맨 앞에 멘션하므로
+    여기서는 시트의 캐릭터 이름을 적는다."""
+    if not accts:
+        return "(없음)"
+    return ", ".join(
+        state.char_dict[a].name if a in state.char_dict else a for a in accts
+    )
+
+
 def _cmd_practice_prep(
     expected_accts: list[str],
     state: "BotState",
@@ -1634,9 +1644,8 @@ def _cmd_investigation_battle(
         except (ValueError, CommandValidationError) as e:
             errors.append(str(e))
 
-    participant_text = " ".join(f"@{a}" for a in mentions) if mentions else "(없음)"
     game_post = (
-        f"◊ 상시전투 준비\n참여 대상: {participant_text}\n\n"
+        f"◊ 상시전투 준비\n참여 대상: {_participant_names(mentions, state)}\n\n"
         "이 게시물에 답글로 포지션을 선언해 주세요.\n"
         "예: [아군/3열]"
     )

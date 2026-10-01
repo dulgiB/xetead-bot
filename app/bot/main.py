@@ -890,10 +890,19 @@ class MastodonBotListener(StreamListener):
             )
             if proxy_ps is not None:
                 assert proxy_reply is not None
-                practice_participants = list(proxy_ps.expected_accts)
+                practice_participants = _practice_post_mention_accts(proxy_ps)
                 practice_visibility = proxy_ps.visibility
                 reply_status = self._reply_with_calc(
-                    status_id, acct, visibility, proxy_reply, proxy_calc
+                    status_id,
+                    acct,
+                    visibility,
+                    proxy_reply,
+                    proxy_calc,
+                    mention_accts=(
+                        _practice_mention_accts(proxy_ps, acct)
+                        if proxy_ps.is_investigation
+                        else None
+                    ),
                 )
                 for proxy_battle_log in proxy_battle_logs:
                     _persist_battle_log(
@@ -989,7 +998,9 @@ class MastodonBotListener(StreamListener):
                     logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
                     if ps.all_declared():
                         game_post_text = _start_investigation_battle(state, ps)
-                        mention_prefix = _practice_mention_prefix(ps.expected_accts)
+                        mention_prefix = _practice_mention_prefix(
+                            _practice_post_mention_accts(ps)
+                        )
                         new_post = self._mastodon.status_post(
                             _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
@@ -1035,7 +1046,9 @@ class MastodonBotListener(StreamListener):
                     )
                     if ps.all_declared() and ps.teams_valid():
                         game_post_text = _start_practice_battle(state, ps)
-                        mention_prefix = _practice_mention_prefix(ps.expected_accts)
+                        mention_prefix = _practice_mention_prefix(
+                            _practice_post_mention_accts(ps)
+                        )
                         new_post = self._mastodon.status_post(
                             _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
@@ -1056,7 +1069,7 @@ class MastodonBotListener(StreamListener):
             # 정산 게시물(game_post)에 참여자 전원을 멘션하려면 호출 전에
             # 미리 담아둬야 한다 — 전투가 이번 커맨드로 종료되면 ended=True로
             # 알려준다.
-            practice_participants = list(ps.expected_accts)
+            practice_participants = _practice_post_mention_accts(ps)
             reply, calc_text, game_post, battle_log, ended = _handle_practice_command(
                 acct, text, state, ps
             )
@@ -1065,7 +1078,14 @@ class MastodonBotListener(StreamListener):
                 # 스레드는 그대로 남아 이후 정상 커맨드가 오면 이어진다.
                 return
             reply_status = self._reply_with_calc(
-                status_id, acct, visibility, reply, calc_text
+                status_id,
+                acct,
+                visibility,
+                reply,
+                calc_text,
+                mention_accts=(
+                    _practice_mention_accts(ps, acct) if ps.is_investigation else None
+                ),
             )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
             if game_post is not None:
@@ -1305,11 +1325,17 @@ class MastodonBotListener(StreamListener):
             # 계산식을 반영해야 한다 — 무시하면 종료 정산의 계산식이 통째로
             # 사라진다.
             if result.game_post_text is not None:
+                prep = result.practice_to_register
                 post = self._reply(
                     status_id,
                     acct,
                     visibility,
                     result.game_post_text,
+                    mention_accts=(
+                        _practice_mention_accts(prep, acct)
+                        if prep is not None and prep.is_investigation
+                        else None
+                    ),
                 )
                 _apply_game_post_side_effects(state, result, post["id"])
                 self._post_calc_followups(post["id"], None, result.game_post_calc_text)
@@ -1394,11 +1420,7 @@ class MastodonBotListener(StreamListener):
         mention_accts를 주면 발신자(acct) 한 명 대신 그 목록 전원을 앞에
         멘션한다 (대련의 참여자 전원 멘션과 동일한 목적 — 여러
         캐릭터가 함께 엮인 결과를 모두에게 알려야 할 때 사용)."""
-        mention_prefix = (
-            " ".join(f"@{a}" for a in mention_accts) + " "
-            if mention_accts
-            else f"@{acct} "
-        )
+        mention_prefix = _reply_mention_prefix(acct, mention_accts)
         chunks = _split_for_post(text, len(mention_prefix))
         status = self._mastodon.status_post(
             f"{mention_prefix}{chunks[0]}",
@@ -1422,6 +1444,7 @@ class MastodonBotListener(StreamListener):
         text: str,
         calc_text: str,
         media_ids: Optional[list] = None,
+        mention_accts: Optional[list[str]] = None,
     ) -> dict:
         """계산식(calc_text)이 없으면 평범한 답글 하나만 보낸다.
 
@@ -1444,9 +1467,11 @@ class MastodonBotListener(StreamListener):
         한 게시물로 합칠 수 없으므로, 그 경우엔 본문을 평범한 답글로
         먼저 보내고 계산식만 별도의 CW 후속 게시물로 이어 붙인다."""
         if not calc_text:
-            return self._reply(in_reply_to_id, acct, visibility, text, media_ids)
+            return self._reply(
+                in_reply_to_id, acct, visibility, text, media_ids, mention_accts
+            )
 
-        mention_prefix = f"@{acct} "
+        mention_prefix = _reply_mention_prefix(acct, mention_accts)
         # spoiler_text에 " (N/N)" 접미사가 붙을 수 있어, 먼저 접미사 없이
         # 나눠 조각 수를 가늠한 뒤 그 길이만큼 예산을 줄여 다시 나눈다.
         provisional_chunks = _split_for_post(calc_text, len(mention_prefix) + len(text))
@@ -1459,7 +1484,13 @@ class MastodonBotListener(StreamListener):
         # 수 없다. 접미사를 빼고 재면 한도에 근접한 text에서 422가 난다.
         if len(text) + suffix_len > _MAX_POST_LENGTH:
             return self._reply_then_calc_followup(
-                in_reply_to_id, acct, visibility, text, calc_text, media_ids
+                in_reply_to_id,
+                acct,
+                visibility,
+                text,
+                calc_text,
+                media_ids,
+                mention_accts,
             )
 
         calc_chunks = (
@@ -1499,15 +1530,21 @@ class MastodonBotListener(StreamListener):
         text: str,
         calc_text: str,
         media_ids: Optional[list] = None,
+        mention_accts: Optional[list[str]] = None,
     ) -> dict:
         """`_reply_with_calc`의 폴백: 본문(text)이 그 자체로 spoiler_text
         한도(500자)를 넘어 한 게시물로 합칠 수 없을 때, 본문을 평범한 답글로
         먼저 보내고 계산식을 별도의 CW(spoiler_text="계산식") 후속
         게시물로 이어 붙인다. 반환값은 (CW 게시물이 아닌) 본문 답글의
         status dict다."""
-        reply_status = self._reply(in_reply_to_id, acct, visibility, text, media_ids)
+        reply_status = self._reply(
+            in_reply_to_id, acct, visibility, text, media_ids, mention_accts
+        )
         self._post_calc_followups(
-            reply_status["id"], visibility, calc_text, prefix=f"@{acct} "
+            reply_status["id"],
+            visibility,
+            calc_text,
+            prefix=_reply_mention_prefix(acct, mention_accts),
         )
         return reply_status
 
@@ -1543,6 +1580,29 @@ class MastodonBotListener(StreamListener):
                 post_kwargs["visibility"] = visibility
             calc_status = self._mastodon.status_post(f"{prefix}{chunk}", **post_kwargs)
             reply_to = calc_status["id"]
+
+
+def _reply_mention_prefix(acct: str, mention_accts: Optional[list[str]]) -> str:
+    if mention_accts:
+        return " ".join(f"@{a}" for a in mention_accts) + " "
+    return f"@{acct} "
+
+
+def _practice_mention_accts(ps: PracticeBattleState, sender: str) -> list[str]:
+    """발신자의 게시물에 답하는 봇 게시물 맨 앞에 멘션할 계정. admin이 대신
+    입력했다면 그 답글은 admin에게도 가야 하므로 발신자도 넣는다."""
+    return list(dict.fromkeys([*_practice_post_mention_accts(ps), sender]))
+
+
+def _practice_post_mention_accts(ps: PracticeBattleState) -> list[str]:
+    """라운드 전환·종료 같은 진행 공지에 멘션할 계정.
+
+    상시전투의 적군은 world가 프록시로 조작하는데 world는 참여
+    대상(expected_accts)이 아니라, 넣지 않으면 적 차례가 와도 알림을 받지
+    못한다."""
+    if ps.is_investigation:
+        return list(dict.fromkeys([WORLD_MASTODON_ID, *ps.expected_accts]))
+    return list(ps.expected_accts)
 
 
 def _practice_mention_prefix(participants: list[str]) -> str:
