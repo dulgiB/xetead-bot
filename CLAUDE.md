@@ -57,7 +57,6 @@ app/
         combat_character.py      # CombatCharacter
         combat_stats.py          # CombatStats
         buffed_stats.py          # 버프 반영 후 최종 스탯 계산
-      companion.py                # 소환수(동료) 생존 여부 등 헬퍼 (is_companion_alive)
       extensions.py                # CommandPart 코스트 계산 (get_total_cost)
       models.py                    # CharacterId, DamageData, HealData, ValueWithModifiers 등
       define.py                    # 주요 enum (ActionType, BuffApplyTiming, CombatStatType 등)
@@ -250,14 +249,6 @@ effect를 여러 개 써서 같은 대상을 때리는 스킬에서 반격·추�
 수만큼 붙지 않게 하기 위함이다. 묶는 단위는 (공격자, 대상) 쌍이라, 한 effect가
 아군 여럿을 동시에 때리는 광역기는 피격자마다 정상 발동한다.
 
-**동료(소환수)는 "아군" 범위 판정에서 일관되게 제외한다** —
-`_characters_in_holder_scope()`, `SkillTargetRuleAllAllies`,
-`PassiveSkill._resolve_targets()`, `SkillEffectAddBuffPerDamagedColumn`이
-모두 `context.companion_owners`를 건너뛴다. 동료는 슬롯을 차지하지 않고
-소환자의 위치를 그대로 따르는 종속 개체라, 세면 소환자 한 명이 두 명으로
-잡히고(예: "사거리 내 아군 3명" 조건) 소환자가 스스로 동료 체력을 대가로
-지불한 것까지 "아군 피격"으로 잡힌다.
-
 `BuffEvent.is_pure_damage_modifier = True`(수치만 바꾸고 부수효과가 없는
 이벤트)는 두 경로에서 따로 재실행된다. 둘 다 "부수효과 이벤트는 한 번만,
 배율은 빠짐없이"라는 같은 규칙의 구현이므로, 새 이벤트를 만들 때 이 플래그를
@@ -311,7 +302,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillTargetRuleColumn`       | 열(column) 기준 광역, 항상 시전자의 `foe_faction`(적 진영)  | `False`                  |
 | `SkillTargetRuleAllyColumn`   | 열 기준 광역, 항상 시전자와 같은 진영(아군)                  | `False`                  |
 | `SkillTargetRuleColumnRange`  | 열 1개 지정 → ±2열(최대 5열) 광역, 항상 시전자의 `foe_faction`(적 진영) | `False`                  |
-| `SkillTargetRuleAllAllies`    | 입력 무시, 시전자와 같은 진영 전원(시전자 자신·동료 제외)         | `True`                   |
+| `SkillTargetRuleAllAllies`    | 입력 무시, 시전자와 같은 진영 전원(시전자 자신 제외)              | `True`                   |
 
 `ignores_input_targets`는 커맨드에 적힌 대상 입력을 규칙이 무시하는지만
 뜻한다 — `fate_config_error()`가 "대상 추가" 모드를 걸러내는 데만 쓰고,
@@ -381,8 +372,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 - **`PassiveSkillTargetType`**: `SELF`/`SAME_COLUMN_ALLIES`/
   `SELF_AND_SAME_COLUMN_ALLIES`/`SELF_AND_ADJACENT_COLUMN_ALLIES`/
   `ALL_ALLIES`/`ATTACKER_OR_TARGET`/`LOWEST_HP_ALLY`. `_resolve_targets()`가
-  실제 대상 목록으로 변환하며, 동료(소환수, `context.companion_owners`)는
-  아군 범위 대상에서 제외된다.
+  실제 대상 목록으로 변환한다.
 
 아군 전체/열 범위에 **받는 대미지 경감**을 주는 패시브는 `buff_id`(버프
 모디파이어) 경로로는 구현할 수 없다 — `_apply_buff_events()`는 피격 당사자에게

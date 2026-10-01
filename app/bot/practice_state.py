@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
-from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import BattlefieldColumnIndex, CombatStatType
 from battle.objects.models import CharacterId
 from battle.practice.context import PracticeBattlefieldContext
@@ -52,7 +51,7 @@ class PracticeBattleState:
     # 시점의 명부를 봐야 한다.
     roster_by_side: dict[SideType, list[str]] = field(default_factory=dict)
 
-    # 전투 시작 시점의 팀별 최대 체력 합(동료 제외). 승패는 체력 "비율"로
+    # 전투 시작 시점의 팀별 최대 체력 합. 승패는 체력 "비율"로
     # 가르는데, 필드에서 빠진 캐릭터(상시전투의 0 체력 적군, 자진 기권한
     # 참가자)는 context.characters에서 사라져 분모에서도 함께 빠진다 — 그러면
     # 잃은 인원이 많은 팀일수록 비율이 올라가는 역전이 생긴다. 시작 시점 값을
@@ -78,7 +77,7 @@ class PracticeBattleState:
         changed = [
             char.id.name
             for side in SideType
-            for char in self.actable_characters(side)
+            for char in self.context.get_side_characters(side)
             if self.written_sheet_hp.get(char.id.name) != char.status.curr_hp
         ]
         changed += [
@@ -101,14 +100,6 @@ class PracticeBattleState:
     def pending_actors(self) -> list[CharacterId]:
         return self.manager.pending_actors()
 
-    def actable_characters(self, side: SideType) -> list[CombatCharacter]:
-        """플레이어가 직접 조작하는 캐릭터만 (동료/소환수 제외)."""
-        return [
-            char
-            for char in self.context.get_side_characters(side)
-            if char.id not in self.context.companion_owners
-        ]
-
     def snapshot_initial_max_hp(self) -> None:
         """전투 시작(첫 라운드 진입) 시점에 팀별 최대 체력 합을 고정한다."""
         self.initial_max_hp_by_side = {
@@ -118,7 +109,7 @@ class PracticeBattleState:
     def snapshot_roster(self) -> None:
         """전투 시작 시점에 팀별 참가자 명부를 고정한다."""
         self.roster_by_side = {
-            side: [char.id.name for char in self.actable_characters(side)]
+            side: [char.id.name for char in self.context.get_side_characters(side)]
             for side in SideType
         }
 
@@ -145,13 +136,13 @@ class PracticeBattleState:
         self.manager.end_round()
 
     def total_hp_by_side(self, side: SideType) -> int:
-        """승패 비율의 분자. 동료(소환수)는 전투 도중 소환·재소환되며 팀의
-        체력 총량을 바꾸므로, 시작 시점에 고정한 분모와 짝이 맞지 않는다."""
-        return sum(c.status.curr_hp for c in self.actable_characters(side))
+        """승패 비율의 분자."""
+        return sum(c.status.curr_hp for c in self.context.get_side_characters(side))
 
     def _live_max_hp_by_side(self, side: SideType) -> int:
         return sum(
-            c.status[CombatStatType.MAX_HP] for c in self.actable_characters(side)
+            c.status[CombatStatType.MAX_HP]
+            for c in self.context.get_side_characters(side)
         )
 
     def total_max_hp_by_side(self, side: SideType) -> int:

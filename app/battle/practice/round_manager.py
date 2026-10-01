@@ -89,18 +89,15 @@ class PracticeRoundManager:
     def pending_actors(self) -> list[CharacterId]:
         """이번 페이즈에 아직 선언하지 않은, 선언할 수 있는 캐릭터 목록.
 
-        체력 0인 캐릭터는 애초에 커맨드를 낼 수 없고(try_expansion_if_valid),
-        동료(소환수)는 플레이어가 조작하는 대상이 아니므로 둘 다 제외한다 —
-        포함하면 아무도 채울 수 없는 대기 조건이 되어 라운드가 멈춘다."""
+        체력 0인 캐릭터는 애초에 커맨드를 낼 수 없으므로(try_expansion_if_valid)
+        제외한다 — 포함하면 아무도 채울 수 없는 대기 조건이 되어 라운드가 멈춘다."""
         side = self.expected_side()
         if side is None:
             return []
         return [
             char.id
             for char in self._context.get_side_characters(side)
-            if char.id not in self._context.companion_owners
-            and char.status.curr_hp > 0
-            and char.id not in self._declared_this_phase
+            if char.status.curr_hp > 0 and char.id not in self._declared_this_phase
         ]
 
     def _draw_movers(self) -> tuple[SideType, SideType]:

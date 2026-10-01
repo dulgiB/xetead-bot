@@ -43,8 +43,7 @@ def resolve_passive_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char_id not in context.companion_owners
-            and (wanted is None or char.faction == wanted)
+            if wanted is None or char.faction == wanted
         ]
 
     holder_char = context.characters.get(holder)
@@ -57,7 +56,6 @@ def resolve_passive_targets(
             char_id
             for char_id, char in context.characters.items()
             if char_id != holder
-            and char_id not in context.companion_owners
             and char.faction == holder_char.faction
             and context.find_character_position(char_id) == holder_pos
         ]
@@ -67,8 +65,7 @@ def resolve_passive_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char_id not in context.companion_owners
-            and char.faction == holder_char.faction
+            if char.faction == holder_char.faction
             and context.find_character_position(char_id) == holder_pos
         ]
 
@@ -77,8 +74,7 @@ def resolve_passive_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char_id not in context.companion_owners
-            and char.faction == holder_char.faction
+            if char.faction == holder_char.faction
             and abs(context.find_character_position(char_id).value - holder_column) <= 1
         ]
 
@@ -86,16 +82,14 @@ def resolve_passive_targets(
         return [
             char_id
             for char_id, char in context.characters.items()
-            if char_id not in context.companion_owners
-            and char.faction == holder_char.faction
+            if char.faction == holder_char.faction
         ]
 
     if target_type == PassiveSkillTargetType.LOWEST_HP_ALLY:
         allies = [
             char_id
             for char_id, char in context.characters.items()
-            if char_id not in context.companion_owners
-            and char.faction == holder_char.faction
+            if char.faction == holder_char.faction
         ]
         if not allies:
             return []

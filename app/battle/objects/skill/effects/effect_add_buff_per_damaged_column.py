@@ -45,13 +45,10 @@ class SkillEffectAddBuffPerDamagedColumn(SkillEffectBase):
             return [], [], [], [], []
         holder_column = context.find_character_position(holder).value
 
-        # 동료(소환수)는 제외한다 — 같은 범위 판정을 하는
-        # _characters_in_holder_scope 계열과 기준을 맞춘다.
         damaged_columns = {
             context.find_character_position(char_id).value
             for char_id in context.damaged_this_round
             if char_id in context.characters
-            and char_id not in context.companion_owners
             and context.characters[char_id].faction == holder_char.faction
         }
         column_count = sum(

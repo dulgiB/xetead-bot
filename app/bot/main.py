@@ -1601,11 +1601,11 @@ def _mover_label(ps: PracticeBattleState, side: Optional[SideType]) -> str:
 
     팀 이름만 알리면 지금 누가 커맨드를 입력해야 하는지 각자 자기 팀을
     다시 확인해야 한다 — 특히 팀당 인원이 여럿이면 헷갈리므로 명단을
-    함께 붙인다. 명단을 만들 수 없으면(전멸 직후 등) 팀 이름만 쓴다. 동료(소환수)는 플레이어가 조작하지 않으므로 명단에서 뺀다."""
+    함께 붙인다. 명단을 만들 수 없으면(전멸 직후 등) 팀 이름만 쓴다."""
     label = ps.side_label(side)
     if side is None:
         return label
-    names = [char.id.name for char in ps.actable_characters(side)]
+    names = [char.id.name for char in ps.context.get_side_characters(side)]
     if not names:
         return label
     return f"{label} - {', '.join(names)}"
@@ -1667,9 +1667,7 @@ def _move_battle_end_hp_to_sheet(
     깎이면 전투가 끝나는 순간 흔적 없이 사라진다."""
     amounts: dict[str, int] = {}
     for entry in entries:
-        if entry.value is None or CharacterId(entry.target_name) in (
-            ps.context.companion_owners
-        ):
+        if entry.value is None:
             continue
         if entry.kind == BattleLogEntryKind.DAMAGE:
             sign = -1
@@ -1837,7 +1835,7 @@ def _begin_practice_rounds(state: "BotState", ps: PracticeBattleState) -> None:
     else:
         ps.round_limit = None
     ps.field_id = str(ps.prep_post_id)
-    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브(소환수 등)가 전장 전체를
+    # 배치가 끝난 뒤에 불러야 "전투 시작" 트리거 패시브가 전장 전체를
     # 볼 수 있다.
     ps.context.on_battle_start()
     ps.snapshot_initial_max_hp()
@@ -2253,9 +2251,6 @@ def _handle_practice_command(
         # 검증(manager.process_command)을 거치지 않고 즉시 처리한다.
         retire_phase = ps.phase
         side = ps.context.get_side(char_id)
-        # 소환자가 빠지면 동료도 함께 내린다(force_remove_character). 동료만
-        # 남으면 주인을 잃은 채 characters에 남아, 위치 조회가 owner를 따라가다
-        # 실패해 그 뒤의 "필드" 시트 저장이 계속 깨진다.
         removed = ps.context.force_remove_character(char_id)
         reply_text = format_eliminated_characters(removed)
         battle_log = log_sheets.BattleCommandLog(

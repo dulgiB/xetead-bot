@@ -68,18 +68,14 @@ def test_same_character_cannot_declare_twice_in_one_phase():
         )
 
 
-def test_defeated_and_companion_characters_are_not_awaited():
-    """체력 0인 캐릭터(커맨드 자체가 막힌다)와 동료(플레이어가 조작하지
-    않는다)를 기다리면 아무도 채울 수 없는 대기 조건이 된다."""
+def test_defeated_characters_are_not_awaited():
+    """체력 0인 캐릭터는 커맨드 자체가 막히므로, 기다리면 아무도 채울 수
+    없는 대기 조건이 된다."""
     ctx = _make_context()
     _place(ctx, "A", SideType.SIDE_1)
     _place(ctx, "A2", SideType.SIDE_1)
     _place(ctx, "B", SideType.SIDE_2)
     ctx.characters[CharacterId("A2")].status.curr_hp = 0
-    # 동료는 position_map 슬롯을 차지하지 않고 companion_owners로만 등록된다.
-    ctx._spawn_companion_character(
-        ctx.characters[CharacterId("A")], CharacterId("P"), 20
-    )
 
     manager = PracticeRoundManager(ctx)
     manager.to_phase(PracticeRoundPhase.FIRST_MOVER_ACTION)

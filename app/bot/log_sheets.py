@@ -481,19 +481,11 @@ def write_back_character_hp(
         curr_hp = char.status.curr_hp if char is not None else 0
         hp_row = hp_rows.get(name)
         if hp_row is None:
-            if char_id in context.companion_owners:
-                # 소환된 동료는 시트에 자기 행이 없는 게 정상이다.
-                logger.debug(
-                    "'%s'은(는) 소환된 동료라 시트에 반영할 행이 없어 건너뜁니다 (체력 %s)",
-                    name,
-                    curr_hp,
-                )
-            else:
-                logger.error(
-                    "'%s'을 캐릭터/에너미 시트에서 찾을 수 없어 체력(%s) 반영 실패",
-                    name,
-                    curr_hp,
-                )
+            logger.error(
+                "'%s'을 캐릭터/에너미 시트에서 찾을 수 없어 체력(%s) 반영 실패",
+                name,
+                curr_hp,
+            )
             continue
         try:
             hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, curr_hp)

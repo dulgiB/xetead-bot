@@ -72,7 +72,7 @@ def test_restore_main_battle_reconstructs_session_progress():
 
 
 def test_restore_main_battle_skips_unknown_character(caplog):
-    """ "캐릭터"/"에너미" 시트에 없는 이름(소환수 등)은 조용히 건너뛰고 경고만
+    """ "캐릭터"/"에너미" 시트에 없는 이름(삭제된 캐릭터 등)은 조용히 건너뛰고 경고만
     남겨야 한다 — 복원 자체가 실패하면 안 된다."""
     state = _make_state({"아군1": get_test_preset("아군1")})
     row = FieldRow(
@@ -83,7 +83,7 @@ def test_restore_main_battle_skips_unknown_character(caplog):
         characters=[
             {"name": "아군1", "faction": "아군", "position": 1, "remaining_cost": 3},
             {
-                "name": "동료소환수",
+                "name": "삭제된캐릭터",
                 "faction": "아군",
                 "position": 1,
                 "remaining_cost": 3,
@@ -97,8 +97,8 @@ def test_restore_main_battle_skips_unknown_character(caplog):
 
     assert summary is not None
     assert CharacterId("아군1") in state.session.context.characters
-    assert CharacterId("동료소환수") not in state.session.context.characters
-    assert any("동료소환수" in r.getMessage() for r in caplog.records)
+    assert CharacterId("삭제된캐릭터") not in state.session.context.characters
+    assert any("삭제된캐릭터" in r.getMessage() for r in caplog.records)
 
 
 def test_restore_main_battle_fails_when_no_character_restorable():
@@ -110,7 +110,7 @@ def test_restore_main_battle_fails_when_no_character_restorable():
         phase=RoundPhaseType.ENEMY_PRE_ACTION.value,
         characters=[
             {
-                "name": "동료소환수",
+                "name": "삭제된캐릭터",
                 "faction": "아군",
                 "position": 1,
                 "remaining_cost": 3,

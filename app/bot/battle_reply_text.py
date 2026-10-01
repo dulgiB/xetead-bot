@@ -353,25 +353,11 @@ def format_log_entry_block(
 
 def format_final_hp_roster(context: "BattlefieldContext") -> str:
     """전투 종료 시 필드에 남아 있는 모든 캐릭터의 최종 체력을
-    "▹ {이름} | {현재 체력}/{최대 체력}" 목록으로 조립한다. 동료(소환수)는
-    맨 아래에 몰아서 나열하는 대신 owner 바로 아래에 "　↳ {이름} | ..."로
-    중첩해서 보여준다 — owner가 이미 전장에서 제거되어 없는 예외적인
-    경우에만 최상위 "▹" 줄로 보여준다."""
-    lines = []
-    for char_id, character in context.characters.items():
-        owner_id = context.companion_owners.get(char_id)
-        if owner_id is not None and owner_id in context.characters:
-            continue  # owner 줄을 그릴 때 함께 그린다
-        lines.append(_format_roster_line(character, "▹"))
-        companion_id = context.find_companion_id(char_id)
-        if companion_id is not None and companion_id in context.characters:
-            lines.append(_format_roster_line(context.characters[companion_id], "　↳"))
-    return "\n".join(lines)
-
-
-def _format_roster_line(character: "CombatCharacter", bullet: str) -> str:
-    hp_text = _format_hp_fraction(character)
-    return f"{bullet} {escape_markdown(character.id.name)} | {hp_text}"
+    "▹ {이름} | {현재 체력}/{최대 체력}" 목록으로 조립한다."""
+    return "\n".join(
+        f"▹ {escape_markdown(character.id.name)} | {_format_hp_fraction(character)}"
+        for character in context.characters.values()
+    )
 
 
 def _header_and_log_entries(

@@ -1244,9 +1244,8 @@ def _damaged_target_mentions(
     part_result: CommandPartProcessResult,
     name_dict: dict[str, "CombatCharacterDataFromSpreadsheet"],
 ) -> str:
-    """part_result의 대미지 로그가 가리키는 대상들 중, "캐릭터" 시트에 등록된
-    (mastodon 계정이 있는) 대상들을 멘션 문자열로 만든다. 소환수 등 계정이
-    없는 대상은 name_dict에 없으므로 자연히 제외된다."""
+    """part_result의 대미지 로그가 가리키는 대상들 중 mastodon 계정이 있는
+    대상들을 멘션 문자열로 만든다."""
     target_names = dict.fromkeys(
         entry.target_name
         for entry in part_result.log_entries
