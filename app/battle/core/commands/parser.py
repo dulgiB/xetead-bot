@@ -19,12 +19,12 @@ if TYPE_CHECKING:
 # 스킬·아이템은 키워드 없이 이름만으로 구분한다(스킬 우선, 없으면 아이템).
 # "이동"/"공격"은 이름만으로는 종류를 알 수 없어 키워드를 유지한다.
 
-kr_charset = r"\p{HangulJamo}\p{HangulCompatibilityJamo}\p{HangulSyllables}\p{HangulJamoExtendedA}\p{HangulJamoExtendedB}"
-# 실제 id에 "_", "!", "^", "~"가 들어가는 스킬·아이템이 있어 모두 허용한다.
-# "^"는 문자 클래스 맨 앞에 오면 부정으로 해석되므로 반드시 끝에 둔다.
-# "()"는 마크다운 답글에서 언더스코어가 강조로 잘못 파싱되는 문제 때문에
-# 구분자 표기를 "이름(테스트)"로 옮겨가는 중이라 함께 허용한다.
-name_charset = rf"{kr_charset}0-9A-Za-z_!^~()"
+# 이름(캐릭터·스킬·아이템)에는 커맨드 문법에서 의미가 있는 기호만 빼고 무엇이든
+# 허용한다 — "/"는 구분, "-"는 파트 연결, "+"는 키워드 보정, 대괄호는 커맨드 경계다.
+# 허용 목록으로 두면 목록에 없는 문자("◇" 등)가 든 이름이 형식 오류로 거부된다.
+_NAME = r"[^/\[\]+\-\n]"
+# "/"로 이은 대상 목록("대상1/대상2") 전체.
+_NAME_LIST = r"[^\[\]+\-\n]"
 
 _이동 = whitespace_tolerant_literal("이동")
 _공격 = whitespace_tolerant_literal("공격")
@@ -49,14 +49,14 @@ command_format_move = regex.compile(rf"^\s*{_이동}\s*/\s*(?P<pos>[1-7]열?)\s*
 
 # 기본 공격 :: 공격/대상 (운명간섭이면 "공격+/대상")
 command_format_attack = regex.compile(
-    rf"^\s*{_공격}\s*(?P<fate>\+)?\s*/\s*(?P<target>[{name_charset} ]+)\s*$"
+    rf"^\s*{_공격}\s*(?P<fate>\+)?\s*/\s*(?P<target>{_NAME}+)\s*$"
 )
 
 # 스킬/아이템 사용 :: 스킬명 또는 아이템명(/대상1/대상2...), 운명간섭이면 "스킬_1+/대상"
-# "+"는 name_charset에 없어 탐욕적인 name 그룹이 삼키지 않고 fate로 갈린다.
+# "+"는 _NAME이 제외하므로 탐욕적인 name 그룹이 삼키지 않고 fate로 갈린다.
 command_format_skill_or_item = regex.compile(
-    rf"^\s*(?P<name>[{name_charset} ]+)\s*(?P<fate>\+)?"
-    rf"\s*(/\s*(?P<targets>[{name_charset}/ ]+))?\s*$"
+    rf"^\s*(?P<name>{_NAME}+)\s*(?P<fate>\+)?"
+    rf"\s*(/\s*(?P<targets>{_NAME_LIST}+))?\s*$"
 )
 
 
