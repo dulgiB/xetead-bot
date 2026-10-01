@@ -1360,6 +1360,8 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     prep_call = mastodon.status_post_calls[-1]
     assert prep_call["visibility"] == "unlisted"
     assert prep_call["in_reply_to_id"] == 1
+    assert prep_call["status"].startswith("@swordsman_acct @archer_acct ")
+    assert "참여 대상: 검사, 궁수" in prep_call["status"]
     prep_post_id = _only_practice(state).prep_post_id
 
     listener._process_notification(

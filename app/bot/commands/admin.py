@@ -1183,11 +1183,8 @@ def _cmd_practice_prep(
         visibility=visibility,
     )
 
-    participant_text = (
-        " ".join(f"@{a}" for a in expected_accts) if expected_accts else "(없음)"
-    )
     game_post = (
-        f"◊ {mode.value} 준비\n참여 대상: {participant_text}\n\n"
+        f"◊ {mode.value} 준비\n참여 대상: {_participant_names(expected_accts, state)}\n\n"
         "이 게시물에 이어 타래로 각자 포지션을 선언해 주세요.\n"
         "예: [1팀/3열] 또는 [2팀/5열]"
     )

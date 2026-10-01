@@ -1337,7 +1337,7 @@ class MastodonBotListener(StreamListener):
                     result.game_post_text,
                     mention_accts=(
                         _practice_mention_accts(prep, acct)
-                        if prep is not None and prep.is_investigation
+                        if prep is not None
                         else None
                     ),
                 )
