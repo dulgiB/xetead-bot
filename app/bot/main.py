@@ -891,7 +891,7 @@ class MastodonBotListener(StreamListener):
             if proxy_ps is not None:
                 assert proxy_reply is not None
                 practice_participants = _practice_post_mention_accts(proxy_ps)
-                reply_status = self._reply_with_calc(
+                reply_status, reply_tail = self._reply_with_calc(
                     status_id,
                     acct,
                     visibility,
@@ -911,7 +911,7 @@ class MastodonBotListener(StreamListener):
                     new_post = self._post_practice_game_post(
                         proxy_ps,
                         proxy_game_post,
-                        reply_status["id"],
+                        reply_tail["id"],
                         practice_participants,
                         proxy_ended,
                     )
@@ -1078,7 +1078,7 @@ class MastodonBotListener(StreamListener):
                 # 대괄호 커맨드가 없는 답글(사담 등) — 조용히 무시한다.
                 # 스레드는 그대로 남아 이후 정상 커맨드가 오면 이어진다.
                 return
-            reply_status = self._reply_with_calc(
+            reply_status, reply_tail = self._reply_with_calc(
                 status_id,
                 acct,
                 visibility,
@@ -1095,7 +1095,7 @@ class MastodonBotListener(StreamListener):
                 # 알림은 바로 위 답글 작성자에게만 가므로, 참여자 전원이 받도록
                 # 멘션을 명시적으로 붙인다.
                 new_post = self._post_practice_game_post(
-                    ps, game_post, reply_status["id"], practice_participants, ended
+                    ps, game_post, reply_tail["id"], practice_participants, ended
                 )
                 if not ended:
                     _register_practice(state, ps, new_post["id"], prep=False)
@@ -1127,7 +1127,7 @@ class MastodonBotListener(StreamListener):
                 str(state.preparation_status_id),
                 log_sheets.FieldBattleType.MAIN,
             )
-            reply_status = self._reply_with_calc(
+            reply_status, _ = self._reply_with_calc(
                 status_id, acct, visibility, response, calc_text
             )
             _persist_battle_log(state, battle_log, str(reply_status["id"]))
@@ -1344,7 +1344,7 @@ class MastodonBotListener(StreamListener):
                     _truncate(result.reply_text), visibility="public"
                 )
             else:
-                reply_status = self._reply_with_calc(
+                reply_status, _ = self._reply_with_calc(
                     status_id,
                     acct,
                     visibility,
@@ -1443,7 +1443,7 @@ class MastodonBotListener(StreamListener):
         calc_text: str,
         media_ids: Optional[list] = None,
         mention_accts: Optional[list[str]] = None,
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """계산식(calc_text)이 없으면 평범한 답글 하나만 보낸다.
 
         있으면 게시물을 둘로 나누는 대신, CW(content warning) 게시물 하나로
@@ -1452,9 +1452,11 @@ class MastodonBotListener(StreamListener):
         Mastodon의 글자수 제한은 spoiler_text와 본문 길이를 합산해서
         적용되므로, 계산식이 길어 한 게시물에 안 들어가면 truncate하지
         않고 spoiler_text에 "(1/2)"처럼 번호를 매긴 여러 게시물로 나눠
-        순서대로 이어 보낸다. 반환값은 그 스레드의 첫 게시물 status dict다
-        — 다음 게시물이 스레드를 이어가려면 이 게시물에 답글로 달려야
-        하기 때문이다.
+        순서대로 이어 보낸다.
+
+        반환값은 (첫 게시물, 마지막 게시물) status dict다. 커맨드 로그는 첫
+        게시물을 가리키고, 이어지는 공지는 마지막 게시물에 달아야 같은
+        게시물에 답글이 둘 달려 스레드가 갈라지지 않는다.
 
         멘션(@계정)은 spoiler_text에 넣어도 실제 멘션으로 파싱되지 않아
         상대방에게 알림이 가지 않으므로, 반드시 본문(계산식) 쪽에 넣는다.
@@ -1465,9 +1467,10 @@ class MastodonBotListener(StreamListener):
         한 게시물로 합칠 수 없으므로, 그 경우엔 본문을 평범한 답글로
         먼저 보내고 계산식만 별도의 CW 후속 게시물로 이어 붙인다."""
         if not calc_text:
-            return self._reply(
+            status = self._reply(
                 in_reply_to_id, acct, visibility, text, media_ids, mention_accts
             )
+            return status, status
 
         mention_prefix = _reply_mention_prefix(acct, mention_accts)
         # spoiler_text에 " (N/N)" 접미사가 붙을 수 있어, 먼저 접미사 없이
@@ -1509,16 +1512,15 @@ class MastodonBotListener(StreamListener):
             media_ids=media_ids or None,
             spoiler_text=_spoiler(1),
         )
-        reply_to = first_status["id"]
+        last_status = first_status
         for i, chunk in enumerate(calc_chunks[1:], start=2):
-            calc_status = self._mastodon.status_post(
+            last_status = self._mastodon.status_post(
                 f"{mention_prefix}{chunk}",
-                in_reply_to_id=reply_to,
+                in_reply_to_id=last_status["id"],
                 visibility=visibility,
                 spoiler_text=_spoiler(i),
             )
-            reply_to = calc_status["id"]
-        return first_status
+        return first_status, last_status
 
     def _reply_then_calc_followup(
         self,
@@ -1529,22 +1531,21 @@ class MastodonBotListener(StreamListener):
         calc_text: str,
         media_ids: Optional[list] = None,
         mention_accts: Optional[list[str]] = None,
-    ) -> dict:
+    ) -> tuple[dict, dict]:
         """`_reply_with_calc`의 폴백: 본문(text)이 그 자체로 spoiler_text
         한도(500자)를 넘어 한 게시물로 합칠 수 없을 때, 본문을 평범한 답글로
         먼저 보내고 계산식을 별도의 CW(spoiler_text="계산식") 후속
-        게시물로 이어 붙인다. 반환값은 (CW 게시물이 아닌) 본문 답글의
-        status dict다."""
+        게시물로 이어 붙인다. 반환값은 `_reply_with_calc`와 같다."""
         reply_status = self._reply(
             in_reply_to_id, acct, visibility, text, media_ids, mention_accts
         )
-        self._post_calc_followups(
+        last_status = self._post_calc_followups(
             reply_status["id"],
             visibility,
             calc_text,
             prefix=_reply_mention_prefix(acct, mention_accts),
         )
-        return reply_status
+        return reply_status, last_status or reply_status
 
     def _post_practice_game_post(
         self,
@@ -1581,7 +1582,7 @@ class MastodonBotListener(StreamListener):
         calc_text: str,
         prefix: str = "",
         label: str = "계산식",
-    ) -> None:
+    ) -> Optional[dict]:
         """계산식(calc_text)이 있으면 spoiler_text="계산식"을 붙인 CW
         게시물로 in_reply_to_id에 답글로 이어 보낸다. 계산식이 길어 한
         게시물에 안 들어가면 truncate하지 않고 "계산식(1)", "계산식(2)"...
@@ -1594,12 +1595,15 @@ class MastodonBotListener(StreamListener):
         `prefix`는 매 조각 앞에 반복해서 붙일 고정 접두어다 — 개별 커맨드
         답글은 그 답글을 단 계정에게 알림이 가도록 "@계정\\n"을 넘긴다. 게임
         진행 공지(game_post)처럼 특정 수신자가 없는 경우는 빈 문자열이면
-        된다."""
+        된다.
+
+        반환값은 마지막으로 올린 게시물이고, 올린 것이 없으면 None이다."""
         if not calc_text:
-            return
+            return None
         calc_chunks = _split_for_post(calc_text, len(prefix))
         multiple = len(calc_chunks) > 1
         reply_to = in_reply_to_id
+        calc_status: Optional[dict] = None
         for i, chunk in enumerate(calc_chunks, start=1):
             spoiler = f"{label}({i})" if multiple else label
             post_kwargs: dict = {"in_reply_to_id": reply_to, "spoiler_text": spoiler}
@@ -1607,6 +1611,7 @@ class MastodonBotListener(StreamListener):
                 post_kwargs["visibility"] = visibility
             calc_status = self._mastodon.status_post(f"{prefix}{chunk}", **post_kwargs)
             reply_to = calc_status["id"]
+        return calc_status
 
 
 def _reply_mention_prefix(acct: str, mention_accts: Optional[list[str]]) -> str:
