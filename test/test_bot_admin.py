@@ -2994,7 +2994,7 @@ def test_practice_retire_can_complete_a_phase_it_was_blocking():
 
 def test_practice_start_calls_on_battle_start(monkeypatch):
     """_start_practice_battle()은 배치를 마친 뒤 on_battle_start()를 호출해야
-    한다 — 이 호출이 "전투 시작" 트리거 패시브(소환수 등)의 유일한 평가
+    한다 — 이 호출이 "전투 시작" 트리거 패시브의 유일한 평가
     지점이다."""
     ctx = PracticeBattlefieldContext(buff_dict={}, skill_dict={})
     ps = PracticeBattleState(

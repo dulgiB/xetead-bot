@@ -106,24 +106,3 @@ def test_max_hp_denominator_survives_a_participant_leaving_the_field():
     ctx.remove_character(CharacterId("A"))
 
     assert ps.total_max_hp_by_side(SideType.SIDE_1) == before
-
-
-def test_companion_hp_does_not_count_toward_the_team_score():
-    """동료(소환수)는 플레이어가 조작하는 참가자가 아니므로 승패용 체력
-    합계에서 빠진다 — 전투 도중 소환·재소환되면서 팀의 체력 총량 자체를
-    바꾸기 때문에, 분자에만 더하면 비율이 100%를 넘는다."""
-    ctx = _context(is_duel=True)
-    _place(ctx, "A", SideType.SIDE_1, max_hp=100)
-    _place(ctx, "B", SideType.SIDE_2, max_hp=100)
-
-    ps = PracticeBattleState(context=ctx, manager=PracticeRoundManager(ctx))
-    ps.snapshot_initial_max_hp()
-    before_hp = ps.total_hp_by_side(SideType.SIDE_1)
-    before_max = ps.total_max_hp_by_side(SideType.SIDE_1)
-
-    ctx._spawn_companion_character(
-        ctx.characters[CharacterId("A")], CharacterId("P"), 20
-    )
-
-    assert ps.total_hp_by_side(SideType.SIDE_1) == before_hp
-    assert ps.total_max_hp_by_side(SideType.SIDE_1) == before_max

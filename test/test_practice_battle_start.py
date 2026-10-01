@@ -2,8 +2,8 @@
 
 BATTLE_START 타이밍은 context.on_battle_start()에서만 평가된다. 본 전투는
 BattleSession이 배치 직후 이를 부르지만(bot/session.py), 대련/상시전투는 시작
-지점이 따로라 그 호출을 빠뜨리기 쉽다 — 빠지면 전투 시작 시 소환수를 부르는
-패시브 같은 것이 조용히 아무 일도 하지 않는다."""
+지점이 따로라 그 호출을 빠뜨리기 쉽다 — 빠지면 "전투 시작" 트리거 패시브가
+조용히 아무 일도 하지 않는다."""
 
 import os
 
@@ -113,7 +113,7 @@ def _state_and_session():
 
 def _record_on_battle_start(monkeypatch, ctx) -> list[int]:
     """on_battle_start()이 불린 시점의 배치 인원 수를 기록한다 — 배치보다
-    먼저 불리면 소환수 계열 패시브가 전장을 보지 못한다."""
+    먼저 불리면 범위 대상 패시브가 전장을 보지 못한다."""
     placed_when_called: list[int] = []
     monkeypatch.setattr(
         ctx,
