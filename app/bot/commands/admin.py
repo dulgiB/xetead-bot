@@ -5,6 +5,12 @@ import traceback
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Optional
 
+from battle.core.command_calculator import build_buff_add_log_entry
+from battle.core.commands.admin import (
+    ADMIN_ID,
+    ForceAddBuffByIdCommand,
+    ForceRemoveBuffByIdCommand,
+)
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
     BattleLogEntry,
@@ -13,6 +19,7 @@ from battle.core.commands.models import (
 )
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
     ActionType,
@@ -29,7 +36,11 @@ from battle.objects.skill.models import fate_config_error
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeBattleMode, SideType
 from battle.practice.round_manager import PracticeRoundManager
-from utils.name_matching import resolve_matching_key, whitespace_tolerant_literal
+from utils.name_matching import (
+    normalize_name,
+    resolve_matching_key,
+    whitespace_tolerant_literal,
+)
 
 from bot.battle_reply_text import (
     drop_intermediate_consecutive_moves,
@@ -92,6 +103,18 @@ _RE_FIELD_EFFECT_ADD = re.compile(
 )
 _RE_FIELD_EFFECT_REMOVE = re.compile(
     rf"\[{whitespace_tolerant_literal('필드효과해제')}\s*/\s*([^/\]]+?)]"
+)
+_BUFF_ADD_KEYWORD = "버프부여"
+_BUFF_REMOVE_KEYWORD = "버프해제"
+_BUFF_KEYWORD_PATTERN = (
+    rf"{whitespace_tolerant_literal(_BUFF_ADD_KEYWORD)}"
+    rf"|{whitespace_tolerant_literal(_BUFF_REMOVE_KEYWORD)}"
+)
+# 캐릭터 커맨드처럼 "[버프부여/A/X - 버프해제/B/Y]"로 한 대괄호 안에 이어 쓴다.
+_RE_FORCE_BUFF = re.compile(rf"\[\s*(?:{_BUFF_KEYWORD_PATTERN})\s*/[^\[\]]*]")
+_RE_FORCE_BUFF_PART = re.compile(
+    rf"^\s*(?P<keyword>{_BUFF_KEYWORD_PATTERN})\s*/\s*(?P<target>[^/]+?)"
+    rf"\s*/\s*(?P<buff>[^/]+?)\s*(?:/\s*(?P<giver>[^/]+?)\s*)?$"
 )
 _RE_BATTLE_START = re.compile(rf"\[{whitespace_tolerant_literal('전투개시')}]")
 _RE_BATTLE_NAME = re.compile(r"「(.+?)」")
@@ -239,6 +262,14 @@ def handle_admin_command(
             for m in add_matches
         ]
         return AdminCommandResult("\n".join(replies))
+
+    if force_buff_matches := list(_RE_FORCE_BUFF.finditer(text)):
+        part_strs = [
+            part
+            for m in force_buff_matches
+            for part in m.group(0).strip()[1:-1].split("-")
+        ]
+        return AdminCommandResult(_cmd_force_buffs(part_strs, state))
 
     if _RE_BATTLE_START.search(text):
         name_match = _RE_BATTLE_NAME.search(text)
@@ -475,6 +506,120 @@ def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
 
     _sync_field_sheets(state)
     return reply
+
+
+@dataclass(frozen=True)
+class _ForceBuffPart:
+    remove: bool
+    target: CharacterId
+    buff_id: str
+    given_by: Optional[CharacterId]
+
+
+def _parse_force_buff_part(
+    part_str: str, context: "BattlefieldContext"
+) -> _ForceBuffPart | str:
+    """파트 하나를 검증해 _ForceBuffPart로, 실패하면 사유 문자열로 돌려준다."""
+    m = _RE_FORCE_BUFF_PART.match(part_str)
+    if m is None:
+        return "형식이 올바르지 않습니다."
+    remove = normalize_name(m.group("keyword")) == _BUFF_REMOVE_KEYWORD
+
+    target = context.resolve_character_id(CharacterId(m.group("target")))
+    if target not in context.characters:
+        return f"{target.name}은(는) 전투에 참여하고 있지 않습니다."
+
+    buff_id = context.resolve_buff_id(m.group("buff"))
+    buff_data = context.get_buff_data_by_id_or_none(buff_id)
+    if buff_data is None:
+        return f"[{buff_id}]은(는) 버프 시트에 없습니다."
+
+    given_by: Optional[CharacterId] = None
+    if m.group("giver"):
+        given_by = context.resolve_character_id(CharacterId(m.group("giver")))
+        if given_by not in context.characters:
+            return f"부여자 {given_by.name}은(는) 전투에 참여하고 있지 않습니다."
+
+    if remove:
+        if not any(
+            buff.id == buff_id and (given_by is None or buff.given_by == given_by)
+            for buff in context.buff_container.get_buffs_by(target, None)
+        ):
+            return f"{target.name}에게 [{buff_id}]이(가) 걸려 있지 않습니다."
+    elif given_by is None and buff_data.get_buff_class().REQUIRES_GIVER_CHARACTER:
+        return (
+            f"[{buff_id}]은(는) 부여자가 있어야 동작합니다 — "
+            f"[{_BUFF_ADD_KEYWORD}/대상/{buff_id}/부여자]로 지정해 주세요."
+        )
+    return _ForceBuffPart(remove, target, buff_id, given_by)
+
+
+def _cmd_force_buffs(part_strs: list[str], state: "BotState") -> str:
+    """`[버프부여/대상/버프(/부여자)]` / `[버프해제/대상/버프(/부여자)]` —
+    admin이 버프를 직접 걸거나 걷는다. 버프 이름은 "버프" 시트의 id다.
+
+    파트를 모두 검증한 뒤에야 적용한다 — 연쇄 중 일부만 들어가면 admin이
+    어디까지 반영됐는지 필드를 보고 맞춰야 하기 때문이다."""
+    if state.session is None or not state.session.started:
+        return "◊ 진행 중인 전투가 없습니다."
+    context = state.session.context
+
+    parsed: list[_ForceBuffPart] = []
+    errors: list[str] = []
+    for part_str in part_strs:
+        result = _parse_force_buff_part(part_str, context)
+        if isinstance(result, str):
+            errors.append(
+                f"▹ {escape_markdown(part_str.strip())}: {escape_markdown(result)}"
+            )
+        else:
+            parsed.append(result)
+    if errors:
+        return "\n".join(["◊ 버프 커맨드를 적용하지 않았습니다.", *errors])
+
+    lines: list[str] = []
+    for part in parsed:
+        if part.remove:
+            removed_labels = [
+                buff.display_id_label()
+                for buff in context.buff_container.get_buffs_by(part.target, None)
+                if buff.id == part.buff_id
+                and (part.given_by is None or buff.given_by == part.given_by)
+            ]
+            state.session.manager.process_command(
+                ForceRemoveBuffByIdCommand(
+                    type_=ActionType.ADMIN,
+                    targets=[part.target],
+                    buff_id=part.buff_id,
+                    given_by=part.given_by,
+                )
+            )
+            results = [f"[{label}] 해제" for label in removed_labels]
+        else:
+            state.session.manager.process_command(
+                ForceAddBuffByIdCommand(
+                    type_=ActionType.ADMIN,
+                    targets=[part.target],
+                    buff_id=part.buff_id,
+                    given_by=part.given_by,
+                )
+            )
+            entry = build_buff_add_log_entry(
+                context,
+                BuffAddData(
+                    given_by=part.given_by or ADMIN_ID,
+                    applied_to=part.target,
+                    buff_id=part.buff_id,
+                ),
+            )
+            results = [entry.result]
+        lines.extend(
+            f"▹ {escape_markdown(part.target.name)} | {escape_markdown(result)}"
+            for result in results
+        )
+
+    _sync_field_sheets(state)
+    return "\n".join(["◊ 버프 강제 적용", *lines])
 
 
 def _sync_field_sheets(state: "BotState") -> None:
