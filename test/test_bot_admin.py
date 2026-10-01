@@ -866,14 +866,14 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
 
     listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
 
-    listener._process_notification(_make_notification("user1", 1, 1000, "[아군/1열]"))
+    listener._process_notification(_make_notification("user1", 1, 1000, "[1열]"))
 
     assert ps.prep_post_id == 0
     assert len(ps.context.characters) == 1
     round_n_after_start = ps.round_n
 
     # 같은 참가자가 이미 소모된 원본 준비 게시물(1000)에 다시 답글
-    listener._process_notification(_make_notification("user1", 2, 1000, "[아군/2열]"))
+    listener._process_notification(_make_notification("user1", 2, 1000, "[2열]"))
 
     assert len(ps.context.characters) == 1
     assert ps.round_n == round_n_after_start

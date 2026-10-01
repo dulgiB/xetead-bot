@@ -92,9 +92,9 @@ _RE_MENTION = re.compile(r"@\S+")
 _RE_DECLARATION = re.compile(
     rf"\[([^\[\]/]+){whitespace_tolerant_literal('팀')}\s*/\s*([^\[\]]+)]"
 )
-_RE_INVESTIGATION_DECLARATION = re.compile(
-    rf"\[{whitespace_tolerant_literal('아군')}\s*/\s*([^\[\]]+)]"
-)
+# 상시전투는 참여자가 모두 아군이라 진영 없이 [N열]로 선언한다. 숫자로
+# 시작하기만 하면 일단 매칭해 범위 밖 입력([9열])에도 오류 답글을 보낸다.
+_RE_INVESTIGATION_DECLARATION = re.compile(r"\[\s*(\d[^\[\]/]*)]")
 _RE_PRACTICE_RETIRE = re.compile(rf"\[{whitespace_tolerant_literal('탈락')}]")
 _PRACTICE_PHASE_GUIDE = "해당 팀 전원이 타래로 이어서 커맨드를 입력해 주세요."
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
@@ -978,10 +978,10 @@ class MastodonBotListener(StreamListener):
         if practice is not None and practice.prep_post_id != 0:
             ps = practice
             if ps.is_investigation:
-                # 상시전투: [아군/N열] 포지션 선언
+                # 상시전투: [N열] 포지션 선언
                 m = _RE_INVESTIGATION_DECLARATION.search(text)
                 if m and acct in ps.expected_accts:
-                    col_str = m.group(1).strip()
+                    col_str = "".join(m.group(1).split())
                     try:
                         column = BattlefieldColumnIndex.from_str(col_str)
                     except ValueError:
@@ -991,7 +991,7 @@ class MastodonBotListener(StreamListener):
                             visibility,
                             f"◊ 입력된 열({col_str})을 인식할 수 없습니다. '1' 등 "
                             "숫자만 입력하거나, '2열' 등 '○열' 형식을 사용해 "
-                            "주세요. 예: [아군/2열]",
+                            "주세요. 예: [2열]",
                         )
                         return
                     ps.declared[acct] = (SideType.SIDE_1, column)

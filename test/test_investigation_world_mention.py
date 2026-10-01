@@ -82,7 +82,7 @@ def _start(state, mastodon, listener) -> PracticeBattleState:
     ps = _only_practice(state)
     assert ps.prep_post_id is not None
     listener._process_notification(
-        _make_notification(_ALLY_ACCT, 2, ps.prep_post_id, "[아군/4열]")
+        _make_notification(_ALLY_ACCT, 2, ps.prep_post_id, "[4열]")
     )
     return ps
 
