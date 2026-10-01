@@ -22,7 +22,7 @@ from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
 from battle.practice.define import (
-    DUEL_DEFEAT_HP_PENALTY_PERCENT,
+    DUEL_SETTLEMENT_DAMAGE_PERCENT,
     PracticeBattleMode,
     PracticeRoundPhase,
     SideType,
@@ -220,8 +220,9 @@ def _practice_field_meta(ps: PracticeBattleState) -> dict:
         "initial_max_hp": {
             side.value: hp for side, hp in ps.initial_max_hp_by_side.items()
         },
-        # 결투 패배 대가 대상. 자진 기권한 캐릭터는 필드 스냅샷에 남지 않아
-        # 복원 후 명부를 다시 만들면 대가에서 빠져 버린다.
+        # 결투 피해 정산 대상. 자진 기권한 캐릭터는 필드 스냅샷에 남지 않아
+        # 복원 후 명부를 다시 만들면 정산에서 빠져 버린다. 같은 이유로 기권
+        # 시점의 피해도 함께 싣는다.
         "roster": {side.value: names for side, names in ps.roster_by_side.items()},
         "retired_damage": dict(ps.retired_damage),
         # 아래 둘은 포지션 선언 단계를 복원하기 위한 값이다. 라운드가 열린
@@ -1735,29 +1736,23 @@ def _move_battle_end_hp_to_sheet(
     return moved, notices
 
 
-def _apply_duel_defeat_penalty(
-    state: "BotState", ps: PracticeBattleState, winner: Optional[SideType]
+def _apply_duel_damage_settlement(
+    state: "BotState", ps: PracticeBattleState, damage_taken: dict[str, int]
 ) -> str:
-    """결투에서 패배한 팀 전원의 실제 체력을 각자의 최대 체력
-    DUEL_DEFEAT_HP_PENALTY_PERCENT%만큼 깎고, 그 결과를 전투 중 결과 줄과
-    같은 형식의 블록으로 반환한다(결투가 아니거나 무승부면 빈 문자열).
+    """결투 참가자 전원(승패 무관)의 실제 체력을 각자 이 결투에서 받은 임시
+    체력 피해의 DUEL_SETTLEMENT_DAMAGE_PERCENT%만큼 깎고, 그 결과를 전투 중
+    결과 줄과 같은 형식의 블록으로 반환한다(받은 피해가 없으면 빈 문자열).
 
-    대상은 필드에 남은 캐릭터가 아니라 시작 시점의 명부다 — 자진 기권한
-    캐릭터도 패배 측이면 대가를 치른다. 체력은 라이브 세션이 들고 있는 값이
-    아니라 시트를 다시 읽어 깎으므로, 전투 도중 GM이 시트에서 고친 체력을
-    덮어쓰지 않는다."""
-    if not ps.is_duel_match or winner is None:
-        return ""
-    loser = winner.opposite
-    names = list(ps.roster_by_side.get(loser, []))
-    if not names:
-        return ""
-
-    changes, failed = log_sheets.apply_persistent_hp_delta(
-        state.spreadsheet,
-        names,
-        -DUEL_DEFEAT_HP_PENALTY_PERCENT,
-        cache=state.sheet_cache,
+    `damage_taken`은 전투 종료 처리 **전에** 떠 둔 값이어야 한다 — 그 처리로
+    깎인 임시 체력은 _move_battle_end_hp_to_sheet()가 이미 실제 체력으로
+    옮겼으므로, 뒤에 뜨면 같은 피해를 두 번 치른다."""
+    amounts = {
+        name: -(damage * DUEL_SETTLEMENT_DAMAGE_PERCENT // 100)
+        for name, damage in damage_taken.items()
+        if damage * DUEL_SETTLEMENT_DAMAGE_PERCENT // 100 > 0
+    }
+    changes, failed = log_sheets.apply_persistent_hp_amounts(
+        state.spreadsheet, amounts, cache=state.sheet_cache
     )
 
     entries = []
@@ -1780,7 +1775,7 @@ def _apply_duel_defeat_penalty(
         if change.curr_hp == 0:
             dead_names.append(change.name)
 
-    blocks = [format_log_entry_block(ps.context, entries, "결투 패배 처리")]
+    blocks = [format_log_entry_block(ps.context, entries, "결투 피해 정산")]
     blocks += [
         f"◊ {escape_markdown(name)}의 체력이 0이 되어 사망 처리됩니다."
         f" @{WORLD_MASTODON_ID}"
@@ -1891,6 +1886,9 @@ def _finish_practice_battle(
     도달 등) 끝났을 때 그 라운드 종료 처리 결과다 — 종료 게시물이 마지막
     라운드의 정산을 삼켜 버리지 않도록 함께 싣는다."""
     assert ps.active_post_id is not None
+    damage_taken, unknown_damage = (
+        ps.temp_damage_taken() if ps.is_duel_match else ({}, [])
+    )
     both_sides_alive = (
         ps.total_hp_by_side(SideType.SIDE_1) > 0
         and ps.total_hp_by_side(SideType.SIDE_2) > 0
@@ -1900,15 +1898,25 @@ def _finish_practice_battle(
         winner = ps.winner()
     else:
         # 한쪽이 쓰러져 승부가 이미 났다. 승자는 전투 종료 처리 전에 정해
-        # 둔다 — 뒤에 정하면 이긴 쪽이 남은 대가로 함께 쓰러져 무승부가 되고,
-        # 결투에서는 진 쪽마저 패배 대가를 치르지 않는다.
+        # 둔다 — 뒤에 정하면 이긴 쪽이 남은 대가로 함께 쓰러져 무승부가 된다.
         winner = ps.winner()
         battle_end_body = (
             _apply_practice_battle_end_effects(state, ps)
             if ps.mode.stakes_sheet_hp
             else ""
         )
-    defeat_body = _apply_duel_defeat_penalty(state, ps, winner)
+    settlement_body = _apply_duel_damage_settlement(state, ps, damage_taken)
+    if unknown_damage:
+        settlement_body = "\n\n".join(
+            block
+            for block in (
+                settlement_body,
+                "⚠️ 다음 캐릭터는 이 결투에서 받은 피해를 알 수 없어 실제 체력에"
+                " 반영하지 못했습니다. 관리자가 직접 확인해 주세요: "
+                + ", ".join(escape_markdown(name) for name in unknown_damage),
+            )
+            if block
+        )
     result_line = (
         f"승자: {ps.side_label(winner)}{_winner_roster_text(ps, winner)}"
         if winner is not None
@@ -1920,7 +1928,7 @@ def _finish_practice_battle(
             round_end_text,
             _field_board(ps),
             battle_end_body,
-            defeat_body,
+            settlement_body,
         )
         if block
     ]
@@ -1988,8 +1996,7 @@ def _advance_practice_phase(
     if current_phase == PracticeRoundPhase.FIRST_MOVER_ACTION:
         if side_wiped:
             # 한쪽이 쓰러져 끝난 라운드는 닫지 않는다 — end_round()를 돌리면
-            # 이긴 쪽이 자기에게 걸린 DoT에 함께 쓰러져 무승부가 되고, 그러면
-            # 진 쪽도 패배 대가를 치르지 않는다.
+            # 이긴 쪽이 자기에게 걸린 DoT에 함께 쓰러져 무승부가 된다.
             return _finish_practice_battle(state, ps, current_phase.value), True
 
         ps.advance_to_second_mover()

@@ -65,7 +65,7 @@ class BattlefieldContext:
 
         self.characters: dict[CharacterId, CombatCharacter] = {}
         # 체력을 "?/?"로 가리는 캐릭터. 필드에서 빠져도 지우지 않는다 — 결투
-        # 기권자의 패배 대가처럼 빠진 뒤에도 체력이 답글에 나가는 경로가 있다.
+        # 기권자의 피해 정산처럼 빠진 뒤에도 체력이 답글에 나가는 경로가 있다.
         self.hp_hidden_ids: set[CharacterId] = set()
 
         self.position_map: dict[

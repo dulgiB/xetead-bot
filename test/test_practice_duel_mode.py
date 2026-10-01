@@ -31,7 +31,6 @@ from battle.objects.skill.effects import SkillEffectDamage  # noqa: E402
 from battle.objects.skill.models import SkillData  # noqa: E402
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import (  # noqa: E402
-    DUEL_DEFEAT_HP_PENALTY_PERCENT,
     PracticeBattleMode,
     PracticeRoundPhase,
     SideType,
@@ -244,12 +243,13 @@ def test_duel_ends_when_one_side_is_wiped(monkeypatch):
     assert post is not None and "결투 종료" in post
 
 
-# ── 3. 패배 대가 ─────────────────────────────────────────────────────────────
+# ── 3. 피해 정산 ─────────────────────────────────────────────────────────────
 
 
 def test_battle_end_effects_come_out_of_real_hp(monkeypatch):
     """전투 종료 처리는 이긴 쪽에게도 남는 대가라 실제 체력에서 빠진다.
-    패배 대가와 함께 치러지고, 승패는 그 처리 전에 정해진 대로다."""
+    피해 정산과 함께 치러지고, 승패는 그 처리 전에 정해진 대로다. 그 처리로
+    깎인 임시 체력은 피해 정산에 다시 잡히지 않는다."""
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(
         hp_by_name={_A.name: 100, _B.name: 80},
@@ -279,14 +279,14 @@ def test_defeated_side_loses_real_hp(monkeypatch):
 
     assert state.spreadsheet.hp_of(_B.name) == 30
     assert state.spreadsheet.hp_of(_A.name) == 100
-    assert "**【결투 패배 처리】**" in post
+    assert "**【결투 피해 정산】**" in post
     assert f"▹ {_B.name} | -50 → 30/100※" in post
     assert "※ 실제 체력" in post
 
 
-def test_defeat_penalty_scales_with_each_max_hp(monkeypatch):
-    """대가는 고정값이 아니라 캐릭터별 최대 체력의 절반이다. 최대 체력이
-    홀수면 다른 절반 계산(max_hp // 2)과 같이 내림한다."""
+def test_wiped_side_loses_half_of_each_max_hp(monkeypatch):
+    """결투는 최대 체력 그대로 싸우므로 전멸한 쪽은 최대 체력의 절반을 잃는다.
+    최대 체력이 홀수면 다른 절반 계산(max_hp // 2)과 같이 내림한다."""
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(hp_by_name={_A.name: 101, _B.name: 101}, max_hp=101)
     ctx.characters[_B].status.curr_hp = 0
@@ -297,19 +297,44 @@ def test_defeat_penalty_scales_with_each_max_hp(monkeypatch):
     assert state.spreadsheet.hp_of(_A.name) == 101
 
 
-def test_defeat_penalty_footnote_is_the_last_line_of_its_block(monkeypatch):
+def test_settlement_footnote_is_the_last_line_of_its_block(monkeypatch):
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
     ctx.characters[_B].status.curr_hp = 0
 
     post = main_module._finish_practice_battle(state, ps, "후공 행동")
 
-    block = post.split("**【결투 패배 처리】**")[1].split("\n\n")[0]
+    block = post.split("**【결투 피해 정산】**")[1].split("\n\n")[0]
     assert block.strip().splitlines()[-1] == "※ 실제 체력"
 
 
-def test_draw_applies_no_defeat_penalty(monkeypatch):
-    """양 팀이 동시에 전멸하면(승자 없음) 어느 쪽도 실제 체력을 잃지 않는다."""
+def test_winner_also_loses_half_of_the_damage_taken(monkeypatch):
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ctx.characters[_A].status.curr_hp = 69
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert "승자: 1팀" in post
+    assert state.spreadsheet.hp_of(_A.name) == 100 - 31 // 2
+    assert state.spreadsheet.hp_of(_B.name) == 30
+
+
+def test_winner_without_damage_is_not_listed(monkeypatch):
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    block = post.split("**【결투 피해 정산】**")[1].split("\n\n")[0]
+    assert f"▹ {_A.name} |" not in block
+
+
+def test_draw_settles_both_sides(monkeypatch):
+    """정산은 승패와 무관하므로, 양 팀이 동시에 전멸해도 각자 받은 피해의
+    절반을 잃는다."""
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 100})
     ctx.characters[_A].status.curr_hp = 0
@@ -317,13 +342,13 @@ def test_draw_applies_no_defeat_penalty(monkeypatch):
 
     post = main_module._finish_practice_battle(state, ps, "후공 행동")
 
-    assert state.spreadsheet.hp_of(_A.name) == 100
-    assert state.spreadsheet.hp_of(_B.name) == 100
-    assert "결투 패배 처리" not in post
+    assert "결과: 무승부" in post
+    assert state.spreadsheet.hp_of(_A.name) == 50
+    assert state.spreadsheet.hp_of(_B.name) == 50
 
 
-def test_defeat_penalty_floors_at_zero_and_calls_world(monkeypatch):
-    """실제 체력이 대가보다 적으면 0에서 멈추고, 사망 처리 확인을 요청한다."""
+def test_settlement_floors_at_zero_and_calls_world(monkeypatch):
+    """실제 체력이 정산량보다 적으면 0에서 멈추고, 사망 처리 확인을 요청한다."""
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 15})
     ctx.characters[_B].status.curr_hp = 0
@@ -338,20 +363,53 @@ def test_defeat_penalty_floors_at_zero_and_calls_world(monkeypatch):
     )
 
 
-def test_retired_participant_still_pays_the_defeat_penalty(monkeypatch):
-    """자진 기권해 필드에서 빠져도 패배 측이면 대가를 치른다."""
+def test_retired_participant_settles_damage_taken_before_retiring(monkeypatch):
+    """자진 기권해 필드에서 빠져도, 기권 시점까지 받은 피해로 정산한다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ctx.characters[_B].status.curr_hp = 60
+    ps.record_retirement(_B)
+    ctx.force_remove_character(_B)
+
+    main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert state.spreadsheet.hp_of(_B.name) == 80 - 40 // 2
+
+
+def test_retire_command_records_damage_for_settlement(monkeypatch):
+    """[탈락]으로 기권하면 그 시점의 피해가 기록되어, 그 기권으로 끝난
+    결투의 정산에 쓰인다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
+    ctx.characters[_B].status.curr_hp = 60
+    state.practices[ps.active_post_id] = ps
+
+    _reply, _calc, game_post, _log, ended = main_module._handle_practice_command(
+        "acct_b", "[탈락]", state, ps
+    )
+
+    assert ended
+    assert game_post is not None and "승자: 1팀" in game_post
+    assert ps.retired_damage == {_B.name: 40}
+    assert state.spreadsheet.hp_of(_B.name) == 80 - 40 // 2
+
+
+def test_participant_with_unknown_damage_is_reported(monkeypatch):
+    """필드에도 없고 기권 기록도 없으면 피해를 정할 수 없다. 0으로 넘기지
+    않고 admin에게 확인을 요청한다."""
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})
     ctx.remove_character(_B)
 
-    main_module._finish_practice_battle(state, ps, "후공 행동")
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
 
-    penalty = 100 * DUEL_DEFEAT_HP_PENALTY_PERCENT // 100
-    assert state.spreadsheet.hp_of(_B.name) == 80 - penalty
+    assert state.spreadsheet.hp_of(_B.name) == 80
+    assert "받은 피해를 알 수 없어" in post
+    assert _B.name in post.split("받은 피해를 알 수 없어")[1]
 
 
-def test_defeat_penalty_reports_failure_when_max_hp_is_unreadable(monkeypatch):
-    """최대 체력을 읽을 수 없으면 대가를 정할 수 없다. 0을 적용해 조용히
+def test_settlement_reports_failure_when_max_hp_is_unreadable(monkeypatch):
+    """최대 체력을 읽을 수 없으면 정산 결과의 상한을 정할 수 없다. 조용히
     넘기지 않고 admin에게 확인을 요청한다."""
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(hp_by_name={_A.name: 100, _B.name: 80})

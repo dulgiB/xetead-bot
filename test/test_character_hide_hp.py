@@ -80,7 +80,7 @@ def test_final_roster_hides_only_flagged_character():
 
 
 def test_result_line_stays_hidden_after_leaving_the_field():
-    """결투 기권자의 패배 대가처럼 필드에서 빠진 뒤에도 체력이 출력된다."""
+    """결투 기권자의 피해 정산처럼 필드에서 빠진 뒤에도 체력이 출력된다."""
     context = _context()
     context.force_remove_character(HIDDEN)
 

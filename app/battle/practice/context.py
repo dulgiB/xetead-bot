@@ -31,7 +31,7 @@ _FACTION_TO_SIDE: dict[FactionType, SideType] = {
 @dataclasses.dataclass
 class PersistentHp:
     """캐릭터 시트에 적힌 실제 체력. 임시 체력(전장의 status.curr_hp)과
-    구분해서 들고 있는다 — 결투에서 키워드 보정 대가와 패배 대가만 이쪽에서
+    구분해서 들고 있는다 — 결투에서 키워드 보정 대가와 피해 정산만 이쪽에서
     빠지기 때문이다."""
 
     curr_hp: int
@@ -61,7 +61,7 @@ class PracticeBattlefieldContext(BattlefieldContext):
     ):
         self.mode = mode
         # 결투 한정으로 캐릭터별 실제 체력을 들고 있는다. 필드에서 빠진
-        # 캐릭터(자진 기권)의 값도 지우지 않는다 — 패배 대가는 기권자에게도
+        # 캐릭터(자진 기권)의 값도 지우지 않는다 — 피해 정산은 기권자에게도
         # 적용되기 때문이다.
         self.persistent_hp: dict[CharacterId, PersistentHp] = {}
         # 인벤토리는 미지원이지만 item_dict는 이름 조회용으로 받아 둔다 —

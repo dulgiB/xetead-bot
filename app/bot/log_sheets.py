@@ -317,48 +317,20 @@ class PersistentHpChange:
     applied_delta: int
 
 
-def apply_persistent_hp_delta(
-    spreadsheet: gspread.Spreadsheet,
-    names: list[str],
-    max_hp_percent: int,
-    cache: Optional[SheetCache] = None,
-) -> tuple[list[PersistentHpChange], list[str]]:
-    """ "캐릭터"/"에너미" 시트의 curr_hp를 각자의 max_hp 대비 max_hp_percent
-    만큼 조정해 기록하고 (적용 결과 목록, 실패한 이름 목록)을 반환한다.
-    음수면 깎고 양수면 회복시킨다. 체력은 0 미만으로 내려가지 않는다.
-
-    결투 패배 대가처럼 전장의 임시 체력이 아니라 시트의 실제 체력을 직접
-    깎는 정산용이다. 라이브 세션이 들고 있는 값이 아니라 시트를 그 시점에
-    다시 읽어 계산하므로, 전투가 길어지는 동안 GM이 시트에서 체력을 고쳤어도
-    그 값을 덮어쓰지 않는다. 대상마다 값이 다른 max_hp를 여기서 읽어 쓰는
-    이유도 같다 — 호출측의 라이브 상태에는 필드에서 이미 빠진 캐릭터의
-    max_hp가 없을 수 있다.
-
-    깎는 양은 부호와 무관하게 크기를 내림한다("최대 체력의 50%"가 max_hp가
-    홀수여도 `max_hp // 2`와 같아야 한다). max_hp를 읽을 수 없는 행은
-    양을 정할 수 없으므로 0을 적용하지 않고 실패로 돌린다 — 조용히 넘기면
-    대가를 치르지 않은 캐릭터가 성공한 것으로 보고된다.
-    """
-
-    def percent_of_max(hp_row: _HpRow) -> Optional[int]:
-        if hp_row.max_hp is None:
-            return None
-        sign = -1 if max_hp_percent < 0 else 1
-        return sign * (hp_row.max_hp * abs(max_hp_percent) // 100)
-
-    return _apply_persistent_hp(
-        spreadsheet, {name: percent_of_max for name in names}, cache
-    )
-
-
 def apply_persistent_hp_amounts(
     spreadsheet: gspread.Spreadsheet,
     amounts: dict[str, int],
     cache: Optional[SheetCache] = None,
 ) -> tuple[list[PersistentHpChange], list[str]]:
-    """apply_persistent_hp_delta()와 같되, 캐릭터별로 정해진 양(음수면 깎고
-    양수면 회복)을 시트의 실제 체력에 반영한다. 결투의 전투 종료 처리처럼
-    전장에서 이미 수치가 정해진 변동을 실제 체력으로 옮길 때 쓴다."""
+    """캐릭터별로 정해진 양(음수면 깎고 양수면 회복)을 "캐릭터"/"에너미"
+    시트의 실제 체력에 반영하고 (적용 결과 목록, 실패한 이름 목록)을 반환한다.
+    체력은 0 미만으로 내려가지 않는다. 결투의 전투 종료 처리·피해 정산처럼
+    전장의 임시 체력이 아니라 시트의 실제 체력을 직접 바꾸는 정산용이다.
+
+    라이브 세션이 들고 있는 값이 아니라 시트를 그 시점에 다시 읽어
+    계산하므로, 전투가 길어지는 동안 GM이 시트에서 체력을 고쳤어도 그 값을
+    덮어쓰지 않는다. max_hp를 읽을 수 없는 행은 상한을 정할 수 없어 실패로
+    돌린다."""
 
     def fixed(amount: int) -> Callable[[_HpRow], Optional[int]]:
         return lambda _hp_row: amount
