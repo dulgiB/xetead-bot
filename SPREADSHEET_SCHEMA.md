@@ -94,7 +94,7 @@
 | `id`           | 스킬 id (고유)                                             |
 | `description`  | 봇이 그대로 노출할 스킬 설명. **스킬_캐릭터에서는 B열 고정**(바깥 스프레드시트가 위치로 참조), 스킬_에너미에서는 마지막 컬럼 |
 | `target_rule`  | 대상 규칙 클래스명 ([README.md#스킬-대상-규칙](README.md#스킬-대상-규칙) 참조) |
-| `target_count` | 지정 가능한 대상 수 상한                                         |
+| `target_count` | 지정 가능한 대상 수 상한. 단 `SkillTargetRuleColumnRange`에서는 지정한 열 양옆으로 넓힐 열 수다(1 → 3열, 2 → 5열) — 입력은 열 1개로 고정 |
 | `cost`         | 코스트                                                   |
 | `fate_mode` (선택, 스킬_캐릭터 전용) | 이 스킬에 키워드 보정("+")을 붙였을 때 무엇이 강해지는지 (`FateBoostMode`, [값 목록](#fateboostmode)). **비우면 기존 동작** — 대미지가 나오는 스킬은 굴림에 `FATE_INTERVENTION_SKILL_BONUS`(10)를 더하고, 대미지가 없는 스킬은 "+"를 거부한다 |
 | `fate_value` (선택, 스킬_캐릭터 전용) | `fate_mode`별 보정치. `굴림 보정`에서만 생략 가능(생략 시 10). 단위는 모드가 정한다 — 아래 값 목록 참조 |

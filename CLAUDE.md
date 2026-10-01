@@ -301,14 +301,16 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillTargetRuleNamedWithColumn` | 캐릭터 1명 + 그 캐릭터에 인접한 열 1개(생략 가능) 동시 지정      | `False`                  |
 | `SkillTargetRuleColumn`       | 열(column) 기준 광역, 항상 시전자의 `foe_faction`(적 진영)  | `False`                  |
 | `SkillTargetRuleAllyColumn`   | 열 기준 광역, 항상 시전자와 같은 진영(아군)                  | `False`                  |
-| `SkillTargetRuleColumnRange`  | 열 1개 지정 → ±2열(최대 5열) 광역, 항상 시전자의 `foe_faction`(적 진영) | `False`                  |
+| `SkillTargetRuleColumnRange`  | 열 1개 지정 → ±`target_count`열 광역(1 → 3열, 2 → 5열), 항상 시전자의 `foe_faction`(적 진영) | `False`                  |
 | `SkillTargetRuleAllAllies`    | 입력 무시, 시전자와 같은 진영 전원(시전자 자신 제외)              | `True`                   |
 
 `ignores_input_targets`는 커맨드에 적힌 대상 입력을 규칙이 무시하는지만
 뜻한다 — `fate_config_error()`가 "대상 추가" 모드를 걸러내는 데만 쓰고,
 도발 리다이렉트 여부와는 무관하다(그쪽은 `ignores_taunt`가 정한다).
 `SkillTargetRuleColumn`/`SkillTargetRuleAllyColumn`/`SkillTargetRuleColumnRange`는 입력이 열 번호일 뿐 대상
-진영은 입력값과 무관하게 규칙이 고정한다는 점에 주의 — 반대로 **기본 공격
+진영은 입력값과 무관하게 규칙이 고정한다는 점에 주의(`SkillTargetRuleColumnRange`는
+`target_count_is_area`라 `target_count`를 대상 수가 아니라 범위로 읽고, 입력은 열
+1개로 고정되며 "대상 추가" 모드도 거부한다) — 반대로 **기본 공격
 (`ActionType.ATTACK`)은 이 규칙 자체를 타지 않는 별도의 하드코딩된 분기**라서
 진영 검증이 전혀 없다. 즉 `공격/[아군 이름]`처럼 입력하면 사거리 검증만
 통과하면 실제로 아군에게도 대미지가 들어간다(`command_expanders.py`의
