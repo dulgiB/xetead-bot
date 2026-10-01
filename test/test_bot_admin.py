@@ -2522,7 +2522,7 @@ def test_practice_field_text_uses_team_labels_not_faction_labels():
         context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert "1팀\n" in text
     assert "2팀\n" in text
@@ -2543,7 +2543,7 @@ def test_investigation_field_text_still_uses_faction_labels():
         mode=PracticeBattleMode.INVESTIGATION,
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert "아군\n" in text
     assert "적군\n" in text
@@ -2561,7 +2561,7 @@ def test_practice_field_text_shows_team_1_before_team_2():
         context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert text.index("1팀\n") < text.index("2팀\n")
 
@@ -2579,7 +2579,7 @@ def test_investigation_field_text_still_shows_enemy_before_ally():
         mode=PracticeBattleMode.INVESTIGATION,
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert text.index("적군\n") < text.index("아군\n")
 
@@ -2596,7 +2596,7 @@ def test_practice_field_text_hides_empty_columns():
         context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert "[1]" in text
     assert "[2]" not in text

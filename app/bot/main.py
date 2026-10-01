@@ -891,7 +891,6 @@ class MastodonBotListener(StreamListener):
             if proxy_ps is not None:
                 assert proxy_reply is not None
                 practice_participants = _practice_post_mention_accts(proxy_ps)
-                practice_visibility = proxy_ps.visibility
                 reply_status = self._reply_with_calc(
                     status_id,
                     acct,
@@ -909,11 +908,12 @@ class MastodonBotListener(StreamListener):
                         state, proxy_battle_log, str(reply_status["id"])
                     )
                 if proxy_game_post is not None:
-                    mention_prefix = _practice_mention_prefix(practice_participants)
-                    new_post = self._mastodon.status_post(
-                        _truncate(f"{mention_prefix}{proxy_game_post}"),
-                        visibility=practice_visibility,
-                        in_reply_to_id=reply_status["id"],
+                    new_post = self._post_practice_game_post(
+                        proxy_ps,
+                        proxy_game_post,
+                        reply_status["id"],
+                        practice_participants,
+                        proxy_ended,
                     )
                     if not proxy_ended:
                         _register_practice(state, proxy_ps, new_post["id"], prep=False)
@@ -998,15 +998,14 @@ class MastodonBotListener(StreamListener):
                     logger.info("상시전투 포지션 선언: %s → 아군 %s", acct, column)
                     if ps.all_declared():
                         game_post_text = _start_investigation_battle(state, ps)
-                        mention_prefix = _practice_mention_prefix(
-                            _practice_post_mention_accts(ps)
-                        )
                         # 선언이 타래로 이어졌다면 마지막 선언 아래에 붙여야
                         # 스레드가 갈라지지 않는다.
-                        new_post = self._mastodon.status_post(
-                            _truncate(f"{mention_prefix}{game_post_text}"),
-                            visibility=ps.visibility,
-                            in_reply_to_id=status_id,
+                        new_post = self._post_practice_game_post(
+                            ps,
+                            game_post_text,
+                            status_id,
+                            _practice_post_mention_accts(ps),
+                            ended=False,
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
@@ -1048,15 +1047,14 @@ class MastodonBotListener(StreamListener):
                     )
                     if ps.all_declared() and ps.teams_valid():
                         game_post_text = _start_practice_battle(state, ps)
-                        mention_prefix = _practice_mention_prefix(
-                            _practice_post_mention_accts(ps)
-                        )
                         # 선언이 타래로 이어졌다면 마지막 선언 아래에 붙여야
                         # 스레드가 갈라지지 않는다.
-                        new_post = self._mastodon.status_post(
-                            _truncate(f"{mention_prefix}{game_post_text}"),
-                            visibility=ps.visibility,
-                            in_reply_to_id=status_id,
+                        new_post = self._post_practice_game_post(
+                            ps,
+                            game_post_text,
+                            status_id,
+                            _practice_post_mention_accts(ps),
+                            ended=False,
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
@@ -1069,7 +1067,6 @@ class MastodonBotListener(StreamListener):
         # 3. 대련/상시전투 진행 중 커맨드 (practice active post 답글)
         if practice is not None and practice.active_post_id is not None:
             ps = practice
-            practice_visibility = ps.visibility
             # 정산 게시물(game_post)에 참여자 전원을 멘션하려면 호출 전에
             # 미리 담아둬야 한다 — 전투가 이번 커맨드로 종료되면 ended=True로
             # 알려준다.
@@ -1097,11 +1094,8 @@ class MastodonBotListener(StreamListener):
                 # 예전 라운드 공지에 다시 답글로 달면 커맨드 답글과 형제가 된다.
                 # 알림은 바로 위 답글 작성자에게만 가므로, 참여자 전원이 받도록
                 # 멘션을 명시적으로 붙인다.
-                mention_prefix = _practice_mention_prefix(practice_participants)
-                new_post = self._mastodon.status_post(
-                    _truncate(f"{mention_prefix}{game_post}"),
-                    visibility=practice_visibility,
-                    in_reply_to_id=reply_status["id"],
+                new_post = self._post_practice_game_post(
+                    ps, game_post, reply_status["id"], practice_participants, ended
                 )
                 if not ended:
                     _register_practice(state, ps, new_post["id"], prep=False)
@@ -1552,12 +1546,41 @@ class MastodonBotListener(StreamListener):
         )
         return reply_status
 
+    def _post_practice_game_post(
+        self,
+        ps: PracticeBattleState,
+        game_post: str,
+        in_reply_to_id: int,
+        mention_accts: list[str],
+        ended: bool,
+    ) -> dict:
+        """대련/상시전투 진행 공지를 올리고, 진행 중이면 버프/디버프 목록을
+        "버프 목록" CW 후속 게시물로 이어 붙인다. 반환값은 공지 본문의 마지막
+        게시물 status dict다."""
+        prefix = _practice_mention_prefix(mention_accts)
+        post: dict = {"id": in_reply_to_id}
+        for chunk in _split_for_post(game_post, len(prefix)):
+            post = self._mastodon.status_post(
+                f"{prefix}{chunk}",
+                visibility=ps.visibility,
+                in_reply_to_id=post["id"],
+            )
+        if not ended:
+            self._post_calc_followups(
+                post["id"],
+                ps.visibility,
+                ps.context.format_status_summary(),
+                label="버프 목록",
+            )
+        return post
+
     def _post_calc_followups(
         self,
         in_reply_to_id: int,
         visibility: Optional[str],
         calc_text: str,
         prefix: str = "",
+        label: str = "계산식",
     ) -> None:
         """계산식(calc_text)이 있으면 spoiler_text="계산식"을 붙인 CW
         게시물로 in_reply_to_id에 답글로 이어 보낸다. 계산식이 길어 한
@@ -1578,7 +1601,7 @@ class MastodonBotListener(StreamListener):
         multiple = len(calc_chunks) > 1
         reply_to = in_reply_to_id
         for i, chunk in enumerate(calc_chunks, start=1):
-            spoiler = f"계산식({i})" if multiple else "계산식"
+            spoiler = f"{label}({i})" if multiple else label
             post_kwargs: dict = {"in_reply_to_id": reply_to, "spoiler_text": spoiler}
             if visibility is not None:
                 post_kwargs["visibility"] = visibility
@@ -1619,30 +1642,13 @@ def _practice_mention_prefix(participants: list[str]) -> str:
     return " ".join(f"@{a}" for a in participants) + " "
 
 
-def _field_text(ps: PracticeBattleState) -> str:
-    """대련/상시전투 필드 상태 텍스트(위치 보드 + 버프/디버프 요약). 진행
-    중인 전투 게시물에 쓴다 — 전투 종료 게시물에는 버프/디버프 요약이
-    더 이상 의미가 없으므로 대신 _field_board()를 쓴다.
-
-    상시전투는 side_label()이 이미 "아군"/"적군"을 쓰므로 그대로, 대련은
-    "1팀"/"2팀"으로 진영 헤더가 바뀐다(본 전투용 BattlefieldContext.__str__
-    기본값인 "아군"/"적군" 대신).
-
-    상시전투는 본 전투 필드 이미지와 같은 순서(적군 먼저)를 유지하지만,
-    대련은 "2팀"이 항상 먼저 출력되는 게 팀 번호 순서와 어긋나 헷갈리므로
-    "1팀"이 먼저 출력되게 한다(ally_first) — SIDE_1↔FactionType 매핑
-    자체는 그대로이므로 라벨-데이터 대응은 변하지 않는다."""
-    return ps.context.format_field_text(
-        ally_label=ps.side_label(SideType.SIDE_1),
-        enemy_label=ps.side_label(SideType.SIDE_2),
-        ally_first=not ps.is_investigation,
-        compact_columns=True,
-    )
-
-
 def _field_board(ps: PracticeBattleState) -> str:
-    """대련/상시전투 필드 위치 보드(버프/디버프 요약 제외). 전투 종료
-    게시물처럼 남은 버프/디버프 목록이 더 이상 의미 없는 자리에 쓴다."""
+    """대련/상시전투 필드 위치 보드. 버프/디버프 목록은 길어지면 게시물
+    길이 한도를 넘기므로 보드에 싣지 않고 접은 후속 게시물로 따로 보낸다
+    (`_post_practice_game_post`).
+
+    대련은 "1팀"/"2팀"으로 진영 헤더가 바뀌고, 팀 번호 순서와 어긋나지
+    않게 "1팀"을 먼저 출력한다(ally_first)."""
     return ps.context.format_position_board(
         ally_label=ps.side_label(SideType.SIDE_1),
         enemy_label=ps.side_label(SideType.SIDE_2),
@@ -1875,7 +1881,7 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
         f"{_round_limit_text(ps)}\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
-        f"{_field_text(ps)}"
+        f"{_field_board(ps)}"
     )
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
@@ -1929,7 +1935,7 @@ def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
         f"{_round_limit_text(ps)}\n\n"
         f"[{ps.round_n}라운드] 선공: {mover_label}\n"
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
-        f"{_field_text(ps)}"
+        f"{_field_board(ps)}"
     )
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
@@ -2068,7 +2074,7 @@ def _advance_practice_phase(
         game_post = (
             f"◊ [{ps.round_n}라운드] 후공: {second_label}\n"
             f"{_PRACTICE_PHASE_GUIDE}\n\n"
-            f"{_field_text(ps)}"
+            f"{_field_board(ps)}"
         )
         return game_post, False
 
@@ -2096,7 +2102,7 @@ def _advance_practice_phase(
     game_post = (
         f"◊ [{ps.round_n}라운드] 선공: {mover_label}\n"
         f"{_PRACTICE_PHASE_GUIDE}\n\n"
-        f"{_field_text(ps)}"
+        f"{_field_board(ps)}"
     )
     if round_end_text:
         # 지난 라운드의 정산을 먼저 보여준 뒤 다음 라운드를 연다.
