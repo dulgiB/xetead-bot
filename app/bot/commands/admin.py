@@ -50,6 +50,7 @@ from bot.battle_reply_text import (
     format_eliminated_characters,
     format_final_hp_roster,
     format_round_end_log_entries,
+    last_stackable_buff_add_entries,
     merge_damage_heal_lines,
     merge_stackable_buff_add_lines,
     with_persistent_hp_footnote,
@@ -1145,6 +1146,16 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
     return result, battle_end_calc
 
 
+def _participant_names(accts: list[str], state: "BotState") -> str:
+    """준비 게시물의 참여 대상 줄. 계정은 봇이 게시물 맨 앞에 멘션하므로
+    여기서는 시트의 캐릭터 이름을 적는다."""
+    if not accts:
+        return "(없음)"
+    return ", ".join(
+        state.char_dict[a].name if a in state.char_dict else a for a in accts
+    )
+
+
 def _cmd_practice_prep(
     expected_accts: list[str],
     state: "BotState",
@@ -1173,12 +1184,9 @@ def _cmd_practice_prep(
         visibility=visibility,
     )
 
-    participant_text = (
-        " ".join(f"@{a}" for a in expected_accts) if expected_accts else "(없음)"
-    )
     game_post = (
-        f"◊ {mode.value} 준비\n참여 대상: {participant_text}\n\n"
-        "이 게시물에 답글로 포지션을 선언해 주세요.\n"
+        f"◊ {mode.value} 준비\n참여 대상: {_participant_names(expected_accts, state)}\n\n"
+        "이 게시물에 이어 타래로 각자 포지션을 선언해 주세요.\n"
         "예: [1팀/3열] 또는 [2팀/5열]"
     )
     return AdminCommandResult(
@@ -1465,6 +1473,7 @@ def _format_named_reply(
         **merge_stackable_buff_add_lines(parts),
     }
     emitted: set[tuple[BattleLogEntryKind, str]] = set()
+    last_buff_adds = last_stackable_buff_add_entries(parts)
     body_blocks = []
     calc_blocks = []
     for part_result in parts:
@@ -1475,6 +1484,7 @@ def _format_named_reply(
             show_skill_preview=show_skill_preview,
             _merged_lines=merged_lines,
             _emitted=emitted,
+            _last_buff_adds=last_buff_adds,
         )
         if body:
             body_blocks.append(
@@ -1634,11 +1644,10 @@ def _cmd_investigation_battle(
         except (ValueError, CommandValidationError) as e:
             errors.append(str(e))
 
-    participant_text = " ".join(f"@{a}" for a in mentions) if mentions else "(없음)"
     game_post = (
-        f"◊ 상시전투 준비\n참여 대상: {participant_text}\n\n"
-        "이 게시물에 답글로 포지션을 선언해 주세요.\n"
-        "예: [아군/3열]"
+        f"◊ 상시전투 준비\n참여 대상: {_participant_names(mentions, state)}\n\n"
+        "이 게시물에 이어 타래로 각자 포지션을 선언해 주세요.\n"
+        "예: [3열]"
     )
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)

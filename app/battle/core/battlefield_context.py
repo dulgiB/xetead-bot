@@ -125,15 +125,21 @@ class BattlefieldContext:
             ally_first=ally_first,
             compact_columns=compact_columns,
         )
-        blocks = [board]
+        status_summary = self.format_status_summary()
+        return f"{board}\n\n{status_summary}" if status_summary else board
+
+    def format_status_summary(self) -> str:
+        """필드 효과 + 버프/디버프 요약. 걸린 것이 없으면 빈 문자열이다."""
         # 필드 효과를 버프 요약보다 먼저 둔다 — 캐릭터별 버프 중 일부가
         # 여기서 온 것이라, 무엇이 전장에 걸려 있는지를 먼저 보여야 읽힌다.
-        field_effect_summary = self._format_field_effect_summary()
-        if field_effect_summary:
-            blocks.append(field_effect_summary)
-        buff_summary = self._format_buff_summary()
-        if buff_summary:
-            blocks.append(buff_summary)
+        blocks = [
+            block
+            for block in (
+                self._format_field_effect_summary(),
+                self._format_buff_summary(),
+            )
+            if block
+        ]
         return "\n\n".join(blocks)
 
     def _format_field_effect_summary(self) -> str:

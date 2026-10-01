@@ -866,14 +866,14 @@ def test_replying_again_to_stale_prep_post_does_not_restart_battle(monkeypatch):
 
     listener = MastodonBotListener(_FakeMastodon(), state, bot_acct="bot")
 
-    listener._process_notification(_make_notification("user1", 1, 1000, "[아군/1열]"))
+    listener._process_notification(_make_notification("user1", 1, 1000, "[1열]"))
 
     assert ps.prep_post_id == 0
     assert len(ps.context.characters) == 1
     round_n_after_start = ps.round_n
 
     # 같은 참가자가 이미 소모된 원본 준비 게시물(1000)에 다시 답글
-    listener._process_notification(_make_notification("user1", 2, 1000, "[아군/2열]"))
+    listener._process_notification(_make_notification("user1", 2, 1000, "[2열]"))
 
     assert len(ps.context.characters) == 1
     assert ps.round_n == round_n_after_start
@@ -1360,6 +1360,8 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     prep_call = mastodon.status_post_calls[-1]
     assert prep_call["visibility"] == "unlisted"
     assert prep_call["in_reply_to_id"] == 1
+    assert prep_call["status"].startswith("@swordsman_acct @archer_acct ")
+    assert "참여 대상: 검사, 궁수" in prep_call["status"]
     prep_post_id = _only_practice(state).prep_post_id
 
     listener._process_notification(
@@ -1370,7 +1372,8 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     )
     start_call = mastodon.status_post_calls[-1]
     assert start_call["visibility"] == "unlisted"
-    assert start_call["in_reply_to_id"] == prep_post_id
+    # 마지막 선언 아래에 이어 붙어야 스레드가 갈라지지 않는다.
+    assert start_call["in_reply_to_id"] == 3
 
     active_post_id = _only_practice(state).active_post_id
     first_acct, second_name = (
@@ -2519,7 +2522,7 @@ def test_practice_field_text_uses_team_labels_not_faction_labels():
         context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert "1팀\n" in text
     assert "2팀\n" in text
@@ -2540,7 +2543,7 @@ def test_investigation_field_text_still_uses_faction_labels():
         mode=PracticeBattleMode.INVESTIGATION,
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert "아군\n" in text
     assert "적군\n" in text
@@ -2558,7 +2561,7 @@ def test_practice_field_text_shows_team_1_before_team_2():
         context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert text.index("1팀\n") < text.index("2팀\n")
 
@@ -2576,7 +2579,7 @@ def test_investigation_field_text_still_shows_enemy_before_ally():
         mode=PracticeBattleMode.INVESTIGATION,
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert text.index("적군\n") < text.index("아군\n")
 
@@ -2593,7 +2596,7 @@ def test_practice_field_text_hides_empty_columns():
         context=ctx, manager=PracticeRoundManager(ctx), mode=PracticeBattleMode.PRACTICE
     )
 
-    text = main_module._field_text(ps)
+    text = main_module._field_board(ps)
 
     assert "[1]" in text
     assert "[2]" not in text
@@ -2923,6 +2926,29 @@ def _practice_state_with(names_by_side, **ps_kwargs):
     ps.active_post_id = 5000
     state.practices[5000] = ps
     return ctx, ps, state
+
+
+def test_proxy_reply_that_closes_the_phase_has_no_pending_list():
+    """프록시 커맨드로 페이즈가 넘어가면 답글에 "남은 선언"을 붙이지 않는다 —
+    붙이면 방금 끝난 차례가 아니라 다음 차례 명단이 찍힌다."""
+    ctx, ps, state = _practice_state_with(
+        {SideType.SIDE_1: ["A"], SideType.SIDE_2: ["B"]}, round_limit=5
+    )
+    ps.manager._first_mover, ps.manager._second_mover = (
+        SideType.SIDE_1,
+        SideType.SIDE_2,
+    )
+    _handle_practice_command("acct_a", "[이동/2]", state, ps)
+
+    reply, _calc, game_post, _logs, ended, _ps = (
+        main_module._handle_practice_proxy_command(
+            "◊ B [이동/2]", state, "test-admin", session=ps
+        )
+    )
+
+    assert game_post is not None
+    assert not ended
+    assert reply is not None and "남은 선언" not in reply
 
 
 def test_practice_phase_waits_until_every_member_of_the_acting_side_declares():

@@ -3,6 +3,13 @@
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import (
+    BattleLogEntry,
+    BattleLogEntryKind,
+    CommandPart,
+    CommandPartData,
+    CommandPartProcessResult,
+)
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
@@ -577,6 +584,58 @@ def test_stack_consume_for_damage_shows_stack_line_before_damage_line():
 
     assert reply == ("▹ 아군 1 | [저주]×2 소모 → 최종 1\n▹ 적군 1 | -2 → 98/100")
     assert calc == "**【저주 방출 ▸ 적군 1】**\n▹ 적군 1 | 2[저주] × 1 → -2"
+
+
+def test_merged_stack_add_line_follows_consume_line_between_adds():
+    """부여 - 소모 - 부여 순서면 합산된 부여 줄은 마지막 부여 위치에 나온다 —
+    첫 부여 위치에 두면 소모 뒤의 "최종 N"이 소모 줄보다 먼저 읽힌다."""
+
+    def add(final_stack: int) -> BattleLogEntry:
+        return BattleLogEntry(
+            target_name="아군 1",
+            kind=BattleLogEntryKind.BUFF_ADD,
+            result=f"[저주]×1 부여 → 최종 {final_stack}",
+            buff_id="저주",
+            stack_delta=1,
+            buff_label="저주",
+            final_stack=final_stack,
+        )
+
+    consume = BattleLogEntry(
+        target_name="아군 1",
+        kind=BattleLogEntryKind.BUFF_REMOVE,
+        result="[저주]×2 소모 → 최종 0",
+        buff_id="저주",
+        stack_delta=2,
+    )
+    parts = [
+        CommandPartProcessResult(
+            expanded_part=CommandPartData(
+                CommandPart(ActionType.SKILL, skill_id="저주 방출")
+            ),
+            log_entries=[add(2), consume, add(1)],
+        ),
+        CommandPartProcessResult(
+            expanded_part=CommandPartData(CommandPart(ActionType.ATTACK)),
+            log_entries=[add(2)],
+        ),
+    ]
+    skill = SkillData(
+        id="저주 방출",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[],
+        description="",
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"저주 방출": skill})
+
+    reply, _calc = format_battle_reply(ctx, CharacterId("아군 1"), parts)
+
+    assert reply.splitlines() == [
+        "▹ 아군 1 | [저주]×2 소모 → 최종 0",
+        "▹ 아군 1 | [저주]×3 부여 → 최종 2",
+    ]
 
 
 def test_multi_effect_skill_combines_roll_and_stack_consume_damage():
