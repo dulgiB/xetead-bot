@@ -98,6 +98,7 @@ def format_battle_reply(
     show_skill_preview: bool = False,
     _merged_lines: Optional[dict[tuple[BattleLogEntryKind, str], str]] = None,
     _emitted: Optional[set[tuple[BattleLogEntryKind, str]]] = None,
+    _last_buff_adds: Optional[set[int]] = None,
 ) -> tuple[str, str]:
     """(본문, 계산식) 튜플을 반환한다. 표시할 계산식이 없으면 두 번째 값은
     빈 문자열이다.
@@ -113,7 +114,7 @@ def format_battle_reply(
     사용된다). 스킬이 아직 공개되지 않았으면(`SkillData.revealed=False`)
     설명 대신 블라인드 문구를 보여준다.
 
-    `_merged_lines`/`_emitted`는 admin.py의 `_format_named_reply()`처럼
+    `_merged_lines`/`_emitted`/`_last_buff_adds`는 admin.py의 `_format_named_reply()`처럼
     파트를 하나씩 잘라 이 함수를 여러 번 호출하는 프록시 경로 전용이다 —
     그 경로는 파트 전체를 한 번에 못 보므로, 호출측이 전체 파트 기준으로
     미리 계산한 합산 결과를 여기 넘겨 공유해야 여러 번 호출해도 중복
@@ -130,12 +131,23 @@ def format_battle_reply(
         }
     )
     emitted = _emitted if _emitted is not None else set()
+    last_buff_adds = (
+        _last_buff_adds
+        if _last_buff_adds is not None
+        else last_stackable_buff_add_entries(parts)
+    )
 
     bodies = []
     calc_blocks = []
     for part_result in parts:
         body, calc_block = _format_part(
-            context, caster_id, part_result, show_skill_preview, merged_lines, emitted
+            context,
+            caster_id,
+            part_result,
+            show_skill_preview,
+            merged_lines,
+            emitted,
+            last_buff_adds,
         )
         if body:
             bodies.append(body)
@@ -248,6 +260,20 @@ def merge_stackable_buff_add_lines(
             f"최종 {last_final_stack[key]}"
         )
     return lines
+
+
+def last_stackable_buff_add_entries(
+    part_results: list[CommandPartProcessResult],
+) -> set[int]:
+    """(대상, buff_id)마다 마지막 적층형 버프 부여 엔트리의 id(). 합산 줄은
+    이 위치에 낸다 — 첫 부여 위치에 내면 사이에 낀 소모 줄보다 "최종 N"이
+    먼저 나와, 소모 뒤의 스택이 소모 앞에 적힌 것처럼 읽힌다."""
+    last: dict[tuple[BattleLogEntryKind, str], int] = {}
+    for part_result in part_results:
+        for entry in part_result.log_entries:
+            if entry.kind == BattleLogEntryKind.BUFF_ADD and entry.buff_label:
+                last[_buff_add_merge_key(entry)] = id(entry)
+    return set(last.values())
 
 
 def drop_intermediate_consecutive_moves(
@@ -373,6 +399,7 @@ def _format_part(
     show_skill_preview: bool,
     merged_lines: dict[tuple[BattleLogEntryKind, str], str],
     emitted: set[tuple[BattleLogEntryKind, str]],
+    last_buff_adds: set[int],
 ) -> tuple[str, str]:
     part, header, log_entries = _header_and_log_entries(caster_id, part_result)
 
@@ -398,16 +425,13 @@ def _format_part(
             # emitted에 일부러 등록하지 않는다 — 여기서 키를 선점하면 같은
             # 대상이 다른 파트에서 내야 할 합산 줄까지 지워진다.
             pass
-        elif (
-            entry.kind in _MERGEABLE_KINDS and not entry.hp_is_persistent
-        ) or is_mergeable_buff_add:
+        elif is_mergeable_buff_add:
+            if id(entry) in last_buff_adds:
+                body_lines.append(merged_lines.get(_buff_add_merge_key(entry), line))
+        elif entry.kind in _MERGEABLE_KINDS and not entry.hp_is_persistent:
             # 다른 파트가 이미 합산 줄로 냈으면 본문에는 또 넣지 않는다 —
             # 계산식은 이 파트 고유의 굴림이므로 그대로 남긴다.
-            key = (
-                _buff_add_merge_key(entry)
-                if is_mergeable_buff_add
-                else (entry.kind, entry.target_name)
-            )
+            key = (entry.kind, entry.target_name)
             if key not in emitted:
                 emitted.add(key)
                 body_lines.append(merged_lines.get(key, line))

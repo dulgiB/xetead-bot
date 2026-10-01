@@ -50,6 +50,7 @@ from bot.battle_reply_text import (
     format_eliminated_characters,
     format_final_hp_roster,
     format_round_end_log_entries,
+    last_stackable_buff_add_entries,
     merge_damage_heal_lines,
     merge_stackable_buff_add_lines,
     with_persistent_hp_footnote,
@@ -1472,6 +1473,7 @@ def _format_named_reply(
         **merge_stackable_buff_add_lines(parts),
     }
     emitted: set[tuple[BattleLogEntryKind, str]] = set()
+    last_buff_adds = last_stackable_buff_add_entries(parts)
     body_blocks = []
     calc_blocks = []
     for part_result in parts:
@@ -1482,6 +1484,7 @@ def _format_named_reply(
             show_skill_preview=show_skill_preview,
             _merged_lines=merged_lines,
             _emitted=emitted,
+            _last_buff_adds=last_buff_adds,
         )
         if body:
             body_blocks.append(
