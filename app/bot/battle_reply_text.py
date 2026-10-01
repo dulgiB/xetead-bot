@@ -85,12 +85,9 @@ def _format_hp_fraction(character: "CombatCharacter") -> str:
 
 
 def _is_hp_hidden(context: "BattlefieldContext", target_name: str) -> bool:
-    """BattleLogEntry.target_name(문자열)으로 캐릭터를 찾아 hide_hp를
-    확인한다. 이미 필드에서 제거된 대상(사망 등)은 확인할 방법이 없으니
-    보수적으로 False(공개)로 취급한다 — 애초에 hide_hp 캐릭터가 사망
-    직후의 hp_after는 대부분 0이라 가려도 실익이 적다."""
-    character = context.characters.get(CharacterId(target_name))
-    return character.hide_hp if character is not None else False
+    """BattleLogEntry.target_name(문자열)의 체력을 가려야 하는지. 필드에서
+    빠진 대상도 가려야 하므로 characters가 아니라 hp_hidden_ids를 본다."""
+    return CharacterId(target_name) in context.hp_hidden_ids
 
 
 def format_battle_reply(

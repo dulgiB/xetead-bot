@@ -67,6 +67,9 @@ class BattlefieldContext:
         self.milestone_n: int = milestone_n
 
         self.characters: dict[CharacterId, CombatCharacter] = {}
+        # 체력을 "?/?"로 가리는 캐릭터. 필드에서 빠져도 지우지 않는다 — 결투
+        # 기권자의 패배 대가처럼 빠진 뒤에도 체력이 답글에 나가는 경로가 있다.
+        self.hp_hidden_ids: set[CharacterId] = set()
 
         self.position_map: dict[
             FactionType, dict[BattlefieldColumnIndex, dict[int, CharacterId]]
@@ -324,6 +327,9 @@ class BattlefieldContext:
             # 한 전투 안에서 판정 기준이 바뀌지 않는다.
             fate_used=data.has_used_fate_on(date.today().isoformat()),
         )
+
+        if data.hide_hp:
+            self.hp_hidden_ids.add(char_id)
 
         if (
             data.passive_skill_id
