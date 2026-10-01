@@ -1370,7 +1370,8 @@ def test_practice_session_posts_thread_together_with_matching_visibility(
     )
     start_call = mastodon.status_post_calls[-1]
     assert start_call["visibility"] == "unlisted"
-    assert start_call["in_reply_to_id"] == prep_post_id
+    # 마지막 선언 아래에 이어 붙어야 스레드가 갈라지지 않는다.
+    assert start_call["in_reply_to_id"] == 3
 
     active_post_id = _only_practice(state).active_post_id
     first_acct, second_name = (

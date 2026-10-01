@@ -179,3 +179,35 @@ def test_world_can_start_mid_thread_as_a_reply(monkeypatch):
     prep = mastodon.status_post_calls[-1]
     assert prep["in_reply_to_id"] == 501
     assert prep["status"].startswith(_PREFIX)
+
+
+def test_declarations_chained_in_a_thread_start_under_the_last_one(monkeypatch):
+    """안내 - A의 선언 - B의 선언처럼 타래로 이어 선언해도 받아들이고,
+    시작 게시물은 마지막 선언 아래에 이어 붙는다."""
+    other = "other_acct"
+    state, mastodon, listener = _setup(monkeypatch)
+    state.char_dict[other] = get_test_preset("동료", attack_range=3)
+    listener._process_notification(
+        _make_notification(
+            WORLD_MASTODON_ID,
+            1,
+            0,
+            "[상시전투] [배치/몬스터/적군 4열]",
+            extra_mentions=[_ALLY_ACCT, other],
+        )
+    )
+    ps = _only_practice(state)
+    listener._process_notification(
+        _make_notification(_ALLY_ACCT, 2, ps.prep_post_id, "[3열]")
+    )
+    mastodon.status_context_ancestors = [
+        {"id": ps.prep_post_id, "account": {"acct": "bot"}, "mentions": []},
+        {"id": 2, "account": {"acct": _ALLY_ACCT}, "mentions": []},
+    ]
+
+    listener._process_notification(_make_notification(other, 3, 2, "[ 5 열 ]"))
+
+    assert ps.active_post_id is not None
+    start = mastodon.status_post_calls[-1]
+    assert start["in_reply_to_id"] == 3
+    assert "상시전투 시작" in start["status"]

@@ -1188,7 +1188,7 @@ def _cmd_practice_prep(
     )
     game_post = (
         f"◊ {mode.value} 준비\n참여 대상: {participant_text}\n\n"
-        "이 게시물에 답글로 포지션을 선언해 주세요.\n"
+        "이 게시물에 이어 타래로 각자 포지션을 선언해 주세요.\n"
         "예: [1팀/3열] 또는 [2팀/5열]"
     )
     return AdminCommandResult(
@@ -1646,7 +1646,7 @@ def _cmd_investigation_battle(
 
     game_post = (
         f"◊ 상시전투 준비\n참여 대상: {_participant_names(mentions, state)}\n\n"
-        "이 게시물에 답글로 포지션을 선언해 주세요.\n"
+        "이 게시물에 이어 타래로 각자 포지션을 선언해 주세요.\n"
         "예: [3열]"
     )
     if errors:

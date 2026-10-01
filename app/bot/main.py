@@ -1001,10 +1001,12 @@ class MastodonBotListener(StreamListener):
                         mention_prefix = _practice_mention_prefix(
                             _practice_post_mention_accts(ps)
                         )
+                        # 선언이 타래로 이어졌다면 마지막 선언 아래에 붙여야
+                        # 스레드가 갈라지지 않는다.
                         new_post = self._mastodon.status_post(
                             _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
-                            in_reply_to_id=ps.prep_post_id,
+                            in_reply_to_id=status_id,
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
@@ -1049,10 +1051,12 @@ class MastodonBotListener(StreamListener):
                         mention_prefix = _practice_mention_prefix(
                             _practice_post_mention_accts(ps)
                         )
+                        # 선언이 타래로 이어졌다면 마지막 선언 아래에 붙여야
+                        # 스레드가 갈라지지 않는다.
                         new_post = self._mastodon.status_post(
                             _truncate(f"{mention_prefix}{game_post_text}"),
                             visibility=ps.visibility,
-                            in_reply_to_id=ps.prep_post_id,
+                            in_reply_to_id=status_id,
                         )
                         _register_practice(state, ps, new_post["id"], prep=False)
                         _update_practice_field_active_post(state, ps)
