@@ -452,7 +452,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | 효과 | 쓰임 |
 |---|---|
 | `SkillEffectAddBuff` / `SkillEffectConditionalBuff` | 범위에 버프/디버프 부여 |
-| `SkillEffectFieldDamage` | 시전자 없는 고정 대미지 (물리 고정, 계수 미지원) |
+| `SkillEffectFieldDamage` | 시전자 없는 고정 대미지 (물리 고정, 공격력 계수 미지원). `value_source_N`을 `참조 버프의 현재 스택 수`로 두면 대상이 가진 `reference_buff_id_N` 스택 × `value_N` |
 | `SkillEffectFieldStatOffset` | 공격력·사거리·턴당 코스트 증감 |
 | `SkillEffectAddFieldEffect` / `SkillEffectRemoveFieldEffect` | 다른 필드 효과 부여·해제 |
 
