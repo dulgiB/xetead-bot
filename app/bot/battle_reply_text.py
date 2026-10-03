@@ -20,6 +20,7 @@ import re
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.models import (
+    FIELD_EFFECT_REMOVED_RESULT,
     BattleLogEntry,
     BattleLogEntryKind,
     CommandPart,
@@ -538,11 +539,14 @@ def _format_entry(
     if entry.kind == BattleLogEntryKind.FIELD_EFFECT:
         # 대상이 캐릭터가 아니라 전장이므로 "이름 | 결과" 형식이 맞지 않는다.
         # target_name에는 필드 효과 이름이 들어 있다.
-        return (
-            f"▹ {escape_markdown(entry.result)}: {escape_markdown(entry.target_name)}",
-            None,
-            None,
-        )
+        name = f"**「{escape_markdown(entry.target_name)}」**"
+        if entry.result == FIELD_EFFECT_REMOVED_RESULT:
+            return f"▹ 필드 효과 {name} 해제", None, None
+        line = f"▹ 필드 효과 {name} 적용"
+        data = context.get_passive_skill_data_by_id(entry.target_name)
+        if data is not None and data.description:
+            line += f"\n ↳ {escape_markdown(data.description)}"
+        return line, None, None
     # 나머지 종류는 build_log_entries()가 만들어 둔 result를 그대로 쓴다.
     return (
         f"▹ {escape_markdown(entry.target_name)} | {escape_markdown(entry.result)}",

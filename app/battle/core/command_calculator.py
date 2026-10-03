@@ -9,6 +9,8 @@ from battle.core.commands.models import (
     BuffRemoveCalculateData,
     CommandPart,
     CommandPartData,
+    FIELD_EFFECT_ADDED_RESULT,
+    FIELD_EFFECT_REMOVED_RESULT,
     DamageCalculateData,
     HealCalculateData,
 )
@@ -1039,7 +1041,11 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                 BattleLogEntry(
                     target_name=effect_id,
                     kind=BattleLogEntryKind.FIELD_EFFECT,
-                    result="필드 효과 해제" if removed else "필드 효과 발생",
+                    result=(
+                        FIELD_EFFECT_REMOVED_RESULT
+                        if removed
+                        else FIELD_EFFECT_ADDED_RESULT
+                    ),
                 )
             )
         entries.extend(effect_data.extra_log_entries)

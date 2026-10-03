@@ -9,7 +9,7 @@ expand()의 5-튜플에는 필드 효과가 들어갈 자리가 없어, 디버�
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
-from battle.core.commands.models import BattleLogEntryKind
+from battle.core.commands.models import FIELD_EFFECT_ADDED_RESULT, BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.models import BuffData
@@ -163,7 +163,7 @@ class TestAddBySkill:
 
         assert len(entries) == 1
         assert entries[0].target_name == FIELD_EFFECT_ID
-        assert entries[0].result == "필드 효과 발생"
+        assert entries[0].result == FIELD_EFFECT_ADDED_RESULT
 
     def test_adding_an_already_active_effect_reports_nothing(self):
         ctx = _make_context()
