@@ -337,6 +337,16 @@ class _ManualPlaceOutcome:
     label: str
 
 
+# 전투 중 배치는 아군이 아직 행동하지 않은 페이즈에서만 받는다 — 들어온
+# 캐릭터가 그 라운드의 아군 행동부터 그대로 참여할 수 있어야 하기 때문이다.
+_MID_BATTLE_PLACEMENT_PHASES = frozenset(
+    {
+        RoundPhaseType.ENEMY_PRE_ACTION,
+        RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY,
+    }
+)
+
+
 def _cmd_manual_place(
     name: str, faction_col_str: str, state: "BotState"
 ) -> _ManualPlaceOutcome:
@@ -344,17 +354,15 @@ def _cmd_manual_place(
         return _ManualPlaceOutcome(
             False, "◊ 진행 중인 전투가 없습니다. 먼저 [전투 준비]를 입력하세요."
         )
-    # 증원 배치는 라운드 종료 페이즈에서 [전투 속행] 전에만 허용한다.
     mid_battle_allowed = (
         state.session.started
-        and state.session.current_phase
-        == RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY
+        and state.session.current_phase in _MID_BATTLE_PLACEMENT_PHASES
     )
     if state.session.started and not mid_battle_allowed:
         return _ManualPlaceOutcome(
             False,
-            "◊ 전투 중에는 라운드 종료(다음 라운드 대기) 단계에서만"
-            " [전투 속행] 입력 전에 캐릭터를 배치할 수 있습니다.",
+            "◊ 전투 중에는 적군 행동 선언 단계나 라운드 종료(다음 라운드 대기)"
+            " 단계에서만 캐릭터를 배치할 수 있습니다.",
         )
     name = resolve_matching_key(name, state.name_dict.keys())
     if name not in state.name_dict:

@@ -15,6 +15,7 @@ from battle.objects.define import (
     # noqa: E402,
     BattlefieldColumnIndex,
     BuffType,
+    CombatStatType,
     FactionType,
     ValueType,
 )
@@ -657,8 +658,7 @@ def test_continue_battle_marks_round_start_for_field_image():
 
 
 def test_manual_place_blocked_during_ally_action_phase():
-    """전투가 이미 시작되어 라운드 종료(다음 라운드 대기) 단계가 아니면
-    [배치/...]는 여전히 막혀야 한다."""
+    """아군이 이미 행동을 시작한 페이즈에서는 [배치/...]가 막혀야 한다."""
     state = _make_state(
         pending_placements=[
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
@@ -673,6 +673,26 @@ def test_manual_place_blocked_during_ally_action_phase():
 
     assert "증원" not in state.session.context.characters
     assert "라운드 종료" in result.reply_text
+
+
+def test_manual_place_allowed_during_enemy_pre_action():
+    """적군 행동 선언 단계에서도 배치할 수 있고, 들어온 아군은 그 라운드
+    아군 행동에 참여할 수 있도록 코스트를 가진 채로 들어온다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    _cmd_battle_start(state)
+    assert state.session.current_phase == RoundPhaseType.ENEMY_PRE_ACTION
+
+    state.name_dict["증원"] = get_test_preset("증원")
+    result = admin_module.handle_admin_command("[배치/증원/아군 1열]", state)
+
+    assert result.reply_text == "◊ 수동 배치: 증원(아군 1열)"
+    added = state.session.context.characters[CharacterId("증원")]
+    assert added.faction == FactionType.ALLY
+    assert added.status.remaining_cost == added.status[CombatStatType.COST_PER_TURN]
 
 
 def test_manual_place_allowed_during_next_round_standby_before_continue():
