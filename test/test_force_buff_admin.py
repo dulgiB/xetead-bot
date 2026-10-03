@@ -29,13 +29,20 @@ TAUNT_BUFF_ID = "유도"
 DOT_BUFF_ID = "잔향: 테스트"
 HOT_BUFF_ID = "재생"
 IGNITE_BUFF_ID = "점화"
+STACK_BUFF_ID = "표식"
 
 ALLY_1 = CharacterId("아군 1")
 ALLY_2 = CharacterId("아군 2")
 ENEMY = CharacterId("적군 1")
 
 
-def _buff(id_: str, class_name: str, value: int = 0, turns: int = 2) -> BuffData:
+def _buff(
+    id_: str,
+    class_name: str,
+    value: int = 0,
+    turns: int = 2,
+    max_stack: int | None = None,
+) -> BuffData:
     return BuffData(
         id=id_,
         buff_class_name=class_name,
@@ -48,6 +55,7 @@ def _buff(id_: str, class_name: str, value: int = 0, turns: int = 2) -> BuffData
         condition_value=None,
         buff_type=BuffType.BUFF,
         description="",
+        max_stack=max_stack,
     )
 
 
@@ -66,6 +74,7 @@ def _make_state(started: bool = True) -> BotState:
         _buff(DOT_BUFF_ID, "BuffDamageOverTime", value=7),
         _buff(HOT_BUFF_ID, "BuffHealOverTime", value=5),
         _buff(IGNITE_BUFF_ID, "BuffIgnite", turns=1),
+        _buff(STACK_BUFF_ID, "BuffStackingMark", turns=3, max_stack=3),
     ]
     state.session = BattleSession(buff_dict={b.id: b for b in buffs}, skill_dict={})
     state.session.add_character(
@@ -191,7 +200,7 @@ class TestRemove:
         ).reply_text
 
         assert _buffs_on(state, ENEMY, TAUNT_BUFF_ID) == []
-        assert reply.count("해제") == 2
+        assert reply.count("] 해제") == 2
 
     def test_giver_narrows_removal(self):
         state = _make_state()
@@ -216,6 +225,46 @@ class TestRemove:
         ).reply_text
 
         assert "걸려 있지 않습니다" in reply
+
+
+class TestReplyText:
+    def test_repeated_add_is_merged_into_one_line(self):
+        """같은 대상·버프·부여자에게 거듭 건 부여는 한 줄로 합쳐 최종값만 보인다."""
+        state = _make_state()
+
+        reply = handle_admin_command(
+            f"[버프부여/{ENEMY.name}/{STACK_BUFF_ID}"
+            f" - 버프부여/{ALLY_1.name}/{STACK_BUFF_ID}"
+            f" - 버프부여/{ENEMY.name}/{STACK_BUFF_ID}]",
+            state,
+        ).reply_text
+
+        assert reply == (
+            "◊ 버프 적용\n\n"
+            f"▹ {ENEMY.name} | [{STACK_BUFF_ID}]×2 부여 → 최종 2\n"
+            f"▹ {ALLY_1.name} | [{STACK_BUFF_ID}]×1 부여 → 최종 1"
+        )
+
+    def test_different_givers_stay_separate(self):
+        state = _make_state()
+
+        reply = handle_admin_command(
+            f"[버프부여/{ENEMY.name}/{STACK_BUFF_ID}/{ALLY_1.name}"
+            f" - 버프부여/{ENEMY.name}/{STACK_BUFF_ID}/{ALLY_2.name}]",
+            state,
+        ).reply_text
+
+        assert reply.count("×1 부여") == 2
+
+    def test_remove_only_chain_uses_remove_header(self):
+        state = _make_state()
+        handle_admin_command(f"[버프부여/{ALLY_1.name}/{ATK_BUFF_ID}]", state)
+
+        reply = handle_admin_command(
+            f"[버프해제/{ALLY_1.name}/{ATK_BUFF_ID}]", state
+        ).reply_text
+
+        assert reply.startswith("◊ 버프 해제\n\n▹ ")
 
 
 class TestChain:
