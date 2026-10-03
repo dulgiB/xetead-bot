@@ -1049,6 +1049,51 @@ class TestBuffDamageOverTime:
         buffs = ctx.buff_container.get_buffs_by(target_id, BuffApplyTiming.ON_ROUND_END)
         assert len(buffs) == 0
 
+    def _add_dot(self, ctx, target: str) -> None:
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("독사"),
+                applied_to=CharacterId(target),
+                buff_id="독",
+            )
+        )
+
+    def test_fallen_enemy_gets_no_round_end_line(self, ctx):
+        """체력 0인 적은 라운드 종료 때 어차피 빠지므로, 지속 대미지 결과 줄을
+        남기지 않는다."""
+        ctx.add_character(
+            get_test_preset("독사"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("쓰러진 적"),
+            FactionType.ENEMY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.characters[CharacterId("쓰러진 적")].status.curr_hp = 0
+        self._add_dot(ctx, "쓰러진 적")
+
+        entries, eliminated = ctx.on_finish_round()
+
+        assert [e for e in entries if e.target_name == "쓰러진 적"] == []
+        assert eliminated == [CharacterId("쓰러진 적")]
+
+    def test_fallen_ally_still_ticks(self, ctx):
+        """아군은 체력 0이어도 필드에 남는 설계라 지금처럼 처리한다."""
+        ctx.add_character(
+            get_test_preset("독사"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("쓰러진 아군"),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.characters[CharacterId("쓰러진 아군")].status.curr_hp = 0
+        self._add_dot(ctx, "쓰러진 아군")
+
+        entries, _ = ctx.on_finish_round()
+
+        assert [e.target_name for e in entries] == ["쓰러진 아군"]
+
     def test_dot_rejects_percent_value_type(self):
         """value_type=PERCENT는 '고정 대미지'라는 버프 취지와 맞지 않으므로
         조용히 정수로 취급되지 않고 명시적으로 에러를 발생시켜야 한다."""

@@ -110,7 +110,7 @@ class PracticeBattlefieldContext(BattlefieldContext):
         hp.curr_hp -= FATE_INTERVENTION_HP_COST
         return hp.curr_hp, hp.max_hp, True
 
-    def _remove_eliminated_characters(self):
+    def is_eliminated(self, char_id: CharacterId) -> bool:
         """대등한 PvP(대련·결투)에서는 0 체력 자동 탈락을 양 팀 모두
         적용하지 않는다.
 
@@ -121,8 +121,8 @@ class PracticeBattlefieldContext(BattlefieldContext):
         2팀이 이긴다. 참가자는 자진 기권(`[탈락]`)으로 직접 물러날 수
         있으므로, 자동 제거는 양쪽 모두 하지 않는 쪽으로 맞춘다."""
         if self.is_duel:
-            return []
-        return super()._remove_eliminated_characters()
+            return False
+        return super().is_eliminated(char_id)
 
     # ------------------------------------------------------------------
     # 공개 API (SideType 기반)
