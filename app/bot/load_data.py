@@ -422,11 +422,14 @@ def load_daily_quest_pools(
 def load_daily_quest_result_messages(
     spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
 ) -> list[DailyQuestResultMessageData]:
-    """'일일 의뢰 결과 메시지' 시트를 읽어 DailyQuestResultMessageData 리스트를 반환한다."""
+    """'일일 의뢰 결과 메시지' 시트를 읽어 `active`가 체크된 행만
+    DailyQuestResultMessageData 리스트로 반환한다."""
     ws = _worksheet(spreadsheet, "일일 의뢰 결과 메시지", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
     return [
-        DailyQuestResultMessageData.from_dict(r) for r in records if r.get("message")
+        DailyQuestResultMessageData.from_dict(r)
+        for r in records
+        if r.get("message") and parse_spreadsheet_bool(r.get("active", False))
     ]
 
 
