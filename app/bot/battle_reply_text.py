@@ -369,7 +369,7 @@ def format_log_entry_block(
         line, calc, final_value = _format_entry(context, entry)
         lines.append(line)
         if calc:
-            lines.append(f"　↳ {calc} → {final_value}")
+            lines.append(f" ↳ {calc} → {final_value}")
     if any(entry.hp_is_persistent for entry in entries):
         lines.append(PERSISTENT_HP_FOOTNOTE)
     return f"**【{header}】**\n" + "\n".join(lines)
@@ -463,7 +463,7 @@ _BLIND_SKILL_TEXT = "[효과 미확인]"
 
 def _format_skill_preview(skill_data: "SkillData") -> str:
     text = skill_data.description if skill_data.revealed else _BLIND_SKILL_TEXT
-    return f"　↳ {escape_markdown(text)}"
+    return f" ↳ {escape_markdown(text)}"
 
 
 def _format_header(
