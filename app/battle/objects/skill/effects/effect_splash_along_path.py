@@ -17,8 +17,9 @@ if TYPE_CHECKING:
 
 
 class SkillEffectSplashAlongPath(SkillEffectBase):
-    """시전자의 원래 위치 ~ 주대상의 위치 사이 전체 열(양 끝 포함)에 있는 모든
-    적에게 대미지를 입힌다. 주대상 본인은 제외한다.
+    """시전자의 원래 위치 ~ 주대상의 위치 사이 열에 있는 모든 적에게 대미지를
+    입힌다. 출발 열은 빼고 도착 열은 넣는다 — 시전자가 지나가는 열만 친다.
+    주대상 본인은 제외하며, 같은 열의 대상을 치면 지나가는 열이 없다.
 
     돌진(SkillEffectMove의 TARGET_CURR_POSITION)과 함께 쓰이는 스킬을 위한
     효과로, expand() 시점엔 아직 실제 이동이 적용되지 않으므로
@@ -45,14 +46,16 @@ class SkillEffectSplashAlongPath(SkillEffectBase):
 
         from_pos = context.find_character_position(holder)
         to_pos = context.find_character_position(main_target)
-        lo, hi = sorted((from_pos.value, to_pos.value))
+        step = 1 if to_pos.value >= from_pos.value else -1
+        path_columns = range(from_pos.value + step, to_pos.value + step, step)
 
         foe_faction = context.characters[holder].foe_faction
         splash_targets = [
             char_id
-            for column in BattlefieldColumnIndex
-            if column != BattlefieldColumnIndex.NONE and lo <= column.value <= hi
-            for char_id in context.position_map[foe_faction][column].values()
+            for value in path_columns
+            for char_id in context.position_map[foe_faction][
+                BattlefieldColumnIndex(value)
+            ].values()
             if char_id != main_target
         ]
 

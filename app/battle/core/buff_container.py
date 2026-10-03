@@ -184,10 +184,13 @@ class BuffContainer:
         )
 
     def _apply_round_events(self, timing: BuffApplyTiming) -> list[BattleLogEntry]:
+        # 쓰러진 적은 라운드 종료까지 필드에 남아 있을 뿐이라, 그에게 걸린
+        # 지속 대미지 등이 돌면 이미 0인 체력에 결과 줄만 붙는다.
         event_pairs = [
             (buff.create_event(), buff.given_by, buff.applied_to)
             for buff in self._buffs
             if buff.timing == timing
+            and not self._context.is_eliminated(buff.applied_to)
         ]
         event_pairs.sort(key=lambda x: x[0].priority.value)
 

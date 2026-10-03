@@ -477,17 +477,22 @@ class BattlefieldContext:
         수도 있으므로). `force_remove_character()`가 그 명시적 제거
         경로다.
         """
-        eliminated: list[CharacterId] = []
-        for char_id, char in self.characters.items():
-            if char.status.curr_hp > 0:
-                continue
-            if char.faction != FactionType.ENEMY:
-                continue
-            eliminated.append(char_id)
-
+        eliminated = [
+            char_id for char_id in self.characters if self.is_eliminated(char_id)
+        ]
         for char_id in eliminated:
             self.remove_character(char_id)
         return eliminated
+
+    def is_eliminated(self, char_id: CharacterId) -> bool:
+        """이번 라운드 종료 때 자동으로 필드에서 빠질 캐릭터인지. 체력 0인
+        적은 라운드 종료까지 필드에 남지만 이미 쓰러진 것이다."""
+        char = self.characters.get(char_id)
+        return (
+            char is not None
+            and char.status.curr_hp <= 0
+            and char.faction == FactionType.ENEMY
+        )
 
     def force_remove_character(self, char_id: CharacterId) -> list[CharacterId]:
         """admin이 `[탈락/이름]`으로 명시적으로 캐릭터를 필드에서 제거한다.

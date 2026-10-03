@@ -99,7 +99,7 @@ def test_main_target_and_path_enemies_take_damage_excluding_bystanders(battle):
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
-    # 시전자 원래 위치(0) ~ 주대상 위치(3) 사이 = COL1~COL4
+    # 시전자 원래 위치(0) 다음 열 ~ 주대상 위치(3) = COL2~COL4
     ctx.add_character(
         get_test_preset("적군 주대상"), FactionType.ENEMY, BattlefieldColumnIndex(3)
     )
@@ -143,6 +143,56 @@ def _given_damage_buff(buff_id: str, percent: int) -> BuffData:
         condition_value=None,
         buff_type=BuffType.BUFF,
     )
+
+
+def test_departure_column_is_not_part_of_the_path(battle):
+    """설명대로 출발 열의 적은 경로 대미지를 받지 않는다."""
+    ctx, manager = battle
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="Cost3Skill", attack_range=3),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(1),
+    )
+    ctx.add_character(
+        get_test_preset("적군 주대상"), FactionType.ENEMY, BattlefieldColumnIndex(3)
+    )
+    ctx.add_character(
+        get_test_preset("적군 출발열"), FactionType.ENEMY, BattlefieldColumnIndex(1)
+    )
+    ctx.add_character(
+        get_test_preset("적군 반대편"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+
+    manager.process_command(
+        parse_character_command(ally_id, "[Cost3Skill/적군 주대상]", ctx)
+    )
+
+    assert ctx.characters[CharacterId("적군 출발열")].status.curr_hp == 100
+    assert ctx.characters[CharacterId("적군 반대편")].status.curr_hp == 100
+
+
+def test_same_column_target_has_no_path(battle):
+    ctx, manager = battle
+    ally_id = CharacterId("아군 1")
+    ctx.add_character(
+        get_test_preset("아군 1", skill_1_id="Cost3Skill", attack_range=3),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(2),
+    )
+    ctx.add_character(
+        get_test_preset("적군 주대상"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+    )
+    ctx.add_character(
+        get_test_preset("적군 같은열"), FactionType.ENEMY, BattlefieldColumnIndex(2)
+    )
+
+    manager.process_command(
+        parse_character_command(ally_id, "[Cost3Skill/적군 주대상]", ctx)
+    )
+
+    assert ctx.characters[CharacterId("적군 주대상")].status.curr_hp < 100
+    assert ctx.characters[CharacterId("적군 같은열")].status.curr_hp == 100
 
 
 def test_path_splash_also_receives_the_casters_given_damage_buff(cost3_skill):
