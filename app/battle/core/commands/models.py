@@ -159,6 +159,11 @@ class BattleLogEntryKind(str, Enum):
     NO_EFFECT = "no_effect"
 
 
+# FIELD_EFFECT 엔트리의 result. 답글 포매터가 부여/해제를 이 값으로 가른다.
+FIELD_EFFECT_ADDED_RESULT = "필드 효과 발생"
+FIELD_EFFECT_REMOVED_RESULT = "필드 효과 해제"
+
+
 @dataclass(frozen=True)
 class BattleLogEntry:
     """로그_전투 시트 한 행에 대응하는 정산 결과 (대상 1명당 1개).

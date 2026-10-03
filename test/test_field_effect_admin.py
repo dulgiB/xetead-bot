@@ -67,7 +67,7 @@ def _passives() -> dict[str, PassiveSkillData]:
                     buff_add_timing=None,
                 )
             ],
-            description="",
+            description="아군 전원에게 버프를 건다.",
         ),
         CHARACTER_PASSIVE_ID: PassiveSkillData(
             id=CHARACTER_PASSIVE_ID,
@@ -108,7 +108,10 @@ class TestAdminCommand:
         reply = handle_admin_command(f"[필드효과/{FIELD_EFFECT_ID}]", state).reply_text
 
         assert FIELD_EFFECT_ID in state.session.context.field_effects
-        assert "필드 효과 발생" in reply
+        assert reply == (
+            f"◊ 필드 효과 **「{FIELD_EFFECT_ID}」** 적용\n\n"
+            "▹ 아군 전원에게 버프를 건다."
+        )
 
     def test_remove_takes_it_off(self):
         state = _make_state()
@@ -119,7 +122,7 @@ class TestAdminCommand:
         ).reply_text
 
         assert FIELD_EFFECT_ID not in state.session.context.field_effects
-        assert "필드 효과 해제" in reply
+        assert reply == f"◊ 필드 효과 **「{FIELD_EFFECT_ID}」** 해제"
 
     def test_remove_is_not_swallowed_by_the_add_pattern(self):
         """ "필드효과해제"는 "필드효과" 패턴에도 걸리므로, 해제가 부여로

@@ -151,7 +151,7 @@ class BattlefieldContext:
         for effect in effects:
             lines.append(f"▸ {effect.display_label()}")
             if effect.description:
-                lines.append(f"　↳ {effect.description}")
+                lines.append(f" ↳ {effect.description}")
         return "\n".join(lines)
 
     def format_position_board(
@@ -242,7 +242,7 @@ class BattlefieldContext:
                 blocks.append(
                     f"{char_id.name} | [{buff.display_id_label()}]"
                     f"{buff.duration.display_text(stack_count)}\n"
-                    f"　↳ {description}"
+                    f" ↳ {description}"
                 )
         return "\n\n".join(blocks)
 

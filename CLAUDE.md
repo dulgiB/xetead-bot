@@ -452,7 +452,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | 효과 | 쓰임 |
 |---|---|
 | `SkillEffectAddBuff` / `SkillEffectConditionalBuff` | 범위에 버프/디버프 부여 |
-| `SkillEffectFieldDamage` | 시전자 없는 고정 대미지 (물리 고정, 계수 미지원) |
+| `SkillEffectFieldDamage` | 시전자 없는 고정 대미지 (물리 고정, 공격력 계수 미지원). `value_source_N`을 `참조 버프의 현재 스택 수`로 두면 대상이 가진 `reference_buff_id_N` 스택 × `value_N` |
 | `SkillEffectFieldStatOffset` | 공격력·사거리·턴당 코스트 증감 |
 | `SkillEffectAddFieldEffect` / `SkillEffectRemoveFieldEffect` | 다른 필드 효과 부여·해제 |
 
@@ -506,7 +506,9 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
 - **필드 텍스트**(`_format_field_effect_summary()`): 버프 요약보다 앞에 두고
   효과마다 한 줄씩, 설명을 아래에 붙인다.
 - **답글 결과 줄**: `BattleLogEntryKind.FIELD_EFFECT`. 대상이 캐릭터가
-  아니므로 "이름 | 결과"가 아니라 "필드 효과 발생: 이름"으로 나간다.
+  아니므로 "이름 | 결과"가 아니라 "필드 효과 **「이름」** 적용/해제"로
+  나가고, 적용이면 설명을 ` ↳` 줄로 붙인다. admin의 `[필드효과]` 답글도
+  같은 모양이다.
 
 **"필드" 시트의 행 좌표는 `_HEADER_ROW` 하나에서 파생된다.** 시트 위쪽에
 행이 늘고 줄면 그 값만 맞추면 진영 격자와 선언 내용 병합 범위가 함께

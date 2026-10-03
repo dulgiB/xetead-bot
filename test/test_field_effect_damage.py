@@ -12,11 +12,16 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     MagicResistanceType,
+    ValueSourceType,
+    ValueType,
 )
 from battle.objects.field_effect.models import FieldEffectSource
 from battle.objects.models import CharacterId
@@ -199,3 +204,171 @@ class TestProducedDamageShape:
         assert damage_list[0].attacker_id == effect.holder_id
         assert damage_list[0].is_magic_attack is False
         assert damage_list[0].ignores_taunt is True
+
+
+STACK_BUFF_ID = "StackBuff"
+DAMAGE_UP_BUFF_ID = "DamageUp"
+
+
+def _stack_buff() -> BuffData:
+    return BuffData(
+        id=STACK_BUFF_ID,
+        buff_class_name="BuffAtk",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.INTEGER,
+        value=0,
+        condition_=None,
+        condition_value=None,
+        buff_type=BuffType.DEBUFF,
+        description="",
+        max_stack=10,
+    )
+
+
+def _damage_up_buff() -> BuffData:
+    return BuffData(
+        id=DAMAGE_UP_BUFF_ID,
+        buff_class_name="BuffReceivedDamage",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.PERCENT,
+        value=100,
+        condition_=None,
+        condition_value=None,
+        buff_type=BuffType.DEBUFF,
+        description="",
+    )
+
+
+def _stack_damage_on_hit_effect(per_stack: int) -> PassiveSkillData:
+    return PassiveSkillData(
+        id=EFFECT_ID,
+        trigger=PassiveSkillTrigger.ALLY_DAMAGED,
+        target_type=PassiveSkillTargetType.FIELD_SUBJECT,
+        effects=[
+            SkillEffectFieldDamage(
+                value_source=ValueSourceType.REFERENCED_BUFF_STACK,
+                value=per_stack,
+                value_type=None,
+                buff_id=None,
+                buff_add_timing=None,
+                reference_buff_id=STACK_BUFF_ID,
+            )
+        ],
+        description="",
+    )
+
+
+class TestDamagePerReferencedStackOnHit:
+    """ "이 버프가 걸린 캐릭터는 공격받을 때마다 (자신의 스택 수 × N)만큼 고정
+    대미지를 추가로 입는다"를 피격 시 트리거 + 사건 당사자 범위로 표현한다."""
+
+    def _hp_after_attack(
+        self,
+        monkeypatch,
+        *,
+        with_effect: bool,
+        stack: int,
+        damage_up: bool = False,
+        attacks: tuple[tuple[str, str], ...] = (("아군", "[공격/적군]"),),
+    ) -> int:
+        monkeypatch.setattr("random.randint", lambda a, b: 4)
+        effect = _stack_damage_on_hit_effect(2)
+        ctx = BattlefieldContext(
+            buff_dict={
+                STACK_BUFF_ID: _stack_buff(),
+                DAMAGE_UP_BUFF_ID: _damage_up_buff(),
+            },
+            skill_dict={},
+            passive_skill_dict={effect.id: effect},
+        )
+        ctx.add_character(
+            get_test_preset("아군"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("아군_2"), FactionType.ALLY, BattlefieldColumnIndex(0)
+        )
+        ctx.add_character(
+            get_test_preset("적군"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+        if with_effect:
+            ctx.add_field_effect(EFFECT_ID, FieldEffectSource.ADMIN)
+        if stack:
+            ctx.buff_container.add(
+                BuffAddData(
+                    given_by=CharacterId("아군"),
+                    applied_to=CharacterId("적군"),
+                    buff_id=STACK_BUFF_ID,
+                    stack_value=stack,
+                )
+            )
+        if damage_up:
+            ctx.buff_container.add(
+                BuffAddData(
+                    given_by=CharacterId("아군"),
+                    applied_to=CharacterId("적군"),
+                    buff_id=DAMAGE_UP_BUFF_ID,
+                )
+            )
+
+        manager = RoundManager(ctx)
+        manager.process_command(
+            ChangePhaseCommand(
+                type_=ActionType.ADMIN, target_phase=RoundPhaseType.ENEMY_PRE_ACTION
+            )
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        for attacker, command in attacks:
+            manager.process_command(
+                parse_character_command(CharacterId(attacker), command, ctx)
+            )
+        return _hp(ctx, "적군")
+
+    def test_adds_stack_times_value(self, monkeypatch):
+        baseline = self._hp_after_attack(monkeypatch, with_effect=False, stack=3)
+        boosted = self._hp_after_attack(monkeypatch, with_effect=True, stack=3)
+
+        assert baseline - boosted == 3 * 2
+
+    def test_no_stack_no_extra_damage(self, monkeypatch):
+        baseline = self._hp_after_attack(monkeypatch, with_effect=False, stack=0)
+        boosted = self._hp_after_attack(monkeypatch, with_effect=True, stack=0)
+
+        assert baseline == boosted
+
+    def test_extra_damage_ignores_received_damage_buffs(self, monkeypatch):
+        """ "고정" 대미지이므로 받는 대미지 버프는 원래 공격에만 붙는다."""
+        baseline = self._hp_after_attack(
+            monkeypatch, with_effect=False, stack=3, damage_up=True
+        )
+        boosted = self._hp_after_attack(
+            monkeypatch, with_effect=True, stack=3, damage_up=True
+        )
+
+        assert baseline - boosted == 3 * 2
+
+    def test_applies_per_attack_from_same_attacker(self, monkeypatch):
+        """중복 방지는 한 행동 안에서만 걸린다 — 공격을 두 번 하면 두 번 붙는다."""
+        attacks = (("아군", "[공격/적군 - 공격/적군]"),)
+        baseline = self._hp_after_attack(
+            monkeypatch, with_effect=False, stack=3, attacks=attacks
+        )
+        boosted = self._hp_after_attack(
+            monkeypatch, with_effect=True, stack=3, attacks=attacks
+        )
+
+        assert baseline - boosted == 2 * 3 * 2
+
+    def test_applies_per_attacker(self, monkeypatch):
+        attacks = (("아군", "[공격/적군]"), ("아군_2", "[공격/적군]"))
+        baseline = self._hp_after_attack(
+            monkeypatch, with_effect=False, stack=3, attacks=attacks
+        )
+        boosted = self._hp_after_attack(
+            monkeypatch, with_effect=True, stack=3, attacks=attacks
+        )
+
+        assert baseline - boosted == 2 * 3 * 2

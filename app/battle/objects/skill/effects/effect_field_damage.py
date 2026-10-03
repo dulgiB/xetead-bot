@@ -6,6 +6,7 @@ from battle.objects.models import (
     BaseValueIndicator,
     CharacterId,
     DamageData,
+    FloatValueModifier,
     HealData,
     MoveData,
 )
@@ -23,8 +24,11 @@ class SkillEffectFieldDamage(SkillEffectBase):
     인덱싱하는데, 필드 효과의 홀더는 전장에 없는 센티넬이라 KeyError가 난다.
 
     같은 이유로 계수 대미지(공격력 × N%)도 지원하지 않는다. 곱할 공격력을
-    가진 시전자가 없으므로 `value_N`은 항상 고정 대미지 수치로 읽는다
-    (`value_source_N`은 비워 둔다).
+    가진 시전자가 없으므로 `value_N`은 고정 대미지 수치로 읽는다
+    (`value_source_N`은 비워 둔다). 예외는 `참조 버프의 현재 스택 수`로,
+    시전자가 아니라 **대상**에게서 읽는 값이라 필드 효과에도 쓸 수 있다 —
+    그때 `value_N`은 스택당 대미지가 된다. 설명이 "고정"이라 부르는 대미지인
+    만큼 주는/받는 대미지 버프의 배율은 받지 않는다.
 
     속성은 물리로 고정한다. 마법 저항은 시전자의 공격 속성에 대응하는 방어
     스탯인데 필드 효과에는 대응할 시전자가 없어, 마법으로 두면 마법 저항
@@ -48,7 +52,26 @@ class SkillEffectFieldDamage(SkillEffectBase):
     ]:
         assert self.value is not None
 
-        damage_value = BaseValueIndicator(ValueSourceType.FIXED, self.value)
+        if self.value_source == ValueSourceType.REFERENCED_BUFF_STACK:
+            assert self.reference_buff_id is not None
+            reference_buff_id = self.reference_buff_id
+            # 라운드 시작처럼 범위 전원에게 걸리는 트리거에서는 스택이 없는
+            # 대상마다 "대미지 0" 결과 줄이 생긴다.
+            targets = [
+                target
+                for target in targets
+                if context.get_buff_stack(target, reference_buff_id) > 0
+            ]
+            damage_value = BaseValueIndicator(
+                ValueSourceType.REFERENCED_BUFF_STACK,
+                coefficient=FloatValueModifier(
+                    source_name="스택당 대미지", value=self.value * 100
+                ),
+                consumed_buff_id=reference_buff_id,
+                ignores_value_modifiers=True,
+            )
+        else:
+            damage_value = BaseValueIndicator(ValueSourceType.FIXED, self.value)
         return (
             [],
             [

@@ -20,6 +20,7 @@ import re
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.models import (
+    FIELD_EFFECT_REMOVED_RESULT,
     BattleLogEntry,
     BattleLogEntryKind,
     CommandPart,
@@ -368,7 +369,7 @@ def format_log_entry_block(
         line, calc, final_value = _format_entry(context, entry)
         lines.append(line)
         if calc:
-            lines.append(f"　↳ {calc} → {final_value}")
+            lines.append(f" ↳ {calc} → {final_value}")
     if any(entry.hp_is_persistent for entry in entries):
         lines.append(PERSISTENT_HP_FOOTNOTE)
     return f"**【{header}】**\n" + "\n".join(lines)
@@ -462,7 +463,7 @@ _BLIND_SKILL_TEXT = "[효과 미확인]"
 
 def _format_skill_preview(skill_data: "SkillData") -> str:
     text = skill_data.description if skill_data.revealed else _BLIND_SKILL_TEXT
-    return f"　↳ {escape_markdown(text)}"
+    return f" ↳ {escape_markdown(text)}"
 
 
 def _format_header(
@@ -538,11 +539,14 @@ def _format_entry(
     if entry.kind == BattleLogEntryKind.FIELD_EFFECT:
         # 대상이 캐릭터가 아니라 전장이므로 "이름 | 결과" 형식이 맞지 않는다.
         # target_name에는 필드 효과 이름이 들어 있다.
-        return (
-            f"▹ {escape_markdown(entry.result)}: {escape_markdown(entry.target_name)}",
-            None,
-            None,
-        )
+        name = f"**「{escape_markdown(entry.target_name)}」**"
+        if entry.result == FIELD_EFFECT_REMOVED_RESULT:
+            return f"▹ 필드 효과 {name} 해제", None, None
+        line = f"▹ 필드 효과 {name} 적용"
+        data = context.get_passive_skill_data_by_id(entry.target_name)
+        if data is not None and data.description:
+            line += f"\n ↳ {escape_markdown(data.description)}"
+        return line, None, None
     # 나머지 종류는 build_log_entries()가 만들어 둔 result를 그대로 쓴다.
     return (
         f"▹ {escape_markdown(entry.target_name)} | {escape_markdown(entry.result)}",

@@ -1007,7 +1007,7 @@ def test_hide_result_lines_skill_keeps_only_header_and_description_in_body():
     reply, calc = _run(ctx, manager, caster_id, "[전체 회복]")
 
     assert reply == (
-        "**【전체 회복 ▸ 아군 1】**\n　↳ 아군 전체의 체력을 최대치까지 회복한다."
+        "**【전체 회복 ▸ 아군 1】**\n ↳ 아군 전체의 체력을 최대치까지 회복한다."
     )
     assert "▹" not in reply
     assert "▹ 아군 2 | 100 × 1[계수] → +100" in calc
@@ -1078,7 +1078,7 @@ def test_enemy_skill_preview_shows_description_when_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "**【스킬\\_1 ▸ 아군 1】**\n　↳ 대상에게 고정 피해를 준다."
+    assert reply == "**【스킬\\_1 ▸ 아군 1】**\n ↳ 대상에게 고정 피해를 준다."
 
 
 def test_enemy_skill_preview_blinds_description_when_not_revealed():
@@ -1108,7 +1108,7 @@ def test_enemy_skill_preview_blinds_description_when_not_revealed():
         ctx, caster_id, new_results, show_skill_preview=True
     )
 
-    assert reply == "**【스킬\\_1 ▸ 아군 1】**\n　↳ [효과 미확인]"
+    assert reply == "**【스킬\\_1 ▸ 아군 1】**\n ↳ [효과 미확인]"
 
 
 def test_skill_preview_omitted_when_show_skill_preview_is_false():

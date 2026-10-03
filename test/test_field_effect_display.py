@@ -1,7 +1,12 @@
 """필드 효과 표시: 필드 텍스트 요약과 답글 결과 줄."""
 
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
+from battle.core.commands.models import (
+    FIELD_EFFECT_ADDED_RESULT,
+    FIELD_EFFECT_REMOVED_RESULT,
+    BattleLogEntry,
+    BattleLogEntryKind,
+)
 from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.field_effect.models import FieldEffectSource
 from battle.objects.passive_skill.models import (
@@ -88,15 +93,39 @@ class TestFieldTextSummary:
 
 
 class TestReplyLine:
-    def test_field_effect_entry_reads_as_an_event_not_a_target(self):
+    def test_added_effect_reads_as_an_event_with_its_description(self):
         """대상이 캐릭터가 아니라 전장이므로 "이름 | 결과" 형식이 아니다."""
         ctx = _make_context()
         entry = BattleLogEntry(
             target_name=EFFECT_ID,
             kind=BattleLogEntryKind.FIELD_EFFECT,
-            result="필드 효과 발생",
+            result=FIELD_EFFECT_ADDED_RESULT,
         )
 
         block = format_log_entry_block(ctx, [entry], "정산")
 
-        assert f"▹ 필드 효과 발생: {EFFECT_ID}" in block
+        assert f"▹ 필드 효과 **「{EFFECT_ID}」** 적용\n ↳ 전장이 불타오른다." in block
+
+    def test_added_effect_without_description_has_no_arrow_line(self):
+        ctx = _make_context(description="")
+        entry = BattleLogEntry(
+            target_name=EFFECT_ID,
+            kind=BattleLogEntryKind.FIELD_EFFECT,
+            result=FIELD_EFFECT_ADDED_RESULT,
+        )
+
+        block = format_log_entry_block(ctx, [entry], "정산")
+
+        assert block.endswith(f"▹ 필드 효과 **「{EFFECT_ID}」** 적용")
+
+    def test_removed_effect(self):
+        ctx = _make_context()
+        entry = BattleLogEntry(
+            target_name=EFFECT_ID,
+            kind=BattleLogEntryKind.FIELD_EFFECT,
+            result=FIELD_EFFECT_REMOVED_RESULT,
+        )
+
+        block = format_log_entry_block(ctx, [entry], "정산")
+
+        assert block.endswith(f"▹ 필드 효과 **「{EFFECT_ID}」** 해제")

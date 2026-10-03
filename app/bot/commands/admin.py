@@ -494,7 +494,7 @@ def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
         removed = context.remove_field_effect(name)
         if removed is None:
             return f"◊ 필드 효과({escape_markdown(name)})는 전장에 걸려 있지 않습니다."
-        reply = f"◊ 필드 효과 해제: {escape_markdown(removed.id)}"
+        reply = f"◊ 필드 효과 **「{escape_markdown(removed.id)}」** 해제"
     else:
         try:
             added = context.add_field_effect(name, FieldEffectSource.ADMIN)
@@ -503,7 +503,9 @@ def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
             return f"◊ {escape_markdown(str(e))}"
         if added is None:
             return f"◊ 필드 효과({escape_markdown(name)})는 이미 전장에 걸려 있습니다."
-        reply = f"◊ 필드 효과 발생: {escape_markdown(added.id)}"
+        reply = f"◊ 필드 효과 **「{escape_markdown(added.id)}」** 적용"
+        if added.description:
+            reply += f"\n\n▹ {escape_markdown(added.description)}"
 
     _sync_field_sheets(state)
     return reply
@@ -515,6 +517,13 @@ class _ForceBuffPart:
     target: CharacterId
     buff_id: str
     given_by: Optional[CharacterId]
+
+
+@dataclass(frozen=True)
+class _ForceBuffAddKey:
+    target: CharacterId
+    buff_id: str
+    given_by: CharacterId
 
 
 def _parse_force_buff_part(
@@ -578,7 +587,11 @@ def _cmd_force_buffs(part_strs: list[str], state: "BotState") -> str:
     if errors:
         return "\n".join(["◊ 버프 커맨드를 적용하지 않았습니다.", *errors])
 
-    lines: list[str] = []
+    # 같은 대상·버프·부여자에게 거듭 건 부여는 처음 나온 자리에 한 줄로
+    # 합친다. 스택을 쌓으려고 같은 파트를 여러 번 쓰는 게 이 커맨드의 흔한
+    # 쓰임이라, 줄마다 중간 스택을 보여 주면 최종값만 묻히기 때문이다.
+    lines: list[str | _ForceBuffAddKey] = []
+    add_counts: dict[_ForceBuffAddKey, int] = {}
     for part in parsed:
         if part.remove:
             removed_labels = [
@@ -595,7 +608,10 @@ def _cmd_force_buffs(part_strs: list[str], state: "BotState") -> str:
                     given_by=part.given_by,
                 )
             )
-            results = [f"[{label}] 해제" for label in removed_labels]
+            lines.extend(
+                _format_force_buff_line(part.target, f"[{label}] 해제")
+                for label in removed_labels
+            )
         else:
             state.session.manager.process_command(
                 ForceAddBuffByIdCommand(
@@ -605,22 +621,37 @@ def _cmd_force_buffs(part_strs: list[str], state: "BotState") -> str:
                     given_by=part.given_by,
                 )
             )
-            entry = build_buff_add_log_entry(
+            key = _ForceBuffAddKey(part.target, part.buff_id, part.given_by or ADMIN_ID)
+            if key not in add_counts:
+                lines.append(key)
+                add_counts[key] = 0
+            add_counts[key] += 1
+
+    rendered = [
+        line
+        if isinstance(line, str)
+        else _format_force_buff_line(
+            line.target,
+            build_buff_add_log_entry(
                 context,
                 BuffAddData(
-                    given_by=part.given_by or ADMIN_ID,
-                    applied_to=part.target,
-                    buff_id=part.buff_id,
+                    given_by=line.given_by,
+                    applied_to=line.target,
+                    buff_id=line.buff_id,
+                    stack_value=add_counts[line],
                 ),
-            )
-            results = [entry.result]
-        lines.extend(
-            f"▹ {escape_markdown(part.target.name)} | {escape_markdown(result)}"
-            for result in results
+            ).result,
         )
+        for line in lines
+    ]
 
     _sync_field_sheets(state)
-    return "\n".join(["◊ 버프 강제 적용", *lines])
+    header = "◊ 버프 해제" if all(part.remove for part in parsed) else "◊ 버프 적용"
+    return "\n".join([header, "", *rendered])
+
+
+def _format_force_buff_line(target: CharacterId, result: str) -> str:
+    return f"▹ {escape_markdown(target.name)} | {escape_markdown(result)}"
 
 
 def _sync_field_sheets(state: "BotState") -> None:
