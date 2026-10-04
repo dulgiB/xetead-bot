@@ -1,3 +1,4 @@
+import logging
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
@@ -7,6 +8,9 @@ from battle.objects.skill.models import SkillEffectBase
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.character.combat_stats import CombatStats
+
+logger = logging.getLogger(__name__)
 
 # value_source_N에 적는 스탯 종류 → 실제로 증감할 스탯.
 # 최대 체력은 일부러 빠져 있다 — 전투 중에 최대 체력이 바뀌면 현재 체력
@@ -32,6 +36,7 @@ class SkillEffectFieldStatOffset(SkillEffectBase):
     """
 
     requires_holder_character: ClassVar[bool] = False
+    is_standing_state: ClassVar[bool] = True
 
     @property
     def stat_type(self) -> Optional[CombatStatType]:
@@ -43,6 +48,20 @@ class SkillEffectFieldStatOffset(SkillEffectBase):
     @property
     def offset(self) -> int:
         return self.value or 0
+
+    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
+        stat_type = self.stat_type
+        if stat_type is None:
+            logger.warning(
+                "스탯 증감이 지원하지 않는 대상 스탯을 가리켜 건너뜁니다"
+                " (value_source=%s)",
+                self.value_source,
+            )
+            return
+        if revert:
+            stats.remove_stat_offset(stat_type, self.offset)
+        else:
+            stats.add_stat_offset(stat_type, self.offset)
 
     def _expand(
         self,

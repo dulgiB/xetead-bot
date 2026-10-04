@@ -22,6 +22,7 @@ from utils.spreadsheet_row import SpreadsheetRow
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
     from battle.objects.buff.conditions import Condition
+    from battle.objects.character.combat_stats import CombatStats
     from battle.objects.field_effect.models import FieldEffectOp
 
 
@@ -85,6 +86,11 @@ class SkillEffectBase(abc.ABC):
     # 그대로 넘긴다. 조건을 만족하지 못한 대상에게도 할 일이 있는 효과
     # (조건에서 벗어나면 버프를 회수하는 등) 전용이다.
     applies_target_condition_itself: ClassVar[bool] = False
+
+    # True면 트리거에 반응해 전개되는 효과가 아니라, 걸려 있는 동안 대상의
+    # CombatStats에 유지되는 상태다(apply_standing_state()). 필드 효과와
+    # 부적이 대상에 들고 날 때 직접 얹고 걷는다.
+    is_standing_state: ClassVar[bool] = False
 
     @property
     def condition(self) -> Optional["Condition"]:
@@ -159,6 +165,10 @@ class SkillEffectBase(abc.ABC):
             ]
 
         return self._expand(context, holder, effective_targets, raw_targets)
+
+    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
+        """is_standing_state인 효과만 오버라이드한다. revert=True면 앞서 얹은
+        것을 정확히 같은 양만큼 되돌린다."""
 
     def get_field_effect_ops(
         self, context: "BattlefieldContext", holder: CharacterId

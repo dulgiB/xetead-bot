@@ -89,6 +89,11 @@ class PracticeBattlefieldContext(BattlefieldContext):
         return False
 
     @property
+    def allow_charms(self) -> bool:
+        """부적은 본 전투에서만 발동한다."""
+        return False
+
+    @property
     def allow_fate_intervention(self) -> bool:
         """결투와 상시전투에서 허용한다 — 대련을 막는 이유인 "되돌릴 수 없는
         자원을 임시 캐릭터에게 걸 수 없다"가 둘에는 해당하지 않는다. 결투는

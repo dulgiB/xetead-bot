@@ -83,7 +83,8 @@ _BAG_DESCRIPTION_PREFIX: dict[ItemType, str] = {
     ItemType.CHARM: "부적. ",
 }
 
-# 코스트·사거리가 항상 0이라 [가방]에서 생략한다.
+# 사용하는 아이템이 아니라 [가방]에서 코스트·사거리를 생략한다. 부적의
+# 사거리는 효과 범위라 값이 있지만, 사용 사거리로 읽히지 않도록 함께 뺀다.
 _BAG_ITEM_TYPES_WITHOUT_COST_RANGE = (
     ItemType.ETC,
     ItemType.NONCOMBAT_CONSUMABLE,

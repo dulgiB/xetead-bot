@@ -283,11 +283,11 @@ def test_field_effect_cell_says_none_when_nothing_is_active():
 
 def test_field_effect_cell_lists_active_effects_with_source():
     ctx, effect_id = _context_with_field_effect()
-    ctx.add_field_effect(effect_id, FieldEffectSource.CHARM, "행운의 부적")
+    ctx.add_field_effect(effect_id, FieldEffectSource.SKILL, "시전자_1")
 
     display_text, _ = _format_field_effect_cell(ctx)
 
-    assert display_text == f"{effect_id}[행운의 부적]"
+    assert display_text == f"{effect_id}[시전자_1]"
 
 
 def test_field_effect_cell_joins_several_on_one_line():
@@ -302,11 +302,11 @@ def test_field_effect_cell_joins_several_on_one_line():
         description="두 번째 효과 설명",
     )
     ctx.add_field_effect(effect_id, FieldEffectSource.ADMIN)
-    ctx.add_field_effect(other_id, FieldEffectSource.CHARM, "가시 부적")
+    ctx.add_field_effect(other_id, FieldEffectSource.SKILL, "시전자_2")
 
     display_text, note_text = _format_field_effect_cell(ctx)
 
-    assert display_text == f"{effect_id}[시스템] · {other_id}[가시 부적]"
+    assert display_text == f"{effect_id}[시스템] · {other_id}[시전자_2]"
     assert "\n" not in display_text
     # 설명은 줄을 나눠 메모에 담는다 — 메모에는 높이 제약이 없다.
     assert note_text.count("\n") == 1

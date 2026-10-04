@@ -21,6 +21,7 @@ app/
       command_calculator.py     # 이동/대미지/힐/버프 개별 처리 + 버프 이벤트 적용
       buff_container.py         # 버프 생명주기 (추가/제거/라운드 훅/반응형 트리거)
       field_effect_container.py # 필드 효과 생명주기 (등록/해제/스탯 오프셋/중간 참전)
+      charm_aura_container.py   # 부적 오라 (소지자 사거리 내 같은 진영에 상시 효과)
       commands/
         define.py               # RoundPhaseType enum
         models.py               # CharacterCommand, CommandPart, CommandPartData, DamageCalculateData 등
@@ -458,37 +459,36 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillEffectAddBuff` / `SkillEffectConditionalBuff` | 범위에 버프/디버프 부여 |
 | `SkillEffectFieldDamage` | 시전자 없는 고정 대미지 (물리 고정, 공격력 계수 미지원). `value_source_N`을 `참조 버프의 현재 스택 수`로 두면 대상이 가진 `reference_buff_id_N` 스택 × `value_N` |
 | `SkillEffectFieldStatOffset` | 공격력·사거리·턴당 코스트 증감 |
+| `SkillEffectRevivalCountFloor` | 부활 `value_N`회 상태처럼 취급(받는 대미지·턴당 코스트만) |
 | `SkillEffectAddFieldEffect` / `SkillEffectRemoveFieldEffect` | 다른 필드 효과 부여·해제 |
 
 **스탯 증감은 `CombatStats.__getitem__`에 직접 얹는다.** 버프(`BuffedStats`)로는
 안 되는데, `BuffedStats`는 `CommandPartCalculator` 안에서만 살기 때문에 사거리
 검증·범위 조건·필드 시트 표시처럼 `CombatStats`를 직접 읽는 지점에 반영되지
-않기 때문이다. 최대 체력은 지원하지 않는다.
+않기 때문이다. 최대 체력은 지원하지 않는다. 이런 "걸려 있는 동안 유지되는
+상태" 효과는 `is_standing_state = True`를 켜고 `apply_standing_state()`로
+얹고 되돌리며, 같은 훅을 [부적](#부적-charmauracontainer)도 쓴다.
 
-### 부여·제거 경로 셋
+### 부여·제거 경로 둘
 
 - **admin**: `[필드효과/이름]` / `[필드효과해제/이름]`. 디스패치에서 해제를
   먼저 본다 — "필드효과해제"가 "필드효과" 패턴에도 걸리기 때문이다.
 - **스킬**: `SkillEffectAddFieldEffect`/`SkillEffectRemoveFieldEffect` +
   `field_effect_id_N`. `expand()`의 5-튜플에 자리가 없어
   `get_field_effect_ops()`로 따로 받는다(디버프 일괄 제거와 같은 방식).
-- **부적**: "아이템" 시트에서 `item_type`이 `부적`인 항목의
-  `passive_skill_id`. **인벤토리에 가진 캐릭터가 있기만 하면 발동하며, 그
-  소지자가 전투에 참여하는지는 보지 않는다** — 요구하면 전투 참여 압력이 되기
-  때문이다.
+
+부적은 필드 효과가 아니다 — 소지자를 기준으로 범위가 정해지므로 아래
+[부적](#부적-charmauracontainer)이 따로 다룬다.
 
 ### 등록 시점과 영속화
-
-등록은 `BattlefieldContext.on_battle_start()` 한 곳에서, **버프 트리거보다
-먼저** 한다("전투 시작" 트리거가 같은 호출에서 발동해야 하므로). 이 한 곳이면
-신규 전투와 봇 재기동 복원이 함께 커버된다.
 
 전투 도중 참전한 캐릭터는 `add_character()` 말미의
 `FieldEffectContainer.apply_to_newcomer()`로 즉시 받는다 — 진영 판정은 정규
 경로와 같은 `resolve_passive_targets()`를 거친다.
 
 영속화는 "필드" 시트에 컬럼을 늘리지 않고 `meta_json`에 싣는다. 복원은
-캐릭터 배치 뒤·`on_battle_start()` 전이어야 한다.
+캐릭터 배치 뒤·`on_battle_start()` 전이어야 한다 — "전투 시작" 트리거가 그
+호출에서 발동해야 하므로.
 
 ### 표시
 
@@ -496,8 +496,8 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 않는다** — 따로 보여주지 않으면 어디에도 드러나지 않는다.
 
 표시 라벨은 `FieldEffect.display_label()`이 만드는 `이름[출처]`로 통일한다.
-대괄호 안은 출처를 특정할 수 있으면 그 이름(부적 이름 등), 아니면 출처
-종류(`시스템`/`스킬`/`부적`)다 — 어느 부적이 걸었는지가 종류보다 쓸모 있다.
+대괄호 안은 출처를 특정할 수 있으면 그 이름, 아니면 출처
+종류(`시스템`/`스킬`)다 — 누가 걸었는지가 종류보다 쓸모 있다.
 admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부르는 기존
 이름(`commands/admin.py`의 `ADMIN_ID`)과 맞추기 위해서다.
 
@@ -522,6 +522,28 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
 
 ---
 
+## 부적 (`CharmAuraContainer`)
+
+"아이템" 시트에서 `item_type`이 `부적`인 항목은 **전장에 있는 소지자를
+기준으로, 그 아이템의 `range` 안에 있는 같은 진영 캐릭터(소지자 포함)**에게
+`passive_skill_id`("스킬_패시브" 시트)의 효과를 건다. 사거리는 소지자의 공격
+사거리가 아니라 아이템의 값이다. 본 전투에서만 발동한다(`allow_charms`).
+
+- **범위는 위치를 따라간다.** 위치를 바꾸는 세 지점 — `add_character()`,
+  `move_character_to()`, `remove_character()` — 이 모두
+  `charm_auras.refresh()`를 불러, 새로 든 대상에게는 얹고 벗어난 대상에게서는
+  걷는다. 소지자가 빠지면 그 부적도 함께 내려간다.
+- **효과는 상시 상태(`is_standing_state`)만 쓴다.** 버프 부여 같은 트리거형
+  효과는 "범위에 있는 동안"과 맞지 않고, 벗어날 때 회수·재기동 때 복원하는
+  경로가 따로 필요해진다. 상시 상태는 배치만으로 다시 계산되므로 영속화가
+  필요 없다(재기동 복원의 `add_character()`가 그대로 다시 건다). 그래서 패시브
+  행의 `trigger`/`target_type`은 읽지 않는다. 어긋난 설정은
+  `charm_config_error()`가 `[전투개시]` 시점에 admin DM으로 알린다.
+- 겹치는 부적(소지자 둘이 같은 부적)은 효과마다 따로 얹히되, 부활 하한처럼
+  `max`로 읽는 값은 중복되지 않는다.
+
+---
+
 ## 운명간섭 · 부활 횟수
 
 "캐릭터" 시트의 `revival_count`(정수)와 `fate_date`(YYYY-MM-DD) 두 컬럼이
@@ -538,10 +560,16 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
 
 ### 적용 지점
 
+`CombatStats.effective_revival_count`는 실제 부활 횟수와
+`SkillEffectRevivalCountFloor`(부적 등)가 얹은 하한 중 큰 값이다. 아래 표에서
+받는 대미지와 턴당 코스트만 이 값을 보고, 이동 코스트와 키워드 보정 사용
+자격은 실제 `revival_count`를 본다 — 부활 경험이 아니라 수치만 끌어올리는
+효과이기 때문이다.
+
 | 효과                 | 위치                                                                 |
 |--------------------|--------------------------------------------------------------------|
 | 받는 대미지 +10%/회      | `CombatStats.revival_penalty` → `command_calculator._process_damage()`가 `m_res` 바로 옆에서 `received_modifiers`에 합류 |
-| 턴당 코스트 +1 (4회 이상)  | `CombatStats.__init__`이 `_max_cost`에 한 번 반영 (`on_start_round()`가 매 라운드 이 값으로 회복) |
+| 턴당 코스트 +1 (4회 이상)  | `CombatStats[COST_PER_TURN]`이 읽을 때마다 반영 (`on_start_round()`가 매 라운드 이 값으로 회복하므로 하한 변동은 다음 라운드부터) |
 | 이동 코스트 +1 (4회 이상)  | `extensions.get_total_cost()`가 이동 파트마다 `extra_move_cost`를 얹는다     |
 
 ### 운명간섭("+" 접미사)
@@ -894,8 +922,7 @@ admin의 `[버프부여]`가 부여자 생략("시스템")을 거부하는 근�
    (`필드 아군 진영`/`필드 적군 진영`/`필드 전원`/`필드 사건 당사자`) 중
    하나로 채운다. 이 값이 그 행을 필드 효과로 만든다.
 3. 거는 방법을 정한다: admin 전용이면 여기까지, 스킬로 걸면 스킬 시트의
-   `field_effect_id_N`에, 부적으로 걸면 "아이템" 시트의 `passive_skill_id`에
-   이 id를 채운다.
+   `field_effect_id_N`에 이 id를 채운다.
 
 설정이 어긋나면 `[전투개시]` 시점에 admin DM으로 경고가 간다 — 전투를
 세우지는 않으므로 경고를 놓치면 그 효과만 조용히 빠진다.
