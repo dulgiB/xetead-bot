@@ -790,9 +790,14 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
 아니다. 호출 수를 줄이는 것이 유일한 방어선이다.
 
 **새 쓰기 경로를 만들 때는 "대상 수에 비례하는 호출"을 만들지 않는다.**
-- 같은 스프레드시트 안의 여러 셀/시트는 `values_batch_update()` 한 번으로
-  묶는다(`log_sheets._write_hp_cells()`가 "캐릭터"/"에너미" 두 시트를 한
-  요청에 담는 예). `update_cell()`은 호출마다 `values.update` 1회다.
+- 같은 스프레드시트 안의 여러 셀/시트는 `log_sheets.write_cells()` 한 번으로
+  묶는다("캐릭터"/"에너미" 두 시트를 한 요청에 담는다). `update_cell()`은
+  호출마다 `values.update` 1회다.
+- 같은 커맨드에서 따로 발생하는 쓰기도 합류시킨다 — 커맨드 처리 시점에
+  `PendingCellWrite`를 모아 `write_back_changed_hp(extra_writes=...)`로
+  넘기면 체력과 한 요청에 들어간다(키워드 보정 사용 날짜가 그렇게 탄다).
+  쓸 시점을 호출측이 잡아야 하므로, 그런 쓰기 함수는 "바로 쓰기"와 "셀만
+  만들어 돌려주기"(`load_data.build_fate_date_write()`)를 나눠 둔다.
 - 값·메모·병합처럼 종류가 다른 변경도 `spreadsheets.batchUpdate`의
   `updateCells`/`mergeCells` 요청으로 한 배열에 담으면 한 번이다
   (`field_sheet_renderer.render_public_field_sheet()`). gspread의

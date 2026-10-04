@@ -153,6 +153,48 @@ def test_write_back_changed_hp_uses_one_api_call_for_many_characters():
     assert len(enemy_ws.written) == len(enemy_names)
 
 
+def test_write_back_changed_hp_folds_extra_writes_into_the_same_call():
+    """같은 커맨드에서 함께 발생하는 다른 셀 쓰기(키워드 보정 사용 날짜 등)도
+    체력과 한 요청에 묶여야 한다 — 따로 보내면 커맨드당 쓰기가 하나 더 는다."""
+    ctx = _make_context_with_two_characters()
+    spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
+    entries = [
+        BattleLogEntry(
+            target_name="아군1",
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 10",
+            value=10,
+        )
+    ]
+    fate_write = log_sheets.PendingCellWrite(
+        worksheet_title="캐릭터", row=3, col=2, value="2026-09-09"
+    )
+
+    log_sheets.write_back_changed_hp(
+        spreadsheet, ctx, entries, extra_writes=[fate_write]
+    )
+
+    assert spreadsheet.values_batch_update_call_count == 1
+    ws = spreadsheet.worksheet("캐릭터")
+    assert (3, 2, "2026-09-09") in ws.written
+    assert len(ws.written) == 2
+
+
+def test_write_back_changed_hp_sends_extra_writes_without_hp_changes():
+    """체력이 하나도 바뀌지 않은 커맨드에서도 함께 묶은 쓰기는 나가야 한다 —
+    대미지 없이 키워드 보정만 쓰는 커맨드가 있다."""
+    ctx = _make_context_with_two_characters()
+    spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
+    fate_write = log_sheets.PendingCellWrite(
+        worksheet_title="캐릭터", row=2, col=2, value="2026-09-09"
+    )
+
+    log_sheets.write_back_changed_hp(spreadsheet, ctx, [], extra_writes=[fate_write])
+
+    assert spreadsheet.values_batch_update_call_count == 1
+    assert (2, 2, "2026-09-09") in spreadsheet.worksheet("캐릭터").written
+
+
 def test_write_back_changed_hp_writes_zero_for_eliminated_character():
     """라운드 종료 시 체력 0으로 이미 제거된 캐릭터는 시트에 0으로
     기록되어야 한다(더 이상 context.characters에 없다는 것 자체가

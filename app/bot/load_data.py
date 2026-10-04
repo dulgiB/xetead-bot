@@ -21,6 +21,7 @@ from spreadsheets.models.quest import (
 )
 from utils.spreadsheet_bool import parse_spreadsheet_bool
 
+from bot.log_sheets import PendingCellWrite, write_cells
 from bot.sheet_cache import SheetCache
 
 if TYPE_CHECKING:
@@ -648,19 +649,38 @@ def update_character_fate_date(
     "fate_date" 컬럼이 없는 시트에서는 경고만 남기고 넘어간다(그 경우
     운명간섭은 항상 "미사용"으로 읽혀 제한이 걸리지 않는다).
     """
-    ws, header, rows = _load_character_sheet(spreadsheet, cache)
+    write = build_fate_date_write(spreadsheet, char_name, today, cache)
+    if write is None:
+        return
+    write_cells(spreadsheet, [write], cache, "운명간섭 사용 기록")
+
+
+def build_fate_date_write(
+    spreadsheet: gspread.Spreadsheet,
+    char_name: str,
+    today: str,
+    cache: Optional[SheetCache] = None,
+) -> Optional[PendingCellWrite]:
+    """update_character_fate_date()가 쓸 셀 하나를 만들어 돌려준다(쓰지는
+    않는다).
+
+    같은 커맨드의 체력 반영과 한 요청으로 묶으려면 쓰기 시점을 호출측이
+    잡아야 한다. "fate_date" 컬럼이 없는 시트에서는 None(그 경우 운명간섭은
+    항상 "미사용"으로 읽혀 제한이 걸리지 않는다).
+    """
+    _ws, header, rows = _load_character_sheet(spreadsheet, cache)
     if "fate_date" not in header:
         logger.warning(
             "캐릭터 시트에 'fate_date' 컬럼이 없어 운명간섭 사용 기록을 건너뜁니다"
         )
-        return
+        return None
     fate_col = header.index("fate_date") + 1
     row_number = _find_character_row_number(header, rows, char_name)
-    # update_character_quest_date()와 같은 이유로 raw로 기록하고, 컬럼
-    # 타입도 TEXT여야 한다.
-    ws.update([[today]], gspread.utils.rowcol_to_a1(row_number, fate_col))
-    if cache is not None:
-        cache.invalidate("캐릭터")
+    # update_character_quest_date()와 같은 이유로 raw로 기록하고(write_cells가
+    # RAW를 쓴다), 컬럼 타입도 TEXT여야 한다.
+    return PendingCellWrite(
+        worksheet_title="캐릭터", row=row_number, col=fate_col, value=today
+    )
 
 
 def update_character_curr_hp(
