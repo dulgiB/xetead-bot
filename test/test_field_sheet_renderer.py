@@ -200,7 +200,7 @@ def test_build_faction_block_pushes_remaining_slots_forward_after_removal():
         ctx.add_character(get_test_preset(name), FactionType.ALLY, column)
     ctx.remove_character(CharacterId("A"))  # 슬롯0을 비움 → {1: B, 2: C}
 
-    grid, _declare_text, _notes = _build_faction_block(
+    grid, _declare_text, _notes, _merges = _build_faction_block(
         ctx,
         FactionType.ALLY,
         main_row_start=_ALLY_MAIN_ROW_START,
@@ -240,7 +240,7 @@ def test_build_faction_block_joins_declared_commands_into_single_text():
         for enemy_id in enemy_ids
     }
 
-    _grid, declare_text, _notes = _build_faction_block(
+    _grid, declare_text, _notes, _merges = _build_faction_block(
         ctx,
         FactionType.ENEMY,
         main_row_start=_ALLY_MAIN_ROW_START,
@@ -343,9 +343,9 @@ def test_layout_rows_follow_the_header_row():
     assert EXPORT_BOTTOM_ROW > _ALLY_BLOCK_BOTTOM
 
 
-def test_multi_column_character_uses_same_row_in_every_column():
-    """여러 열에 걸친 에너미는 걸친 열 전부에서 같은 행에 그려져야 한다 —
-    열마다 따로 앞으로 당기면 덩치가 끊겨 보인다."""
+def test_multi_column_character_is_written_once_and_merged():
+    """행도 걸친 열 전부에서 같아야 한다 — 열마다 따로 앞으로 당기면 덩치가
+    끊겨 보인다."""
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     # 0열에만 다른 적이 하나 있어, 열마다 따로 앞으로 당기면 0열에서는 둘째
     # 줄, 1열에서는 첫째 줄에 놓여 어긋나는 배치다.
@@ -356,7 +356,7 @@ def test_multi_column_character_uses_same_row_in_every_column():
         get_test_preset("거대적", span=2), FactionType.ENEMY, BattlefieldColumnIndex(0)
     )
 
-    grid, _declare_text, _notes = _build_faction_block(
+    grid, _declare_text, _notes, merges = _build_faction_block(
         ctx,
         FactionType.ENEMY,
         main_row_start=_ENEMY_MAIN_ROW_START,
@@ -364,11 +364,36 @@ def test_multi_column_character_uses_same_row_in_every_column():
         declared={},
     )
 
-    # 블록 최하단(슬롯 0)이 grid의 마지막 3행이다.
-    name_rows = [row for row in grid if any("거대적" in cell for cell in row)]
+    name_rows = [
+        index for index, row in enumerate(grid) if any("거대적" in cell for cell in row)
+    ]
     assert len(name_rows) == 1
-    assert "거대적" in name_rows[0][0]
-    assert "거대적" in name_rows[0][1]
+    # 왼쪽 끝(B=0번째) 칸에만 값이 들어가고 오른쪽 칸은 비어 있다.
+    assert "거대적" in grid[name_rows[0]][0]
+    assert grid[name_rows[0]][1] == ""
+
+    # 이름/스탯/버프 세 줄이 B~C(2~3열)로 병합된다.
+    assert len(merges) == 3
+    assert {(first, last) for _row, first, last in merges} == {(2, 3)}
+    merged_rows = sorted(row for row, _first, _last in merges)
+    assert merged_rows == list(range(merged_rows[0], merged_rows[0] + 3))
+
+
+def test_single_column_character_is_not_merged():
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("적 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+
+    _grid, _declare_text, _notes, merges = _build_faction_block(
+        ctx,
+        FactionType.ENEMY,
+        main_row_start=_ENEMY_MAIN_ROW_START,
+        direction=-1,
+        declared={},
+    )
+
+    assert merges == []
 
 
 class _FakeFieldWorksheet:
@@ -487,3 +512,48 @@ def test_render_public_field_sheet_clears_stale_notes_in_the_grid():
     # 아무도 없는 7열(H) 적군 블록 칸.
     empty_cell = rowcol_to_a1(_ENEMY_MAIN_ROW_START + 2, 8)
     assert cells[empty_cell] == ("", "")
+
+
+def test_render_public_field_sheet_merges_multi_column_enemy_in_one_call():
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("거대적", span=3), FactionType.ENEMY, BattlefieldColumnIndex(1)
+    )
+    spreadsheet = _RecordingFieldSpreadsheet()
+
+    render_public_field_sheet(
+        spreadsheet,
+        ctx,
+        round_n=1,
+        phase="적 선언",
+        enemy_declared={},
+    )
+
+    assert len(spreadsheet.bodies) == 1
+    requests = spreadsheet.bodies[0]["requests"]
+
+    # 적군 격자(B~H)를 먼저 풀고 나서 병합해야 이전 범위가 남지 않는다.
+    unmerge_indexes = [
+        index
+        for index, request in enumerate(requests)
+        if "unmergeCells" in request
+        and request["unmergeCells"]["range"]["startRowIndex"] == _ENEMY_BLOCK_TOP - 1
+    ]
+    assert len(unmerge_indexes) == 1
+
+    # 2열(C)에 선 span 3짜리라 이름/스탯/버프 세 줄이 C~E로 병합된다.
+    enemy_merges = [
+        (index, request["mergeCells"]["range"])
+        for index, request in enumerate(requests)
+        if "mergeCells" in request
+        and request["mergeCells"]["range"]["startColumnIndex"] == 2
+        and request["mergeCells"]["range"]["endColumnIndex"] == 5
+    ]
+    assert len(enemy_merges) == 3
+    assert all(index > unmerge_indexes[0] for index, _range in enemy_merges)
+
+    # 값은 왼쪽 끝 열(C)에만 들어가고 나머지는 비어 있다.
+    cells = _written_cells(spreadsheet.bodies[0])
+    name_cells = {a1 for a1, (value, _) in cells.items() if "거대적" in value}
+    assert len(name_cells) == 1
+    assert next(iter(name_cells)).startswith("C")
