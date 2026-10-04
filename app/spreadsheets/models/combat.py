@@ -21,6 +21,9 @@ class CombatCharacterDataFromSpreadsheet:
     skill_id_list: list[str]
     # "캐릭터"/"에너미" 시트 공통 체크박스. 공개 노출 지점에서 체력을 "?/?"로 가린다.
     hide_hp: bool = False
+    # "에너미" 시트 전용 컬럼. 전장에서 차지하는 열 수로, 배치 위치는 그중
+    # 가장 왼쪽 열이다.
+    span: int = 1
     # "캐릭터" 시트 전용 컬럼이며 GM이 직접 관리한다. 컬럼이 없는 "에너미"는
     # 0으로 채워져 부활 관련 수치 효과가 전혀 붙지 않는다.
     revival_count: int = 0
@@ -51,6 +54,7 @@ class CombatCharacterDataFromSpreadsheet:
                 for i in range(MAX_SKILL_SLOT_COUNT)
             ],
             hide_hp=parse_spreadsheet_bool(raw.get("hide_hp", False)),
+            span=max(1, int(raw.get("span", 1) or 1)),
             revival_count=int(raw.get("revival_count", 0) or 0),
             fate_date=str(raw.get("fate_date", "") or ""),
         )

@@ -1,6 +1,5 @@
 from typing import TYPE_CHECKING, Callable, Optional
 
-from utils.battle_helpers import is_reachable
 
 from battle.core.command_calculator import CommandPartCalculator, build_log_entries
 from battle.core.commands.models import BattleLogEntry
@@ -252,11 +251,11 @@ class BuffContainer:
             if event.is_applied(self._context, holder, attacker_or_target):
                 event.apply(holder, attacker_or_target, calculator, effect_seq_number)
 
-    def _is_in_range_of(self, holder_id: CharacterId, target_pos) -> bool:
+    def _is_in_range_of(self, holder_id: CharacterId, target_id: CharacterId) -> bool:
+        """홀더의 사거리 안에 target이 있는지."""
         holder_char = self._context.characters[holder_id]
-        holder_pos = self._context.find_character_position(holder_id)
         holder_range = holder_char.status[CombatStatType.RANGE]
-        return is_reachable(holder_pos, target_pos, holder_range)
+        return self._context.can_reach(holder_id, target_id, holder_range)
 
     def on_enemy_move(
         self,
@@ -312,14 +311,11 @@ class BuffContainer:
         if damaged_char is None:
             return
         self._context.damaged_this_round.add(damaged_char_id)
-        damaged_pos = self._context.find_character_position(damaged_char_id)
 
         event_pairs = self._collect_reactive_event_pairs(
             BuffApplyTiming.ALLY_DAMAGED,
             damaged_char.faction,
-            lambda holder_id: (
-                self._context.find_character_position(holder_id) == damaged_pos
-            ),
+            lambda holder_id: self._context.shares_column(holder_id, damaged_char_id),
             subject_faction=damaged_char.faction,
         )
         self._apply_reactive_events(
@@ -344,12 +340,10 @@ class BuffContainer:
         damaged_char = self._context.characters.get(damaged_char_id)
         if damaged_char is None or attacker_id not in self._context.characters:
             return
-        damaged_pos = self._context.find_character_position(damaged_char_id)
-
         event_pairs = self._collect_reactive_event_pairs(
             BuffApplyTiming.ALLY_IN_RANGE_DAMAGED,
             damaged_char.faction,
-            lambda holder_id: self._is_in_range_of(holder_id, damaged_pos),
+            lambda holder_id: self._is_in_range_of(holder_id, damaged_char_id),
             subject_faction=damaged_char.faction,
         )
         self._apply_reactive_events(
@@ -374,12 +368,10 @@ class BuffContainer:
         attacker_char = self._context.characters.get(attacker_id)
         if attacker_char is None or target_id not in self._context.characters:
             return
-        attacker_pos = self._context.find_character_position(attacker_id)
-
         event_pairs = self._collect_reactive_event_pairs(
             BuffApplyTiming.ALLY_IN_RANGE_ATTACKED,
             attacker_char.faction,
-            lambda holder_id: self._is_in_range_of(holder_id, attacker_pos),
+            lambda holder_id: self._is_in_range_of(holder_id, attacker_id),
             subject_faction=attacker_char.faction,
         )
         self._apply_reactive_events(

@@ -15,6 +15,15 @@ def error_too_many_characters(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})에 이미 {CHARACTER_PER_COLUMN}명이 위치하고 있어 이동할 수 없습니다."
 
 
+def error_span_out_of_board(pos: BattlefieldColumnIndex, span: int) -> str:
+    """지정하는 위치는 언제나 가장 왼쪽 열이므로, 왼쪽 끝이 아니라 span이
+    문제라는 것을 문구에 드러낸다."""
+    return (
+        f"{span}개 열을 차지하는 대상은 지정한 위치({pos})에서 전장 밖으로 "
+        f"벗어나 배치할 수 없습니다."
+    )
+
+
 def error_target_does_not_exist(target_id: CharacterId) -> str:
     return f"지정한 대상({target_id.name})을 찾을 수 없습니다."
 

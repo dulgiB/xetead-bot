@@ -343,6 +343,34 @@ def test_layout_rows_follow_the_header_row():
     assert EXPORT_BOTTOM_ROW > _ALLY_BLOCK_BOTTOM
 
 
+def test_multi_column_character_uses_same_row_in_every_column():
+    """여러 열에 걸친 에너미는 걸친 열 전부에서 같은 행에 그려져야 한다 —
+    열마다 따로 앞으로 당기면 덩치가 끊겨 보인다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    # 0열에만 다른 적이 하나 있어, 열마다 따로 앞으로 당기면 0열에서는 둘째
+    # 줄, 1열에서는 첫째 줄에 놓여 어긋나는 배치다.
+    ctx.add_character(
+        get_test_preset("선점"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("거대적", span=2), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+
+    grid, _declare_text, _notes = _build_faction_block(
+        ctx,
+        FactionType.ENEMY,
+        main_row_start=_ENEMY_MAIN_ROW_START,
+        direction=-1,
+        declared={},
+    )
+
+    # 블록 최하단(슬롯 0)이 grid의 마지막 3행이다.
+    name_rows = [row for row in grid if any("거대적" in cell for cell in row)]
+    assert len(name_rows) == 1
+    assert "거대적" in name_rows[0][0]
+    assert "거대적" in name_rows[0][1]
+
+
 class _FakeFieldWorksheet:
     id = 4242
     title = "필드"

@@ -383,6 +383,50 @@ def _charm_merge_requests(
     return requests
 
 
+def _assign_block_slots(
+    context: "BattlefieldContext", faction: FactionType
+) -> dict[BattlefieldColumnIndex, dict[int, CharacterId]]:
+    """진영 블록에서 각 캐릭터가 설 행(슬롯 0~2)을 열별로 정한다.
+
+    position_map의 슬롯 번호를 그대로 쓰지 않는 이유는 두 가지다. 캐릭터가
+    빠지면 그 슬롯 키만 pop되므로(슬롯0이 빠지면 {1: b, 2: c}) 번호를 그대로
+    행에 매핑하면 앞 칸이 빈칸으로 보이고, 반대로 열마다 따로 앞으로 당기면
+    여러 열에 걸친 캐릭터가 열마다 다른 행에 그려져 덩치가 끊겨 보인다.
+    그래서 왼쪽 열부터 훑으며 캐릭터마다 "자기가 걸친 열 전부에서 비어 있는
+    가장 앞 행"을 한 번만 잡아, 다열 캐릭터가 모든 열에서 같은 행에 놓이게
+    한다."""
+    assigned: dict[BattlefieldColumnIndex, dict[int, CharacterId]] = {
+        column: {} for column in _BATTLEFIELD_COLUMNS
+    }
+    placed: set[CharacterId] = set()
+
+    for column in _BATTLEFIELD_COLUMNS:
+        slots = context.position_map[faction][column]
+        for char_id in (slots[i] for i in sorted(slots.keys())):
+            if char_id in placed:
+                continue
+            columns = [
+                col
+                for col in context.find_character_columns(char_id)
+                if col in assigned
+            ]
+            row = next(
+                (
+                    candidate
+                    for candidate in range(CHARACTER_PER_COLUMN)
+                    if all(candidate not in assigned[col] for col in columns)
+                ),
+                None,
+            )
+            if row is None:
+                continue
+            for col in columns:
+                assigned[col][row] = char_id
+            placed.add(char_id)
+
+    return assigned
+
+
 def _build_faction_block(
     context: "BattlefieldContext",
     faction: FactionType,
@@ -405,13 +449,10 @@ def _build_faction_block(
 
     grid = [["" for _ in range(_COLUMN_COUNT)] for _ in range(_FACTION_BLOCK_HEIGHT)]
     notes: dict[str, str] = {}
+    occupants_by_column = _assign_block_slots(context, faction)
 
     for col_idx, column in enumerate(_BATTLEFIELD_COLUMNS):
-        slots = context.position_map[faction][column]
-        # 캐릭터가 빠지면 그 슬롯 키만 pop되므로(슬롯0이 빠지면 {1: b, 2: c}),
-        # 인덱스를 그대로 행에 매핑하면 앞 칸이 빈칸으로 보인다 — 슬롯 번호와
-        # 무관하게 남은 순서대로 앞부터 채운다.
-        occupants = [slots[i] for i in sorted(slots.keys())]
+        occupants = occupants_by_column[column]
         sheet_col = col_idx + 2  # B=2
 
         for slot in range(CHARACTER_PER_COLUMN):
@@ -420,10 +461,10 @@ def _build_faction_block(
             buff_row = name_row + 2
             buff_cell = rowcol_to_a1(buff_row, sheet_col)
 
-            if slot >= len(occupants):
+            char_id = occupants.get(slot)
+            if char_id is None:
                 notes[buff_cell] = ""
                 continue
-            char_id = occupants[slot]
 
             char = context.characters[char_id]
             grid[name_row - block_top][col_idx] = _format_name_line(char)

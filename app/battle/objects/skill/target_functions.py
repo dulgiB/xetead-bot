@@ -232,8 +232,13 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
             raise CommandValidationError(error_invalid_command_format())
 
         if columns:
-            target_pos = self.context.find_character_position(characters[0])
-            if abs(target_pos.value - columns[0].value) != 1:
+            # 다열 대상은 점유 열 어느 쪽에든 붙어 있으면 인접으로 본다
+            # (점유 열 자체를 지정하는 것은 "이동 없음"이라 거부한다).
+            target_columns = self.context.find_character_columns(characters[0])
+            distance = min(
+                abs(column.value - columns[0].value) for column in target_columns
+            )
+            if distance != 1:
                 raise CommandValidationError(error_invalid_move_destination(columns[0]))
 
         return characters

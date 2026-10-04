@@ -41,6 +41,7 @@ def get_test_preset(
     revival_count: int = 0,
     fate_date: str = "",
     hide_hp: bool = False,
+    span: int = 1,
 ) -> CombatCharacterDataFromSpreadsheet:
     return CombatCharacterDataFromSpreadsheet(
         name=character_name,
@@ -59,6 +60,7 @@ def get_test_preset(
             skill_3_id if skill_3_id else "",
         ],
         hide_hp=hide_hp,
+        span=span,
         revival_count=revival_count,
         fate_date=fate_date,
     )
