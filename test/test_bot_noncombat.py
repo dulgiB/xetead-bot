@@ -1906,5 +1906,6 @@ def test_investigation_start_in_shared_thread_tracks_all_characters(monkeypatch)
     dispatch("user2", 2, session.menu_post_id, "[광장]", "public", [])
 
     overview_post = mastodon.status_post_calls[-1]
-    assert overview_post["status"].startswith("@user1 @user2 ")
+    # 답글을 단 user2가 맨 앞이다.
+    assert overview_post["status"].startswith("@user2 @user1 ")
     assert session.quest_id == "항구 마을_운반"
