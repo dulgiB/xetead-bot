@@ -122,9 +122,11 @@ def test_ally_command_reply_and_phase_post_mention_world(monkeypatch):
     )
 
     posts = mastodon.status_post_calls[before:]
-    # 커맨드 결과 답글(계산식 CW)과 적 차례로 넘어가는 공지
+    # 커맨드 결과 답글(계산식 CW)과 적 차례로 넘어가는 공지. 커맨드 결과는
+    # 답글을 단 아군이 맨 앞이다.
     assert len(posts) >= 2
-    assert all(p["status"].startswith(_PREFIX) for p in posts)
+    assert posts[0]["status"].startswith(f"@{_ALLY_ACCT} @{WORLD_MASTODON_ID} ")
+    assert all(p["status"].startswith(_PREFIX) for p in posts[1:])
 
 
 def test_world_proxy_reply_mentions_participants_too(monkeypatch):

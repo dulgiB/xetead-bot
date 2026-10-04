@@ -499,6 +499,8 @@ class MastodonBotListener(StreamListener):
         # on_notification()은 여기 넣기만 하고 즉시 반환한다 — 실제 처리는
         # _notification_worker() 스레드가 순서대로 꺼내 수행한다.
         self._notification_queue: "queue.Queue[dict]" = queue.Queue()
+        # 지금 처리 중인 멘션 게시물 id → 그 게시물에 답할 때 멘션할 계정.
+        self._reply_mentions: dict[int, list[str]] = {}
 
     def on_abort(self, err: Exception) -> None:
         """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
@@ -623,6 +625,7 @@ class MastodonBotListener(StreamListener):
                 for m in status.get("mentions", [])
                 if m["acct"] != self._bot_acct
             ]
+            self._reply_mentions = {status_id: [acct, *mentions]}
             # 선언 시점의 Optional은 아래 except가 로그에 None을 안전하게
             # 쓰기 위한 것일 뿐, 여기 도달했다면 항상 채워져 있다.
             assert acct is not None
@@ -1400,6 +1403,20 @@ class MastodonBotListener(StreamListener):
             except Exception:
                 logger.exception("admin DM 전송 실패")
 
+    def _mention_prefix(
+        self, in_reply_to_id: int, acct: str, mention_accts: Optional[list[str]]
+    ) -> str:
+        """답글 맨 앞의 멘션. 웹 UI에서 답글을 달 때와 같이 원 게시물의
+        작성자, 그 게시물의 멘션 순으로 스레드 참여자 전원을 멘션하고,
+        mention_accts는 그 뒤에 덧붙인다."""
+        thread = self._reply_mentions.get(in_reply_to_id, [acct])
+        accts = [
+            a
+            for a in dict.fromkeys([*thread, *(mention_accts or [])])
+            if a != self._bot_acct
+        ]
+        return "".join(f"@{a} " for a in accts)
+
     def _reply(
         self,
         in_reply_to_id: int,
@@ -1415,10 +1432,9 @@ class MastodonBotListener(StreamListener):
         게시물 status dict — 이 답글에 이어지는 후속 게시물(다음 라운드
         공지 등)이 스레드 맨 끝에 달리게 하기 위함이다.
 
-        mention_accts를 주면 발신자(acct) 한 명 대신 그 목록 전원을 앞에
-        멘션한다 (대련의 참여자 전원 멘션과 동일한 목적 — 여러
-        캐릭터가 함께 엮인 결과를 모두에게 알려야 할 때 사용)."""
-        mention_prefix = _reply_mention_prefix(acct, mention_accts)
+        멘션은 _mention_prefix()가 정한다. mention_accts는 스레드 참여자가
+        아니어도 결과를 알려야 할 계정(대련 참여자 전원 등)이다."""
+        mention_prefix = self._mention_prefix(in_reply_to_id, acct, mention_accts)
         chunks = _split_for_post(text, len(mention_prefix))
         status = self._mastodon.status_post(
             f"{mention_prefix}{chunks[0]}",
@@ -1472,7 +1488,7 @@ class MastodonBotListener(StreamListener):
             )
             return status, status
 
-        mention_prefix = _reply_mention_prefix(acct, mention_accts)
+        mention_prefix = self._mention_prefix(in_reply_to_id, acct, mention_accts)
         # spoiler_text에 " (N/N)" 접미사가 붙을 수 있어, 먼저 접미사 없이
         # 나눠 조각 수를 가늠한 뒤 그 길이만큼 예산을 줄여 다시 나눈다.
         provisional_chunks = _split_for_post(calc_text, len(mention_prefix) + len(text))
@@ -1543,7 +1559,7 @@ class MastodonBotListener(StreamListener):
             reply_status["id"],
             visibility,
             calc_text,
-            prefix=_reply_mention_prefix(acct, mention_accts),
+            prefix=self._mention_prefix(in_reply_to_id, acct, mention_accts),
         )
         return reply_status, last_status or reply_status
 
@@ -1612,12 +1628,6 @@ class MastodonBotListener(StreamListener):
             calc_status = self._mastodon.status_post(f"{prefix}{chunk}", **post_kwargs)
             reply_to = calc_status["id"]
         return calc_status
-
-
-def _reply_mention_prefix(acct: str, mention_accts: Optional[list[str]]) -> str:
-    if mention_accts:
-        return " ".join(f"@{a}" for a in mention_accts) + " "
-    return f"@{acct} "
 
 
 def _practice_mention_accts(ps: PracticeBattleState, sender: str) -> list[str]:
