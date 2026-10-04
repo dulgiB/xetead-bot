@@ -57,7 +57,10 @@ from bot.battle_reply_text import (
     with_persistent_hp_footnote,
 )
 from bot.commands.character import mark_fate_used_if_needed
-from bot.field_sheet_renderer import render_public_field_sheet
+from bot.field_sheet_renderer import (
+    CHARM_ROW_COUNT,
+    render_public_field_sheet,
+)
 from bot.load_data import (
     find_unreachable_enemy_buffs,
     load_battle_data,
@@ -845,6 +848,26 @@ def _check_charm_config(state: "BotState") -> Optional[str]:
     return f"◊ '아이템' 시트의 부적 설정에 문제가 있습니다.\n{lines}"
 
 
+def _check_charm_row_capacity(state: "BotState") -> Optional[str]:
+    """이 전투에 배치된 아군 소지자의 부적이 공개 "필드" 시트의 부적 행 수를
+    넘으면 넘친 부적은 시트에 보이지 않는다. 효과는 그대로 걸리므로 경고만
+    한다."""
+    assert state.session is not None
+    context = state.session.context
+    labels = [
+        f"{aura.item.id}[{aura.holder.name}]"
+        for aura in context.charm_auras.as_list()
+        if context.characters[aura.holder].faction == FactionType.ALLY
+    ]
+    if len(labels) <= CHARM_ROW_COUNT:
+        return None
+    return (
+        f"◊ 이 전투의 부적 {len(labels)}개({', '.join(labels)}) 중 공개 '필드'"
+        f" 시트에는 {CHARM_ROW_COUNT}개만 표시됩니다. 효과는 모두 적용됩니다."
+        " 템플릿의 부적 행과 코드의 CHARM_ROW_COUNT를 함께 늘려 주세요."
+    )
+
+
 def _cmd_battle_start(
     state: "BotState", battle_name: Optional[str] = None
 ) -> AdminCommandResult:
@@ -910,6 +933,7 @@ def _cmd_battle_start(
 
     # 3. 전투 시작
     state.session.start()
+    charm_row_warning = _check_charm_row_capacity(state)
     state.session.name = battle_name
 
     # 4. 필드 시트 저장
@@ -964,7 +988,12 @@ def _cmd_battle_start(
         game_post_calc_text=game_post_calc,
         admin_dm_text="\n\n".join(
             warning
-            for warning in (fate_config_warning, field_effect_warning, charm_warning)
+            for warning in (
+                fate_config_warning,
+                field_effect_warning,
+                charm_warning,
+                charm_row_warning,
+            )
             if warning
         )
         or None,

@@ -46,6 +46,9 @@ class CharmAuraContainer:
         self._auras: dict[tuple[CharacterId, str], CharmAura] = {}
         self._applied: dict[tuple[CharacterId, str], set[CharacterId]] = {}
 
+    def as_list(self) -> list[CharmAura]:
+        return list(self._auras.values())
+
     def register_holder(self, holder: CharacterId) -> None:
         """holder가 지닌 부적을 모두 등록한다."""
         for item_id in self._context.inventory.items_for_character(holder.name):
