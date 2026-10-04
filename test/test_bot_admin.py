@@ -303,6 +303,31 @@ def test_advance_phase_system_error_is_generic_and_logged(monkeypatch, caplog):
     )
 
 
+def test_advance_phase_adopts_hp_edited_on_sheet_before_transition(monkeypatch):
+    """GM이 "캐릭터" 시트에서 고친 체력은 다음 페이즈 전환 때 전장에 들어와,
+    그 전환의 정산부터 고친 체력 위에서 돌아야 한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0))
+        ]
+    )
+    _cmd_battle_start(state)
+    edited_row = log_sheets._HpRow(
+        worksheet=None, row=2, hp_col=2, curr_hp=40, max_hp=100
+    )
+    monkeypatch.setattr(
+        log_sheets,
+        "_load_hp_rows",
+        lambda spreadsheet, cache=None: {"유효 캐릭터": edited_row},
+    )
+
+    result = _cmd_advance_phase(state)
+
+    char = state.session.context.characters[CharacterId("유효 캐릭터")]
+    assert char.status.curr_hp == 40
+    assert "시트 체력 반영: 유효 캐릭터 100 → 40" in result.reply_text
+
+
 def test_advance_phase_always_marks_field_image():
     """필드 현황은 str 대신 이미지로만 표시하므로, 모든 페이즈 전환
     게시물(ALLY_ACTION, ENEMY_POST_ACTION, STANDBY 진입 모두)에 이미지를

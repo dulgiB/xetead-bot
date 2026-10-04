@@ -26,6 +26,7 @@ import gspread
 from gspread.utils import ValueInputOption
 
 from battle.core.commands.models import BattleLogEntry
+from battle.objects.define import CombatStatType
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 
@@ -398,6 +399,7 @@ def write_back_changed_hp(
     context: "BattlefieldContext",
     entries: list[BattleLogEntry],
     cache: Optional[SheetCache] = None,
+    written_hp: Optional[dict[str, int]] = None,
 ) -> None:
     """entries 중 대미지/회복이 발생한 대상의 curr_hp를 "캐릭터" 시트에 반영한다.
 
@@ -421,7 +423,9 @@ def write_back_changed_hp(
         for entry in entries
         if entry.result.startswith("대미지 ") or entry.result.startswith("회복 ")
     }
-    write_back_character_hp(spreadsheet, context, changed_names, cache=cache)
+    write_back_character_hp(
+        spreadsheet, context, changed_names, cache=cache, written_hp=written_hp
+    )
 
 
 def write_back_character_hp(
@@ -429,9 +433,11 @@ def write_back_character_hp(
     context: "BattlefieldContext",
     names: Iterable[str],
     cache: Optional[SheetCache] = None,
+    written_hp: Optional[dict[str, int]] = None,
 ) -> set[str]:
     """names 캐릭터들의 전장 체력을 "캐릭터"/"에너미" 시트 curr_hp에 쓰고,
-    실제로 쓴 이름을 반환한다.
+    실제로 쓴 이름을 반환한다. `written_hp`가 주어지면 쓴 값을 거기에도
+    남긴다(sync_hp_from_sheet() 참고).
 
     write_back_changed_hp()와 같은 이유로 예외를 위로 전파하지 않는다.
     """
@@ -462,9 +468,58 @@ def write_back_character_hp(
         try:
             hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, curr_hp)
             written.add(name)
+            if written_hp is not None:
+                written_hp[name] = curr_hp
         except Exception:
             logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
     return written
+
+
+@dataclass(frozen=True)
+class HpSyncChange:
+    """sync_hp_from_sheet()가 시트 값으로 바꾼 전장 체력 하나."""
+
+    name: str
+    before: int
+    after: int
+
+
+def sync_hp_from_sheet(
+    spreadsheet: gspread.Spreadsheet,
+    context: "BattlefieldContext",
+    written_hp: dict[str, int],
+    cache: Optional[SheetCache] = None,
+) -> list[HpSyncChange]:
+    """GM이 "캐릭터"/"에너미" 시트에서 고친 체력을 전장에 들인다.
+
+    시트 값이 `written_hp`(봇이 마지막으로 읽거나 쓴 값)와 다를 때만
+    채택한다. 전장 체력과 비교하면 안 된다 — 시트 쓰기가 실패한 캐릭터는
+    시트가 낡은 값이라, 그 값으로 덮으면 이미 정산된 대미지가 되돌려진다.
+    기준값이 없는 캐릭터는 지금 시트 값을 기준으로 삼기만 한다.
+
+    write_back_changed_hp()와 같은 이유로 예외를 위로 전파하지 않는다.
+    """
+    try:
+        hp_rows = _load_hp_rows(spreadsheet, cache)
+    except Exception:
+        logger.exception("시트 체력 동기화 대상 조회 실패")
+        return []
+
+    changes: list[HpSyncChange] = []
+    for char_id, char in context.characters.items():
+        hp_row = hp_rows.get(char_id.name)
+        if hp_row is None or hp_row.curr_hp is None:
+            continue
+        sheet_hp = hp_row.curr_hp
+        known_hp = written_hp.get(char_id.name)
+        written_hp[char_id.name] = sheet_hp
+        if known_hp is None or known_hp == sheet_hp:
+            continue
+        before = char.status.curr_hp
+        char.status.curr_hp = max(0, min(sheet_hp, char.status[CombatStatType.MAX_HP]))
+        if char.status.curr_hp != before:
+            changes.append(HpSyncChange(char_id.name, before, char.status.curr_hp))
+    return changes
 
 
 # 동시에 최대 1개 슬롯만 진행되는 배틀타입 — field_id로 행을 못 찾으면 같은
