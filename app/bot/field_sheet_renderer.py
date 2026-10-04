@@ -12,7 +12,9 @@
 
 - H-9 ~ H-1행: 적군 캐릭터 3슬롯 블록. H에 바로 인접한 3행이 슬롯0(메인)이고,
   슬롯이 늘어날수록 H에서 멀어지며 위로 쌓인다.
-- H+1 ~ H+9행: 아군 캐릭터 3슬롯 블록. 슬롯이 늘어날수록 아래로 쌓인다.
+- H+1행부터 `CHARM_ROW_COUNT`행: 부적 행. 부적 하나가 행 하나를 차지하며,
+  소지자 열 ± 부적 사거리를 병합해 이름을 적고 효과는 메모에 넣는다.
+- 그 아래 9행: 아군 캐릭터 3슬롯 블록. 슬롯이 늘어날수록 아래로 쌓인다.
 - 각 블록 옆 J:K 열은 병합된 셀 하나다 — 선언 내용을 "이름 [커맨드]" 줄
   단위로 `\n`을 이어붙여 그 한 셀에 통째로 쓰므로, 적 수가 많아도 그리드
   구조가 깨지지 않는다.
@@ -20,7 +22,7 @@
 
 J:K 병합은 `ensure_merged=True`로 호출했을 때만 수행한다 — 구조적 변경이라
 값 쓰기와 별개의 API 호출이 필요하고, 전투 시작 시 한 번 병합해 두면 시트에
-그대로 남는다.
+그대로 남는다. 부적 행의 병합은 소지자가 움직이면 바뀌므로 매번 다시 한다.
 
 "전투 이름" 칸은 `battle_name`이 주어졌을 때만 갱신한다. 병합된 셀은 좌상단
 셀 하나에만 값을 써도 정상 반영된다.
@@ -90,14 +92,19 @@ _ENEMY_BLOCK_TOP = _HEADER_ROW - _FACTION_BLOCK_HEIGHT  # 10
 _ENEMY_MAIN_ROW_START = _HEADER_ROW - 3  # 16 (슬롯0, 헤더에 바로 인접)
 _ENEMY_BLOCK_BOTTOM = _HEADER_ROW - 1  # 18
 
-_ALLY_MAIN_ROW_START = _HEADER_ROW + 1  # 20 (슬롯0, 헤더에 바로 인접)
-_ALLY_BLOCK_BOTTOM = _HEADER_ROW + _FACTION_BLOCK_HEIGHT  # 28
+# 템플릿에 만들어 둔 부적 행 수. 동시에 표시할 수 있는 부적 수의 상한이며,
+# 템플릿의 행 수와 다르면 그 아래 아군 블록이 통째로 어긋난다.
+CHARM_ROW_COUNT = 1
+_CHARM_ROW_START = _HEADER_ROW + 1  # 20
 
-_DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J10:K18 / J20:K28)
+_ALLY_MAIN_ROW_START = _CHARM_ROW_START + CHARM_ROW_COUNT  # 21 (슬롯0)
+_ALLY_BLOCK_BOTTOM = _ALLY_MAIN_ROW_START + _FACTION_BLOCK_HEIGHT - 1  # 29
+
+_DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J10:K18 / J20:K29)
 
 # 이미지로 캡처할 마지막 행(field_sheet_image). 아군 블록 아래로 "아군"
 # 띠와 여백이 붙으므로 그만큼 더 잡는다.
-EXPORT_BOTTOM_ROW = _ALLY_BLOCK_BOTTOM + 4  # 32
+EXPORT_BOTTOM_ROW = _ALLY_BLOCK_BOTTOM + 4  # 33
 
 
 def render_public_field_sheet(
@@ -118,7 +125,7 @@ def render_public_field_sheet(
 
     if ensure_merged:
         ws.merge_cells(f"J{_ENEMY_BLOCK_TOP}:K{_ENEMY_BLOCK_BOTTOM}")
-        ws.merge_cells(f"J{_ALLY_MAIN_ROW_START}:K{_ALLY_BLOCK_BOTTOM}")
+        ws.merge_cells(f"J{_CHARM_ROW_START}:K{_ALLY_BLOCK_BOTTOM}")
 
     enemy_grid, enemy_declare_text, notes = _build_faction_block(
         context,
@@ -135,6 +142,10 @@ def render_public_field_sheet(
         declared={},
     )
     notes.update(ally_notes)
+
+    charm_grid, charm_notes, charm_merges = _build_charm_rows(context)
+    notes.update(charm_notes)
+    spreadsheet.batch_update({"requests": _charm_merge_requests(ws.id, charm_merges)})
 
     field_effect_text, field_effect_note = _format_field_effect_cell(context)
     notes[_FIELD_EFFECT_CELL] = field_effect_note
@@ -157,17 +168,102 @@ def render_public_field_sheet(
                 "values": [[enemy_declare_text]],
             },
             {
+                "range": f"B{_CHARM_ROW_START}:H{_ALLY_MAIN_ROW_START - 1}",
+                "values": charm_grid,
+            },
+            {
                 "range": f"B{_ALLY_MAIN_ROW_START}:H{_ALLY_BLOCK_BOTTOM}",
                 "values": ally_grid,
             },
             {
-                "range": rowcol_to_a1(_ALLY_MAIN_ROW_START, _DECLARE_NAME_COL),
+                "range": rowcol_to_a1(_CHARM_ROW_START, _DECLARE_NAME_COL),
                 "values": [[ally_declare_text]],
             },
         ]
     )
     ws.batch_update(updates, value_input_option=ValueInputOption.user_entered)
     ws.update_notes(notes)
+
+
+def _build_charm_rows(
+    context: "BattlefieldContext",
+) -> tuple[list[list[str]], dict[str, str], list[tuple[int, int, int]]]:
+    """부적 행의 (값 격자, 메모, 병합할 (행, 시작 열, 끝 열)) 을 만든다.
+
+    아군 소지자만 그린다 — 부적 행은 아군 블록에 붙어 있다. 상한을 넘는 부적은
+    표시에서 빠진다([전투개시] 때 admin에게 알린다).
+    """
+    grid = [["" for _ in range(_COLUMN_COUNT)] for _ in range(CHARM_ROW_COUNT)]
+    notes = {
+        rowcol_to_a1(row, col + 2): ""
+        for row in range(_CHARM_ROW_START, _ALLY_MAIN_ROW_START)
+        for col in range(_COLUMN_COUNT)
+    }
+    merges: list[tuple[int, int, int]] = []
+
+    auras = sorted(
+        (
+            aura
+            for aura in context.charm_auras.as_list()
+            if (holder := context.characters.get(aura.holder)) is not None
+            and holder.faction == FactionType.ALLY
+        ),
+        key=lambda aura: (
+            context.find_character_position(aura.holder).value,
+            aura.holder.name,
+            aura.item.id,
+        ),
+    )
+    for offset, aura in enumerate(auras[:CHARM_ROW_COUNT]):
+        row = _CHARM_ROW_START + offset
+        center = context.find_character_position(aura.holder).value
+        first = max(0, center - aura.item.attack_range)
+        last = min(_COLUMN_COUNT - 1, center + aura.item.attack_range)
+        grid[offset][first] = f"{aura.item.id}[{aura.holder.name}]"
+        notes[rowcol_to_a1(row, first + 2)] = (
+            f"[{aura.item.id}] {aura.passive.description}"
+        )
+        merges.append((row, first + 2, last + 2))
+
+    return grid, notes, merges
+
+
+def _charm_merge_requests(
+    sheet_id: int, merges: list[tuple[int, int, int]]
+) -> list[dict]:
+    """부적 행의 병합을 이번 상태로 다시 잡는 요청. 이전 병합을 먼저 풀어야
+    소지자가 움직였을 때 범위가 따라간다."""
+
+    def grid_range(row: int, first_col: int, last_col: int) -> dict:
+        return {
+            "sheetId": sheet_id,
+            "startRowIndex": row - 1,
+            "endRowIndex": row,
+            "startColumnIndex": first_col - 1,
+            "endColumnIndex": last_col,
+        }
+
+    requests: list[dict] = [
+        {
+            "unmergeCells": {
+                "range": {
+                    **grid_range(_CHARM_ROW_START, 2, _COLUMN_COUNT + 1),
+                    "endRowIndex": _ALLY_MAIN_ROW_START - 1,
+                }
+            }
+        }
+    ]
+    for row, first_col, last_col in merges:
+        if last_col > first_col:
+            requests.append(
+                {
+                    "mergeCells": {
+                        "range": grid_range(row, first_col, last_col),
+                        "mergeType": "MERGE_ALL",
+                    }
+                }
+            )
+    return requests
 
 
 def _build_faction_block(

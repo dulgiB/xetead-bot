@@ -21,7 +21,9 @@ from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.effects import SkillEffectAddBuff, SkillEffectDamage
 from battle.objects.field_effect.models import FieldEffectSource
 from bot.field_sheet_renderer import (
+    CHARM_ROW_COUNT,
     EXPORT_BOTTOM_ROW,
+    _CHARM_ROW_START,
     _ALLY_BLOCK_BOTTOM,
     _ALLY_MAIN_ROW_START,
     _ENEMY_BLOCK_BOTTOM,
@@ -331,7 +333,8 @@ def test_layout_rows_follow_the_header_row():
     assert _ENEMY_BLOCK_TOP == _HEADER_ROW - 9
     assert _ENEMY_MAIN_ROW_START == _HEADER_ROW - 3
     assert _ENEMY_BLOCK_BOTTOM == _HEADER_ROW - 1
-    assert _ALLY_MAIN_ROW_START == _HEADER_ROW + 1
-    assert _ALLY_BLOCK_BOTTOM == _HEADER_ROW + 9
+    assert _CHARM_ROW_START == _HEADER_ROW + 1
+    assert _ALLY_MAIN_ROW_START == _HEADER_ROW + 1 + CHARM_ROW_COUNT
+    assert _ALLY_BLOCK_BOTTOM == _ALLY_MAIN_ROW_START + 8
     # 이미지 캡처가 아군 블록 아래(“아군” 띠 + 여백)까지 담는지.
     assert EXPORT_BOTTOM_ROW > _ALLY_BLOCK_BOTTOM
