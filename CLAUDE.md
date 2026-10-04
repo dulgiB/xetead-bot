@@ -124,6 +124,10 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
   데이터 쪽 운영 원칙이다.
 
 - 적군 커맨드는 **PRE**에서 이동과 PRE 타이밍 버프만 즉시 처리, 대미지/힐/POST 버프는 `remaining_parts_dict`에 저장했다가 **POST** 페이즈에 처리.
+- 사거리 검증(`try_expansion_if_valid()`)은 PRE 선언 시점에만 돌므로, POST
+  재전개 때 `_drop_targets_out_of_range()`가 그 시점 위치로 다시 본다 — 아군
+  행동으로 밀려나거나 물러난 대상은 대미지와 그 대상에게 붙은 부가 효과가
+  빠지고 답글에 "사거리 밖"으로 남는다. 도발 배정보다 먼저 거른다.
 - `on_start_round()` = 코스트 초기화 + `ON_ROUND_START` 버프 이벤트.
 - `on_finish_round()` = `ON_ROUND_END` 버프 이벤트 + 턴 차감/제거.
 
