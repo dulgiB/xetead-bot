@@ -68,6 +68,7 @@ from bot.log_sheets import (
     BattleCommandLog,
     FieldBattleType,
     build_field_characters,
+    sync_hp_from_sheet,
     upsert_field_row,
     write_back_changed_hp,
 )
@@ -943,10 +944,28 @@ def _cmd_battle_start(
     )
 
 
+def _sync_hp_from_sheet(state: "BotState") -> str:
+    """GM이 시트에서 고친 체력을 페이즈 전환 전에 전장에 들이고, 바뀐
+    내역을 admin 답글에 덧붙일 문구로 돌려준다. 전환보다 먼저 해야 이번
+    전환의 정산(적 후행 공격, 라운드 종료 DoT 등)이 고친 체력 위에서 돈다."""
+    assert state.session is not None
+    changes = sync_hp_from_sheet(
+        state.spreadsheet,
+        state.session.context,
+        state.session.sheet_hp,
+        cache=state.sheet_cache,
+    )
+    return "".join(
+        f"\n◊ 시트 체력 반영: {change.name} {change.before} → {change.after}"
+        for change in changes
+    )
+
+
 def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     if state.session is None or not state.session.started:
         return AdminCommandResult("◊ 진행 중인 전투가 없습니다.")
 
+    hp_sync_notice = _sync_hp_from_sheet(state)
     new_phase = state.session.advance_phase()
 
     # 필드 시트 저장 (커맨드 수신 없는 페이즈에서도)
@@ -998,6 +1017,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             state.session.context,
             post_action_entries,
             cache=state.sheet_cache,
+            written_hp=state.session.sheet_hp,
         )
 
     round_end_log_entries = (
@@ -1012,6 +1032,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             state.session.context,
             round_end_log_entries,
             cache=state.sheet_cache,
+            written_hp=state.session.sheet_hp,
         )
 
     eliminated_characters = (
@@ -1031,7 +1052,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
     )
 
     error_suffix = f"\n{_SYSTEM_ERROR_MESSAGE}" if system_error else ""
-    reply = f"◊ 페이즈 전환: {new_phase.value}{error_suffix}"
+    reply = f"◊ 페이즈 전환: {new_phase.value}{hp_sync_notice}{error_suffix}"
 
     # 커맨드를 받지 않는 POST_ACTION·STANDBY도 게시물은 올리되
     # active_phase_post_id는 None이어야 한다 — 그 처리는 main.py에서 한다.
@@ -1051,6 +1072,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             "◊ 라운드 종료 단계에서만 [전투 속행]을 입력할 수 있습니다."
         )
 
+    hp_sync_notice = _sync_hp_from_sheet(state)
     new_phase = state.session.advance_phase()  # → ENEMY_PRE_ACTION
 
     system_error = False
@@ -1088,7 +1110,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
     )
 
     error_suffix = f"\n{_SYSTEM_ERROR_MESSAGE}" if system_error else ""
-    reply = f"◊ 라운드 {state.session.round_n} 시작{error_suffix}"
+    reply = f"◊ 라운드 {state.session.round_n} 시작{hp_sync_notice}{error_suffix}"
     return AdminCommandResult(
         reply,
         game_post,
@@ -1274,7 +1296,11 @@ def _cmd_proxy(
         new_results = state.session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
         write_back_changed_hp(
-            state.spreadsheet, state.session.context, entries, cache=state.sheet_cache
+            state.spreadsheet,
+            state.session.context,
+            entries,
+            cache=state.sheet_cache,
+            written_hp=state.session.sheet_hp,
         )
         mark_fate_used_if_needed(state, char_id, command)
 

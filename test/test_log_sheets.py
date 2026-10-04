@@ -593,3 +593,73 @@ def test_battle_log_sheet_names_default_for_prod_instance(monkeypatch):
     finally:
         monkeypatch.delenv("MASTODON_API_BASE_URL", raising=False)
         importlib.reload(log_sheets)
+
+
+def _spreadsheet_with_hp(hp_by_name: dict[str, int]) -> _FakeSpreadsheetForHpLookup:
+    spreadsheet = _FakeSpreadsheetForHpLookup([])
+    spreadsheet._sheets["캐릭터"] = _FakeHpWorksheet(
+        [["name", "curr_hp", "max_hp"]]
+        + [[name, str(hp), "100"] for name, hp in hp_by_name.items()]
+    )
+    return spreadsheet
+
+
+def test_sync_hp_from_sheet_adopts_hp_edited_on_sheet():
+    ctx = _make_context_with_two_characters()
+    sheet_hp = {"아군1": 100, "아군2": 100}
+    spreadsheet = _spreadsheet_with_hp({"아군1": 60, "아군2": 100})
+
+    changes = log_sheets.sync_hp_from_sheet(spreadsheet, ctx, sheet_hp)
+
+    assert ctx.characters[CharacterId("아군1")].status.curr_hp == 60
+    assert ctx.characters[CharacterId("아군2")].status.curr_hp == 100
+    assert changes == [log_sheets.HpSyncChange("아군1", 100, 60)]
+    assert sheet_hp == {"아군1": 60, "아군2": 100}
+
+
+def test_sync_hp_from_sheet_keeps_hp_whose_write_back_failed():
+    """시트 쓰기가 실패해 시트가 낡은 값으로 남은 캐릭터를 그 값으로 되돌리면
+    이미 정산된 대미지가 사라진다."""
+    ctx = _make_context_with_two_characters()
+    ctx.characters[CharacterId("아군1")].status.curr_hp = 70
+    spreadsheet = _spreadsheet_with_hp({"아군1": 100, "아군2": 100})
+
+    changes = log_sheets.sync_hp_from_sheet(
+        spreadsheet, ctx, {"아군1": 100, "아군2": 100}
+    )
+
+    assert changes == []
+    assert ctx.characters[CharacterId("아군1")].status.curr_hp == 70
+
+
+def test_sync_hp_from_sheet_compares_against_last_written_hp():
+    ctx = _make_context_with_two_characters()
+    sheet_hp = {"아군1": 100, "아군2": 100}
+    ctx.characters[CharacterId("아군1")].status.curr_hp = 70
+    log_sheets.write_back_character_hp(
+        _spreadsheet_with_hp({"아군1": 100, "아군2": 100}),
+        ctx,
+        ["아군1"],
+        written_hp=sheet_hp,
+    )
+    assert sheet_hp["아군1"] == 70
+
+    # GM이 쓰인 값(70)을 90으로 고쳤다.
+    log_sheets.sync_hp_from_sheet(
+        _spreadsheet_with_hp({"아군1": 90, "아군2": 100}), ctx, sheet_hp
+    )
+
+    assert ctx.characters[CharacterId("아군1")].status.curr_hp == 90
+
+
+def test_sync_hp_from_sheet_only_records_hp_without_baseline():
+    ctx = _make_context_with_two_characters()
+    sheet_hp: dict[str, int] = {}
+
+    changes = log_sheets.sync_hp_from_sheet(
+        _spreadsheet_with_hp({"아군1": 40, "아군2": 100}), ctx, sheet_hp
+    )
+
+    assert changes == []
+    assert ctx.characters[CharacterId("아군1")].status.curr_hp == 100
+    assert sheet_hp == {"아군1": 40, "아군2": 100}

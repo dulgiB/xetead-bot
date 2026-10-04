@@ -124,6 +124,10 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
   데이터 쪽 운영 원칙이다.
 
 - 적군 커맨드는 **PRE**에서 이동과 PRE 타이밍 버프만 즉시 처리, 대미지/힐/POST 버프는 `remaining_parts_dict`에 저장했다가 **POST** 페이즈에 처리.
+- 사거리 검증(`try_expansion_if_valid()`)은 PRE 선언 시점에만 돌므로, POST
+  재전개 때 `_drop_targets_out_of_range()`가 그 시점 위치로 다시 본다 — 아군
+  행동으로 밀려나거나 물러난 대상은 대미지와 그 대상에게 붙은 부가 효과가
+  빠지고 답글에 "사거리 밖"으로 남는다. 도발 배정보다 먼저 거른다.
 - `on_start_round()` = 코스트 초기화 + `ON_ROUND_START` 버프 이벤트.
 - `on_finish_round()` = `ON_ROUND_END` 버프 이벤트 + 턴 차감/제거.
 
@@ -721,6 +725,20 @@ DM으로 경고한다. 전투를 세우지는 않는다 — 잘못 설정된 스
   임시 체력 대미지와 합산되지 않는다(`merge_damage_heal_lines`).
 
 ---
+
+## 본 전투 체력과 "캐릭터" 시트
+
+본 전투의 체력은 전장(`CombatStats.curr_hp`)이 들고 있고, 변동이 생길 때마다
+시트에 쓴다. 반대 방향 — GM이 잘못 정산된 체력을 시트에서 고친 것 — 은
+admin의 페이즈 전환(`[진행]`/`[전투속행]`) **직전**에
+`log_sheets.sync_hp_from_sheet()`가 들인다. 전환보다 먼저 해야 그 전환의
+정산(적 후행 공격, 라운드 종료 DoT)이 고친 체력 위에서 돈다.
+
+시트 값을 채택하는 기준은 전장 체력이 아니라 `BattleSession.sheet_hp`(봇이
+마지막으로 그 캐릭터 시트 체력을 읽거나 쓴 값)다. 시트 쓰기가 실패하면 시트가
+낡은 값으로 남는데, 전장 체력과 비교하면 그 낡은 값으로 이미 정산된 대미지를
+되돌려 버린다. 그래서 본 전투에서 체력을 쓰는 경로는 `write_back_changed_hp()`에
+`written_hp=session.sheet_hp`를 넘겨야 한다.
 
 ## 재기동 복원 (`bot/field_restore.py`)
 

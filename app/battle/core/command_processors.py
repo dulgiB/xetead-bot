@@ -208,6 +208,8 @@ def try_process_enemy_command_on_post_action(
     calculators = [
         CommandPartCalculator(post_part, context) for post_part in post_parts
     ]
+    for calculator, post_part in zip(calculators, post_parts):
+        _drop_targets_out_of_range(context, user_id, post_part, calculator)
     assign_taunt_redirects(
         context, user_id, calculators, RoundPhaseType.ENEMY_POST_ACTION
     )
@@ -223,6 +225,75 @@ def try_process_enemy_command_on_post_action(
             )
         )
     return results
+
+
+def _drop_targets_out_of_range(
+    context: BattlefieldContext,
+    user_id: CharacterId,
+    part_data: CommandPartData,
+    calculator: CommandPartCalculator,
+) -> None:
+    """PRE 선언 뒤 아군 행동으로 사거리 밖에 놓인 대상을 POST 대미지에서 뺀다.
+
+    사거리는 선언 시점에만 검증되므로, 여기서 다시 보지 않으면 밀려나거나
+    스스로 물러난 대상도 그대로 맞는다. 그 대상에게 걸릴 부가 효과(디버프
+    부여·스택 소모)도 같은 공격의 일부라 함께 뺀다. 도발 리다이렉트보다 먼저
+    걸러, 빗나간 공격을 도발자가 끌어오지 않게 한다.
+
+    POST 타이밍 effect의 이동은 계산 중에 일어나므로, PRE 검증과 같이
+    시전자의 이동 목적지를 이어받아 판정한다.
+    """
+    user = context.characters[user_id]
+    user_pos = context.find_character_position(user_id)
+    attack_range = _effective_attack_range(context, user, part_data.original_part)
+
+    for mutable in calculator.data_by_effect:
+        if not calculator._damage_processed_in_phase(
+            mutable.apply_timing, RoundPhaseType.ENEMY_POST_ACTION
+        ):
+            continue
+        for move_data in mutable.move_list:
+            if move_data.character_id == user_id:
+                user_pos = move_data.to_position
+        out_of_range: list[CharacterId] = []
+        for damage_calc in mutable.damage_data_list:
+            target_id = damage_calc.base.target_id
+            if target_id in out_of_range or target_id not in context.characters:
+                continue
+            target_pos = context.find_character_position(target_id)
+            if not is_reachable(user_pos, target_pos, attack_range):
+                out_of_range.append(target_id)
+        if not out_of_range:
+            continue
+
+        mutable.damage_data_list = [
+            d for d in mutable.damage_data_list if d.base.target_id not in out_of_range
+        ]
+        mutable.buff_add_data_list = [
+            d for d in mutable.buff_add_data_list if d.applied_to not in out_of_range
+        ]
+        mutable.buff_remove_data_list = [
+            d
+            for d in mutable.buff_remove_data_list
+            if d.base.applied_to not in out_of_range
+        ]
+        mutable.nullified_effect_list.extend(
+            (target_id, "사거리 밖, 대미지 없음") for target_id in out_of_range
+        )
+
+
+def _effective_attack_range(
+    context: BattlefieldContext,
+    user: "CombatCharacter",
+    original_part: Optional[CommandPart],
+) -> int:
+    if (
+        original_part is not None
+        and original_part.type_ == ActionType.USE_ITEM
+        and original_part.item_id is not None
+    ):
+        return context.get_item_data_by_id(original_part.item_id).attack_range
+    return user.status[CombatStatType.RANGE]
 
 
 def try_expansion_if_valid(
@@ -250,7 +321,6 @@ def try_expansion_if_valid(
         raise CommandValidationError(error_character_is_defeated())
 
     user_pos = context.find_character_position(command.user_id)
-    attack_range = user.status[CombatStatType.RANGE]
 
     # 입력한 공백이 등록된 표기와 달라도("스킬_1" vs "스킬 _1") 등록된 표기로
     # 치환해, 이후 검증·전개가 정확한 값을 보게 한다.
@@ -318,17 +388,9 @@ def try_expansion_if_valid(
 
     expanded_command_data_list = expand_character_command(command, context)
     for command_data in expanded_command_data_list:
-        original_part = command_data.original_part
-        if (
-            original_part is not None
-            and original_part.type_ == ActionType.USE_ITEM
-            and original_part.item_id is not None
-        ):
-            effective_range = context.get_item_data_by_id(
-                original_part.item_id
-            ).attack_range
-        else:
-            effective_range = attack_range
+        effective_range = _effective_attack_range(
+            context, user, command_data.original_part
+        )
 
         for sub_data in command_data.data_per_effect:
             if sub_data is None:

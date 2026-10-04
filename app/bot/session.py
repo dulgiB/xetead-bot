@@ -38,6 +38,9 @@ class BattleSession:
         self.name: Optional[str] = None
         self._phase_idx: int = 0
         self.round_n: int = 0
+        # 캐릭터별로 봇이 마지막으로 "캐릭터"/"에너미" 시트에서 읽거나 쓴 체력.
+        # GM이 시트에서 고친 체력을 가려내는 기준이다(sync_hp_from_sheet()).
+        self.sheet_hp: dict[str, int] = {}
 
     @property
     def current_phase(self) -> RoundPhaseType:
@@ -50,6 +53,8 @@ class BattleSession:
         column: BattlefieldColumnIndex,
     ) -> None:
         self.context.add_character(data, faction, column)
+        if data.curr_hp is not None:
+            self.sheet_hp[data.name] = data.curr_hp
 
     def restore_progress(self, round_n: int, phase: RoundPhaseType) -> None:
         """봇 재기동 복원 전용: `start()`처럼 1라운드+ENEMY_PRE_ACTION으로

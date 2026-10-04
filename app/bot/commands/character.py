@@ -115,7 +115,11 @@ def handle_character_command(
         new_results = session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
         write_back_changed_hp(
-            state.spreadsheet, session.context, entries, cache=state.sheet_cache
+            state.spreadsheet,
+            session.context,
+            entries,
+            cache=state.sheet_cache,
+            written_hp=session.sheet_hp,
         )
 
         mark_fate_used_if_needed(state, char_id, command)
