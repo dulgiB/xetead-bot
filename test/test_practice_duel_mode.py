@@ -84,6 +84,11 @@ class _FakeSpreadsheet:
             raise gspread.exceptions.WorksheetNotFound(name)
         return self._sheets[name]
 
+    def values_batch_update(self, body) -> None:
+        from helpers import apply_values_batch_update
+
+        apply_values_batch_update(self._sheets, body)
+
     def hp_of(self, name: str) -> int:
         for row in self._sheets["캐릭터"].rows[1:]:
             if row[0] == name:

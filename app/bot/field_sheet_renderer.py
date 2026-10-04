@@ -20,9 +20,19 @@
   구조가 깨지지 않는다.
 - 블록 바깥의 "적군"/"아군" 타이틀과 헤더 라벨은 고정 텍스트라 건드리지 않는다.
 
-J:K 병합은 `ensure_merged=True`로 호출했을 때만 수행한다 — 구조적 변경이라
-값 쓰기와 별개의 API 호출이 필요하고, 전투 시작 시 한 번 병합해 두면 시트에
-그대로 남는다. 부적 행의 병합은 소지자가 움직이면 바뀌므로 매번 다시 한다.
+J:K 병합은 `ensure_merged=True`로 호출했을 때만 수행한다 — 전투 시작 시 한 번
+병합해 두면 시트에 그대로 남는다. 부적 행의 병합은 소지자가 움직이면 바뀌므로
+매번 다시 한다.
+
+**한 번의 렌더링은 `spreadsheets.batchUpdate` 호출 한 번이다.** 병합·값·메모를
+따로 보내면 쓰기가 3회로 늘고, 커맨드마다 렌더링하는 구조라 분당 할당량
+(서비스 계정 60회)을 금방 깎는다. `updateCells`는 한 CellData에
+`userEnteredValue`와 `note`를 함께 실을 수 있어 값과 메모를 같은 요청에 담을
+수 있고, 병합 요청도 같은 배열 앞쪽에 둔다(요청은 배열 순서대로 적용된다).
+
+값은 `stringValue`로 쓴다 — 격자 내용이 전부 텍스트라 숫자/수식 해석이 필요
+없고, 해석을 켜 두면 "="로 시작하는 전투 이름 같은 입력이 수식이 된다.
+`fields` 마스크는 `userEnteredValue,note`뿐이라 셀 서식은 건드리지 않는다.
 
 "전투 이름" 칸은 `battle_name`이 주어졌을 때만 갱신한다. 병합된 셀은 좌상단
 셀 하나에만 값을 써도 정상 반영된다.
@@ -32,7 +42,7 @@ import re
 from typing import TYPE_CHECKING, Optional
 
 import gspread
-from gspread.utils import ValueInputOption, rowcol_to_a1
+from gspread.utils import a1_to_rowcol, rowcol_to_a1
 
 from battle.core.commands.models import CharacterCommand
 from battle.objects.define import (
@@ -123,10 +133,6 @@ def render_public_field_sheet(
         else spreadsheet.worksheet(_FIELD_SHEET)
     )
 
-    if ensure_merged:
-        ws.merge_cells(f"J{_ENEMY_BLOCK_TOP}:K{_ENEMY_BLOCK_BOTTOM}")
-        ws.merge_cells(f"J{_CHARM_ROW_START}:K{_ALLY_BLOCK_BOTTOM}")
-
     enemy_grid, enemy_declare_text, notes = _build_faction_block(
         context,
         FactionType.ENEMY,
@@ -145,44 +151,168 @@ def render_public_field_sheet(
 
     charm_grid, charm_notes, charm_merges = _build_charm_rows(context)
     notes.update(charm_notes)
-    spreadsheet.batch_update({"requests": _charm_merge_requests(ws.id, charm_merges)})
 
     field_effect_text, field_effect_note = _format_field_effect_cell(context)
-    notes[_FIELD_EFFECT_CELL] = field_effect_note
 
-    updates = []
+    # 병합·값·메모를 한 요청에 모은다. 요청은 배열 순서대로 적용되므로
+    # 병합을 먼저 둔다.
+    requests: list[dict] = []
+    if ensure_merged:
+        requests.extend(
+            _merge_request(
+                ws.id, row, _DECLARE_NAME_COL, _DECLARE_NAME_COL + 1, last_row
+            )
+            for row, last_row in (
+                (_ENEMY_BLOCK_TOP, _ENEMY_BLOCK_BOTTOM),
+                (_CHARM_ROW_START, _ALLY_BLOCK_BOTTOM),
+            )
+        )
+    requests.extend(_charm_merge_requests(ws.id, charm_merges))
+
     if battle_name is not None:
-        updates.append({"range": _BATTLE_NAME_CELL, "values": [[battle_name]]})
-
-    updates.extend(
-        [
-            {"range": _ROUND_CELL, "values": [[f"ROUND {round_n}"]]},
-            {"range": _PHASE_CELL, "values": [[phase]]},
-            {"range": _FIELD_EFFECT_CELL, "values": [[field_effect_text]]},
-            {
-                "range": f"B{_ENEMY_BLOCK_TOP}:H{_ENEMY_BLOCK_BOTTOM}",
-                "values": enemy_grid,
-            },
-            {
-                "range": rowcol_to_a1(_ENEMY_BLOCK_TOP, _DECLARE_NAME_COL),
-                "values": [[enemy_declare_text]],
-            },
-            {
-                "range": f"B{_CHARM_ROW_START}:H{_ALLY_MAIN_ROW_START - 1}",
-                "values": charm_grid,
-            },
-            {
-                "range": f"B{_ALLY_MAIN_ROW_START}:H{_ALLY_BLOCK_BOTTOM}",
-                "values": ally_grid,
-            },
-            {
-                "range": rowcol_to_a1(_CHARM_ROW_START, _DECLARE_NAME_COL),
-                "values": [[ally_declare_text]],
-            },
-        ]
+        requests.append(_value_request(ws.id, _BATTLE_NAME_CELL, battle_name))
+    requests.append(_value_request(ws.id, _ROUND_CELL, f"ROUND {round_n}"))
+    requests.append(_value_request(ws.id, _PHASE_CELL, phase))
+    requests.append(
+        _value_request(
+            ws.id, _FIELD_EFFECT_CELL, field_effect_text, note=field_effect_note
+        )
     )
-    ws.batch_update(updates, value_input_option=ValueInputOption.user_entered)
-    ws.update_notes(notes)
+    requests.append(
+        _value_request(
+            ws.id, rowcol_to_a1(_ENEMY_BLOCK_TOP, _DECLARE_NAME_COL), enemy_declare_text
+        )
+    )
+    requests.append(
+        _value_request(
+            ws.id, rowcol_to_a1(_CHARM_ROW_START, _DECLARE_NAME_COL), ally_declare_text
+        )
+    )
+    for first_row, grid in (
+        (_ENEMY_BLOCK_TOP, enemy_grid),
+        (_CHARM_ROW_START, charm_grid),
+        (_ALLY_MAIN_ROW_START, ally_grid),
+    ):
+        requests.append(_grid_request(ws.id, first_row, grid, notes))
+
+    spreadsheet.batch_update({"requests": requests})
+
+
+# 그리드 값이 들어가는 첫 열 (B). 격자는 B~H 7열이다.
+_GRID_FIRST_COL = 2
+
+
+def _cell_data(value: str, note: str = "") -> dict:
+    """updateCells에 넣을 CellData 하나.
+
+    값이 빈 문자열이면 `userEnteredValue`를 아예 넣지 않는다 — fields 마스크가
+    그 칸을 비워, 빈 문자열이 들어간 칸이 아니라 진짜 빈 칸이 된다.
+
+    값은 항상 `stringValue`다. 이름·스탯 줄은 전부 텍스트이고, 수식/숫자
+    해석(기존 USER_ENTERED)은 "="로 시작하는 전투 이름 같은 입력을 수식으로
+    바꿔 버리는 쪽으로만 작용한다.
+    """
+    cell: dict = {}
+    if value:
+        cell["userEnteredValue"] = {"stringValue": value}
+    cell["note"] = note
+    return cell
+
+
+def _grid_range(
+    sheet_id: int, first_row: int, first_col: int, last_row: int, last_col: int
+) -> dict:
+    """1-indexed 행/열(양끝 포함)을 GridRange(0-indexed, 끝 열림)로 옮긴다."""
+    return {
+        "sheetId": sheet_id,
+        "startRowIndex": first_row - 1,
+        "endRowIndex": last_row,
+        "startColumnIndex": first_col - 1,
+        "endColumnIndex": last_col,
+    }
+
+
+def _merge_request(
+    sheet_id: int,
+    row: int,
+    first_col: int,
+    last_col: int,
+    last_row: Optional[int] = None,
+) -> dict:
+    return {
+        "mergeCells": {
+            "range": _grid_range(
+                sheet_id,
+                row,
+                first_col,
+                last_row if last_row is not None else row,
+                last_col,
+            ),
+            "mergeType": "MERGE_ALL",
+        }
+    }
+
+
+def _value_request(
+    sheet_id: int, cell_a1: str, value: str, note: Optional[str] = None
+) -> dict:
+    """단일 셀 하나를 쓰는 updateCells 요청.
+
+    `note`를 주지 않으면 fields에서 note를 빼, 그 칸에 사람이 달아 둔 메모를
+    건드리지 않는다.
+    """
+    row, col = a1_to_rowcol(cell_a1)
+    cell = _cell_data(value, note or "")
+    if note is None:
+        cell.pop("note")
+    return {
+        "updateCells": {
+            "range": _grid_range(sheet_id, row, col, row, col),
+            "rows": [{"values": [cell]}],
+            "fields": "userEnteredValue" if note is None else "userEnteredValue,note",
+        }
+    }
+
+
+def _grid_request(
+    sheet_id: int, first_row: int, grid: list[list[str]], notes: dict[str, str]
+) -> dict:
+    """격자 블록 하나(값 + 메모)를 쓰는 updateCells 요청.
+
+    메모는 `notes`에 A1로 담겨 오므로 칸마다 찾아 붙이고, 없는 칸은 빈
+    메모로 둔다 — 캐릭터가 빠진 자리에 이전 버프 메모가 남지 않게 하려면
+    비우는 쪽이 맞다(기존 update_notes도 빈 문자열을 썼다).
+    """
+    rows = [
+        {
+            "values": [
+                _cell_data(
+                    value,
+                    notes.get(
+                        rowcol_to_a1(
+                            first_row + row_offset, _GRID_FIRST_COL + col_offset
+                        ),
+                        "",
+                    ),
+                )
+                for col_offset, value in enumerate(row_values)
+            ]
+        }
+        for row_offset, row_values in enumerate(grid)
+    ]
+    return {
+        "updateCells": {
+            "range": _grid_range(
+                sheet_id,
+                first_row,
+                _GRID_FIRST_COL,
+                first_row + len(grid) - 1,
+                _GRID_FIRST_COL + _COLUMN_COUNT - 1,
+            ),
+            "rows": rows,
+            "fields": "userEnteredValue,note",
+        }
+    }
 
 
 def _build_charm_rows(
@@ -234,35 +364,22 @@ def _charm_merge_requests(
     """부적 행의 병합을 이번 상태로 다시 잡는 요청. 이전 병합을 먼저 풀어야
     소지자가 움직였을 때 범위가 따라간다."""
 
-    def grid_range(row: int, first_col: int, last_col: int) -> dict:
-        return {
-            "sheetId": sheet_id,
-            "startRowIndex": row - 1,
-            "endRowIndex": row,
-            "startColumnIndex": first_col - 1,
-            "endColumnIndex": last_col,
-        }
-
     requests: list[dict] = [
         {
             "unmergeCells": {
-                "range": {
-                    **grid_range(_CHARM_ROW_START, 2, _COLUMN_COUNT + 1),
-                    "endRowIndex": _ALLY_MAIN_ROW_START - 1,
-                }
+                "range": _grid_range(
+                    sheet_id,
+                    _CHARM_ROW_START,
+                    _GRID_FIRST_COL,
+                    _ALLY_MAIN_ROW_START - 1,
+                    _COLUMN_COUNT + 1,
+                )
             }
         }
     ]
     for row, first_col, last_col in merges:
         if last_col > first_col:
-            requests.append(
-                {
-                    "mergeCells": {
-                        "range": grid_range(row, first_col, last_col),
-                        "mergeType": "MERGE_ALL",
-                    }
-                }
-            )
+            requests.append(_merge_request(sheet_id, row, first_col, last_col))
     return requests
 
 
