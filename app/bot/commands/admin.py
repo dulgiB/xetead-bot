@@ -26,6 +26,7 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     FactionType,
 )
+from battle.core.charm_aura_container import charm_config_error
 from battle.objects.field_effect.models import FieldEffectSource
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import (
@@ -819,6 +820,31 @@ def _check_field_effect_config(state: "BotState") -> Optional[str]:
     return f"◊ '스킬_패시브' 시트의 필드 효과 설정에 문제가 있습니다.\n{lines}"
 
 
+def _check_charm_config(state: "BotState") -> Optional[str]:
+    """ "아이템" 시트의 부적 중 효과가 조용히 빠질 설정을 찾아 admin에게만
+    보낼 경고를 만든다. _check_field_effect_config()와 같은 이유로 전투를
+    세우지는 않는다."""
+    if state.session is None:
+        return None
+    context = state.session.context
+
+    problems = [
+        error
+        for item in context.charm_items()
+        if (
+            error := charm_config_error(
+                item, context.get_passive_skill_data_by_id(item.passive_skill_id)
+            )
+        )
+        is not None
+    ]
+    if not problems:
+        return None
+
+    lines = "\n".join(f"- {problem}" for problem in problems)
+    return f"◊ '아이템' 시트의 부적 설정에 문제가 있습니다.\n{lines}"
+
+
 def _cmd_battle_start(
     state: "BotState", battle_name: Optional[str] = None
 ) -> AdminCommandResult:
@@ -844,6 +870,7 @@ def _cmd_battle_start(
     # admin DM으로만 보낸다.
     fate_config_warning = _check_fate_boost_config(state)
     field_effect_warning = _check_field_effect_config(state)
+    charm_warning = _check_charm_config(state)
 
     # 1. 수동 배치 처리 (pending_placements)
     errors: list[str] = []
@@ -937,7 +964,7 @@ def _cmd_battle_start(
         game_post_calc_text=game_post_calc,
         admin_dm_text="\n\n".join(
             warning
-            for warning in (fate_config_warning, field_effect_warning)
+            for warning in (fate_config_warning, field_effect_warning, charm_warning)
             if warning
         )
         or None,

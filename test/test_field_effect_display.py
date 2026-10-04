@@ -54,14 +54,14 @@ class TestFieldTextSummary:
         assert "전장이 불타오른다." in text
 
     def test_source_is_shown(self):
-        """출처를 특정할 수 있으면 종류("부적")가 아니라 그 이름을 적는다 —
-        어느 부적이 걸었는지가 더 쓸모 있다."""
+        """출처를 특정할 수 있으면 종류("스킬")가 아니라 그 이름을 적는다 —
+        누가 걸었는지가 더 쓸모 있다."""
         ctx = _make_context()
-        ctx.add_field_effect(EFFECT_ID, FieldEffectSource.CHARM, "행운의 부적")
+        ctx.add_field_effect(EFFECT_ID, FieldEffectSource.SKILL, "시전자_1")
 
         text = ctx.format_field_text()
 
-        assert f"{EFFECT_ID}[행운의 부적]" in text
+        assert f"{EFFECT_ID}[시전자_1]" in text
 
     def test_source_falls_back_to_its_kind(self):
         ctx = _make_context()

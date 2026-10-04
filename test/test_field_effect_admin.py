@@ -205,7 +205,7 @@ class TestPersistence:
     def test_meta_carries_active_field_effects(self):
         state = _make_state()
         state.session.context.add_field_effect(
-            FIELD_EFFECT_ID, FieldEffectSource.CHARM, "행운의 부적"
+            FIELD_EFFECT_ID, FieldEffectSource.SKILL, "시전자_1"
         )
 
         meta = build_field_meta(state)
@@ -213,8 +213,8 @@ class TestPersistence:
         assert meta["field_effects"] == [
             {
                 "id": FIELD_EFFECT_ID,
-                "source": FieldEffectSource.CHARM.value,
-                "source_detail": "행운의 부적",
+                "source": FieldEffectSource.SKILL.value,
+                "source_detail": "시전자_1",
             }
         ]
 
@@ -234,8 +234,8 @@ class TestPersistence:
             [
                 {
                     "id": FIELD_EFFECT_ID,
-                    "source": FieldEffectSource.CHARM.value,
-                    "source_detail": "행운의 부적",
+                    "source": FieldEffectSource.SKILL.value,
+                    "source_detail": "시전자_1",
                 }
             ]
         )
@@ -244,8 +244,8 @@ class TestPersistence:
 
         restored = state.session.context.field_effects.get(FIELD_EFFECT_ID)
         assert restored is not None
-        assert restored.source is FieldEffectSource.CHARM
-        assert restored.source_detail == "행운의 부적"
+        assert restored.source is FieldEffectSource.SKILL
+        assert restored.source_detail == "시전자_1"
 
     def test_restored_effect_applies_again(self):
         state = _make_state()

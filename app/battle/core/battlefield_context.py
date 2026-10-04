@@ -1,5 +1,4 @@
 import copy
-import logging
 from dataclasses import replace
 from datetime import date
 from typing import Optional
@@ -9,6 +8,7 @@ from utils.logging import print_apply_damage, print_apply_heal
 from utils.name_matching import resolve_matching_key
 
 from battle.core.buff_container import BuffContainer
+from battle.core.charm_aura_container import CharmAuraContainer
 from battle.core.field_effect_container import FieldEffectContainer
 from battle.core.command_calculator import CommandPartCalculator
 from battle.core.commands.models import BattleLogEntry, CommandPartProcessResult
@@ -39,8 +39,6 @@ from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import SkillData
 from spreadsheets.inventory import Inventory
-
-logger = logging.getLogger(__name__)
 
 
 class BattlefieldContext:
@@ -88,6 +86,10 @@ class BattlefieldContext:
         # 전장 전체에 걸린 효과. 캐릭터가 아니라 전장에 붙으며, 명시적으로
         # 해제하기 전까지 유지된다.
         self.field_effects: FieldEffectContainer = FieldEffectContainer(self)
+
+        # 소지자 사거리 안에만 걸리는 부적 효과. 위치가 바뀔 때마다 대상을
+        # 다시 계산해야 해서 배치·이동·퇴장 경로가 모두 refresh()를 부른다.
+        self.charm_auras: CharmAuraContainer = CharmAuraContainer(self)
 
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
@@ -247,6 +249,7 @@ class BattlefieldContext:
         return "\n\n".join(blocks)
 
     def clear(self):
+        self.charm_auras.clear()
         self.characters.clear()
         self.buff_container.clear()
         self.position_map[FactionType.ALLY] = {
@@ -335,6 +338,10 @@ class BattlefieldContext:
         # 배치 단계에서는 아직 필드 효과가 없어 비용이 들지 않는다.
         self.field_effects.apply_to_newcomer(char_id)
 
+        if self.allow_charms:
+            self.charm_auras.register_holder(char_id)
+            self.charm_auras.refresh()
+
     def _remove_from_position_map(self, char_id: CharacterId) -> None:
         char = self.characters[char_id]
         char_pos = self.find_character_position(char_id)
@@ -351,8 +358,11 @@ class BattlefieldContext:
         for buff in self.buff_container.get_buffs_by(char_id, None):
             self.buff_container.remove(buff.uid)
 
+        self.charm_auras.unregister_holder(char_id)
         self._remove_from_position_map(char_id)
-        return self.characters.pop(char_id)
+        removed = self.characters.pop(char_id)
+        self.charm_auras.refresh()
+        return removed
 
     def try_find_empty_slot(
         self, faction: FactionType, column: BattlefieldColumnIndex
@@ -406,6 +416,7 @@ class BattlefieldContext:
         self._remove_from_position_map(char_id)
         self.position_map[char.faction][to_position][empty_slot] = char_id
         self.moved_this_round.add(char_id)
+        self.charm_auras.refresh()
 
     def apply_damage(
         self,
@@ -503,49 +514,7 @@ class BattlefieldContext:
         return [char_id]
 
     def on_battle_start(self) -> None:
-        # 부적 등록이 버프 트리거보다 먼저여야 "전투 시작" 트리거 필드 효과가
-        # 이번 호출에서 발동한다. 여기 한 곳이면 신규 전투(BattleSession.start)와
-        # 봇 재기동 복원(field_restore)이 함께 커버된다.
-        self._register_charm_field_effects()
         self.buff_container.on_battle_start()
-
-    def _register_charm_field_effects(self) -> None:
-        """인벤토리에 있는 "부적" 아이템의 필드 효과를 전장에 올린다.
-
-        소지자가 이 전투에 참여하는지는 보지 않는다 — 참여를 강요하는 압력이
-        되지 않도록, 누군가 지니고 있기만 하면 발동한다. 인벤토리는 캐릭터
-        이름 기준이고 에너미는 인벤토리에 없으므로, 자연히 아군 쪽 소지품만
-        대상이 된다.
-
-        종류당 1개라는 전제가 시트에서 깨져도(두 명이 같은 부적을 들고 있는
-        등) 필드 효과 id 단위로 한 번만 걸린다 — add()가 이미 걸린 효과를
-        무시하기 때문이다.
-        """
-        if not self.allow_field_effects:
-            return
-
-        for item_id, item_data in self._item_dictionary.items():
-            if item_data.item_type is not ItemType.CHARM:
-                continue
-            if not item_data.passive_skill_id:
-                continue
-            if not self.inventory.is_owned_by_anyone(item_id):
-                continue
-            try:
-                self.add_field_effect(
-                    item_data.passive_skill_id,
-                    FieldEffectSource.CHARM,
-                    item_id,
-                )
-            except CommandValidationError as e:
-                # 시트 설정 오류로 전투가 서지 않게 하지 않는다 — 부적 하나가
-                # 빠질 뿐이므로 로그만 남기고 진행한다.
-                logger.warning(
-                    "부적 '%s'의 필드 효과 '%s'를 걸지 못했습니다: %s",
-                    item_id,
-                    item_data.passive_skill_id,
-                    e,
-                )
 
     def on_battle_end(self) -> list[BattleLogEntry]:
         return self.buff_container.on_battle_end()
@@ -607,6 +576,17 @@ class BattlefieldContext:
     def allow_field_effects(self) -> bool:
         """이 전장에서 필드 효과를 쓸 수 있는지 여부."""
         return True
+
+    @property
+    def allow_charms(self) -> bool:
+        return True
+
+    def charm_items(self) -> list[ItemData]:
+        return [
+            item
+            for item in self._item_dictionary.values()
+            if item.item_type is ItemType.CHARM
+        ]
 
     def add_field_effect(
         self,

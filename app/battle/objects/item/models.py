@@ -41,8 +41,8 @@ class ItemData:
     effect: Optional[SkillEffectBase]
     description: str = ""
     item_type: ItemType = ItemType.BATTLE_CONSUMABLE
-    # 부적 전용: 이 아이템을 누군가 지니고 있으면 본 전투에 걸리는 필드 효과
-    # ("스킬_패시브" 시트의 id). 다른 item_type에서는 쓰이지 않는다.
+    # 부적 전용: 소지자 사거리(attack_range) 안의 같은 진영 캐릭터에게 거는
+    # 패시브("스킬_패시브" 시트의 id). 다른 item_type에서는 쓰이지 않는다.
     passive_skill_id: str = ""
 
     @classmethod

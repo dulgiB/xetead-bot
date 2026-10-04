@@ -35,7 +35,6 @@ class FieldEffectSource(str, Enum):
     이름과 맞추기 위해서다(commands/admin.py의 ADMIN_ID).
     """
 
-    CHARM = "부적"
     SKILL = "스킬"
     ADMIN = "시스템"
 
@@ -66,7 +65,7 @@ class FieldEffect:
 
     data: PassiveSkillData
     source: FieldEffectSource
-    # 출처를 사람이 읽을 수 있게 덧붙이는 꼬리표(부적 이름, 시전자 이름 등).
+    # 출처를 사람이 읽을 수 있게 덧붙이는 꼬리표(시전자 이름 등).
     # 비어 있으면 표시에서 생략한다.
     source_detail: str = ""
 
@@ -85,7 +84,7 @@ class FieldEffect:
     def display_label(self) -> str:
         """`이름[출처]` 형태의 표시 라벨.
 
-        대괄호 안은 출처를 특정할 수 있으면 그 이름(부적 이름 등), 아니면
-        출처 종류다 — 어느 부적이 걸었는지가 종류보다 쓸모 있는 정보다.
+        대괄호 안은 출처를 특정할 수 있으면 그 이름, 아니면 출처 종류다 —
+        누가 걸었는지가 종류보다 쓸모 있는 정보다.
         """
         return f"{self.id}[{self.source_detail or self.source.value}]"
