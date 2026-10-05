@@ -20,6 +20,7 @@ from bot.load_data import (  # noqa: E402
     update_character_quest_date,
 )
 from bot.sheet_cache import SheetCache  # noqa: E402
+from helpers import apply_values_batch_update  # noqa: E402
 
 
 class _FakeWorksheet:
@@ -59,6 +60,7 @@ class _FakeSpreadsheet:
         self.id = "fake-id"
         self.client = None
         self.fetch_sheet_metadata_call_count = 0
+        self.values_batch_update_bodies: list[dict] = []
 
     def worksheet(self, name):
         if name not in self._sheets:
@@ -68,6 +70,10 @@ class _FakeSpreadsheet:
     def fetch_sheet_metadata(self):
         self.fetch_sheet_metadata_call_count += 1
         return {"sheets": [{"properties": {"title": name}} for name in self._sheets]}
+
+    def values_batch_update(self, body):
+        self.values_batch_update_bodies.append(body)
+        apply_values_batch_update(self._sheets, body)
 
 
 def _make_cache(spreadsheet: _FakeSpreadsheet) -> SheetCache:
@@ -405,9 +411,9 @@ def test_reveal_declared_enemy_skills_reads_sheet_once_for_multiple_skills():
 
 
 def test_update_character_fate_date_writes_raw_string():
-    """update_cell()의 USER_ENTERED로 쓰면 "YYYY-MM-DD"가 Sheets에서 날짜
-    타입(시리얼 넘버)으로 변환되어 "오늘 이미 씀" 비교가 영원히 거짓이 된다 —
-    daily_quest_date와 동일하게 RAW로 저장해야 한다."""
+    """USER_ENTERED로 쓰면 "YYYY-MM-DD"가 Sheets에서 날짜 타입(시리얼 넘버)으로
+    변환되어 "오늘 이미 씀" 비교가 영원히 거짓이 된다 — daily_quest_date와
+    동일하게 RAW로 저장해야 한다."""
     rows = [["name", "fate_date"], ["아군1", ""], ["아군2", ""]]
     spreadsheet = _FakeSpreadsheet({"캐릭터": rows})
 
@@ -415,8 +421,7 @@ def test_update_character_fate_date_writes_raw_string():
 
     ws = spreadsheet.worksheet("캐릭터")
     assert (3, 2, "2026-09-09") in ws.written
-    call = next(c for c in ws.update_calls if c["col"] == 2)
-    assert call["raw"] is True
+    assert spreadsheet.values_batch_update_bodies[-1]["valueInputOption"] == "RAW"
 
 
 def test_update_character_fate_date_skips_missing_column():

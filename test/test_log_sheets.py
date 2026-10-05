@@ -14,7 +14,7 @@ from battle.objects.define import BattlefieldColumnIndex, FactionType  # noqa: E
 from battle.objects.models import CharacterId  # noqa: E402
 from bot import log_sheets  # noqa: E402
 from bot.sheet_cache import SheetCache  # noqa: E402
-from helpers import get_test_preset  # noqa: E402
+from helpers import apply_values_batch_update, get_test_preset  # noqa: E402
 
 
 def _make_context_with_two_characters() -> BattlefieldContext:
@@ -32,7 +32,10 @@ class _FakeHpWorksheet:
     """ "캐릭터"/"에너미" 시트 하나를 흉내낸다. name→행 매핑이 담긴 원본
     2차원 배열을 들고 있으며, update_cell 호출을 기록한다."""
 
-    def __init__(self, rows: list[list], fail_for: set[str] | None = None):
+    def __init__(
+        self, rows: list[list], fail_for: set[str] | None = None, title: str = "캐릭터"
+    ):
+        self.title = title
         self._rows = rows  # 헤더 포함, get_values() 형식
         self._fail_for = fail_for or set()
         self.written: list[tuple[int, int, int]] = []
@@ -55,12 +58,13 @@ class _FakeSpreadsheetForHpLookup:
 
     def __init__(self, char_names: list[str], enemy_names: list[str] | None = None):
         char_rows = [["name", "curr_hp"]] + [[n, "0"] for n in char_names]
-        self._sheets = {"캐릭터": _FakeHpWorksheet(char_rows)}
+        self._sheets = {"캐릭터": _FakeHpWorksheet(char_rows, title="캐릭터")}
         if enemy_names is not None:
             enemy_rows = [["name", "curr_hp"]] + [[n, "0"] for n in enemy_names]
-            self._sheets["에너미"] = _FakeHpWorksheet(enemy_rows)
+            self._sheets["에너미"] = _FakeHpWorksheet(enemy_rows, title="에너미")
         self.worksheet_call_count = 0
         self.fetch_sheet_metadata_call_count = 0
+        self.values_batch_update_call_count = 0
 
     def worksheet(self, name):
         self.worksheet_call_count += 1
@@ -72,12 +76,20 @@ class _FakeSpreadsheetForHpLookup:
         self.fetch_sheet_metadata_call_count += 1
         return {"sheets": [{"properties": {"title": name}} for name in self._sheets]}
 
+    def values_batch_update(self, body):
+        self.values_batch_update_call_count += 1
+        apply_values_batch_update(self._sheets, body)
 
-def test_write_back_changed_hp_absorbs_failure_and_continues():
-    """한 캐릭터의 시트 반영이 실패해도 예외가 위로 전파되면 안 된다 —
-    전파되면 이미 끝난 커맨드 처리의 응답 자체가 사라지고, 재시도 시
-    같은 행동이 중복 적용되는 문제로 이어진다. 나머지 캐릭터는 정상적으로
-    반영되어야 한다."""
+
+def test_write_back_changed_hp_absorbs_failure():
+    """시트 반영이 실패해도 예외가 위로 전파되면 안 된다 — 전파되면 이미 끝난
+    커맨드 처리의 응답 자체가 사라지고, 재시도 시 같은 행동이 중복 적용되는
+    문제로 이어진다.
+
+    체력은 캐릭터별이 아니라 배치 한 번으로 쓰므로 실패도 전부다. 그때
+    written_hp를 갱신하지 않아야 sync_hp_from_sheet가 "봇이 마지막으로 쓴
+    값"을 기준으로 삼는 전제가 깨지지 않는다 — 쓰지 못한 값을 썼다고
+    기록하면 GM이 고치지도 않은 시트 값을 고친 것으로 오인한다."""
     ctx = _make_context_with_two_characters()
     spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
     spreadsheet.worksheet("캐릭터")._fail_for = {"아군1"}
@@ -97,13 +109,90 @@ def test_write_back_changed_hp_absorbs_failure_and_continues():
         ),
     ]
 
+    written_hp: dict[str, int] = {}
     # 예외를 던지지 않아야 한다.
+    log_sheets.write_back_changed_hp(spreadsheet, ctx, entries, written_hp=written_hp)
+
+    assert written_hp == {}
+
+
+def test_write_back_changed_hp_uses_one_api_call_for_many_characters():
+    """바뀐 캐릭터가 N명이어도 쓰기는 1회여야 한다. 캐릭터별 update_cell을
+    돌리면 광역기 한 방에 쓰기 할당량(분당 60회)을 커맨드 두어 개로
+    소진한다. 두 시트("캐릭터"/"에너미")에 걸쳐 있어도 같은
+    스프레드시트라 요청 하나에 담긴다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ally_names = [f"아군{i}" for i in range(3)]
+    enemy_names = [f"적{i}" for i in range(3)]
+    for i, name in enumerate(ally_names):
+        ctx.add_character(
+            get_test_preset(name), FactionType.ALLY, BattlefieldColumnIndex(i)
+        )
+    for i, name in enumerate(enemy_names):
+        ctx.add_character(
+            get_test_preset(name), FactionType.ENEMY, BattlefieldColumnIndex(i)
+        )
+
+    spreadsheet = _FakeSpreadsheetForHpLookup(ally_names, enemy_names)
+    entries = [
+        BattleLogEntry(
+            target_name=name,
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 5",
+            value=5,
+        )
+        for name in ally_names + enemy_names
+    ]
+
     log_sheets.write_back_changed_hp(spreadsheet, ctx, entries)
 
+    assert spreadsheet.values_batch_update_call_count == 1
+    char_ws = spreadsheet.worksheet("캐릭터")
+    enemy_ws = spreadsheet.worksheet("에너미")
+    assert len(char_ws.written) == len(ally_names)
+    assert len(enemy_ws.written) == len(enemy_names)
+
+
+def test_write_back_changed_hp_folds_extra_writes_into_the_same_call():
+    """같은 커맨드에서 함께 발생하는 다른 셀 쓰기(키워드 보정 사용 날짜 등)도
+    체력과 한 요청에 묶여야 한다 — 따로 보내면 커맨드당 쓰기가 하나 더 는다."""
+    ctx = _make_context_with_two_characters()
+    spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
+    entries = [
+        BattleLogEntry(
+            target_name="아군1",
+            kind=BattleLogEntryKind.DAMAGE,
+            result="대미지 10",
+            value=10,
+        )
+    ]
+    fate_write = log_sheets.PendingCellWrite(
+        worksheet_title="캐릭터", row=3, col=2, value="2026-09-09"
+    )
+
+    log_sheets.write_back_changed_hp(
+        spreadsheet, ctx, entries, extra_writes=[fate_write]
+    )
+
+    assert spreadsheet.values_batch_update_call_count == 1
     ws = spreadsheet.worksheet("캐릭터")
-    written_names = {ws._rows[row - 1][0] for row, _, _ in ws.written}
-    assert written_names == {"아군2"}
-    assert (3, 2, ctx.characters[CharacterId("아군2")].status.curr_hp) in ws.written
+    assert (3, 2, "2026-09-09") in ws.written
+    assert len(ws.written) == 2
+
+
+def test_write_back_changed_hp_sends_extra_writes_without_hp_changes():
+    """체력이 하나도 바뀌지 않은 커맨드에서도 함께 묶은 쓰기는 나가야 한다 —
+    대미지 없이 키워드 보정만 쓰는 커맨드가 있다."""
+    ctx = _make_context_with_two_characters()
+    spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
+    fate_write = log_sheets.PendingCellWrite(
+        worksheet_title="캐릭터", row=2, col=2, value="2026-09-09"
+    )
+
+    log_sheets.write_back_changed_hp(spreadsheet, ctx, [], extra_writes=[fate_write])
+
+    assert spreadsheet.values_batch_update_call_count == 1
+    assert (2, 2, "2026-09-09") in spreadsheet.worksheet("캐릭터").written
 
 
 def test_write_back_changed_hp_writes_zero_for_eliminated_character():

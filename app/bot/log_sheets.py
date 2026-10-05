@@ -18,12 +18,12 @@ import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from typing import TYPE_CHECKING, Optional
 from urllib.parse import urlparse
 
 import gspread
-from gspread.utils import ValueInputOption
+from gspread.utils import ValueInputOption, absolute_range_name, rowcol_to_a1
 
 from battle.core.commands.models import BattleLogEntry
 from battle.objects.define import CombatStatType
@@ -341,6 +341,90 @@ def apply_persistent_hp_amounts(
     )
 
 
+@dataclass(frozen=True)
+class PendingCellWrite:
+    """한 요청으로 묶어 쓸 셀 하나. 같은 커맨드에서 발생한 쓰기를 모아
+    `write_cells()`에 한 번에 넘기기 위한 값이다."""
+
+    worksheet_title: str
+    row: int
+    col: int
+    value: object
+
+
+def write_cells(
+    spreadsheet: gspread.Spreadsheet,
+    writes: "Sequence[PendingCellWrite]",
+    cache: Optional[SheetCache],
+    description: str,
+) -> bool:
+    """여러 셀을 `values.batchUpdate` **한 번**으로 쓴다.
+
+    셀마다 `update_cell`(= `values.update` 1회)을 돌리면 광역기 한 방에
+    바뀐 체력 수만큼 API 쓰기가 나가, 분당 할당량(서비스 계정 60회)을
+    커맨드 두어 개로 소진한다. 한 스프레드시트 안이면 시트가 달라도
+    ("캐릭터"/"에너미") 요청 하나에 담을 수 있다.
+
+    `valueInputOption`은 RAW다 — 체력은 정수뿐이고 `fate_date`는 그대로
+    저장돼야 하는 문자열이라(USER_ENTERED면 날짜 시리얼이 될 수 있다)
+    파싱을 끄는 쪽이 맞다.
+
+    묶은 대가로 부분 실패 단위를 잃는다(셀 하나만 실패하는 일이 없는
+    대신, 실패하면 전부 반영되지 않는다). 호출측이 실패를 흡수하고 라이브
+    상태는 이미 정확하므로, 다음 성공적인 쓰기에서 시트가 다시 맞춰진다.
+    """
+    if not writes:
+        return True
+
+    data = [
+        {
+            "range": absolute_range_name(
+                write.worksheet_title, rowcol_to_a1(write.row, write.col)
+            ),
+            "values": [[write.value]],
+        }
+        for write in writes
+    ]
+    try:
+        spreadsheet.values_batch_update(
+            {"valueInputOption": ValueInputOption.raw, "data": data}
+        )
+    except Exception:
+        logger.exception("%s (%d건) 시트 반영 실패", description, len(writes))
+        return False
+
+    if cache is not None:
+        for title in {write.worksheet_title for write in writes}:
+            cache.invalidate(title)
+    return True
+
+
+def _write_hp_cells(
+    spreadsheet: gspread.Spreadsheet,
+    updates: "list[tuple[_HpRow, int]]",
+    cache: Optional[SheetCache],
+    description: str,
+    extra_writes: "Sequence[PendingCellWrite]" = (),
+) -> bool:
+    """체력 변경분과 `extra_writes`를 한 요청으로 쓴다.
+
+    `extra_writes`는 같은 커맨드에서 함께 발생한 다른 셀 쓰기다(키워드 보정
+    사용 날짜 등). 같은 스프레드시트라 체력과 한 요청에 묶을 수 있고, 묶으면
+    커맨드당 쓰기가 하나 줄어든다.
+    """
+    writes = [
+        PendingCellWrite(
+            worksheet_title=hp_row.worksheet.title,
+            row=hp_row.row,
+            col=hp_row.hp_col,
+            value=new_hp,
+        )
+        for hp_row, new_hp in updates
+    ]
+    writes.extend(extra_writes)
+    return write_cells(spreadsheet, writes, cache, description)
+
+
 def _apply_persistent_hp(
     spreadsheet: gspread.Spreadsheet,
     delta_by_name: "dict[str, Callable[[_HpRow], Optional[int]]]",
@@ -358,6 +442,7 @@ def _apply_persistent_hp(
 
     applied: list[PersistentHpChange] = []
     failed: list[str] = []
+    updates: list[tuple[_HpRow, int]] = []
     for name, delta_for in delta_by_name.items():
         hp_row = hp_rows.get(name)
         if hp_row is None or hp_row.curr_hp is None:
@@ -375,14 +460,7 @@ def _apply_persistent_hp(
             failed.append(name)
             continue
         new_hp = max(0, min(hp_row.max_hp, hp_row.curr_hp + delta))
-        try:
-            hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, new_hp)
-        except Exception:
-            logger.exception("'%s'의 실제 체력(%s) 시트 반영 실패", name, new_hp)
-            failed.append(name)
-            continue
-        if cache is not None:
-            cache.invalidate(hp_row.worksheet.title)
+        updates.append((hp_row, new_hp))
         applied.append(
             PersistentHpChange(
                 name=name,
@@ -391,6 +469,10 @@ def _apply_persistent_hp(
                 applied_delta=new_hp - hp_row.curr_hp,
             )
         )
+
+    if not _write_hp_cells(spreadsheet, updates, cache, "실제 체력 정산"):
+        # 묶어 쓰므로 실패도 전부다 — 반영됐다고 보고하면 안 된다.
+        return [], failed + [change.name for change in applied]
     return applied, failed
 
 
@@ -400,6 +482,7 @@ def write_back_changed_hp(
     entries: list[BattleLogEntry],
     cache: Optional[SheetCache] = None,
     written_hp: Optional[dict[str, int]] = None,
+    extra_writes: "Sequence[PendingCellWrite]" = (),
 ) -> None:
     """entries 중 대미지/회복이 발생한 대상의 curr_hp를 "캐릭터" 시트에 반영한다.
 
@@ -416,7 +499,7 @@ def write_back_changed_hp(
 
     이름→행 매핑을 시트당 1회만 읽어서 구축한 뒤(_load_hp_rows)
     변경된 캐릭터 수만큼 그 매핑을 재사용한다 — 바뀐 캐릭터가 N명이어도
-    읽기는 시트당 1회로 고정된다(쓰기는 여전히 캐릭터별 update_cell).
+    읽기도 쓰기도 각각 1회로 고정된다(_write_hp_cells).
     """
     changed_names = {
         entry.target_name
@@ -424,7 +507,12 @@ def write_back_changed_hp(
         if entry.result.startswith("대미지 ") or entry.result.startswith("회복 ")
     }
     write_back_character_hp(
-        spreadsheet, context, changed_names, cache=cache, written_hp=written_hp
+        spreadsheet,
+        context,
+        changed_names,
+        cache=cache,
+        written_hp=written_hp,
+        extra_writes=extra_writes,
     )
 
 
@@ -434,6 +522,7 @@ def write_back_character_hp(
     names: Iterable[str],
     cache: Optional[SheetCache] = None,
     written_hp: Optional[dict[str, int]] = None,
+    extra_writes: "Sequence[PendingCellWrite]" = (),
 ) -> set[str]:
     """names 캐릭터들의 전장 체력을 "캐릭터"/"에너미" 시트 curr_hp에 쓰고,
     실제로 쓴 이름을 반환한다. `written_hp`가 주어지면 쓴 값을 거기에도
@@ -444,14 +533,20 @@ def write_back_character_hp(
     written: set[str] = set()
     name_set = set(names)
     if not name_set:
+        # 체력 변동이 없어도 함께 묶기로 한 쓰기는 나가야 한다 — 키워드 보정
+        # 사용 기록처럼 대미지 없이 발생하는 쓰기가 있다.
+        write_cells(spreadsheet, extra_writes, cache, "시트 반영")
         return written
 
     try:
         hp_rows = _load_hp_rows(spreadsheet, cache)
     except Exception:
         logger.exception("체력 시트 반영 대상 조회 실패")
+        write_cells(spreadsheet, extra_writes, cache, "시트 반영")
         return written
 
+    updates: list[tuple[_HpRow, int]] = []
+    hp_by_name: dict[str, int] = {}
     for name in name_set:
         char_id = CharacterId(name)
         char = context.characters.get(char_id)
@@ -465,13 +560,17 @@ def write_back_character_hp(
                 curr_hp,
             )
             continue
-        try:
-            hp_row.worksheet.update_cell(hp_row.row, hp_row.hp_col, curr_hp)
-            written.add(name)
-            if written_hp is not None:
-                written_hp[name] = curr_hp
-        except Exception:
-            logger.exception("'%s'의 체력(%s) 시트 반영 실패", name, curr_hp)
+        updates.append((hp_row, curr_hp))
+        hp_by_name[name] = curr_hp
+
+    if not _write_hp_cells(
+        spreadsheet, updates, cache, "체력 시트 반영", extra_writes=extra_writes
+    ):
+        return written
+
+    written.update(hp_by_name)
+    if written_hp is not None:
+        written_hp.update(hp_by_name)
     return written
 
 

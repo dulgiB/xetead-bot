@@ -20,6 +20,7 @@ from battle.objects.passive_skill.models import (
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.effects import SkillEffectAddBuff, SkillEffectDamage
 from battle.objects.field_effect.models import FieldEffectSource
+from gspread.utils import rowcol_to_a1
 from bot.field_sheet_renderer import (
     CHARM_ROW_COUNT,
     EXPORT_BOTTOM_ROW,
@@ -28,11 +29,13 @@ from bot.field_sheet_renderer import (
     _ALLY_MAIN_ROW_START,
     _ENEMY_BLOCK_BOTTOM,
     _ENEMY_BLOCK_TOP,
+    _DECLARE_NAME_COL,
     _ENEMY_MAIN_ROW_START,
     _HEADER_ROW,
     _build_faction_block,
     _format_buff_cell,
     _format_field_effect_cell,
+    render_public_field_sheet,
 )
 from helpers import get_test_preset
 
@@ -338,3 +341,121 @@ def test_layout_rows_follow_the_header_row():
     assert _ALLY_BLOCK_BOTTOM == _ALLY_MAIN_ROW_START + 8
     # 이미지 캡처가 아군 블록 아래(“아군” 띠 + 여백)까지 담는지.
     assert EXPORT_BOTTOM_ROW > _ALLY_BLOCK_BOTTOM
+
+
+class _FakeFieldWorksheet:
+    id = 4242
+    title = "필드"
+
+
+class _RecordingFieldSpreadsheet:
+    """공개 "필드" 시트 쓰기를 기록하는 가짜 스프레드시트. 값·메모·병합을
+    한 번의 batch_update로 보내는지 확인하는 데 쓴다."""
+
+    def __init__(self):
+        self.ws = _FakeFieldWorksheet()
+        self.bodies: list[dict] = []
+
+    def worksheet(self, name):
+        assert name == "필드"
+        return self.ws
+
+    def batch_update(self, body):
+        self.bodies.append(body)
+
+
+def _written_cells(body: dict) -> dict[str, tuple[str, str | None]]:
+    """updateCells 요청들을 A1 → (값, 메모)로 펼친다."""
+    cells: dict[str, tuple[str, str | None]] = {}
+    for request in body["requests"]:
+        update = request.get("updateCells")
+        if update is None:
+            continue
+        grid = update["range"]
+        for row_offset, row in enumerate(update["rows"]):
+            for col_offset, cell in enumerate(row["values"]):
+                a1 = rowcol_to_a1(
+                    grid["startRowIndex"] + 1 + row_offset,
+                    grid["startColumnIndex"] + 1 + col_offset,
+                )
+                value = cell.get("userEnteredValue", {}).get("stringValue", "")
+                cells[a1] = (value, cell.get("note"))
+    return cells
+
+
+def _render_once(**kwargs) -> _RecordingFieldSpreadsheet:
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("적 1"), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(1)
+    )
+    spreadsheet = _RecordingFieldSpreadsheet()
+    render_public_field_sheet(
+        spreadsheet,
+        ctx,
+        round_n=3,
+        phase="아군 행동",
+        enemy_declared={},
+        **kwargs,
+    )
+    return spreadsheet
+
+
+def test_render_public_field_sheet_sends_one_api_call():
+    """값·메모·병합을 따로 보내면 렌더링마다 쓰기 3회가 나가, 커맨드마다
+    렌더링하는 구조에서 분당 할당량을 빠르게 깎는다. 한 번의
+    batch_update로 모여야 한다."""
+    spreadsheet = _render_once()
+
+    assert len(spreadsheet.bodies) == 1
+
+    cells = _written_cells(spreadsheet.bodies[0])
+    assert cells["B4"][0] == "ROUND 3"
+    assert cells["D6"][0] == "아군 행동"
+    # 걸린 필드 효과가 없으면 "없음" — 빈 칸으로 두면 아직 렌더링되지 않은
+    # 것과 구분되지 않는다.
+    assert cells["D7"][0] == "없음"
+
+    # 진영 격자는 각 블록의 슬롯0 행에 이름이 들어간다.
+    enemy_names = [
+        value
+        for a1, (value, _) in cells.items()
+        if a1.startswith("B") and "적 1" in value
+    ]
+    ally_names = [
+        value
+        for a1, (value, _) in cells.items()
+        if a1.startswith("C") and "아군 1" in value
+    ]
+    assert enemy_names and ally_names
+
+
+def test_render_public_field_sheet_folds_initial_merges_into_the_same_call():
+    """전투 시작 시의 J:K 병합도 같은 요청에 실려, 추가 호출이 생기지 않는다."""
+    spreadsheet = _render_once(ensure_merged=True)
+
+    assert len(spreadsheet.bodies) == 1
+    merges = [
+        request["mergeCells"]
+        for request in spreadsheet.bodies[0]["requests"]
+        if "mergeCells" in request
+    ]
+    declare_merges = [
+        merge
+        for merge in merges
+        if merge["range"]["startColumnIndex"] == _DECLARE_NAME_COL - 1
+    ]
+    assert len(declare_merges) == 2
+
+
+def test_render_public_field_sheet_clears_stale_notes_in_the_grid():
+    """캐릭터가 없는 칸의 메모는 빈 문자열로 덮여야 한다 — 남겨 두면 전에
+    그 자리에 있던 캐릭터의 버프 설명이 계속 보인다."""
+    spreadsheet = _render_once()
+    cells = _written_cells(spreadsheet.bodies[0])
+
+    # 아무도 없는 7열(H) 적군 블록 칸.
+    empty_cell = rowcol_to_a1(_ENEMY_MAIN_ROW_START + 2, 8)
+    assert cells[empty_cell] == ("", "")

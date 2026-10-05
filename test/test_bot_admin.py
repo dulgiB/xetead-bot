@@ -43,7 +43,7 @@ from bot.main import BotState, MastodonBotListener, _handle_practice_command  # 
 from bot.noncombat_state import InvestigationSession  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from bot.session import BattleSession  # noqa: E402
-from helpers import get_test_preset  # noqa: E402
+from helpers import apply_values_batch_update, get_test_preset  # noqa: E402
 from test_bot_noncombat import _quest, _quest_location  # noqa: E402
 from test_load_battle_data import _base_sheets, _FakeSpreadsheet  # noqa: E402
 
@@ -509,12 +509,24 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
     호출되고 POST_ACTION 정산 자체는 반영되지 않는 갭이 있었다."""
 
     class _RecordingWorksheet:
+        title = "캐릭터"
+
         def __init__(self, row_to_name: dict[int, str]):
             self._row_to_name = row_to_name
             self.recorded_hp: dict = {}
 
         def update_cell(self, row, col, value):
             self.recorded_hp[self._row_to_name[row]] = value
+
+    class _RecordingSpreadsheet:
+        """체력을 배치 한 번으로 쓰므로, 가짜 스프레드시트도 그 호출을 받아
+        워크시트로 분배해야 한다."""
+
+        def __init__(self, worksheet):
+            self._sheets = {worksheet.title: worksheet}
+
+        def values_batch_update(self, body):
+            apply_values_batch_update(self._sheets, body)
 
     ws = _RecordingWorksheet({2: "유효 캐릭터", 3: "적 캐릭터"})
     monkeypatch.setattr(
@@ -530,6 +542,7 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
             ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
         ]
     )
+    state.spreadsheet = _RecordingSpreadsheet(ws)
     state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
     state.pending_placements.append(
         ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))

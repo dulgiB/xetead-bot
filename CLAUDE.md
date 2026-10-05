@@ -776,6 +776,45 @@ admin의 페이즈 전환(`[진행]`/`[전투속행]`) **직전**에
 되돌려 버린다. 그래서 본 전투에서 체력을 쓰는 경로는 `write_back_changed_hp()`에
 `written_hp=session.sheet_hp`를 넘겨야 한다.
 
+## 스프레드시트 API 쓰기 할당량
+
+Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, 봇이 쓰는 세
+스프레드시트(`DB_SPREADSHEET_KEY`/`FIELD_SPREADSHEET_KEY`/
+`LOG_SPREADSHEET_KEY`)가 그 하나의 할당량을 함께 쓴다. 커맨드 하나를
+처리할 때마다 체력 반영·공개 필드 시트 렌더링·로그 기록·필드 DB 갱신이
+모두 나가므로, **"캐릭터 수만큼" 늘어나는 쓰기를 하나라도 남겨 두면
+광역기 한 방에 할당량이 날아간다.**
+
+쓰기 실패는 재시도되지 않는다 — `sheet_cache.py`의 지수 백오프는 읽기
+전용이고 `_RETRYABLE_STATUS_CODES`도 5xx만이라 429는 애초에 대상이
+아니다. 호출 수를 줄이는 것이 유일한 방어선이다.
+
+**새 쓰기 경로를 만들 때는 "대상 수에 비례하는 호출"을 만들지 않는다.**
+- 같은 스프레드시트 안의 여러 셀/시트는 `log_sheets.write_cells()` 한 번으로
+  묶는다("캐릭터"/"에너미" 두 시트를 한 요청에 담는다). `update_cell()`은
+  호출마다 `values.update` 1회다.
+- 같은 커맨드에서 따로 발생하는 쓰기도 합류시킨다 — 커맨드 처리 시점에
+  `PendingCellWrite`를 모아 `write_back_changed_hp(extra_writes=...)`로
+  넘기면 체력과 한 요청에 들어간다(키워드 보정 사용 날짜가 그렇게 탄다).
+  쓸 시점을 호출측이 잡아야 하므로, 그런 쓰기 함수는 "바로 쓰기"와 "셀만
+  만들어 돌려주기"(`load_data.build_fate_date_write()`)를 나눠 둔다.
+- 값·메모·병합처럼 종류가 다른 변경도 `spreadsheets.batchUpdate`의
+  `updateCells`/`mergeCells` 요청으로 한 배열에 담으면 한 번이다
+  (`field_sheet_renderer.render_public_field_sheet()`). gspread의
+  `merge_cells()`/`update_notes()`는 **호출마다** HTTP 요청을 보내므로
+  루프 안에서 쓰면 안 된다.
+- 여러 행 추가는 `append_rows()`(이미 그렇게 쓰고 있다).
+
+묶으면 부분 실패 단위를 잃는다(한 캐릭터만 실패하는 대신 전부 실패).
+체력 경로는 그래도 묶는 쪽을 택했다 — 라이브 상태(`context`)가 진실이고
+다음 성공적인 write-back이 시트를 다시 맞추므로, 실패를 "썼다"고 보고하지
+않는 것(`written_hp` 미갱신)만 지키면 된다.
+
+커맨드를 넘어 쓰기를 모으거나 미루지는 않는다. **커맨드 1회 = 시트 반영
+1회**라는 구조는 그대로이고, 묶는 범위는 그 한 번 안에서다.
+
+---
+
 ## 재기동 복원 (`bot/field_restore.py`)
 
 "필드" 시트에서 `ended_at`이 빈 행을 읽어 전투를 되살린다. 캐릭터 스냅샷에는
