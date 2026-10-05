@@ -6,7 +6,6 @@ from battle.objects.define import ItemType
 from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
-from utils.battle_helpers import is_reachable
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -97,16 +96,11 @@ class CharmAuraContainer:
         holder_char = self._context.characters.get(aura.holder)
         if holder_char is None:
             return set()
-        holder_pos = self._context.find_character_position(aura.holder)
         return {
             char_id
             for char_id, char in self._context.characters.items()
             if char.faction == holder_char.faction
-            and is_reachable(
-                holder_pos,
-                self._context.find_character_position(char_id),
-                aura.item.attack_range,
-            )
+            and self._context.can_reach(aura.holder, char_id, aura.item.attack_range)
         }
 
     def _apply(self, aura: CharmAura, char_id: CharacterId, *, revert: bool) -> None:

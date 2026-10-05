@@ -1,7 +1,7 @@
 from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
-from utils.battle_helpers import is_reachable
+from utils.battle_helpers import columns_for_span, is_reachable_between
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_calculator import CommandPartCalculator, build_log_entries
@@ -35,6 +35,7 @@ from battle.exceptions import (
     error_no_item_in_inventory,
     error_no_remaining_cost,
     error_skill_not_registered,
+    error_span_out_of_board,
     error_target_does_not_exist,
     error_too_many_characters,
     error_too_many_targets,
@@ -260,8 +261,13 @@ def _drop_targets_out_of_range(
             target_id = damage_calc.base.target_id
             if target_id in out_of_range or target_id not in context.characters:
                 continue
-            target_pos = context.find_character_position(target_id)
-            if not is_reachable(user_pos, target_pos, attack_range):
+            # 시전자는 선언한 이동 목적지 기준이라 위치에서 점유 열을 다시
+            # 만들고, 대상은 전장에 있는 그대로의 점유 열을 쓴다.
+            if not is_reachable_between(
+                columns_for_span(user_pos, user.span),
+                context.find_character_columns(target_id),
+                attack_range,
+            ):
                 out_of_range.append(target_id)
         if not out_of_range:
             continue
@@ -404,8 +410,17 @@ def try_expansion_if_valid(
                 mover_id = move_data.character_id
                 if mover_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(mover_id))
-                mover_faction = context.characters[mover_id].faction
-                if context.try_find_empty_slot(mover_faction, to_pos) is None:
+                mover = context.characters[mover_id]
+                if len(columns_for_span(to_pos, mover.span)) < mover.span:
+                    raise CommandValidationError(
+                        error_span_out_of_board(to_pos, mover.span)
+                    )
+                if (
+                    context.try_find_empty_slot(
+                        mover.faction, to_pos, span=mover.span, ignore=mover_id
+                    )
+                    is None
+                ):
                     raise CommandValidationError(error_too_many_characters(to_pos))
                 if mover_id == command.user_id:
                     user_pos = to_pos
@@ -415,10 +430,15 @@ def try_expansion_if_valid(
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
-                target_pos = context.find_character_position(target_id)
-                if not is_reachable(user_pos, target_pos, effective_range):
+                if not is_reachable_between(
+                    columns_for_span(user_pos, user.span),
+                    context.find_character_columns(target_id),
+                    effective_range,
+                ):
                     raise CommandValidationError(
-                        error_attack_position_too_far(target_pos)
+                        error_attack_position_too_far(
+                            context.find_character_position(target_id)
+                        )
                     )
 
             for heal_data in sub_data.heal_list:

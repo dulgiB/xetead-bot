@@ -20,6 +20,7 @@ class CombatCharacter:
         skills: list[Skill],
         hide_hp: bool = False,
         fate_used: bool = False,
+        span: int = 1,
     ):
         self.field = context
         self.id = char_id
@@ -32,6 +33,9 @@ class CombatCharacter:
         # 배치 시점 날짜와 시트의 fate_date를 비교한 결과. 실제 사용 시 여기가
         # 먼저 True가 되고, 봇 계층이 뒤이어 시트에 날짜를 기록한다.
         self.fate_used = fate_used
+        # 전장에서 차지하는 열 수. find_character_position()은 그중 가장 왼쪽
+        # 열을 가리키고, 점유 열 전체는 find_character_columns()가 돌려준다.
+        self.span = max(1, span)
 
     def __str__(self):
         return f"{self.id} ({self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]})"

@@ -1,6 +1,8 @@
 from typing import TYPE_CHECKING
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
+from utils.battle_helpers import COLUMN_COUNT
+
 from battle.objects.define import BattlefieldColumnIndex, ValueSourceType
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
 from battle.objects.skill.models import SkillEffectBase
@@ -9,13 +11,20 @@ if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
 
 
+def _max_anchor(span: int) -> int:
+    """여러 열을 차지하는 캐릭터가 설 수 있는 가장 오른쪽 기준 열. 기준 열은
+    항상 가장 왼쪽이므로, 오른쪽 끝이 전장을 넘지 않으려면 여기까지다."""
+    return COLUMN_COUNT - span
+
+
 def _move_toward(
     from_pos: BattlefieldColumnIndex,
     toward_pos: BattlefieldColumnIndex,
     steps: int,
+    span: int = 1,
 ) -> BattlefieldColumnIndex:
     if from_pos.value < toward_pos.value:
-        return BattlefieldColumnIndex(min(6, from_pos.value + steps))
+        return BattlefieldColumnIndex(min(_max_anchor(span), from_pos.value + steps))
     elif from_pos.value > toward_pos.value:
         return BattlefieldColumnIndex(max(0, from_pos.value - steps))
     return from_pos  # 동일 위치면 이동 없음
@@ -25,12 +34,18 @@ def _move_away_from(
     from_pos: BattlefieldColumnIndex,
     away_from: BattlefieldColumnIndex,
     steps: int,
+    span: int = 1,
 ) -> BattlefieldColumnIndex:
     if from_pos.value < away_from.value:
         return BattlefieldColumnIndex(max(0, from_pos.value - steps))
     elif from_pos.value > away_from.value:
-        return BattlefieldColumnIndex(min(6, from_pos.value + steps))
+        return BattlefieldColumnIndex(min(_max_anchor(span), from_pos.value + steps))
     return from_pos  # 동일 위치면 방향 불명, 이동 없음
+
+
+def _span_of(context: "BattlefieldContext", char_id: CharacterId) -> int:
+    character = context.characters.get(char_id)
+    return character.span if character is not None else 1
 
 
 class SkillEffectMove(SkillEffectBase):
@@ -106,7 +121,10 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=target,
                         to_position=_move_toward(
-                            context.find_character_position(target), holder_pos, steps
+                            context.find_character_position(target),
+                            holder_pos,
+                            steps,
+                            _span_of(context, target),
                         ),
                         is_forced=True,
                     )
@@ -147,7 +165,10 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=target,
                         to_position=_move_away_from(
-                            context.find_character_position(target), holder_pos, steps
+                            context.find_character_position(target),
+                            holder_pos,
+                            steps,
+                            _span_of(context, target),
                         ),
                         is_forced=True,
                     )

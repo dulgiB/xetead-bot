@@ -343,8 +343,7 @@ def apply_persistent_hp_amounts(
 
 @dataclass(frozen=True)
 class PendingCellWrite:
-    """한 요청으로 묶어 쓸 셀 하나. 같은 커맨드에서 발생한 쓰기를 모아
-    `write_cells()`에 한 번에 넘기기 위한 값이다."""
+    """`write_cells()`로 한 요청에 묶어 쓸 셀 하나."""
 
     worksheet_title: str
     row: int
@@ -360,18 +359,15 @@ def write_cells(
 ) -> bool:
     """여러 셀을 `values.batchUpdate` **한 번**으로 쓴다.
 
-    셀마다 `update_cell`(= `values.update` 1회)을 돌리면 광역기 한 방에
-    바뀐 체력 수만큼 API 쓰기가 나가, 분당 할당량(서비스 계정 60회)을
-    커맨드 두어 개로 소진한다. 한 스프레드시트 안이면 시트가 달라도
+    셀마다 `update_cell`을 돌리면 광역기 한 방에 바뀐 체력 수만큼 쓰기가
+    나가 분당 할당량을 금방 소진한다. 한 스프레드시트 안이면 시트가 달라도
     ("캐릭터"/"에너미") 요청 하나에 담을 수 있다.
 
-    `valueInputOption`은 RAW다 — 체력은 정수뿐이고 `fate_date`는 그대로
-    저장돼야 하는 문자열이라(USER_ENTERED면 날짜 시리얼이 될 수 있다)
-    파싱을 끄는 쪽이 맞다.
+    `valueInputOption`은 RAW다 — USER_ENTERED면 `fate_date` 같은 날짜
+    문자열이 날짜 시리얼이 될 수 있다.
 
-    묶은 대가로 부분 실패 단위를 잃는다(셀 하나만 실패하는 일이 없는
-    대신, 실패하면 전부 반영되지 않는다). 호출측이 실패를 흡수하고 라이브
-    상태는 이미 정확하므로, 다음 성공적인 쓰기에서 시트가 다시 맞춰진다.
+    실패하면 전부 반영되지 않는다. 라이브 상태는 이미 정확하므로 다음
+    성공적인 쓰기에서 시트가 다시 맞춰진다.
     """
     if not writes:
         return True
@@ -406,12 +402,7 @@ def _write_hp_cells(
     description: str,
     extra_writes: "Sequence[PendingCellWrite]" = (),
 ) -> bool:
-    """체력 변경분과 `extra_writes`를 한 요청으로 쓴다.
-
-    `extra_writes`는 같은 커맨드에서 함께 발생한 다른 셀 쓰기다(키워드 보정
-    사용 날짜 등). 같은 스프레드시트라 체력과 한 요청에 묶을 수 있고, 묶으면
-    커맨드당 쓰기가 하나 줄어든다.
-    """
+    """체력 변경분과 `extra_writes`를 한 요청으로 쓴다."""
     writes = [
         PendingCellWrite(
             worksheet_title=hp_row.worksheet.title,
@@ -492,14 +483,11 @@ def write_back_changed_hp(
     호출측(캐릭터 커맨드 처리, 페이즈 전환 등)은 이미 커맨드/버프 처리를
     마친 뒤 이 함수를 호출한다 — 여기서 예외가 위로 전파되면 이미 끝난
     처리의 응답 자체가 사라지고, 사용자가 재시도하면 같은 행동이 중복
-    적용되는 문제로 이어진다. 그래서 캐릭터별로 실패를 흡수하고 로깅만
-    하며(한 캐릭터가 실패해도 나머지는 계속 반영), 절대 위로 전파하지
-    않는다. 실패해도 라이브 세션 상태(context)는 이미 정확하므로, 다음
-    성공적인 write-back 시점에 시트도 자연히 다시 맞춰진다.
+    적용되는 문제로 이어진다. 그래서 실패를 흡수하고 로깅만 하며, 절대
+    위로 전파하지 않는다. 실패해도 라이브 세션 상태(context)는 이미
+    정확하므로, 다음 성공적인 write-back 시점에 시트도 자연히 다시 맞춰진다.
 
-    이름→행 매핑을 시트당 1회만 읽어서 구축한 뒤(_load_hp_rows)
-    변경된 캐릭터 수만큼 그 매핑을 재사용한다 — 바뀐 캐릭터가 N명이어도
-    읽기도 쓰기도 각각 1회로 고정된다(_write_hp_cells).
+    바뀐 캐릭터가 N명이어도 읽기는 시트당 1회, 쓰기는 1회로 고정된다.
     """
     changed_names = {
         entry.target_name
@@ -533,8 +521,7 @@ def write_back_character_hp(
     written: set[str] = set()
     name_set = set(names)
     if not name_set:
-        # 체력 변동이 없어도 함께 묶기로 한 쓰기는 나가야 한다 — 키워드 보정
-        # 사용 기록처럼 대미지 없이 발생하는 쓰기가 있다.
+        # 체력 변동이 없어도 함께 묶기로 한 쓰기는 나가야 한다.
         write_cells(spreadsheet, extra_writes, cache, "시트 반영")
         return written
 

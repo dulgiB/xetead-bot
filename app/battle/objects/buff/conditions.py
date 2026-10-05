@@ -2,7 +2,6 @@ import abc
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Iterator, Optional
 
-from utils.battle_helpers import is_reachable
 
 from battle.objects.define import BuffType, CombatStatType
 from battle.objects.models import CharacterId
@@ -28,7 +27,6 @@ def _characters_in_holder_scope(
     holder_char = context.characters.get(holder)
     if holder_char is None:
         return
-    holder_pos = context.find_character_position(holder)
     holder_range = holder_char.status[CombatStatType.RANGE] if in_range else None
 
     for char_id, char in context.characters.items():
@@ -38,11 +36,9 @@ def _characters_in_holder_scope(
             continue
         if in_range:
             assert holder_range is not None  # in_range=True일 때만 여기 도달
-            if not is_reachable(
-                holder_pos, context.find_character_position(char_id), holder_range
-            ):
+            if not context.can_reach(holder, char_id, holder_range):
                 continue
-        elif context.find_character_position(char_id) != holder_pos:
+        elif not context.shares_column(holder, char_id):
             continue
         yield char_id, char
 
@@ -120,9 +116,7 @@ class IsInSameColumnCondition(Condition):
         if attacker_or_target is None:
             return False
 
-        return context.find_character_position(
-            holder
-        ) == context.find_character_position(attacker_or_target)
+        return context.shares_column(holder, attacker_or_target)
 
 
 @dataclass(frozen=True)
@@ -411,10 +405,8 @@ class TargetIsInRangeCondition(Condition):
         holder_char = context.characters.get(holder)
         if holder_char is None:
             return False
-        holder_pos = context.find_character_position(holder)
-        target_pos = context.find_character_position(attacker_or_target)
         holder_range = holder_char.status[CombatStatType.RANGE]
-        return is_reachable(holder_pos, target_pos, holder_range)
+        return context.can_reach(holder, attacker_or_target, holder_range)
 
 
 @dataclass(frozen=True)

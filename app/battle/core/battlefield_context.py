@@ -4,6 +4,11 @@ from datetime import date
 from typing import Optional
 
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
+from utils.battle_helpers import (
+    columns_for_span,
+    columns_overlap,
+    is_reachable_between,
+)
 from utils.logging import print_apply_damage, print_apply_heal
 from utils.name_matching import resolve_matching_key
 
@@ -17,6 +22,7 @@ from battle.exceptions import (
     error_character_already_defeated,
     error_field_effect_not_found,
     error_not_a_field_effect,
+    error_span_out_of_board,
     error_target_does_not_exist,
     error_too_many_characters,
 )
@@ -308,6 +314,7 @@ class BattlefieldContext:
             ),
             skills=skills,
             hide_hp=data.hide_hp,
+            span=data.span,
             # 배치 시점의 날짜로 한 번 확정해 두면 전투가 자정을 넘겨도
             # 한 전투 안에서 판정 기준이 바뀌지 않는다.
             fate_used=data.has_used_fate_on(date.today().isoformat()),
@@ -326,12 +333,23 @@ class BattlefieldContext:
             for wrapper in wrappers:
                 self.buff_container.add_passive_wrapper(wrapper)
 
-        maybe_empty_slot = self.try_find_empty_slot(faction, column_idx)
+        occupied = columns_for_span(column_idx, character.span)
+        if len(occupied) < character.span:
+            raise CommandValidationError(
+                error_span_out_of_board(column_idx, character.span)
+            )
+
+        maybe_empty_slot = self.try_find_empty_slot(
+            faction, column_idx, span=character.span
+        )
 
         if maybe_empty_slot is None:
             raise CommandValidationError(error_too_many_characters(column_idx))
 
-        self.position_map[faction][column_idx][maybe_empty_slot] = char_id
+        # 걸친 열 전부에 등록해야 열당 인원 제한과 열 광역기 판정이 덩치를
+        # 그대로 반영한다.
+        for column in occupied:
+            self.position_map[faction][column][maybe_empty_slot] = char_id
         self.characters[char_id] = character
 
         # 전투 도중 참전한 캐릭터도 이미 걸린 필드 효과를 즉시 받는다.
@@ -344,12 +362,14 @@ class BattlefieldContext:
 
     def _remove_from_position_map(self, char_id: CharacterId) -> None:
         char = self.characters[char_id]
-        char_pos = self.find_character_position(char_id)
-        for slot_idx, cid in self.position_map[char.faction][char_pos].items():
-            if cid == char_id:
-                self.position_map[char.faction][char_pos].pop(slot_idx)
-                return
-        raise CommandValidationError(error_target_does_not_exist(char_id))
+        removed = False
+        for slots in self.position_map[char.faction].values():
+            for slot_idx, cid in list(slots.items()):
+                if cid == char_id:
+                    slots.pop(slot_idx)
+                    removed = True
+        if not removed:
+            raise CommandValidationError(error_target_does_not_exist(char_id))
 
     def remove_character(self, char_id: CharacterId) -> "CombatCharacter":
         if char_id not in self.characters:
@@ -365,10 +385,31 @@ class BattlefieldContext:
         return removed
 
     def try_find_empty_slot(
-        self, faction: FactionType, column: BattlefieldColumnIndex
+        self,
+        faction: FactionType,
+        column: BattlefieldColumnIndex,
+        span: int = 1,
+        ignore: Optional[CharacterId] = None,
     ) -> Optional[int]:
+        """`column`을 가장 왼쪽으로 삼아 span개 열에 모두 비어 있는 슬롯
+        번호를 찾는다. 없으면 None.
+
+        여러 열에 걸치는 캐릭터도 모든 열에서 같은 슬롯 번호를 쓴다 — 열마다
+        다른 번호를 잡으면 제거·표시 쪽에서 같은 캐릭터를 열마다 다른 자리로
+        보게 된다.
+
+        `ignore`가 차지한 자리는 빈 것으로 센다 — 이동은 원래 자리를 비우고
+        들어가므로, 자기 자신 때문에 자리가 없다고 판정하면 다열 캐릭터가
+        한 칸도 움직이지 못한다(이동 전후 점유 열이 겹치기 때문).
+        """
+        columns = columns_for_span(column, span)
+        if len(columns) < span:
+            return None
         for i in range(CHARACTER_PER_COLUMN):
-            if i not in self.position_map[faction][column].keys():
+            if all(
+                self.position_map[faction][col].get(i) in (None, ignore)
+                for col in columns
+            ):
                 return i
         return None
 
@@ -403,18 +444,59 @@ class BattlefieldContext:
 
         return BattlefieldColumnIndex.NONE
 
+    def find_character_columns(
+        self, char_id: CharacterId
+    ) -> tuple[BattlefieldColumnIndex, ...]:
+        """캐릭터가 차지하는 열 전부(왼쪽부터).
+
+        사거리·"같은 열" 판정은 모두 이 목록을 기준으로 한다 — 위치 하나만
+        보면 다열 에너미가 왼쪽 끝 열에서만 닿고 맞는 꼴이 된다."""
+        char = self.characters.get(char_id)
+        if char is None:
+            return (BattlefieldColumnIndex.NONE,)
+        return columns_for_span(self.find_character_position(char_id), char.span)
+
+    def can_reach(
+        self,
+        ref_id: CharacterId,
+        target_id: CharacterId,
+        reachable_range: int,
+    ) -> bool:
+        """ref가 target에 닿는지(양쪽 모두 점유 열 전체 기준)."""
+        return is_reachable_between(
+            self.find_character_columns(ref_id),
+            self.find_character_columns(target_id),
+            reachable_range,
+        )
+
+    def shares_column(self, char_id: CharacterId, other_id: CharacterId) -> bool:
+        """두 캐릭터가 한 열이라도 함께 차지하는지("같은 열" 판정)."""
+        return columns_overlap(
+            self.find_character_columns(char_id),
+            self.find_character_columns(other_id),
+        )
+
     def move_character_to(
         self, char_id: CharacterId, to_position: BattlefieldColumnIndex
     ):
         char = self.characters[char_id]
-        empty_slot = self.try_find_empty_slot(char.faction, to_position)
+        occupied = columns_for_span(to_position, char.span)
+        if len(occupied) < char.span:
+            raise CommandValidationError(
+                error_span_out_of_board(to_position, char.span)
+            )
+
+        empty_slot = self.try_find_empty_slot(
+            char.faction, to_position, span=char.span, ignore=char_id
+        )
 
         # 강제 이동(스킬 효과 등)은 is_valid를 거치지 않으므로 체크를 유지한다.
         if empty_slot is None:
             raise CommandValidationError(error_too_many_characters(to_position))
 
         self._remove_from_position_map(char_id)
-        self.position_map[char.faction][to_position][empty_slot] = char_id
+        for column in occupied:
+            self.position_map[char.faction][column][empty_slot] = char_id
         self.moved_this_round.add(char_id)
         self.charm_auras.refresh()
 

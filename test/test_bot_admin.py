@@ -519,9 +519,6 @@ def test_advance_phase_writes_back_post_action_damage(monkeypatch):
             self.recorded_hp[self._row_to_name[row]] = value
 
     class _RecordingSpreadsheet:
-        """체력을 배치 한 번으로 쓰므로, 가짜 스프레드시트도 그 호출을 받아
-        워크시트로 분배해야 한다."""
-
         def __init__(self, worksheet):
             self._sheets = {worksheet.title: worksheet}
 

@@ -28,7 +28,7 @@ J:K 병합은 `ensure_merged=True`로 호출했을 때만 수행한다 — 전�
 따로 보내면 쓰기가 3회로 늘고, 커맨드마다 렌더링하는 구조라 분당 할당량
 (서비스 계정 60회)을 금방 깎는다. `updateCells`는 한 CellData에
 `userEnteredValue`와 `note`를 함께 실을 수 있어 값과 메모를 같은 요청에 담을
-수 있고, 병합 요청도 같은 배열 앞쪽에 둔다(요청은 배열 순서대로 적용된다).
+수 있고, 병합 요청도 같은 배열에 둔다.
 
 값은 `stringValue`로 쓴다 — 격자 내용이 전부 텍스트라 숫자/수식 해석이 필요
 없고, 해석을 켜 두면 "="로 시작하는 전투 이름 같은 입력이 수식이 된다.
@@ -133,14 +133,14 @@ def render_public_field_sheet(
         else spreadsheet.worksheet(_FIELD_SHEET)
     )
 
-    enemy_grid, enemy_declare_text, notes = _build_faction_block(
+    enemy_grid, enemy_declare_text, notes, enemy_merges = _build_faction_block(
         context,
         FactionType.ENEMY,
         main_row_start=_ENEMY_MAIN_ROW_START,
         direction=-1,
         declared=enemy_declared,
     )
-    ally_grid, ally_declare_text, ally_notes = _build_faction_block(
+    ally_grid, ally_declare_text, ally_notes, ally_merges = _build_faction_block(
         context,
         FactionType.ALLY,
         main_row_start=_ALLY_MAIN_ROW_START,
@@ -154,8 +154,7 @@ def render_public_field_sheet(
 
     field_effect_text, field_effect_note = _format_field_effect_cell(context)
 
-    # 병합·값·메모를 한 요청에 모은다. 요청은 배열 순서대로 적용되므로
-    # 병합을 먼저 둔다.
+    # 요청은 배열 순서대로 적용되므로 병합을 먼저 둔다.
     requests: list[dict] = []
     if ensure_merged:
         requests.extend(
@@ -168,6 +167,16 @@ def render_public_field_sheet(
             )
         )
     requests.extend(_charm_merge_requests(ws.id, charm_merges))
+    requests.extend(
+        _faction_merge_requests(
+            ws.id, _ENEMY_BLOCK_TOP, _ENEMY_BLOCK_BOTTOM, enemy_merges
+        )
+    )
+    requests.extend(
+        _faction_merge_requests(
+            ws.id, _ALLY_MAIN_ROW_START, _ALLY_BLOCK_BOTTOM, ally_merges
+        )
+    )
 
     if battle_name is not None:
         requests.append(_value_request(ws.id, _BATTLE_NAME_CELL, battle_name))
@@ -198,8 +207,7 @@ def render_public_field_sheet(
     spreadsheet.batch_update({"requests": requests})
 
 
-# 그리드 값이 들어가는 첫 열 (B). 격자는 B~H 7열이다.
-_GRID_FIRST_COL = 2
+_GRID_FIRST_COL = 2  # B
 
 
 def _cell_data(value: str, note: str = "") -> dict:
@@ -207,10 +215,6 @@ def _cell_data(value: str, note: str = "") -> dict:
 
     값이 빈 문자열이면 `userEnteredValue`를 아예 넣지 않는다 — fields 마스크가
     그 칸을 비워, 빈 문자열이 들어간 칸이 아니라 진짜 빈 칸이 된다.
-
-    값은 항상 `stringValue`다. 이름·스탯 줄은 전부 텍스트이고, 수식/숫자
-    해석(기존 USER_ENTERED)은 "="로 시작하는 전투 이름 같은 입력을 수식으로
-    바꿔 버리는 쪽으로만 작용한다.
     """
     cell: dict = {}
     if value:
@@ -279,9 +283,8 @@ def _grid_request(
 ) -> dict:
     """격자 블록 하나(값 + 메모)를 쓰는 updateCells 요청.
 
-    메모는 `notes`에 A1로 담겨 오므로 칸마다 찾아 붙이고, 없는 칸은 빈
-    메모로 둔다 — 캐릭터가 빠진 자리에 이전 버프 메모가 남지 않게 하려면
-    비우는 쪽이 맞다(기존 update_notes도 빈 문자열을 썼다).
+    `notes`에 없는 칸은 빈 메모로 덮는다 — 캐릭터가 빠진 자리에 이전 버프
+    메모가 남지 않게 하기 위해서다.
     """
     rows = [
         {
@@ -383,6 +386,79 @@ def _charm_merge_requests(
     return requests
 
 
+def _faction_merge_requests(
+    sheet_id: int, block_top: int, block_bottom: int, merges: list[tuple[int, int, int]]
+) -> list[dict]:
+    """진영 블록의 다열 캐릭터 병합을 이번 상태로 다시 잡는 요청.
+
+    부적 행과 같은 이유로 이전 병합을 먼저 전부 푼다 — 다열 에너미가 움직이거나
+    쓰러지면 병합 범위가 달라지는데, 남겨 두면 엉뚱한 칸이 계속 묶여 있다.
+    """
+    requests: list[dict] = [
+        {
+            "unmergeCells": {
+                "range": _grid_range(
+                    sheet_id,
+                    block_top,
+                    _GRID_FIRST_COL,
+                    block_bottom,
+                    _GRID_FIRST_COL + _COLUMN_COUNT - 1,
+                )
+            }
+        }
+    ]
+    requests.extend(
+        _merge_request(sheet_id, row, first_col, last_col)
+        for row, first_col, last_col in merges
+        if last_col > first_col
+    )
+    return requests
+
+
+def _assign_block_slots(
+    context: "BattlefieldContext", faction: FactionType
+) -> dict[BattlefieldColumnIndex, dict[int, CharacterId]]:
+    """진영 블록에서 각 캐릭터가 설 행(슬롯 0~2)을 열별로 정한다.
+
+    position_map의 슬롯 번호를 그대로 쓰지 않는 이유는 두 가지다. 캐릭터가
+    빠지면 그 슬롯 키만 pop되므로(슬롯0이 빠지면 {1: b, 2: c}) 번호를 그대로
+    행에 매핑하면 앞 칸이 빈칸으로 보이고, 반대로 열마다 따로 앞으로 당기면
+    여러 열에 걸친 캐릭터가 열마다 다른 행에 그려져 덩치가 끊겨 보인다.
+    그래서 왼쪽 열부터 훑으며 캐릭터마다 "자기가 걸친 열 전부에서 비어 있는
+    가장 앞 행"을 한 번만 잡아, 다열 캐릭터가 모든 열에서 같은 행에 놓이게
+    한다."""
+    assigned: dict[BattlefieldColumnIndex, dict[int, CharacterId]] = {
+        column: {} for column in _BATTLEFIELD_COLUMNS
+    }
+    placed: set[CharacterId] = set()
+
+    for column in _BATTLEFIELD_COLUMNS:
+        slots = context.position_map[faction][column]
+        for char_id in (slots[i] for i in sorted(slots.keys())):
+            if char_id in placed:
+                continue
+            columns = [
+                col
+                for col in context.find_character_columns(char_id)
+                if col in assigned
+            ]
+            row = next(
+                (
+                    candidate
+                    for candidate in range(CHARACTER_PER_COLUMN)
+                    if all(candidate not in assigned[col] for col in columns)
+                ),
+                None,
+            )
+            if row is None:
+                continue
+            for col in columns:
+                assigned[col][row] = char_id
+            placed.add(char_id)
+
+    return assigned
+
+
 def _build_faction_block(
     context: "BattlefieldContext",
     faction: FactionType,
@@ -390,14 +466,18 @@ def _build_faction_block(
     main_row_start: int,
     direction: int,
     declared: dict[CharacterId, list[CharacterCommand]],
-) -> tuple[list[list[str]], str, dict[str, str]]:
-    """진영 블록 하나(9행 x 7열 캐릭터 그리드 + 선언 내용 병합 셀 텍스트)를 조립한다.
+) -> tuple[list[list[str]], str, dict[str, str], list[tuple[int, int, int]]]:
+    """진영 블록 하나(9행 x 7열 캐릭터 그리드 + 선언 내용 병합 셀 텍스트 +
+    다열 캐릭터의 병합 범위)를 조립한다.
 
     `direction`은 슬롯이 늘어날수록 메인 행(슬롯0)에서 어느 쪽으로 멀어지는지를
     나타낸다 (적군은 -1: 위로, 아군은 +1: 아래로). 캐릭터 그리드는 블록의
-    최상단 행부터 시작하는 상대 좌표라 `batch_update`에 그대로 넘길 수 있다.
+    최상단 행부터 시작하는 상대 좌표라 그대로 넘길 수 있다.
     선언 내용은 J열 병합 셀 하나에 통째로 들어가므로 행 수 제약이 없다 —
     "이름 [커맨드]" 줄을 `\n`으로 이어붙인 문자열 하나로 반환한다.
+
+    여러 열에 걸친 캐릭터는 가장 왼쪽 열에만 값을 쓰고, 세 줄(이름/스탯/
+    버프)을 점유 열만큼 병합할 범위를 함께 돌려준다.
     """
     block_top = min(
         main_row_start, main_row_start + direction * (CHARACTER_PER_COLUMN - 1) * 3
@@ -405,13 +485,11 @@ def _build_faction_block(
 
     grid = [["" for _ in range(_COLUMN_COUNT)] for _ in range(_FACTION_BLOCK_HEIGHT)]
     notes: dict[str, str] = {}
+    merges: list[tuple[int, int, int]] = []
+    occupants_by_column = _assign_block_slots(context, faction)
 
     for col_idx, column in enumerate(_BATTLEFIELD_COLUMNS):
-        slots = context.position_map[faction][column]
-        # 캐릭터가 빠지면 그 슬롯 키만 pop되므로(슬롯0이 빠지면 {1: b, 2: c}),
-        # 인덱스를 그대로 행에 매핑하면 앞 칸이 빈칸으로 보인다 — 슬롯 번호와
-        # 무관하게 남은 순서대로 앞부터 채운다.
-        occupants = [slots[i] for i in sorted(slots.keys())]
+        occupants = occupants_by_column[column]
         sheet_col = col_idx + 2  # B=2
 
         for slot in range(CHARACTER_PER_COLUMN):
@@ -420,10 +498,22 @@ def _build_faction_block(
             buff_row = name_row + 2
             buff_cell = rowcol_to_a1(buff_row, sheet_col)
 
-            if slot >= len(occupants):
+            char_id = occupants.get(slot)
+            if char_id is None:
                 notes[buff_cell] = ""
                 continue
-            char_id = occupants[slot]
+
+            char_columns = context.find_character_columns(char_id)
+            if column != char_columns[0]:
+                # 다열 캐릭터의 왼쪽 끝이 아닌 열 — 병합에 가려지므로 비워 둔다.
+                notes[buff_cell] = ""
+                continue
+            if len(char_columns) > 1:
+                last_sheet_col = char_columns[-1].value + 2
+                merges.extend(
+                    (row, sheet_col, last_sheet_col)
+                    for row in (name_row, stats_row, buff_row)
+                )
 
             char = context.characters[char_id]
             grid[name_row - block_top][col_idx] = _format_name_line(char)
@@ -439,7 +529,7 @@ def _build_faction_block(
         for char_id, commands in declared.items()
     ]
 
-    return grid, "\n".join(declare_lines), notes
+    return grid, "\n".join(declare_lines), notes, merges
 
 
 def _format_declared_command(command: CharacterCommand) -> str:

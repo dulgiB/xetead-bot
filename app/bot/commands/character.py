@@ -46,10 +46,9 @@ def mark_fate_used_if_needed(
     여부와 무관하게 막힌다.
 
     `collect`가 주어지면 바로 쓰지 않고 그 목록에 셀 쓰기를 적어 둔다 — 같은
-    커맨드의 체력 반영과 한 요청으로 묶어 쓰기 횟수를 하나 줄이기 위해서다
-    (CLAUDE.md의 "스프레드시트 API 쓰기 할당량" 참고). 묶은 쪽이 실패하면 이
-    기록도 함께 빠지지만, 하루 1번 제한은 한 진행에 전투가 하나라는 전제 위에
-    서 있고 라이브 상태가 이미 재사용을 막으므로 감수할 수 있다.
+    커맨드의 체력 반영과 한 요청으로 묶기 위해서다. 그 요청이 실패하면 이
+    기록도 빠지지만, 하루에 전투가 하나라는 전제라 위의 라이브 상태만으로
+    충분하다.
     """
     if not any(part.fate_boost for part in command.parts):
         return
@@ -142,7 +141,6 @@ def handle_character_command(
         session.process_command(command)
         new_results = session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
-        # 키워드 보정 기록도 같은 "캐릭터" 시트라 체력과 한 요청으로 묶는다.
         fate_writes: list[PendingCellWrite] = []
         mark_fate_used_if_needed(state, char_id, command, collect=fate_writes)
         write_back_changed_hp(

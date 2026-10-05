@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Optional
 
+from utils.battle_helpers import is_reachable_between
+
 from battle.core.commands.models import DamageCalculateData, HealCalculateData
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
@@ -51,31 +53,33 @@ def resolve_passive_targets(
         return []
 
     if target_type == PassiveSkillTargetType.SAME_COLUMN_ALLIES:
-        holder_pos = context.find_character_position(holder)
         return [
             char_id
             for char_id, char in context.characters.items()
             if char_id != holder
             and char.faction == holder_char.faction
-            and context.find_character_position(char_id) == holder_pos
+            and context.shares_column(holder, char_id)
         ]
 
     if target_type == PassiveSkillTargetType.SELF_AND_SAME_COLUMN_ALLIES:
-        holder_pos = context.find_character_position(holder)
         return [
             char_id
             for char_id, char in context.characters.items()
             if char.faction == holder_char.faction
-            and context.find_character_position(char_id) == holder_pos
+            and context.shares_column(holder, char_id)
         ]
 
     if target_type == PassiveSkillTargetType.SELF_AND_ADJACENT_COLUMN_ALLIES:
-        holder_column = context.find_character_position(holder).value
+        # "인접"도 사거리 1과 같은 기준으로 본다 — 다열 캐릭터는 점유 열
+        # 어느 쪽에 붙어 있어도 인접이다.
+        holder_columns = context.find_character_columns(holder)
         return [
             char_id
             for char_id, char in context.characters.items()
             if char.faction == holder_char.faction
-            and abs(context.find_character_position(char_id).value - holder_column) <= 1
+            and is_reachable_between(
+                holder_columns, context.find_character_columns(char_id), 1
+            )
         ]
 
     if target_type == PassiveSkillTargetType.ALL_ALLIES:
