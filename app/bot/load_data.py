@@ -661,12 +661,8 @@ def build_fate_date_write(
     today: str,
     cache: Optional[SheetCache] = None,
 ) -> Optional[PendingCellWrite]:
-    """update_character_fate_date()가 쓸 셀 하나를 만들어 돌려준다(쓰지는
-    않는다).
-
-    같은 커맨드의 체력 반영과 한 요청으로 묶으려면 쓰기 시점을 호출측이
-    잡아야 한다. "fate_date" 컬럼이 없는 시트에서는 None(그 경우 운명간섭은
-    항상 "미사용"으로 읽혀 제한이 걸리지 않는다).
+    """update_character_fate_date()가 쓸 셀을 쓰지 않고 돌려준다 — 호출측이
+    다른 쓰기와 한 요청으로 묶을 수 있게. "fate_date" 컬럼이 없으면 None.
     """
     _ws, header, rows = _load_character_sheet(spreadsheet, cache)
     if "fate_date" not in header:
@@ -676,8 +672,7 @@ def build_fate_date_write(
         return None
     fate_col = header.index("fate_date") + 1
     row_number = _find_character_row_number(header, rows, char_name)
-    # update_character_quest_date()와 같은 이유로 raw로 기록하고(write_cells가
-    # RAW를 쓴다), 컬럼 타입도 TEXT여야 한다.
+    # 컬럼 타입이 TEXT여야 날짜 시리얼로 바뀌지 않는다.
     return PendingCellWrite(
         worksheet_title="캐릭터", row=row_number, col=fate_col, value=today
     )

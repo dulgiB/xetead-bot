@@ -457,9 +457,6 @@ def _render_once(**kwargs) -> _RecordingFieldSpreadsheet:
 
 
 def test_render_public_field_sheet_sends_one_api_call():
-    """값·메모·병합을 따로 보내면 렌더링마다 쓰기 3회가 나가, 커맨드마다
-    렌더링하는 구조에서 분당 할당량을 빠르게 깎는다. 한 번의
-    batch_update로 모여야 한다."""
     spreadsheet = _render_once()
 
     assert len(spreadsheet.bodies) == 1
@@ -467,8 +464,6 @@ def test_render_public_field_sheet_sends_one_api_call():
     cells = _written_cells(spreadsheet.bodies[0])
     assert cells["B4"][0] == "ROUND 3"
     assert cells["D6"][0] == "아군 행동"
-    # 걸린 필드 효과가 없으면 "없음" — 빈 칸으로 두면 아직 렌더링되지 않은
-    # 것과 구분되지 않는다.
     assert cells["D7"][0] == "없음"
 
     # 진영 격자는 각 블록의 슬롯0 행에 이름이 들어간다.
@@ -486,7 +481,6 @@ def test_render_public_field_sheet_sends_one_api_call():
 
 
 def test_render_public_field_sheet_folds_initial_merges_into_the_same_call():
-    """전투 시작 시의 J:K 병합도 같은 요청에 실려, 추가 호출이 생기지 않는다."""
     spreadsheet = _render_once(ensure_merged=True)
 
     assert len(spreadsheet.bodies) == 1
@@ -504,8 +498,6 @@ def test_render_public_field_sheet_folds_initial_merges_into_the_same_call():
 
 
 def test_render_public_field_sheet_clears_stale_notes_in_the_grid():
-    """캐릭터가 없는 칸의 메모는 빈 문자열로 덮여야 한다 — 남겨 두면 전에
-    그 자리에 있던 캐릭터의 버프 설명이 계속 보인다."""
     spreadsheet = _render_once()
     cells = _written_cells(spreadsheet.bodies[0])
 

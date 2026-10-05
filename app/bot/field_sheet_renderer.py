@@ -28,7 +28,7 @@ J:K 병합은 `ensure_merged=True`로 호출했을 때만 수행한다 — 전�
 따로 보내면 쓰기가 3회로 늘고, 커맨드마다 렌더링하는 구조라 분당 할당량
 (서비스 계정 60회)을 금방 깎는다. `updateCells`는 한 CellData에
 `userEnteredValue`와 `note`를 함께 실을 수 있어 값과 메모를 같은 요청에 담을
-수 있고, 병합 요청도 같은 배열 앞쪽에 둔다(요청은 배열 순서대로 적용된다).
+수 있고, 병합 요청도 같은 배열에 둔다.
 
 값은 `stringValue`로 쓴다 — 격자 내용이 전부 텍스트라 숫자/수식 해석이 필요
 없고, 해석을 켜 두면 "="로 시작하는 전투 이름 같은 입력이 수식이 된다.
@@ -154,8 +154,7 @@ def render_public_field_sheet(
 
     field_effect_text, field_effect_note = _format_field_effect_cell(context)
 
-    # 병합·값·메모를 한 요청에 모은다. 요청은 배열 순서대로 적용되므로
-    # 병합을 먼저 둔다.
+    # 요청은 배열 순서대로 적용되므로 병합을 먼저 둔다.
     requests: list[dict] = []
     if ensure_merged:
         requests.extend(
@@ -208,8 +207,7 @@ def render_public_field_sheet(
     spreadsheet.batch_update({"requests": requests})
 
 
-# 그리드 값이 들어가는 첫 열 (B). 격자는 B~H 7열이다.
-_GRID_FIRST_COL = 2
+_GRID_FIRST_COL = 2  # B
 
 
 def _cell_data(value: str, note: str = "") -> dict:
@@ -217,10 +215,6 @@ def _cell_data(value: str, note: str = "") -> dict:
 
     값이 빈 문자열이면 `userEnteredValue`를 아예 넣지 않는다 — fields 마스크가
     그 칸을 비워, 빈 문자열이 들어간 칸이 아니라 진짜 빈 칸이 된다.
-
-    값은 항상 `stringValue`다. 이름·스탯 줄은 전부 텍스트이고, 수식/숫자
-    해석(기존 USER_ENTERED)은 "="로 시작하는 전투 이름 같은 입력을 수식으로
-    바꿔 버리는 쪽으로만 작용한다.
     """
     cell: dict = {}
     if value:
@@ -289,9 +283,8 @@ def _grid_request(
 ) -> dict:
     """격자 블록 하나(값 + 메모)를 쓰는 updateCells 요청.
 
-    메모는 `notes`에 A1로 담겨 오므로 칸마다 찾아 붙이고, 없는 칸은 빈
-    메모로 둔다 — 캐릭터가 빠진 자리에 이전 버프 메모가 남지 않게 하려면
-    비우는 쪽이 맞다(기존 update_notes도 빈 문자열을 썼다).
+    `notes`에 없는 칸은 빈 메모로 덮는다 — 캐릭터가 빠진 자리에 이전 버프
+    메모가 남지 않게 하기 위해서다.
     """
     rows = [
         {

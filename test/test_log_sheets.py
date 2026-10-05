@@ -86,7 +86,7 @@ def test_write_back_changed_hp_absorbs_failure():
     커맨드 처리의 응답 자체가 사라지고, 재시도 시 같은 행동이 중복 적용되는
     문제로 이어진다.
 
-    체력은 캐릭터별이 아니라 배치 한 번으로 쓰므로 실패도 전부다. 그때
+    체력은 한 요청으로 쓰므로 실패하면 전부 실패다. 그때
     written_hp를 갱신하지 않아야 sync_hp_from_sheet가 "봇이 마지막으로 쓴
     값"을 기준으로 삼는 전제가 깨지지 않는다 — 쓰지 못한 값을 썼다고
     기록하면 GM이 고치지도 않은 시트 값을 고친 것으로 오인한다."""
@@ -117,10 +117,8 @@ def test_write_back_changed_hp_absorbs_failure():
 
 
 def test_write_back_changed_hp_uses_one_api_call_for_many_characters():
-    """바뀐 캐릭터가 N명이어도 쓰기는 1회여야 한다. 캐릭터별 update_cell을
-    돌리면 광역기 한 방에 쓰기 할당량(분당 60회)을 커맨드 두어 개로
-    소진한다. 두 시트("캐릭터"/"에너미")에 걸쳐 있어도 같은
-    스프레드시트라 요청 하나에 담긴다."""
+    """두 시트("캐릭터"/"에너미")에 걸쳐 있어도 같은 스프레드시트라 요청
+    하나에 담긴다."""
     ctx = BattlefieldContext(buff_dict={}, skill_dict={})
     ally_names = [f"아군{i}" for i in range(3)]
     enemy_names = [f"적{i}" for i in range(3)]
@@ -154,8 +152,6 @@ def test_write_back_changed_hp_uses_one_api_call_for_many_characters():
 
 
 def test_write_back_changed_hp_folds_extra_writes_into_the_same_call():
-    """같은 커맨드에서 함께 발생하는 다른 셀 쓰기(키워드 보정 사용 날짜 등)도
-    체력과 한 요청에 묶여야 한다 — 따로 보내면 커맨드당 쓰기가 하나 더 는다."""
     ctx = _make_context_with_two_characters()
     spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
     entries = [
@@ -181,8 +177,7 @@ def test_write_back_changed_hp_folds_extra_writes_into_the_same_call():
 
 
 def test_write_back_changed_hp_sends_extra_writes_without_hp_changes():
-    """체력이 하나도 바뀌지 않은 커맨드에서도 함께 묶은 쓰기는 나가야 한다 —
-    대미지 없이 키워드 보정만 쓰는 커맨드가 있다."""
+    """대미지 없이 키워드 보정만 쓰는 커맨드가 있다."""
     ctx = _make_context_with_two_characters()
     spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
     fate_write = log_sheets.PendingCellWrite(
