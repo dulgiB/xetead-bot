@@ -5,12 +5,14 @@
   2. 라운드 상한이 없다 — 한쪽이 전멸할 때까지 계속된다.
   3. 패배한 팀은 임시 체력이 아니라 시트의 실제 체력을 최대 체력의 50% 잃는다.
 그리고 그 대가 구조 덕에 키워드 보정만은 허용된다(실제 체력에서 빠진다).
-전투 종료 처리([재앙] 등)도 이긴 쪽에게 남는 대가라 실제 체력에서 빠진다.
+전투 종료 처리([재앙] 등)도 이긴 쪽에게 남는 대가라 실제 체력에서 빠진다
+(피해 정산과 같이 절반만).
 
 대련/상시전투와 공유하는 진행 규칙 자체는 test_practice_* 다른 파일에서
 다루므로 여기서는 위 차이점만 확인한다.
 """
 
+import dataclasses
 import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
@@ -252,8 +254,8 @@ def test_duel_ends_when_one_side_is_wiped(monkeypatch):
 
 
 def test_battle_end_effects_come_out_of_real_hp(monkeypatch):
-    """전투 종료 처리는 이긴 쪽에게도 남는 대가라 실제 체력에서 빠진다.
-    피해 정산과 함께 치러지고, 승패는 그 처리 전에 정해진 대로다. 그 처리로
+    """전투 종료 처리는 이긴 쪽에게도 남는 대가라 실제 체력에서 빠지되, 피해
+    정산과 같이 절반(내림)만 빠진다. 피해 정산과 함께 치러지고, 승패는 그 처리 전에 정해진 대로다. 그 처리로
     깎인 임시 체력은 피해 정산에 다시 잡히지 않는다."""
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(
@@ -269,10 +271,27 @@ def test_battle_end_effects_come_out_of_real_hp(monkeypatch):
 
     assert "승자: 1팀" in post
     assert "**【전투 종료 처리】**" in post
-    assert f"▹ {_A.name} | -20 → 80/100※" in post
-    assert state.spreadsheet.hp_of(_A.name) == 80
-    assert ctx.persistent_hp[_A].curr_hp == 80
+    assert f"▹ {_A.name} | -10 → 90/100※" in post
+    assert state.spreadsheet.hp_of(_A.name) == 90
+    assert ctx.persistent_hp[_A].curr_hp == 90
     assert state.spreadsheet.hp_of(_B.name) == 30
+
+
+def test_battle_end_effect_halved_to_zero_is_dropped(monkeypatch):
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(
+        hp_by_name={_A.name: 100, _B.name: 80},
+        buff_dict={"재앙": dataclasses.replace(_catastrophe_buff(), value=1)},
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=_A, applied_to=_A, buff_id="재앙", stack_value=1)
+    )
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert "**【전투 종료 처리】**" not in post
+    assert state.spreadsheet.hp_of(_A.name) == 100
 
 
 def test_defeated_side_loses_real_hp(monkeypatch):
