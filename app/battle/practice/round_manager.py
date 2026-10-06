@@ -137,7 +137,7 @@ class PracticeRoundManager:
 
         본 전투(RoundManager)는 ENEMY_POST_ACTION 페이즈에서
         on_enemy_post_action()/on_enemy_post_action_resolved()를 호출해
-        "적 후행 시" 트리거 패시브(예: 피격 시 [유예된 재앙] 스택을 쌓는
+        "적 후행 시" 트리거 패시브(예: 피격 시 [재앙] 스택을 쌓는
         패시브)를 평가한다. 대련은 PRE/POST 구분 없이 선공/후공을 각각
         process_ally_command()로 즉시 처리하는 대칭 구조라, 본 전투의 두
         훅을 각각 어디에 대응시킬지 직접 정해야 한다:
