@@ -29,6 +29,8 @@ class SkillEffectHealAndFillBuffStack(SkillEffectBase):
     전부 즉시 계산해 FIXED 값으로 반환한다.
     """
 
+    precomputes_value = True
+
     def _expand(
         self,
         context: "BattlefieldContext",

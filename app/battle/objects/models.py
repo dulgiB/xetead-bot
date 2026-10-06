@@ -75,6 +75,20 @@ class BaseValueIndicator:
     # 내야 할 때 쓴다(예: 소모한 스택 수 × 스택당 고정 대미지).
     ignores_value_modifiers: bool = False
 
+    @property
+    def takes_keyword_roll_bonus(self) -> bool:
+        """키워드 보정의 굴림 보정(+N)을 받는 값인지.
+
+        굴림 보정은 계수를 곱하기 전에 더해지므로, 스택 수·위치처럼 큰 계수를
+        곱하는 "개수"에 더하면 그 계수만큼 불어난다(스택 × 500%면 +50).
+        체력이나 앞서 준 대미지에 비례하는 값에는 더할 의미가 없다.
+        """
+        return self.value_source in (
+            ValueSourceType.STAT_ATK_ROLL,
+            ValueSourceType.STAT_ATK,
+            ValueSourceType.FIXED,
+        )
+
     def get_value(
         self,
         user_id: CharacterId,

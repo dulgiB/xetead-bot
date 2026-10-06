@@ -112,7 +112,7 @@ def _apply_keyword_boost_modifier(
         return
 
     if original_part.type_ == ActionType.ATTACK:
-        _add_flat_bonus(data_by_effect, KEYWORD_BOOST_ATTACK_BONUS)
+        _add_flat_bonus(data_by_effect, KEYWORD_BOOST_ATTACK_BONUS, roll_only=True)
         return
     if original_part.type_ != ActionType.SKILL:
         # 아이템 등은 try_expansion_if_valid()에서 이미 걸러진다.
@@ -123,7 +123,7 @@ def _apply_keyword_boost_modifier(
     mode = skill_data.keyword_mode
 
     if mode is None or mode is KeywordBoostMode.ROLL_BONUS:
-        _add_flat_bonus(data_by_effect, skill_data.keyword_boost_value)
+        _add_flat_bonus(data_by_effect, skill_data.keyword_boost_value, roll_only=True)
         return
 
     if mode is not KeywordBoostMode.VALUE_BOOST:
@@ -135,6 +135,8 @@ def _apply_keyword_boost_modifier(
         # 설정 오류는 keyword_config_error가 이미 admin에게 알렸다. 커맨드를 통째로
         # 실패시키면 플레이어만 손해이므로 보정 없이 원래 스킬대로 진행한다.
         return
+    if effect.precomputes_value:
+        return
 
     # SkillValueType과 ValueType은 값("퍼센트")이 같은 별개의 str Enum이라,
     # 둘 중 무엇이 들어와도 같은 의미로 받으려면 `is`가 아니라 `==`여야 한다.
@@ -144,16 +146,23 @@ def _apply_keyword_boost_modifier(
         _add_flat_bonus([data_by_effect[index]], skill_data.keyword_boost_value)
 
 
-def _add_flat_bonus(data_by_effect: list[CalculatorMutableData], bonus: int) -> None:
-    """대미지·회복 굴림에 정수 보정을 더한다."""
+def _add_flat_bonus(
+    data_by_effect: list[CalculatorMutableData], bonus: int, roll_only: bool = False
+) -> None:
+    """대미지·회복 굴림에 정수 보정을 더한다. roll_only면 굴림 보정을 받는
+    항목(BaseValueIndicator.takes_keyword_roll_bonus)에만 더한다."""
     modifier = IntValueModifier(
         source_name=_KEYWORD_BOOST_LABEL, value=bonus, applies_to_fixed=True
     )
     for effect_data in data_by_effect:
-        for damage_calc in effect_data.damage_data_list:
-            damage_calc.given_modifiers.append(modifier)
-        for heal_calc in effect_data.heal_data_list:
-            heal_calc.given_modifiers.append(modifier)
+        calc_list: list[DamageCalculateData | HealCalculateData] = [
+            *effect_data.damage_data_list,
+            *effect_data.heal_data_list,
+        ]
+        for calc in calc_list:
+            if roll_only and not calc.base.value.takes_keyword_roll_bonus:
+                continue
+            calc.given_modifiers.append(modifier)
 
 
 def _boost_coefficient(effect_data: CalculatorMutableData, bonus: int) -> None:

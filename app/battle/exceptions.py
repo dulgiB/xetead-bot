@@ -131,7 +131,7 @@ def error_keyword_unsupported_command() -> str:
 
 def error_keyword_skill_without_damage(skill_id: str) -> str:
     return (
-        f"지정한 스킬({skill_id})은 대미지를 주지 않고 키워드 보정 효과도"
+        f"지정한 스킬({skill_id})은 키워드 보정을 받을 대미지가 없고 보정 효과도"
         " 설정되어 있지 않아 적용할 수 없습니다."
     )
 

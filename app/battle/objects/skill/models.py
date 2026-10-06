@@ -92,6 +92,11 @@ class SkillEffectBase(abc.ABC):
     # 부적이 대상에 들고 날 때 직접 얹고 걷는다.
     is_standing_state: ClassVar[bool] = False
 
+    # True면 expand()가 value로 수치를 미리 계산해 FIXED로 내보낸다. 계산
+    # 단계에서는 계수가 남아 있지 않으므로, 키워드 보정의 '수치 강화'는 계산
+    # 단계가 아니라 value를 올린 사본으로 전개해 반영한다.
+    precomputes_value: ClassVar[bool] = False
+
     @property
     def condition(self) -> Optional["Condition"]:
         if not self.condition_class_name:
