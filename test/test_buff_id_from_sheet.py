@@ -11,7 +11,7 @@ from battle.objects.buff.buffs import BuffGivenDamageAgainstDebuff
 from battle.objects.buff.models import PassiveBuffData
 from battle.objects.models import CharacterId
 from battle.objects.skill.effects import (
-    SkillEffectShieldOrReflectIfTargetHasFormationBuff,
+    SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction,
 )
 from battle.objects.skill.models import SkillData
 
@@ -22,7 +22,7 @@ BONUS_BUFF = "추가조건버프"
 
 def _shield_or_reflect(
     reference_buff_id: str,
-) -> SkillEffectShieldOrReflectIfTargetHasFormationBuff:
+) -> SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction:
     skill = SkillData.from_dict(
         {
             "id": "Skill",
@@ -30,7 +30,7 @@ def _shield_or_reflect(
             "target_rule": "SkillTargetRuleAllyColumn",
             "target_count": 1,
             "cost": 3,
-            "effect_0": "SkillEffectShieldOrReflectIfTargetHasFormationBuff",
+            "effect_0": "SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction",
             "value_source_0": "",
             "value_0": "",
             "value_type_0": "",
@@ -39,7 +39,7 @@ def _shield_or_reflect(
         }
     )
     effect = skill.effects[0]
-    assert isinstance(effect, SkillEffectShieldOrReflectIfTargetHasFormationBuff)
+    assert isinstance(effect, SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction)
     return effect
 
 

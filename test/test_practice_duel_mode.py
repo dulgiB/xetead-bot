@@ -5,7 +5,7 @@
   2. 라운드 상한이 없다 — 한쪽이 전멸할 때까지 계속된다.
   3. 패배한 팀은 임시 체력이 아니라 시트의 실제 체력을 최대 체력의 50% 잃는다.
 그리고 그 대가 구조 덕에 키워드 보정만은 허용된다(실제 체력에서 빠진다).
-전투 종료 처리([재앙] 등)도 이긴 쪽에게 남는 대가라 실제 체력에서 빠진다
+전투 종료 처리([잔여 대가] 등)도 이긴 쪽에게 남는 대가라 실제 체력에서 빠진다
 (피해 정산과 같이 절반만).
 
 대련/상시전투와 공유하는 진행 규칙 자체는 test_practice_* 다른 파일에서
@@ -43,9 +43,9 @@ from bot.main import BotState  # noqa: E402
 from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
-from test_practice_round_end_report import _catastrophe_buff  # noqa: E402
+from test_practice_round_end_report import _battle_end_penalty_buff  # noqa: E402
 
-_A = CharacterId("Catastrophe")
+_A = CharacterId("Bearer")
 _B = CharacterId("Adversary")
 
 
@@ -260,10 +260,10 @@ def test_battle_end_effects_come_out_of_real_hp(monkeypatch):
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(
         hp_by_name={_A.name: 100, _B.name: 80},
-        buff_dict={"재앙": _catastrophe_buff()},
+        buff_dict={"잔여 대가": _battle_end_penalty_buff()},
     )
     ctx.buff_container.add(
-        BuffAddData(given_by=_A, applied_to=_A, buff_id="재앙", stack_value=4)
+        BuffAddData(given_by=_A, applied_to=_A, buff_id="잔여 대가", stack_value=4)
     )
     ctx.characters[_B].status.curr_hp = 0
 
@@ -281,10 +281,12 @@ def test_battle_end_effect_halved_to_zero_is_dropped(monkeypatch):
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(
         hp_by_name={_A.name: 100, _B.name: 80},
-        buff_dict={"재앙": dataclasses.replace(_catastrophe_buff(), value=1)},
+        buff_dict={
+            "잔여 대가": dataclasses.replace(_battle_end_penalty_buff(), value=1)
+        },
     )
     ctx.buff_container.add(
-        BuffAddData(given_by=_A, applied_to=_A, buff_id="재앙", stack_value=1)
+        BuffAddData(given_by=_A, applied_to=_A, buff_id="잔여 대가", stack_value=1)
     )
     ctx.characters[_B].status.curr_hp = 0
 

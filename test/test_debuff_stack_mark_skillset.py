@@ -3,9 +3,8 @@
 거쳐) 로드했을 때 의도대로 동작하는지 확인하는 통합 테스트.
 
 캐릭터/스킬 id는 실제 스프레드시트의 고유명사를 코드에 노출하지 않도록 모두
-일반화한 이름(Fracture, PassiveSkill, PassiveBuff, Cost2Skill, Cost3Skill)을
-쓴다. [균열]은 여러 캐릭터가 공유하는 범용 게임 시스템 명칭(재앙/도발과 동급)이라
-그대로 사용한다.
+일반화한 이름(Marker, PassiveSkill, PassiveBuff, Cost2Skill, Cost3Skill)을
+쓰고, 버프는 기능을 드러내는 이름([누적 표식])으로 쓴다.
 
 여기 쓰인 딕셔너리는 실제 '버프'/'버프_패시브'/'스킬_캐릭터'/'스킬_패시브' 시트에서
 그대로 읽어온 값이다.
@@ -27,13 +26,13 @@ from helpers import get_test_preset
 
 
 def _buff_dict() -> dict[str, BuffData]:
-    """'버프' 시트의 [균열] 행 + 패시브의 "일반 디버프" 분기를 [균열]과 구분해서
+    """'버프' 시트의 [누적 표식] 행 + 패시브의 "일반 디버프" 분기를 [누적 표식]과 구분해서
     검증하기 위한 무관한 디버프 하나."""
     return {
-        "균열": BuffData.from_dict(
+        "누적 표식": BuffData.from_dict(
             {
-                "id": "균열",
-                "buff_name": "BuffFracture",
+                "id": "누적 표식",
+                "buff_name": "BuffDebuffStackMark",
                 "duration_turn_value": 2,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
@@ -49,9 +48,9 @@ def _buff_dict() -> dict[str, BuffData]:
         "다른디버프": BuffData.from_dict(
             {
                 "id": "다른디버프",
-                # BuffFracture는 순수 마커라 수치 부작용이 없다 — [균열]과 구분되는
+                # BuffDebuffStackMark는 순수 마커라 수치 부작용이 없다 — [누적 표식]과 구분되는
                 # "그냥 디버프가 있다"는 상태만 재현하기 위해 재사용한다.
-                "buff_name": "BuffFracture",
+                "buff_name": "BuffDebuffStackMark",
                 "duration_turn_value": 2,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
@@ -79,7 +78,7 @@ def _passive_buff_dict() -> dict[str, PassiveBuffData]:
                 "value_1": 5,
                 "condition": "TargetHasDebuffCondition",
                 "condition_value": "",
-                "reference_buff_id": "균열",
+                "reference_buff_id": "누적 표식",
             }
         ),
     }
@@ -109,7 +108,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "value_source_1": "",
                 "value_1": "",
                 "value_type_1": "",
-                "buff_id_1": "균열",
+                "buff_id_1": "누적 표식",
                 "buff_stack_cap_1": "",
                 "target_override_1": "",
                 "effect_2": "",
@@ -122,7 +121,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "buff_stack_cap_2": "",
                 "target_override_2": "",
                 "description": (
-                    "대상에게 공격 굴림 230%만큼 대미지를 입히고 2턴간 [균열]을 부여한다."
+                    "대상에게 공격 굴림 230%만큼 대미지를 입히고 2턴간 [누적 표식]을 부여한다."
                 ),
             }
         ),
@@ -138,7 +137,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "value_source_0": "공격 굴림값",
                 "value_0": "",
                 "value_type_0": "",
-                "buff_id_0": "균열",
+                "buff_id_0": "누적 표식",
                 "buff_stack_cap_0": "",
                 "target_override_0": "",
                 "effect_1": "",
@@ -160,9 +159,9 @@ def _skill_dict() -> dict[str, SkillData]:
                 "buff_stack_cap_2": "",
                 "target_override_2": "",
                 "description": (
-                    "[균열] 중첩 수에 따라 효과가 달라진다. 1~2스택: 공격 굴림 "
-                    "280%만큼 대미지를 입히고 [균열]을 1스택 추가한다(지속시간 2턴 "
-                    "갱신). 3~4스택: 공격 굴림 350%만큼 대미지를 입히고 [균열]을 "
+                    "[누적 표식] 중첩 수에 따라 효과가 달라진다. 1~2스택: 공격 굴림 "
+                    "280%만큼 대미지를 입히고 [누적 표식]을 1스택 추가한다(지속시간 2턴 "
+                    "갱신). 3~4스택: 공격 굴림 350%만큼 대미지를 입히고 [누적 표식]을 "
                     "1스택 추가한다(지속시간 2턴 갱신). 5스택: 공격 굴림 500%만큼 "
                     "대미지를 입히고 모든 스택을 삭제한다."
                 ),
@@ -200,7 +199,7 @@ def _passive_skill_dict(
                 "condition_value_1": "",
                 "description": (
                     "디버프가 걸린 적을 공격하면 주는 대미지가 20% 증가한다. "
-                    "대상에게 [균열]이 있다면 추가로 5% 증가한다."
+                    "대상에게 [누적 표식]이 있다면 추가로 5% 증가한다."
                 ),
             },
             passive_buff_dict,
@@ -229,7 +228,7 @@ def _setup_ally_phase(context: BattlefieldContext) -> RoundManager:
 
 
 class TestPassiveSkill:
-    """패시브 스킬: 디버프 걸린 대상 공격 시 대미지 +20%, [균열] 보유 시 추가 +5%.
+    """패시브 스킬: 디버프 걸린 대상 공격 시 대미지 +20%, [누적 표식] 보유 시 추가 +5%.
 
     STAT_ATK_ROLL의 무작위성을 없애기 위해 milestone_n=0, 공격자 atk=100으로
     고정한다(기본 대미지 = 100).
@@ -238,11 +237,11 @@ class TestPassiveSkill:
     def _run(self, *, target_debuff_id: str | None) -> int:
         ctx = _make_context(milestone_n=0)
         manager = _setup_ally_phase(ctx)
-        caster = CharacterId("Fracture")
+        caster = CharacterId("Marker")
         target = CharacterId("적군")
         ctx.add_character(
             get_test_preset(
-                "Fracture",
+                "Marker",
                 atk=100,
                 passive_skill_id="PassiveSkill",
             ),
@@ -272,22 +271,22 @@ class TestPassiveSkill:
     def test_twenty_percent_bonus_with_unrelated_debuff(self):
         assert self._run(target_debuff_id="다른디버프") == 120
 
-    def test_twenty_five_percent_bonus_with_fracture_debuff(self):
-        assert self._run(target_debuff_id="균열") == 125
+    def test_twenty_five_percent_bonus_with_stack_mark_debuff(self):
+        assert self._run(target_debuff_id="누적 표식") == 125
 
 
 class TestCost2Skill:
-    """코스트 2 스킬: 공격 굴림 230% 대미지 + 대상에게 2턴간 [균열] 1스택 부여.
+    """코스트 2 스킬: 공격 굴림 230% 대미지 + 대상에게 2턴간 [누적 표식] 1스택 부여.
     STAT_ATK_ROLL의 무작위성을 없애기 위해 milestone_n=0, 공격자 atk=100으로
     고정한다(230% 대미지 = 230)."""
 
-    def test_deals_damage_and_grants_fracture_stack(self):
+    def test_deals_damage_and_grants_stack_mark(self):
         ctx = _make_context(milestone_n=0)
         manager = _setup_ally_phase(ctx)
-        caster = CharacterId("Fracture")
+        caster = CharacterId("Marker")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Fracture", atk=100, skill_1_id="Cost2Skill"),
+            get_test_preset("Marker", atk=100, skill_1_id="Cost2Skill"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -304,22 +303,22 @@ class TestCost2Skill:
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 230
-        assert ctx.get_buff_stack(target, "균열") == 1
+        assert ctx.get_buff_stack(target, "누적 표식") == 1
 
 
 class TestCost3Skill:
-    """코스트 3 스킬: [균열] 스택 수에 따라 대미지 계수와 후속 효과가 3단계로
+    """코스트 3 스킬: [누적 표식] 스택 수에 따라 대미지 계수와 후속 효과가 3단계로
     분기한다. STAT_ATK_ROLL의 무작위성을 없애기 위해 milestone_n=0, 공격자
     atk=100으로 고정한다."""
 
     def _make_ready_context(self, *, passive_skill_id: str | None = None):
         ctx = _make_context(milestone_n=0)
         manager = _setup_ally_phase(ctx)
-        caster = CharacterId("Fracture")
+        caster = CharacterId("Marker")
         target = CharacterId("적군")
         ctx.add_character(
             get_test_preset(
-                "Fracture",
+                "Marker",
                 atk=100,
                 skill_1_id="Cost3Skill",
                 passive_skill_id=passive_skill_id,
@@ -338,7 +337,7 @@ class TestCost3Skill:
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=target, buff_id="균열", stack_value=1
+                given_by=caster, applied_to=target, buff_id="누적 표식", stack_value=1
             )
         )
 
@@ -349,13 +348,13 @@ class TestCost3Skill:
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 280
-        assert ctx.get_buff_stack(target, "균열") == 2
+        assert ctx.get_buff_stack(target, "누적 표식") == 2
 
     def test_mid_tier_deals_350_percent_and_adds_stack(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=target, buff_id="균열", stack_value=3
+                given_by=caster, applied_to=target, buff_id="누적 표식", stack_value=3
             )
         )
 
@@ -366,13 +365,13 @@ class TestCost3Skill:
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 350
-        assert ctx.get_buff_stack(target, "균열") == 4
+        assert ctx.get_buff_stack(target, "누적 표식") == 4
 
     def test_max_tier_deals_500_percent_and_clears_all_stacks(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+                given_by=caster, applied_to=target, buff_id="누적 표식", stack_value=5
             )
         )
 
@@ -383,20 +382,20 @@ class TestCost3Skill:
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 500
-        assert ctx.get_buff_stack(target, "균열") == 0
+        assert ctx.get_buff_stack(target, "누적 표식") == 0
 
     def test_max_tier_hit_still_receives_the_debuff_passive_bonus(self):
-        """스택을 전부 터뜨리는 그 일격 자신은 아직 [균열]이 걸린 상태를 보고
+        """스택을 전부 터뜨리는 그 일격 자신은 아직 [누적 표식]이 걸린 상태를 보고
         계산되어야 한다 — 차감이 대미지보다 먼저면 마무리기에서만 패시브
         보정이 빠진다. 계수를 올려 보정하는 방식으로는 해결되지 않는다:
-        [균열] 외의 디버프가 함께 걸려 있으면 패시브가 그대로 발동해 이중으로
+        [누적 표식] 외의 디버프가 함께 걸려 있으면 패시브가 그대로 발동해 이중으로
         보정된다."""
         ctx, manager, caster, target = self._make_ready_context(
             passive_skill_id="PassiveSkill"
         )
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+                given_by=caster, applied_to=target, buff_id="누적 표식", stack_value=5
             )
         )
 
@@ -406,18 +405,18 @@ class TestCost3Skill:
         )
         hp_after = ctx.characters[target].status.curr_hp
 
-        # 500% × (1 + 0.2[디버프] + 0.05[균열])
+        # 500% × (1 + 0.2[디버프] + 0.05[누적 표식])
         assert hp_before - hp_after == 625
-        assert ctx.get_buff_instance(target, "균열") is None
+        assert ctx.get_buff_instance(target, "누적 표식") is None
 
-    def test_max_tier_removes_the_fracture_instance_entirely(self):
+    def test_max_tier_removes_the_stack_mark_instance_entirely(self):
         """스택만 0으로 깎고 인스턴스를 남기면 남은 지속시간 동안 대상이
-        여전히 "[균열]이 걸린 상태"로 잡혀 패시브 보너스가 계속 붙고, 필드
-        요약에도 `[균열] (N턴/0스택)`이 뜬다."""
+        여전히 "[누적 표식]이 걸린 상태"로 잡혀 패시브 보너스가 계속 붙고, 필드
+        요약에도 `[누적 표식] (N턴/0스택)`이 뜬다."""
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+                given_by=caster, applied_to=target, buff_id="누적 표식", stack_value=5
             )
         )
 
@@ -425,8 +424,8 @@ class TestCost3Skill:
             parse_character_command(caster, "[Cost3Skill/적군]", ctx)
         )
 
-        assert ctx.get_buff_instance(target, "균열") is None
-        assert "균열" not in ctx.format_field_text()
+        assert ctx.get_buff_instance(target, "누적 표식") is None
+        assert "누적 표식" not in ctx.format_field_text()
 
     def test_max_tier_still_reports_final_zero_stack_in_the_log(self):
         """인스턴스를 즉시 제거해도 답글에는 "→ 최종 0"이 남아야 한다 —
@@ -434,7 +433,7 @@ class TestCost3Skill:
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=target, buff_id="균열", stack_value=5
+                given_by=caster, applied_to=target, buff_id="누적 표식", stack_value=5
             )
         )
 
@@ -449,4 +448,4 @@ class TestCost3Skill:
             if entry.kind == BattleLogEntryKind.BUFF_REMOVE
         ]
         assert len(remove_entries) == 1
-        assert remove_entries[0].result == "[균열]×5 소모 → 최종 0"
+        assert remove_entries[0].result == "[누적 표식]×5 소모 → 최종 0"

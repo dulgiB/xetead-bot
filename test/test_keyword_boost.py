@@ -42,7 +42,7 @@ from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
 from helpers import get_test_preset
 
-_ATTACKER = CharacterId("Catastrophe")
+_ATTACKER = CharacterId("Bearer")
 _TARGET = CharacterId("Adversary")
 
 
@@ -352,7 +352,7 @@ def _make_stack_skill_context(holder_stack: int) -> BattlefieldContext:
     stack_buff = BuffData(
         id=_STACK_BUFF_ID,
         description="",
-        buff_class_name="BuffCatastrophe",
+        buff_class_name="BuffBattleEndPenalty",
         duration_turn_value=None,
         duration_count_value=None,
         duration_count_deduct_condition=None,

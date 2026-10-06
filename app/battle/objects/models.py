@@ -306,7 +306,7 @@ class ValueWithModifiers:
         if not has_content:
             return None
 
-        # CONSUMED_BUFF_STACK은 숫자에 이미 버프 이름을 라벨링하므로("5[재앙]"),
+        # CONSUMED_BUFF_STACK은 숫자에 이미 버프 이름을 라벨링하므로("5[잔여 대가]"),
         # 배율에 다시 "[계수]"를 붙이면 중복이라 생략한다.
         consumed_buff_id = (
             self.base_value.consumed_buff_id

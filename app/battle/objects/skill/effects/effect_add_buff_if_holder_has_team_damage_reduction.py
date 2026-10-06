@@ -8,10 +8,10 @@ if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
 
 
-class SkillEffectAddBuffIfHolderHasFormationBuff(SkillEffectBase):
-    """시전자가 [Formation] 버프를 보유한 상태일 때만 대상에게 버프를 부여한다."""
+class SkillEffectAddBuffIfHolderHasTeamDamageReduction(SkillEffectBase):
+    """시전자가 `BuffTeamDamageReduction` 버프를 보유한 상태일 때만 대상에게 버프를 부여한다."""
 
-    _GATE_BUFF_CLASS_NAME: ClassVar[str] = "BuffFormation"
+    _GATE_BUFF_CLASS_NAME: ClassVar[str] = "BuffTeamDamageReduction"
 
     def _expand(
         self,

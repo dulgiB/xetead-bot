@@ -1,7 +1,7 @@
 """
 test_buff_stacking.py
 적층형(스택) 버프 지원과 관련 기능(CONSUMED_BUFF_STACK, ALLY_DAMAGED 관전 훅,
-SkillEffectConsumeStackForDamage, SkillEffectHealAndFillBuffStack, BuffCatastrophe의
+SkillEffectConsumeStackForDamage, SkillEffectHealAndFillBuffStack, BuffBattleEndPenalty의
 전투 종료 훅)에 대한 단위 테스트 모음.
 """
 
@@ -39,9 +39,9 @@ from helpers import get_test_preset
 
 def make_curse_data(max_stack: int = 10) -> BuffData:
     return BuffData(
-        id="재앙",
+        id="잔여 대가",
         description="",
-        buff_class_name="BuffCatastrophe",
+        buff_class_name="BuffBattleEndPenalty",
         duration_turn_value=None,
         duration_count_value=None,
         duration_count_deduct_condition=None,
@@ -79,26 +79,26 @@ class TestBuffStackAccumulation:
 
     def test_stack_accumulates_up_to_max(self):
         curse = make_curse_data(max_stack=10)
-        ctx = BattlefieldContext(buff_dict={"재앙": curse}, skill_dict={})
-        holder = CharacterId("Catastrophe")
+        ctx = BattlefieldContext(buff_dict={"잔여 대가": curse}, skill_dict={})
+        holder = CharacterId("Bearer")
         ctx.add_character(
-            get_test_preset("Catastrophe"), FactionType.ALLY, BattlefieldColumnIndex(0)
+            get_test_preset("Bearer"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
 
         ctx.buff_container.add(
             BuffAddData(
-                given_by=holder, applied_to=holder, buff_id="재앙", stack_value=4
+                given_by=holder, applied_to=holder, buff_id="잔여 대가", stack_value=4
             )
         )
-        assert ctx.get_buff_stack(holder, "재앙") == 4
+        assert ctx.get_buff_stack(holder, "잔여 대가") == 4
 
         ctx.buff_container.add(
             BuffAddData(
-                given_by=holder, applied_to=holder, buff_id="재앙", stack_value=9
+                given_by=holder, applied_to=holder, buff_id="잔여 대가", stack_value=9
             )
         )
         # 4 + 9 = 13 이지만 max_stack=10에서 clamp 되어야 한다.
-        assert ctx.get_buff_stack(holder, "재앙") == 10
+        assert ctx.get_buff_stack(holder, "잔여 대가") == 10
 
     def test_non_stackable_buff_reapply_does_not_duplicate(self):
         """max_stack이 없는 버프는 재부여해도 중복 생성되지 않고 인스턴스 하나를 유지한다."""
@@ -200,7 +200,7 @@ class TestConsumeStackForDamage:
                     value_source=ValueSourceType.CONSUMED_BUFF_STACK,
                     value=300,
                     value_type=ValueType.PERCENT,
-                    buff_id="재앙",
+                    buff_id="잔여 대가",
                     buff_add_timing=None,
                     buff_stack_cap=5,
                 ),
@@ -220,14 +220,14 @@ class TestConsumeStackForDamage:
             description="",
         )
         ctx = BattlefieldContext(
-            buff_dict={"재앙": curse, "도발_1": taunt},
+            buff_dict={"잔여 대가": curse, "도발_1": taunt},
             skill_dict={"저주 폭발": skill},
         )
         manager = setup_ally_phase(ctx)
-        caster = CharacterId("Catastrophe")
+        caster = CharacterId("Bearer")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Catastrophe", skill_1_id="저주 폭발"),
+            get_test_preset("Bearer", skill_1_id="저주 폭발"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -244,7 +244,7 @@ class TestConsumeStackForDamage:
         ctx, manager, caster, target = self._make_context()
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4
+                given_by=caster, applied_to=caster, buff_id="잔여 대가", stack_value=4
             )
         )
 
@@ -255,7 +255,7 @@ class TestConsumeStackForDamage:
         hp_after = ctx.characters[target].status.curr_hp
 
         assert hp_before - hp_after == 22
-        assert ctx.get_buff_stack(caster, "재앙") == 0
+        assert ctx.get_buff_stack(caster, "잔여 대가") == 0
         assert any(
             b.id == "도발_1" for b in ctx.buff_container.get_buffs_by(target, None)
         )
@@ -266,7 +266,7 @@ class TestConsumeStackForDamage:
         ctx, manager, caster, target = self._make_context()
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=2
+                given_by=caster, applied_to=caster, buff_id="잔여 대가", stack_value=2
             )
         )
 
@@ -320,7 +320,7 @@ class TestConsumeStackDamageIsFixed:
                     value_source=ValueSourceType.CONSUMED_BUFF_STACK,
                     value=300,
                     value_type=ValueType.PERCENT,
-                    buff_id="재앙",
+                    buff_id="잔여 대가",
                     buff_add_timing=None,
                     buff_stack_cap=5,
                 ),
@@ -329,15 +329,15 @@ class TestConsumeStackDamageIsFixed:
         )
         # milestone_n=0이면 주사위 없이 ATK 그대로 굴림 결과가 되어 결정적이다.
         ctx = BattlefieldContext(
-            buff_dict={"재앙": curse, "증폭": amplify},
+            buff_dict={"잔여 대가": curse, "증폭": amplify},
             skill_dict={"저주 폭발": skill},
             milestone_n=0,
         )
         manager = setup_ally_phase(ctx)
-        caster = CharacterId("Catastrophe")
+        caster = CharacterId("Bearer")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Catastrophe", atk=10, skill_1_id="저주 폭발"),
+            get_test_preset("Bearer", atk=10, skill_1_id="저주 폭발"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -348,7 +348,7 @@ class TestConsumeStackDamageIsFixed:
         )
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=4
+                given_by=caster, applied_to=caster, buff_id="잔여 대가", stack_value=4
             )
         )
         return ctx, manager, caster, target
@@ -378,7 +378,7 @@ class TestAllyDamagedHook:
     def _make_passive_context(self, condition_class_name=None):
         curse = make_curse_data()
         passive = PassiveSkillData(
-            id="재앙 축적",
+            id="StackPassive",
             trigger=PassiveSkillTrigger.ALLY_DAMAGED,
             target_type=PassiveSkillTargetType.SELF,
             effects=[
@@ -386,7 +386,7 @@ class TestAllyDamagedHook:
                     value_source=None,
                     value=None,
                     value_type=None,
-                    buff_id="재앙",
+                    buff_id="잔여 대가",
                     buff_add_timing=None,
                     buff_stack_cap=1,
                     condition_class_name=condition_class_name,
@@ -395,18 +395,18 @@ class TestAllyDamagedHook:
             description="",
         )
         ctx = BattlefieldContext(
-            buff_dict={"재앙": curse},
+            buff_dict={"잔여 대가": curse},
             skill_dict={},
-            passive_skill_dict={"재앙 축적": passive},
+            passive_skill_dict={"StackPassive": passive},
         )
         return ctx
 
     def test_stack_gained_when_same_column_ally_damaged(self):
         ctx = self._make_passive_context()
         manager = setup_enemy_pre_phase(ctx)
-        catastrophe_id = CharacterId("Catastrophe")
+        bearer_id = CharacterId("Bearer")
         ctx.add_character(
-            get_test_preset("Catastrophe", passive_skill_id="재앙 축적"),
+            get_test_preset("Bearer", passive_skill_id="StackPassive"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -422,14 +422,14 @@ class TestAllyDamagedHook:
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
-        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 1
+        assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 1
 
     def test_no_stack_when_different_column_ally_damaged(self):
         ctx = self._make_passive_context()
         manager = setup_enemy_pre_phase(ctx)
-        catastrophe_id = CharacterId("Catastrophe")
+        bearer_id = CharacterId("Bearer")
         ctx.add_character(
-            get_test_preset("Catastrophe", passive_skill_id="재앙 축적"),
+            get_test_preset("Bearer", passive_skill_id="StackPassive"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -445,7 +445,7 @@ class TestAllyDamagedHook:
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
-        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
+        assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 0
 
     def test_extra_stack_only_when_holder_itself_damaged(self):
         """HolderWasAttackedCondition: 자신이 맞았을 때만 추가로 반응."""
@@ -453,9 +453,9 @@ class TestAllyDamagedHook:
             condition_class_name="HolderWasAttackedCondition"
         )
         manager = setup_enemy_pre_phase(ctx)
-        catastrophe_id = CharacterId("Catastrophe")
+        bearer_id = CharacterId("Bearer")
         ctx.add_character(
-            get_test_preset("Catastrophe", passive_skill_id="재앙 축적"),
+            get_test_preset("Bearer", passive_skill_id="StackPassive"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -473,23 +473,23 @@ class TestAllyDamagedHook:
             parse_character_command(CharacterId("적군1"), "[공격/동료]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
-        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
+        assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 0
 
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
         ctx.on_finish_round()
         manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
         manager.process_command(
-            parse_character_command(CharacterId("적군2"), "[공격/Catastrophe]", ctx)
+            parse_character_command(CharacterId("적군2"), "[공격/Bearer]", ctx)
         )
         manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
-        assert ctx.get_buff_stack(catastrophe_id, "재앙") == 1
+        assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 1
 
 
 class TestSkillEffectHealAndFillBuffStack:
     def test_heal_fills_target_and_overflow_heals_self(self):
         curse = make_curse_data()
         skill = SkillData(
-            id="재앙 나눔",
+            id="Cost3Skill",
             target_rule="SkillTargetRuleNamed",
             target_count=1,
             cost=3,
@@ -498,21 +498,21 @@ class TestSkillEffectHealAndFillBuffStack:
                     value_source=None,
                     value=500,
                     value_type=ValueType.PERCENT,
-                    buff_id="재앙",
+                    buff_id="잔여 대가",
                     buff_add_timing=None,
                 )
             ],
             description="",
         )
         ctx = BattlefieldContext(
-            buff_dict={"재앙": curse}, skill_dict={"재앙 나눔": skill}
+            buff_dict={"잔여 대가": curse}, skill_dict={"Cost3Skill": skill}
         )
         manager = setup_ally_phase(ctx)
-        caster = CharacterId("Catastrophe")
+        caster = CharacterId("Bearer")
         ally = CharacterId("아군")
         ctx.add_character(
             get_test_preset(
-                "Catastrophe", skill_1_id="재앙 나눔", initial_hp=90, max_hp=100
+                "Bearer", skill_1_id="Cost3Skill", initial_hp=90, max_hp=100
             ),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
@@ -524,19 +524,19 @@ class TestSkillEffectHealAndFillBuffStack:
         )
         ctx.buff_container.add(
             BuffAddData(
-                given_by=caster, applied_to=caster, buff_id="재앙", stack_value=6
+                given_by=caster, applied_to=caster, buff_id="잔여 대가", stack_value=6
             )
         )
 
         # space = 10-6=4 -> heal_amount = 4*5=20. 아군은 84->100(16 흡수),
         # 초과분 4는 시전자 자신에게: 90+4=94.
         manager.process_command(
-            parse_character_command(caster, "[재앙 나눔/아군]", ctx)
+            parse_character_command(caster, "[Cost3Skill/아군]", ctx)
         )
 
         assert ctx.characters[ally].status.curr_hp == 100
         assert ctx.characters[caster].status.curr_hp == 94
-        assert ctx.get_buff_stack(caster, "재앙") == 10
+        assert ctx.get_buff_stack(caster, "잔여 대가") == 10
 
     def test_self_target_emits_a_single_heal_entry_without_overflow(self):
         """자신을 대상으로 쓰면 초과분을 자신에게 다시 돌릴 이유가 없다 —
@@ -544,7 +544,7 @@ class TestSkillEffectHealAndFillBuffStack:
         "회복 N"이 두 줄로 찍혀 그만큼 더 회복한 것처럼 보인다."""
         curse = make_curse_data()
         skill = SkillData(
-            id="재앙 나눔",
+            id="Cost3Skill",
             target_rule="SkillTargetRuleNamed",
             target_count=1,
             cost=3,
@@ -553,20 +553,20 @@ class TestSkillEffectHealAndFillBuffStack:
                     value_source=None,
                     value=500,
                     value_type=ValueType.PERCENT,
-                    buff_id="재앙",
+                    buff_id="잔여 대가",
                     buff_add_timing=None,
                 )
             ],
             description="",
         )
         ctx = BattlefieldContext(
-            buff_dict={"재앙": curse}, skill_dict={"재앙 나눔": skill}
+            buff_dict={"잔여 대가": curse}, skill_dict={"Cost3Skill": skill}
         )
         manager = setup_ally_phase(ctx)
-        caster = CharacterId("Catastrophe")
+        caster = CharacterId("Bearer")
         ctx.add_character(
             get_test_preset(
-                "Catastrophe", skill_1_id="재앙 나눔", initial_hp=95, max_hp=100
+                "Bearer", skill_1_id="Cost3Skill", initial_hp=95, max_hp=100
             ),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
@@ -574,7 +574,7 @@ class TestSkillEffectHealAndFillBuffStack:
 
         # space = 10-0=10 -> heal_amount = 50이지만 부족분은 5뿐이다.
         manager.process_command(
-            parse_character_command(caster, "[재앙 나눔/Catastrophe]", ctx)
+            parse_character_command(caster, "[Cost3Skill/Bearer]", ctx)
         )
 
         assert ctx.characters[caster].status.curr_hp == 100
@@ -587,41 +587,41 @@ class TestSkillEffectHealAndFillBuffStack:
         assert [entry.result for entry in heal_entries] == ["회복 5"]
 
 
-class TestBuffCatastropheBattleEnd:
+class TestBuffBattleEndPenaltyBattleEnd:
     def test_battle_end_reduces_hp_by_triple_stack(self):
         curse = make_curse_data()
-        ctx = BattlefieldContext(buff_dict={"재앙": curse}, skill_dict={})
-        catastrophe_id = CharacterId("Catastrophe")
+        ctx = BattlefieldContext(buff_dict={"잔여 대가": curse}, skill_dict={})
+        bearer_id = CharacterId("Bearer")
         ctx.add_character(
-            get_test_preset("Catastrophe", max_hp=100),
+            get_test_preset("Bearer", max_hp=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
         ctx.buff_container.add(
             BuffAddData(
-                given_by=catastrophe_id,
-                applied_to=catastrophe_id,
-                buff_id="재앙",
+                given_by=bearer_id,
+                applied_to=bearer_id,
+                buff_id="잔여 대가",
                 stack_value=6,
             )
         )
 
         ctx.on_battle_end()
 
-        assert ctx.characters[catastrophe_id].status.curr_hp == 100 - 6 * 3
+        assert ctx.characters[bearer_id].status.curr_hp == 100 - 6 * 3
 
     def test_curse_not_removed_by_round_end_or_debuff_removal(self):
         curse = make_curse_data()
-        ctx = BattlefieldContext(buff_dict={"재앙": curse}, skill_dict={})
-        catastrophe_id = CharacterId("Catastrophe")
+        ctx = BattlefieldContext(buff_dict={"잔여 대가": curse}, skill_dict={})
+        bearer_id = CharacterId("Bearer")
         ctx.add_character(
-            get_test_preset("Catastrophe"), FactionType.ALLY, BattlefieldColumnIndex(0)
+            get_test_preset("Bearer"), FactionType.ALLY, BattlefieldColumnIndex(0)
         )
         ctx.buff_container.add(
             BuffAddData(
-                given_by=catastrophe_id,
-                applied_to=catastrophe_id,
-                buff_id="재앙",
+                given_by=bearer_id,
+                applied_to=bearer_id,
+                buff_id="잔여 대가",
                 stack_value=3,
             )
         )
@@ -629,7 +629,7 @@ class TestBuffCatastropheBattleEnd:
         for _ in range(5):
             ctx.on_finish_round()
 
-        buff = ctx.get_buff_instance(catastrophe_id, "재앙")
+        buff = ctx.get_buff_instance(bearer_id, "잔여 대가")
         assert buff is not None
         assert buff.stack_count == 3
         assert buff.buff_type == BuffType.NEUTRAL
@@ -645,14 +645,14 @@ def _on_action_self_buff_context() -> BattlefieldContext:
                 value_source=None,
                 value=None,
                 value_type=None,
-                buff_id="재앙",
+                buff_id="잔여 대가",
                 buff_add_timing=None,
             )
         ],
         description="",
     )
     return BattlefieldContext(
-        buff_dict={"재앙": make_curse_data()},
+        buff_dict={"잔여 대가": make_curse_data()},
         skill_dict={},
         passive_skill_dict={"PassiveSkill": passive},
     )
@@ -663,9 +663,9 @@ def test_on_action_passive_does_not_fire_when_holder_is_hit():
     보유자가 맞는 쪽일 때는 발동하지 않는다."""
     ctx = _on_action_self_buff_context()
     manager = setup_enemy_pre_phase(ctx)
-    holder = CharacterId("Catastrophe")
+    holder = CharacterId("Bearer")
     ctx.add_character(
-        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        get_test_preset("Bearer", passive_skill_id="PassiveSkill"),
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
@@ -675,11 +675,11 @@ def test_on_action_passive_does_not_fire_when_holder_is_hit():
     ctx.on_battle_start()
 
     manager.process_command(
-        parse_character_command(CharacterId("적군"), "[공격/Catastrophe]", ctx)
+        parse_character_command(CharacterId("적군"), "[공격/Bearer]", ctx)
     )
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
-    assert ctx.get_buff_stack(holder, "재앙") == 0
+    assert ctx.get_buff_stack(holder, "잔여 대가") == 0
 
 
 def test_on_action_passive_buff_grant_shows_in_command_log():
@@ -687,9 +687,9 @@ def test_on_action_passive_buff_grant_shows_in_command_log():
     빠지면 답글의 "최종 N"이 실제 스택보다 작게 보인다."""
     ctx = _on_action_self_buff_context()
     manager = setup_ally_phase(ctx)
-    attacker = CharacterId("Catastrophe")
+    attacker = CharacterId("Bearer")
     ctx.add_character(
-        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        get_test_preset("Bearer", passive_skill_id="PassiveSkill"),
         FactionType.ALLY,
         BattlefieldColumnIndex(0),
     )
@@ -708,4 +708,4 @@ def test_on_action_passive_buff_grant_shows_in_command_log():
         and entry.target_name == attacker.name
     ]
     assert [entry.final_stack for entry in buff_adds] == [1]
-    assert ctx.get_buff_stack(attacker, "재앙") == 1
+    assert ctx.get_buff_stack(attacker, "잔여 대가") == 1

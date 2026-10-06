@@ -2146,14 +2146,14 @@ def test_world_account_can_start_investigation_battle(monkeypatch):
             1,
             0,
             "[상시전투] [배치/적 캐릭터/적군 1열]",
-            extra_mentions=["moirak_test"],
+            extra_mentions=["ally_acct"],
         )
     )
 
     assert len(state.practices) == 1
     ps = _only_practice(state)
     assert ps.is_investigation
-    assert ps.expected_accts == ["moirak_test"]
+    assert ps.expected_accts == ["ally_acct"]
     assert "상시전투 준비" in mastodon.status_post_calls[-1]["status"]
 
 
@@ -2182,7 +2182,7 @@ def test_world_account_cannot_use_other_admin_commands(monkeypatch):
 def _start_active_investigation(
     state: BotState,
     *,
-    ally_acct: str = "ally_test",
+    ally_acct: str = "ally_acct",
     active_post_id: int = 5000,
     enemy_max_hp: int = 500,
 ) -> PracticeBattleState:
@@ -2495,12 +2495,12 @@ def test_practice_end_summary_hides_buffs_and_shows_winner_roster():
 
 
 def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_calc():
-    """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())이 대련에서도
+    """전투 종료 시점 버프 훅([잔여 대가] 등, BuffBase.on_battle_end())이 대련에서도
     승자 계산 전에 반영돼야 하고, 그 결과(계산식 포함)가 종료 메시지에
     나와야 한다."""
     curse_buff = BuffData(
-        id="재앙",
-        buff_class_name="BuffCatastrophe",
+        id="잔여 대가",
+        buff_class_name="BuffBattleEndPenalty",
         duration_turn_value=None,
         duration_count_value=None,
         duration_count_deduct_condition=None,
@@ -2512,7 +2512,7 @@ def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_cal
         description="",
         max_stack=20,
     )
-    ctx = PracticeBattlefieldContext(buff_dict={"재앙": curse_buff}, skill_dict={})
+    ctx = PracticeBattlefieldContext(buff_dict={"잔여 대가": curse_buff}, skill_dict={})
     # PracticeBattlefieldContext.add_character()는 curr_hp를 항상
     # max_hp // 2로 초기화하므로(initial_hp는 무시됨), A/B 모두 시작
     # 시점엔 정확히 50%로 동률이다.
@@ -2522,14 +2522,14 @@ def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_cal
     ctx.add_character(
         get_test_preset("B", max_hp=100), SideType.SIDE_2, BattlefieldColumnIndex(0)
     )
-    # 재앙 5스택 × 3 = 15 감소. A만 이 훅으로 50 → 35(35%)까지 깎여
+    # 잔여 대가 5스택 × 3 = 15 감소. A만 이 훅으로 50 → 35(35%)까지 깎여
     # B(50%)보다 열세가 되므로, 승자 계산이 반드시 이 훅 이후에 일어나야
     # B(2팀)가 승리로 나온다.
     ctx.buff_container.add(
         BuffAddData(
             given_by=CharacterId("A"),
             applied_to=CharacterId("A"),
-            buff_id="재앙",
+            buff_id="잔여 대가",
             stack_value=5,
         )
     )

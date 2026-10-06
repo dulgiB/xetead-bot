@@ -347,7 +347,7 @@ def format_round_end_log_entries(
 def format_battle_end_log_entries(
     context: "BattlefieldContext", entries: list[BattleLogEntry]
 ) -> tuple[str, str]:
-    """전투 종료 시점에 발동하는 효과(유예된 재앙 등)의 결과를 "【전투 종료
+    """전투 종료 시점에 발동하는 효과([잔여 대가] 등)의 결과를 "【전투 종료
     처리】" 헤더 하나 아래 모든 대상의 결과를 나열한 (본문, 계산식) 튜플을
     반환한다. 전투 종료 정산은 CW로 접어 두지 않고 한 번에 다 보여주는
     편이 낫다는 판단으로, 계산식도 본문에 함께 포함시키고 두 번째 값은

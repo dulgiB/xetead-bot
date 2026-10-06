@@ -3,16 +3,16 @@
 거쳐) 로드했을 때 의도대로 동작하는지 확인하는 통합 테스트.
 
 캐릭터/스킬/버프 id는 실제 스프레드시트의 고유명사를 코드에 노출하지 않도록 모두
-일반화한 이름(Formation, PassiveSkill, Cost2Skill, Cost3Skill, Weaken)을 쓴다.
-[도발]/[방어막]/[반사]는 여러 캐릭터가 공유하는 범용 게임 시스템 명칭(재앙/균열과
-동급)이라 그대로 사용한다.
+일반화한 이름(Guardian, TeamDamageReduction, PassiveSkill, Cost2Skill, Cost3Skill,
+Weaken)을 쓴다. [도발]/[방어막]/[반사]는 여러 캐릭터가 공유하는 범용 게임 시스템
+명칭이라 그대로 사용한다.
 
 여기 쓰인 딕셔너리는 실제 '버프'/'스킬_캐릭터'/'스킬_패시브' 시트에서 그대로
 읽어온 값이다.
 
-[코스트 2 스킬]의 "자신에게 [Formation]이 부여된 상태라면 추가로 [Weaken]을
+[코스트 2 스킬]의 "자신에게 [TeamDamageReduction]이 부여된 상태라면 추가로 [Weaken]을
 부여한다"는 대상(적)에게 부여하는 것으로 해석해 구현했다 — 도발과 함께 걸리는
-추가 견제 효과로 보는 편이 [Formation]이 갖는 "밀집 대형 보상" 컨셉과 맞다고
+추가 견제 효과로 보는 편이 [TeamDamageReduction]이 갖는 "밀집 대형 보상" 컨셉과 맞다고
 판단했다.
 """
 
@@ -35,10 +35,10 @@ from helpers import get_test_preset
 def _buff_dict() -> dict[str, BuffData]:
     """'버프' 시트의 행들."""
     return {
-        "Formation": BuffData.from_dict(
+        "TeamDamageReduction": BuffData.from_dict(
             {
-                "id": "Formation",
-                "buff_name": "BuffFormation",
+                "id": "TeamDamageReduction",
+                "buff_name": "BuffTeamDamageReduction",
                 "duration_turn_value": 1,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
@@ -201,7 +201,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "buff_id_1": "도발",
                 "buff_stack_cap_1": "",
                 "target_override_1": "",
-                "effect_2": "SkillEffectAddBuffIfHolderHasFormationBuff",
+                "effect_2": "SkillEffectAddBuffIfHolderHasTeamDamageReduction",
                 "condition_2": "",
                 "condition_value_2": "",
                 "value_source_2": "",
@@ -212,7 +212,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "target_override_2": "",
                 "description": (
                     "대상에게 공격 굴림 180%만큼 대미지를 입히고 1턴간 [도발]을 "
-                    "부여한다. 만약 자신에게 [Formation]이 부여된 상태라면 추가로 "
+                    "부여한다. 만약 자신에게 [TeamDamageReduction]이 부여된 상태라면 추가로 "
                     "1턴간 [Weaken]을 부여한다."
                 ),
             }
@@ -223,7 +223,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "target_rule": "SkillTargetRuleAllyColumn",
                 "target_count": 1,
                 "cost": 3,
-                "effect_0": "SkillEffectShieldOrReflectIfTargetHasFormationBuff",
+                "effect_0": "SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction",
                 "condition_0": "",
                 "condition_value_0": "",
                 "value_source_0": "",
@@ -254,7 +254,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "description": (
                     "사거리 내에서 열 1개를 지정한다. 범위 내의 모든 아군에게 "
                     "2턴/1회 동안 [방어막]을 부여한다. 만약 그 아군에게 "
-                    "[Formation]이 부여되어 있다면 [방어막] 대신 [반사]를 부여한다."
+                    "[TeamDamageReduction]이 부여되어 있다면 [방어막] 대신 [반사]를 부여한다."
                 ),
             }
         ),
@@ -314,7 +314,7 @@ def _passive_skill_dict() -> dict[str, PassiveSkillData]:
                 "value_source_0": "",
                 "value_0": "",
                 "value_type_0": "",
-                "buff_id_0": "Formation",
+                "buff_id_0": "TeamDamageReduction",
                 "target_override_0": "",
                 "condition_0": "AllyInRangeCountCondition",
                 "condition_value_0": 3,
@@ -328,7 +328,7 @@ def _passive_skill_dict() -> dict[str, PassiveSkillData]:
                 "condition_value_1": "",
                 "description": (
                     "라운드 시작 시 사거리 내에 자신을 제외한 아군이 3명 이상이라면 "
-                    "아군 전체에게 1턴간 [Formation]을 부여한다."
+                    "아군 전체에게 1턴간 [TeamDamageReduction]을 부여한다."
                 ),
             },
             {},
@@ -357,21 +357,27 @@ def _setup_ally_phase(context: BattlefieldContext) -> RoundManager:
 
 class TestPassiveSkill:
     """패시브 스킬: 라운드 시작 시 사거리 내 자신 제외 아군이 3명 이상이면
-    아군 전체에게 1턴간 [Formation]을 부여한다."""
+    아군 전체에게 1턴간 [TeamDamageReduction]을 부여한다."""
 
-    def _has_formation(self, context: BattlefieldContext, char_id: CharacterId) -> bool:
-        return context.buff_container.get_buff(char_id, "Formation") is not None
+    def _has_team_damage_reduction(
+        self, context: BattlefieldContext, char_id: CharacterId
+    ) -> bool:
+        return (
+            context.buff_container.get_buff(char_id, "TeamDamageReduction") is not None
+        )
 
-    def test_grants_formation_to_all_allies_when_three_or_more_in_range(self):
+    def test_grants_team_damage_reduction_to_all_allies_when_three_or_more_in_range(
+        self,
+    ):
         ctx = _make_context()
         manager = RoundManager(ctx)
-        caster = CharacterId("Formation")
+        caster = CharacterId("Guardian")
         ally1 = CharacterId("Ally1")
         ally2 = CharacterId("Ally2")
         ally3 = CharacterId("Ally3")
         ctx.add_character(
             get_test_preset(
-                "Formation", attack_range=10, passive_skill_id="PassiveSkill"
+                "Guardian", attack_range=10, passive_skill_id="PassiveSkill"
             ),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
@@ -388,20 +394,20 @@ class TestPassiveSkill:
 
         manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
 
-        assert self._has_formation(ctx, caster)
-        assert self._has_formation(ctx, ally1)
-        assert self._has_formation(ctx, ally2)
-        assert self._has_formation(ctx, ally3)
+        assert self._has_team_damage_reduction(ctx, caster)
+        assert self._has_team_damage_reduction(ctx, ally1)
+        assert self._has_team_damage_reduction(ctx, ally2)
+        assert self._has_team_damage_reduction(ctx, ally3)
 
-    def test_no_formation_when_fewer_than_three_allies_in_range(self):
+    def test_no_team_damage_reduction_when_fewer_than_three_allies_in_range(self):
         ctx = _make_context()
         manager = RoundManager(ctx)
-        caster = CharacterId("Formation")
+        caster = CharacterId("Guardian")
         ally1 = CharacterId("Ally1")
         ally2 = CharacterId("Ally2")
         ctx.add_character(
             get_test_preset(
-                "Formation", attack_range=10, passive_skill_id="PassiveSkill"
+                "Guardian", attack_range=10, passive_skill_id="PassiveSkill"
             ),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
@@ -415,24 +421,24 @@ class TestPassiveSkill:
 
         manager.to_phase(RoundPhaseType.ENEMY_PRE_ACTION)
 
-        assert not self._has_formation(ctx, caster)
-        assert not self._has_formation(ctx, ally1)
-        assert not self._has_formation(ctx, ally2)
+        assert not self._has_team_damage_reduction(ctx, caster)
+        assert not self._has_team_damage_reduction(ctx, ally1)
+        assert not self._has_team_damage_reduction(ctx, ally2)
 
 
 class TestCost2Skill:
     """코스트 2 스킬: 공격 굴림 180% 대미지 + 대상에게 1턴간 [도발] 부여.
-    시전자가 [Formation]을 보유한 상태라면 대상에게 추가로 1턴간 [Weaken]도
+    시전자가 [TeamDamageReduction]을 보유한 상태라면 대상에게 추가로 1턴간 [Weaken]도
     부여한다. STAT_ATK_ROLL의 무작위성을 없애기 위해 milestone_n=0, 공격자
     atk=100으로 고정한다(180% 대미지 = 180)."""
 
     def _make_ready_context(self):
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        caster = CharacterId("Formation")
+        caster = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100, skill_1_id="Cost2Skill"),
+            get_test_preset("Guardian", atk=100, skill_1_id="Cost2Skill"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -443,7 +449,7 @@ class TestCost2Skill:
         )
         return ctx, manager, caster, target
 
-    def test_deals_damage_and_taunts_without_formation(self):
+    def test_deals_damage_and_taunts_without_team_buff(self):
         ctx, manager, caster, target = self._make_ready_context()
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -456,10 +462,12 @@ class TestCost2Skill:
         assert ctx.buff_container.get_buff(target, "도발") is not None
         assert ctx.buff_container.get_buff(target, "Weaken") is None
 
-    def test_also_grants_weaken_to_target_when_caster_has_formation(self):
+    def test_also_grants_weaken_to_target_when_caster_has_team_damage_reduction(self):
         ctx, manager, caster, target = self._make_ready_context()
         ctx.buff_container.add(
-            BuffAddData(given_by=caster, applied_to=caster, buff_id="Formation")
+            BuffAddData(
+                given_by=caster, applied_to=caster, buff_id="TeamDamageReduction"
+            )
         )
 
         hp_before = ctx.characters[target].status.curr_hp
@@ -475,32 +483,34 @@ class TestCost2Skill:
 
 class TestCost3Skill:
     """코스트 3 스킬: 지정한 열의 아군 전체에게 2턴/1회 동안 [방어막]을 부여한다.
-    이미 [Formation]을 보유한 아군에게는 [방어막] 대신 [반사]를 부여한다."""
+    이미 [TeamDamageReduction]을 보유한 아군에게는 [방어막] 대신 [반사]를 부여한다."""
 
-    def test_grants_shield_or_reflect_per_target_formation_state(self):
+    def test_grants_shield_or_reflect_per_target_team_damage_reduction_state(self):
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        caster = CharacterId("Formation")
-        with_formation = CharacterId("WithFormation")
-        without_formation = CharacterId("WithoutFormation")
+        caster = CharacterId("Guardian")
+        with_team_buff = CharacterId("WithTeamBuff")
+        without_team_buff = CharacterId("WithoutTeamBuff")
         ctx.add_character(
-            get_test_preset("Formation", skill_1_id="Cost3Skill"),
+            get_test_preset("Guardian", skill_1_id="Cost3Skill"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("WithFormation"),
+            get_test_preset("WithTeamBuff"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
         ctx.add_character(
-            get_test_preset("WithoutFormation"),
+            get_test_preset("WithoutTeamBuff"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
         ctx.buff_container.add(
             BuffAddData(
-                given_by=with_formation, applied_to=with_formation, buff_id="Formation"
+                given_by=with_team_buff,
+                applied_to=with_team_buff,
+                buff_id="TeamDamageReduction",
             )
         )
 
@@ -508,10 +518,10 @@ class TestCost3Skill:
             parse_character_command(caster, "[Cost3Skill/1열]", ctx)
         )
 
-        assert ctx.buff_container.get_buff(with_formation, "반사") is not None
-        assert ctx.buff_container.get_buff(with_formation, "방어막") is None
-        assert ctx.buff_container.get_buff(without_formation, "방어막") is not None
-        assert ctx.buff_container.get_buff(without_formation, "반사") is None
+        assert ctx.buff_container.get_buff(with_team_buff, "반사") is not None
+        assert ctx.buff_container.get_buff(with_team_buff, "방어막") is None
+        assert ctx.buff_container.get_buff(without_team_buff, "방어막") is not None
+        assert ctx.buff_container.get_buff(without_team_buff, "반사") is None
         assert ctx.buff_container.get_buff(caster, "방어막") is not None
 
 
@@ -523,10 +533,10 @@ class TestReflectBuff:
     def test_nullifies_damage_and_reflects_forty_percent(self):
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        attacker = CharacterId("Formation")
+        attacker = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100),
+            get_test_preset("Guardian", atk=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -554,10 +564,10 @@ class TestReflectBuff:
         공격자 쪽에는 반사 계산식이 포함된 대미지 로그가 각각 남는다."""
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        attacker = CharacterId("Formation")
+        attacker = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100),
+            get_test_preset("Guardian", atk=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -578,21 +588,21 @@ class TestReflectBuff:
         assert no_effect.result == "[반사] 소모, 대미지 없음"
 
         reflected = next(e for e in entries if e.kind == BattleLogEntryKind.DAMAGE)
-        assert reflected.target_name == "Formation"
+        assert reflected.target_name == "Guardian"
         assert reflected.value == 40
         assert reflected.roll_display is not None
         assert "반사 계수" in reflected.roll_display
 
     def test_reply_summary_labels_reflected_damage_with_buff_id_and_holder(self):
-        """반사 대미지는 공격자(Formation) 본인의 행동이 아니라 [반사] 보유자가
+        """반사 대미지는 공격자(Guardian) 본인의 행동이 아니라 [반사] 보유자가
         되돌려보낸 대미지이므로, 답글 요약에도 "[반사: 적군]"으로 발생 원인이
         드러나야 한다."""
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        attacker = CharacterId("Formation")
+        attacker = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100),
+            get_test_preset("Guardian", atk=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -615,10 +625,10 @@ class TestReflectBuff:
         """공격자에게 "주는 대미지 증가" 버프가 있으면 반사량도 함께 커진다."""
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        attacker = CharacterId("Formation")
+        attacker = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100),
+            get_test_preset("Guardian", atk=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -648,10 +658,10 @@ class TestReflectBuff:
         반영되지 않는다(피격자의 받는 대미지 버프는 무시)."""
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        attacker = CharacterId("Formation")
+        attacker = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100),
+            get_test_preset("Guardian", atk=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -681,10 +691,10 @@ class TestReflectBuff:
         대미지에는 반영되지 않는다(되돌려받는 공격자의 받는 대미지 버프 무시)."""
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        attacker = CharacterId("Formation")
+        attacker = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100),
+            get_test_preset("Guardian", atk=100),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )
@@ -717,10 +727,10 @@ class TestNullifyingBuffsPreserveSideEffects:
     def _run(self, *, target_buff_id: str) -> tuple[int, bool]:
         ctx = _make_context()
         manager = _setup_ally_phase(ctx)
-        caster = CharacterId("Formation")
+        caster = CharacterId("Guardian")
         target = CharacterId("적군")
         ctx.add_character(
-            get_test_preset("Formation", atk=100, skill_1_id="MarkedStrikeSkill"),
+            get_test_preset("Guardian", atk=100, skill_1_id="MarkedStrikeSkill"),
             FactionType.ALLY,
             BattlefieldColumnIndex(0),
         )

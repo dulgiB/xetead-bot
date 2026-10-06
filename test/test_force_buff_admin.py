@@ -28,7 +28,7 @@ ATK_BUFF_ID = "공격 강화"
 TAUNT_BUFF_ID = "유도"
 DOT_BUFF_ID = "잔향: 테스트"
 HOT_BUFF_ID = "재생"
-IGNITE_BUFF_ID = "점화"
+DELAYED_BURST_BUFF_ID = "점화"
 STACK_BUFF_ID = "표식"
 
 ALLY_1 = CharacterId("아군 1")
@@ -73,7 +73,7 @@ def _make_state(started: bool = True) -> BotState:
         _buff(TAUNT_BUFF_ID, "BuffTaunt", turns=1),
         _buff(DOT_BUFF_ID, "BuffDamageOverTime", value=7),
         _buff(HOT_BUFF_ID, "BuffHealOverTime", value=5),
-        _buff(IGNITE_BUFF_ID, "BuffIgnite", turns=1),
+        _buff(DELAYED_BURST_BUFF_ID, "BuffDelayedColumnBurst", turns=1),
         _buff(STACK_BUFF_ID, "BuffStackingMark", turns=3, max_stack=3),
     ]
     state.session = BattleSession(buff_dict={b.id: b for b in buffs}, skill_dict={})
@@ -151,14 +151,14 @@ class TestAdd:
         assert buff.given_by == ALLY_1
         assert buff.get_target_override() == ALLY_1
 
-    def test_ignite_snapshots_the_target_column(self):
+    def test_delayed_burst_snapshots_the_target_column(self):
         state = _make_state()
 
         handle_admin_command(
-            f"[버프부여/{ENEMY.name}/{IGNITE_BUFF_ID}/{ALLY_1.name}]", state
+            f"[버프부여/{ENEMY.name}/{DELAYED_BURST_BUFF_ID}/{ALLY_1.name}]", state
         )
 
-        [buff] = _buffs_on(state, ENEMY, IGNITE_BUFF_ID)
+        [buff] = _buffs_on(state, ENEMY, DELAYED_BURST_BUFF_ID)
         assert buff.value == BattlefieldColumnIndex(3).value
 
 

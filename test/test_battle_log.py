@@ -119,7 +119,7 @@ def test_build_log_entries_records_buff_add(context_with_atk_buff_skill):
 def test_build_log_entries_records_stacking_buff_add_with_stack_count():
     """max_stack이 있는 적층형 버프는 턴/횟수가 아니라 스택 수로 표시된다."""
     buff = BuffData(
-        id="재앙",
+        id="잔여 대가",
         buff_class_name="BuffAtk",
         duration_turn_value=None,
         duration_count_value=None,
@@ -137,10 +137,14 @@ def test_build_log_entries_records_stacking_buff_add_with_stack_count():
         target_rule="SkillTargetRuleSelf",
         target_count=1,
         cost=0,
-        effects=[SkillEffectAddBuff(None, None, None, "재앙", None, buff_stack_cap=2)],
+        effects=[
+            SkillEffectAddBuff(None, None, None, "잔여 대가", None, buff_stack_cap=2)
+        ],
         description="",
     )
-    ctx = BattlefieldContext(buff_dict={"재앙": buff}, skill_dict={"쌓기": stack_skill})
+    ctx = BattlefieldContext(
+        buff_dict={"잔여 대가": buff}, skill_dict={"쌓기": stack_skill}
+    )
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
     ctx.add_character(
@@ -157,15 +161,15 @@ def test_build_log_entries_records_stacking_buff_add_with_stack_count():
     entries = [e for r in new_results for e in r.log_entries]
     assert len(entries) == 1
     assert entries[0].kind == BattleLogEntryKind.BUFF_ADD
-    assert entries[0].buff_id == "재앙"
+    assert entries[0].buff_id == "잔여 대가"
     assert entries[0].stack_delta == 2
-    assert entries[0].result == "[재앙]×2 부여 → 최종 2"
+    assert entries[0].result == "[잔여 대가]×2 부여 → 최종 2"
 
 
 def test_build_log_entries_records_buff_remove_from_stack_consumption():
     """SkillEffectConsumeStackForDamage로 소모된 스택이 BUFF_REMOVE 엔트리로 남아야 한다."""
     stack_buff = BuffData(
-        id="재앙",
+        id="잔여 대가",
         buff_class_name="BuffAtk",
         duration_turn_value=None,
         duration_count_value=None,
@@ -188,7 +192,7 @@ def test_build_log_entries_records_buff_remove_from_stack_consumption():
                 ValueSourceType.CONSUMED_BUFF_STACK,
                 100,
                 ValueType.INTEGER,
-                "재앙",
+                "잔여 대가",
                 None,
                 buff_stack_cap=2,
             )
@@ -196,7 +200,7 @@ def test_build_log_entries_records_buff_remove_from_stack_consumption():
         description="",
     )
     ctx = BattlefieldContext(
-        buff_dict={"재앙": stack_buff}, skill_dict={"전가": consume_skill}
+        buff_dict={"잔여 대가": stack_buff}, skill_dict={"전가": consume_skill}
     )
     manager = _ally_action_manager(ctx)
     caster_id = CharacterId("아군 1")
@@ -210,7 +214,7 @@ def test_build_log_entries_records_buff_remove_from_stack_consumption():
     )
     ctx.buff_container.add(
         BuffAddData(
-            given_by=caster_id, applied_to=caster_id, buff_id="재앙", stack_value=3
+            given_by=caster_id, applied_to=caster_id, buff_id="잔여 대가", stack_value=3
         )
     )
 
@@ -223,9 +227,9 @@ def test_build_log_entries_records_buff_remove_from_stack_consumption():
     remove_entries = [e for e in entries if e.kind == BattleLogEntryKind.BUFF_REMOVE]
     assert len(remove_entries) == 1
     assert remove_entries[0].target_name == "아군 1"
-    assert remove_entries[0].buff_id == "재앙"
+    assert remove_entries[0].buff_id == "잔여 대가"
     assert remove_entries[0].stack_delta == 2
-    assert remove_entries[0].result == "[재앙]×2 소모 → 최종 1"
+    assert remove_entries[0].result == "[잔여 대가]×2 소모 → 최종 1"
 
     damage_entries = [e for e in entries if e.kind == BattleLogEntryKind.DAMAGE]
     assert len(damage_entries) == 1

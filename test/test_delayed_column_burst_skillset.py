@@ -1,6 +1,6 @@
 """
-"주는 대미지 감소" 패시브 + 코스트 2 스킬(공격 굴림 기반 대미지 + [발화] 디버프
-부여) 스킬셋에 대한 테스트. [발화]는 부여 시점 대상의 열을 스냅샷해두었다가,
+"주는 대미지 감소" 패시브 + 코스트 2 스킬(공격 굴림 기반 대미지 + [지연 폭발] 디버프
+부여) 스킬셋에 대한 테스트. [지연 폭발]은 부여 시점 대상의 열을 스냅샷해두었다가,
 지속시간이 끝나는(0턴이 되는) 라운드 종료 시점에 대상이 그 열에 그대로
 있으면 부여자 공격 굴림 기반 대미지를 입히는 디버프이며, 서로 다른 열로
 부여되면 동시에 여러 개 유지될 수 있다.
@@ -38,15 +38,15 @@ from battle.objects.skill.effects import (
 from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
 
-IGNITE_BUFF_ID = "Ignite"
+DELAYED_BURST_BUFF_ID = "DelayedBurst"
 COST2_SKILL_ID = "Cost2Skill"
 PASSIVE_SKILL_ID = "PassiveSkill"
 
 
-def make_ignite_buff_data(duration_turn_value: int = 2) -> BuffData:
+def make_delayed_burst_buff_data(duration_turn_value: int = 2) -> BuffData:
     return BuffData(
-        id=IGNITE_BUFF_ID,
-        buff_class_name="BuffIgnite",
+        id=DELAYED_BURST_BUFF_ID,
+        buff_class_name="BuffDelayedColumnBurst",
         duration_turn_value=duration_turn_value,
         duration_count_value=None,
         duration_count_deduct_condition=None,
@@ -61,7 +61,7 @@ def make_ignite_buff_data(duration_turn_value: int = 2) -> BuffData:
 
 def make_cost2_skill() -> SkillData:
     """대상에게 공격 굴림 230% 대미지를 입히고, 대상의 현재 위치를 기준으로
-    2턴간 [발화: X열]을 부여한다."""
+    2턴간 [지연 폭발: X열]을 부여한다."""
     return SkillData(
         id=COST2_SKILL_ID,
         target_rule="SkillTargetRuleNamed",
@@ -75,7 +75,7 @@ def make_cost2_skill() -> SkillData:
                 value_source=None,
                 value=None,
                 value_type=None,
-                buff_id=IGNITE_BUFF_ID,
+                buff_id=DELAYED_BURST_BUFF_ID,
                 buff_add_timing=None,
             ),
         ],
@@ -107,11 +107,15 @@ def make_passive_skill_data() -> PassiveSkillData:
 
 
 def make_context(
-    ignite_duration_turn_value: int = 2,
+    delayed_burst_duration_turn_value: int = 2,
     with_passive: bool = False,
 ) -> BattlefieldContext:
     return BattlefieldContext(
-        buff_dict={IGNITE_BUFF_ID: make_ignite_buff_data(ignite_duration_turn_value)},
+        buff_dict={
+            DELAYED_BURST_BUFF_ID: make_delayed_burst_buff_data(
+                delayed_burst_duration_turn_value
+            )
+        },
         skill_dict={COST2_SKILL_ID: make_cost2_skill()},
         passive_skill_dict={PASSIVE_SKILL_ID: make_passive_skill_data()}
         if with_passive
@@ -180,7 +184,7 @@ class TestGivenDamageReductionPassive:
 
 
 class TestCost2SkillDamageAndDebuff:
-    """코스트 2 스킬: 대미지 + 대상 현재 위치 기준 [발화] 부여."""
+    """코스트 2 스킬: 대미지 + 대상 현재 위치 기준 [지연 폭발] 부여."""
 
     def _add_characters(
         self, ctx: BattlefieldContext, target_column: BattlefieldColumnIndex
@@ -192,7 +196,7 @@ class TestCost2SkillDamageAndDebuff:
         )
         ctx.add_character(get_test_preset("대상"), FactionType.ENEMY, target_column)
 
-    def test_deals_damage_and_applies_ignite_at_targets_current_column(self):
+    def test_deals_damage_and_applies_delayed_burst_at_targets_current_column(self):
         ctx = make_context()
         manager = setup_ally_phase(ctx)
         caster_id = CharacterId("시전자")
@@ -204,14 +208,14 @@ class TestCost2SkillDamageAndDebuff:
         )
 
         assert ctx.characters[target_id].status.curr_hp < 100
-        ignite = ctx.buff_container.get_buff(target_id, IGNITE_BUFF_ID)
-        assert ignite is not None
-        assert ignite.value == BattlefieldColumnIndex(2).value
-        assert ignite.given_by == caster_id
+        delayed_burst = ctx.buff_container.get_buff(target_id, DELAYED_BURST_BUFF_ID)
+        assert delayed_burst is not None
+        assert delayed_burst.value == BattlefieldColumnIndex(2).value
+        assert delayed_burst.given_by == caster_id
 
 
-class TestIgniteStacksAcrossDifferentColumns:
-    """서로 다른 열에 대해서는 [발화]가 중첩 가능해야 하고, 같은 열이면
+class TestDelayedBurstStacksAcrossDifferentColumns:
+    """서로 다른 열에 대해서는 [지연 폭발]이 중첩 가능해야 하고, 같은 열이면
     재부여 시 지속시간만 갱신되어야 한다."""
 
     def test_different_columns_coexist_simultaneously(self):
@@ -229,7 +233,7 @@ class TestIgniteStacksAcrossDifferentColumns:
             BuffAddData(
                 given_by=caster_id,
                 applied_to=target_id,
-                buff_id=IGNITE_BUFF_ID,
+                buff_id=DELAYED_BURST_BUFF_ID,
                 value_override=BattlefieldColumnIndex(2).value,
             )
         )
@@ -237,7 +241,7 @@ class TestIgniteStacksAcrossDifferentColumns:
             BuffAddData(
                 given_by=caster_id,
                 applied_to=target_id,
-                buff_id=IGNITE_BUFF_ID,
+                buff_id=DELAYED_BURST_BUFF_ID,
                 value_override=BattlefieldColumnIndex(3).value,
             )
         )
@@ -245,7 +249,7 @@ class TestIgniteStacksAcrossDifferentColumns:
         buffs = [
             b
             for b in ctx.buff_container.get_buffs_by(target_id, None)
-            if b.id == IGNITE_BUFF_ID
+            if b.id == DELAYED_BURST_BUFF_ID
         ]
         assert len(buffs) == 2
         assert {b.value for b in buffs} == {
@@ -268,18 +272,18 @@ class TestIgniteStacksAcrossDifferentColumns:
             BuffAddData(
                 given_by=caster_id,
                 applied_to=target_id,
-                buff_id=IGNITE_BUFF_ID,
+                buff_id=DELAYED_BURST_BUFF_ID,
                 value_override=BattlefieldColumnIndex(2).value,
             )
         )
-        ignite = ctx.buff_container.get_buff(target_id, IGNITE_BUFF_ID)
-        ignite.duration.remaining_turns = 1
+        delayed_burst = ctx.buff_container.get_buff(target_id, DELAYED_BURST_BUFF_ID)
+        delayed_burst.duration.remaining_turns = 1
 
         ctx.buff_container.add(
             BuffAddData(
                 given_by=caster_id,
                 applied_to=target_id,
-                buff_id=IGNITE_BUFF_ID,
+                buff_id=DELAYED_BURST_BUFF_ID,
                 value_override=BattlefieldColumnIndex(2).value,
             )
         )
@@ -287,14 +291,14 @@ class TestIgniteStacksAcrossDifferentColumns:
         buffs = [
             b
             for b in ctx.buff_container.get_buffs_by(target_id, None)
-            if b.id == IGNITE_BUFF_ID
+            if b.id == DELAYED_BURST_BUFF_ID
         ]
         assert len(buffs) == 1
         assert buffs[0].duration.remaining_turns == 2
 
 
-class TestIgniteExpireDamage:
-    """[발화]가 만료되는(0턴이 되는) 라운드 종료 시점에 대상이 저장된 열에
+class TestDelayedBurstExpireDamage:
+    """[지연 폭발]이 만료되는(0턴이 되는) 라운드 종료 시점에 대상이 저장된 열에
     있으면 부여자 공격 굴림 150% 대미지를 입혀야 한다."""
 
     def _setup(
@@ -316,42 +320,42 @@ class TestIgniteExpireDamage:
         manager = RoundManager(ctx)
         return ctx, manager, caster_id, target_id
 
-    def _grant_ignite(
+    def _grant_delayed_burst(
         self, ctx: BattlefieldContext, caster_id: CharacterId, target_id: CharacterId
     ) -> None:
         ctx.buff_container.add(
             BuffAddData(
                 given_by=caster_id,
                 applied_to=target_id,
-                buff_id=IGNITE_BUFF_ID,
+                buff_id=DELAYED_BURST_BUFF_ID,
                 value_override=BattlefieldColumnIndex(2).value,
             )
         )
 
     def test_no_damage_before_expiring_round(self):
         ctx, manager, caster_id, target_id = self._setup()
-        self._grant_ignite(ctx, caster_id, target_id)
+        self._grant_delayed_burst(ctx, caster_id, target_id)
 
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
 
         assert ctx.characters[target_id].status.curr_hp == 1000
-        ignite = ctx.buff_container.get_buff(target_id, IGNITE_BUFF_ID)
-        assert ignite is not None
-        assert ignite.duration.remaining_turns == 1
+        delayed_burst = ctx.buff_container.get_buff(target_id, DELAYED_BURST_BUFF_ID)
+        assert delayed_burst is not None
+        assert delayed_burst.duration.remaining_turns == 1
 
     def test_deals_damage_on_expiring_round_when_target_still_in_column(self):
         ctx, manager, caster_id, target_id = self._setup()
-        self._grant_ignite(ctx, caster_id, target_id)
+        self._grant_delayed_burst(ctx, caster_id, target_id)
 
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
 
         assert ctx.characters[target_id].status.curr_hp < 1000
-        assert ctx.buff_container.get_buff(target_id, IGNITE_BUFF_ID) is None
+        assert ctx.buff_container.get_buff(target_id, DELAYED_BURST_BUFF_ID) is None
 
     def test_no_damage_when_target_left_the_column_before_expiry(self):
         ctx, manager, caster_id, target_id = self._setup()
-        self._grant_ignite(ctx, caster_id, target_id)
+        self._grant_delayed_burst(ctx, caster_id, target_id)
 
         ctx.move_character_to(target_id, BattlefieldColumnIndex(3))
 
@@ -359,4 +363,4 @@ class TestIgniteExpireDamage:
         manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
 
         assert ctx.characters[target_id].status.curr_hp == 1000
-        assert ctx.buff_container.get_buff(target_id, IGNITE_BUFF_ID) is None
+        assert ctx.buff_container.get_buff(target_id, DELAYED_BURST_BUFF_ID) is None

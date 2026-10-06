@@ -32,7 +32,7 @@ class StackingMarkNoopEvent(BuffEvent):
 class BuffStackingMark(BuffBase):
     """단독으로는 아무 효과가 없는 순수 적층 마커 버프/디버프.
 
-    재앙(BuffCatastrophe)/균열(BuffFracture)과 같은 목적이지만, 다른 캐릭터의
+    잔여 대가(BuffBattleEndPenalty)/누적 표식(BuffDebuffStackMark)과 같은 목적이지만, 다른 캐릭터의
     마커와 buff_class_name 기반 식별(BuffUid)이 충돌하지 않아야 하는 경우
     (동일 부여자가 이 마커와 다른 마커를 동시에 다른 대상에게 부여하는 등)
     전용으로 쓴다. 다른 버프/스킬 효과가 이 버프의 id로 스택 수를 조회해

@@ -19,7 +19,7 @@ from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.models import CharacterId
 from helpers import get_test_preset
 
-_ACTOR = CharacterId("Catastrophe")
+_ACTOR = CharacterId("Bearer")
 _TARGET = CharacterId("Adversary")
 
 

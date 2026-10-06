@@ -4,9 +4,9 @@
 배경: PracticeRoundManager는 선공/후공을 process_ally_command()로 즉시
 처리할 뿐, 본 전투(RoundManager)가 ENEMY_POST_ACTION 페이즈에서 호출하는
 buff_container.on_enemy_post_action()/on_enemy_post_action_resolved()를
-전혀 호출하지 않았다 — 그 결과 이 타이밍(예: 피격 시 [재앙] 스택을 쌓는
+전혀 호출하지 않았다 — 그 결과 이 타이밍(예: 피격 시 [잔여 대가] 스택을 쌓는
 패시브)을 쓰는 패시브가 대련에서는 한 번도 발동하지 않는 문제가 있었다.
-test_catastrophe_full_skillset.py(본 전투)의 TestPassiveSkill과 동일한
+test_battle_end_penalty_skillset.py(본 전투)의 TestPassiveSkill과 동일한
 버프/패시브 데이터를 대련 컨텍스트에 그대로 옮겨, PracticeRoundManager가
 라운드 종료 시 이 훅을 호출하도록 고친 뒤에도 같은 결과가 나오는지
 검증한다.
@@ -29,10 +29,10 @@ from helpers import get_test_preset
 
 def _buff_dict() -> dict[str, BuffData]:
     return {
-        "재앙": BuffData.from_dict(
+        "잔여 대가": BuffData.from_dict(
             {
-                "id": "재앙",
-                "buff_name": "BuffCatastrophe",
+                "id": "잔여 대가",
+                "buff_name": "BuffBattleEndPenalty",
                 "duration_turn_value": "",
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
@@ -70,7 +70,7 @@ def _passive_skill_dict() -> dict[str, PassiveSkillData]:
                 "value_source_0": "",
                 "value_0": "",
                 "value_type_0": "",
-                "buff_id_0": "재앙",
+                "buff_id_0": "잔여 대가",
                 "target_override_0": "자신",
                 "condition_0": "AllyInSameColumnWasAttackedCondition",
                 "condition_value_0": "",
@@ -78,7 +78,7 @@ def _passive_skill_dict() -> dict[str, PassiveSkillData]:
                 "value_source_1": "",
                 "value_1": "",
                 "value_type_1": "",
-                "buff_id_1": "재앙",
+                "buff_id_1": "잔여 대가",
                 "target_override_1": "자신",
                 "condition_1": "HolderWasAttackedCondition",
                 "condition_value_1": "",
@@ -120,9 +120,9 @@ def test_stack_gained_when_same_column_ally_is_hit():
     ctx = _make_context()
     manager = PracticeRoundManager(ctx)
 
-    catastrophe_id = CharacterId("Catastrophe")
+    bearer_id = CharacterId("Bearer")
     ctx.add_character(
-        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        get_test_preset("Bearer", passive_skill_id="PassiveSkill"),
         SideType.SIDE_1,
         BattlefieldColumnIndex(0),
     )
@@ -136,16 +136,16 @@ def test_stack_gained_when_same_column_ally_is_hit():
     _play_round_with_attack(manager, ctx, SideType.SIDE_2, "[공격/동료]")
 
     # 동료(같은 열)가 맞았으므로 1스택, 자신은 맞지 않았으므로 추가 스택은 없다.
-    assert ctx.get_buff_stack(catastrophe_id, "재앙") == 1
+    assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 1
 
 
 def test_extra_stack_gained_when_holder_itself_is_hit():
     ctx = _make_context()
     manager = PracticeRoundManager(ctx)
 
-    catastrophe_id = CharacterId("Catastrophe")
+    bearer_id = CharacterId("Bearer")
     ctx.add_character(
-        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        get_test_preset("Bearer", passive_skill_id="PassiveSkill"),
         SideType.SIDE_1,
         BattlefieldColumnIndex(0),
     )
@@ -153,10 +153,10 @@ def test_extra_stack_gained_when_holder_itself_is_hit():
         get_test_preset("적군"), SideType.SIDE_2, BattlefieldColumnIndex(0)
     )
 
-    _play_round_with_attack(manager, ctx, SideType.SIDE_2, "[공격/Catastrophe]")
+    _play_round_with_attack(manager, ctx, SideType.SIDE_2, "[공격/Bearer]")
 
     # 같은 열 피격(효과 0) + 자신 피격(효과 1) 둘 다 조건을 만족해 2스택.
-    assert ctx.get_buff_stack(catastrophe_id, "재앙") == 2
+    assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 2
 
 
 def test_no_stack_when_only_the_opposing_side_in_the_same_column_is_hit():
@@ -168,9 +168,9 @@ def test_no_stack_when_only_the_opposing_side_in_the_same_column_is_hit():
     ctx = _make_context()
     manager = PracticeRoundManager(ctx)
 
-    catastrophe_id = CharacterId("Catastrophe")
+    bearer_id = CharacterId("Bearer")
     ctx.add_character(
-        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        get_test_preset("Bearer", passive_skill_id="PassiveSkill"),
         SideType.SIDE_1,
         BattlefieldColumnIndex(0),
     )
@@ -179,10 +179,10 @@ def test_no_stack_when_only_the_opposing_side_in_the_same_column_is_hit():
     )
 
     _play_round_with_attack(
-        manager, ctx, SideType.SIDE_1, "[공격/적군]", attacker_name="Catastrophe"
+        manager, ctx, SideType.SIDE_1, "[공격/적군]", attacker_name="Bearer"
     )
 
-    assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
+    assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 0
 
 
 def test_no_stack_per_damaged_column_when_only_the_opposing_side_is_hit():
@@ -199,7 +199,7 @@ def test_no_stack_per_damaged_column_when_only_the_opposing_side_is_hit():
                 "value_source_0": "",
                 "value_0": 1,
                 "value_type_0": "",
-                "buff_id_0": "재앙",
+                "buff_id_0": "잔여 대가",
                 "target_override_0": "자신",
                 "condition_0": "",
                 "condition_value_0": "",
@@ -213,9 +213,9 @@ def test_no_stack_per_damaged_column_when_only_the_opposing_side_is_hit():
     )
     manager = PracticeRoundManager(ctx)
 
-    catastrophe_id = CharacterId("Catastrophe")
+    bearer_id = CharacterId("Bearer")
     ctx.add_character(
-        get_test_preset("Catastrophe", passive_skill_id="PassiveSkill"),
+        get_test_preset("Bearer", passive_skill_id="PassiveSkill"),
         SideType.SIDE_1,
         BattlefieldColumnIndex(0),
     )
@@ -224,7 +224,7 @@ def test_no_stack_per_damaged_column_when_only_the_opposing_side_is_hit():
     )
 
     _play_round_with_attack(
-        manager, ctx, SideType.SIDE_1, "[공격/적군]", attacker_name="Catastrophe"
+        manager, ctx, SideType.SIDE_1, "[공격/적군]", attacker_name="Bearer"
     )
 
-    assert ctx.get_buff_stack(catastrophe_id, "재앙") == 0
+    assert ctx.get_buff_stack(bearer_id, "잔여 대가") == 0

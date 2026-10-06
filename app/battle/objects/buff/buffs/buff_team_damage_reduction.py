@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class FormationReceivedDamageModEvent(BuffEvent):
+class TeamDamageReductionModEvent(BuffEvent):
     is_pure_damage_modifier: ClassVar[bool] = True
 
     value: ValueModifierBase
@@ -39,11 +39,11 @@ class FormationReceivedDamageModEvent(BuffEvent):
                 damage_data.received_modifiers.append(self.value)
 
 
-class BuffFormation(BuffBase):
-    """진형 밀집 시 받는 대미지를 감소시키는 팀 버프.
+class BuffTeamDamageReduction(BuffBase):
+    """받는 대미지를 감소시키는 팀 버프.
 
     받는 대미지 증감이라는 점에서는 BuffReceivedDamage와 동일하지만, 다른 스킬
-    효과(SkillEffectAddBuffIfHolderHasFormationBuff 등)가 "이 버프를 보유했는지"를
+    효과(SkillEffectAddBuffIfHolderHasTeamDamageReduction 등)가 "이 버프를 보유했는지"를
     buff_class_name으로 식별해야 하므로, 다른 캐릭터의 범용 받는 대미지 버프와
     섞이지 않도록 전용 클래스로 둔다.
     """
@@ -52,14 +52,14 @@ class BuffFormation(BuffBase):
     def timing(self) -> BuffApplyTiming:
         return BuffApplyTiming.ON_ACTION
 
-    def create_event(self) -> FormationReceivedDamageModEvent:
+    def create_event(self) -> TeamDamageReductionModEvent:
         if self.value_type == ValueType.INTEGER:
-            return FormationReceivedDamageModEvent(
+            return TeamDamageReductionModEvent(
                 condition=self.condition,
                 value=IntValueModifier(source_name=self.id, value=self.value),
             )
         elif self.value_type == ValueType.PERCENT:
-            return FormationReceivedDamageModEvent(
+            return TeamDamageReductionModEvent(
                 condition=self.condition,
                 value=FloatValueModifier(source_name=self.id, value=self.value),
             )

@@ -32,7 +32,7 @@ from battle.objects.skill.effects import (
 from battle.objects.skill.models import SkillData, keyword_config_error
 from helpers import get_test_preset
 
-_CASTER = CharacterId("Catastrophe")
+_CASTER = CharacterId("Bearer")
 _TARGET = CharacterId("Adversary")
 _ALLY = CharacterId("Companion")
 

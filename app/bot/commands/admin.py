@@ -1203,7 +1203,7 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
     context = state.session.context
     system_error = False
 
-    # 전투 종료 시점 버프 훅([재앙] 등) 처리 후, 변경된 HP를 스프레드시트에 반영한다.
+    # 전투 종료 시점 버프 훅([잔여 대가] 등) 처리 후, 변경된 HP를 스프레드시트에 반영한다.
     battle_end_entries = context.on_battle_end()
     if battle_end_entries:
         try:
