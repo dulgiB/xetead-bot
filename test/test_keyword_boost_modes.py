@@ -334,7 +334,7 @@ def test_non_damage_skill_without_mode_is_still_rejected():
         effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
     )
     context = _make_context(skill, buff=_buff_data())
-    with pytest.raises(CommandValidationError, match="대미지를 주지 않고"):
+    with pytest.raises(CommandValidationError, match="보정을 받을 대미지가 없고"):
         _run(context, f"[PassiveSkill+/{_ALLY.name}]")
 
 

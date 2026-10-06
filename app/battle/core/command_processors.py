@@ -447,8 +447,9 @@ def try_expansion_if_valid(
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
-    # keyword_mode가 없는 스킬은 대미지 스킬에만 키워드 보정을 허용한다. 대미지가
-    # 실제로 나오는지는 효과 구현체마다 달라 전개해 봐야 알 수 있다.
+    # keyword_mode가 없는 스킬은 굴림 보정을 받을 대미지가 있는 스킬에만 키워드
+    # 보정을 허용한다. 대미지가 실제로 나오는지는 효과 구현체마다 달라 전개해 봐야
+    # 알 수 있다.
     if (
         keyword_part is not None
         and keyword_part.type_ == ActionType.SKILL
@@ -456,11 +457,12 @@ def try_expansion_if_valid(
     ):
         assert keyword_part.skill_id is not None
         has_damage = any(
-            sub_data.damage_list
+            damage.value.takes_keyword_roll_bonus
             for command_data in expanded_command_data_list
             if command_data.original_part is keyword_part
             for sub_data in command_data.data_per_effect
             if sub_data is not None
+            for damage in sub_data.damage_list
         )
         if not has_damage:
             raise CommandValidationError(

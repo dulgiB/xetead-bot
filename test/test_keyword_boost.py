@@ -18,18 +18,25 @@ from battle.core.command_processors import (
 from battle.core.commands.models import BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
+from battle.objects.buff.buff_base import BuffAddData
+from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     KEYWORD_BOOST_ATTACK_BONUS,
     KEYWORD_BOOST_HP_COST,
     KEYWORD_BOOST_SKILL_BONUS,
     ActionType,
     BattlefieldColumnIndex,
+    BuffType,
     FactionType,
     ValueSourceType,
     ValueType,
 )
 from battle.objects.models import CharacterId
-from battle.objects.skill.effects import SkillEffectDamage, SkillEffectHeal
+from battle.objects.skill.effects import (
+    SkillEffectConsumeStackForDamage,
+    SkillEffectDamage,
+    SkillEffectHeal,
+)
 from battle.objects.skill.models import SkillData
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
@@ -72,6 +79,21 @@ def _heal_skill(skill_id: str, cost: int = 2) -> SkillData:
     )
 
 
+def _hp_ratio_damage_skill(skill_id: str) -> SkillData:
+    return SkillData(
+        id=skill_id,
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=2,
+        effects=[
+            SkillEffectDamage(
+                ValueSourceType.TARGET_MAX_HP, 10, ValueType.PERCENT, None, None
+            )
+        ],
+        description="",
+    )
+
+
 def _make_context(
     *,
     attacker_revival: int = 0,
@@ -83,6 +105,7 @@ def _make_context(
     skill_dict = {
         "Cost2Skill": _fixed_damage_skill("Cost2Skill", cost=2),
         "HealSkill": _heal_skill("HealSkill"),
+        "HpRatioSkill": _hp_ratio_damage_skill("HpRatioSkill"),
     }
     context: BattlefieldContext
     if practice:
@@ -97,6 +120,7 @@ def _make_context(
         keyword_date=attacker_keyword_date,
         skill_1_id="Cost2Skill",
         skill_2_id="HealSkill",
+        skill_3_id="HpRatioSkill",
     )
     target = get_test_preset(_TARGET.name)
 
@@ -188,7 +212,7 @@ def test_keyword_blocked_on_non_damage_skill():
     test_keyword_boost_modes.py 참고.
     """
     context = _make_context(attacker_revival=1)
-    with pytest.raises(CommandValidationError, match="대미지를 주지 않고"):
+    with pytest.raises(CommandValidationError, match="보정을 받을 대미지가 없고"):
         _run(context, f"[HealSkill+/{_ATTACKER.name}]")
 
 
@@ -317,6 +341,90 @@ def test_keyword_skill_bonus_applies_to_fixed_damage():
     ]
     assert len(damage_entries) == 1
     assert damage_entries[0].value == _FIXED_DAMAGE + KEYWORD_BOOST_SKILL_BONUS
+
+
+_STACK_BUFF_ID = "StackBuff"
+_STACK_DAMAGE_PERCENT = 500
+
+
+def _make_stack_skill_context(holder_stack: int) -> BattlefieldContext:
+    """굴림 대미지 + "소모한 스택 수 × 계수" 고정 대미지를 함께 주는 스킬."""
+    stack_buff = BuffData(
+        id=_STACK_BUFF_ID,
+        description="",
+        buff_class_name="BuffCatastrophe",
+        duration_turn_value=None,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=None,
+        value=0,
+        condition_=None,
+        condition_value=None,
+        buff_type=BuffType.NEUTRAL,
+        max_stack=10,
+    )
+    skill = SkillData(
+        id="StackSkill",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=2,
+        effects=[
+            SkillEffectDamage(
+                ValueSourceType.FIXED, _FIXED_DAMAGE, ValueType.INTEGER, None, None
+            ),
+            SkillEffectConsumeStackForDamage(
+                value_source=ValueSourceType.CONSUMED_BUFF_STACK,
+                value=_STACK_DAMAGE_PERCENT,
+                value_type=ValueType.PERCENT,
+                buff_id=_STACK_BUFF_ID,
+                buff_add_timing=None,
+                buff_stack_cap=5,
+            ),
+        ],
+        description="",
+    )
+    context = BattlefieldContext(
+        buff_dict={_STACK_BUFF_ID: stack_buff}, skill_dict={"StackSkill": skill}
+    )
+    context.add_character(
+        get_test_preset(_ATTACKER.name, revival_count=1, skill_1_id="StackSkill"),
+        FactionType.ALLY,
+        BattlefieldColumnIndex(3),
+    )
+    context.add_character(
+        get_test_preset(_TARGET.name, max_hp=300),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(3),
+    )
+    if holder_stack > 0:
+        context.buff_container.add(
+            BuffAddData(
+                given_by=_ATTACKER,
+                applied_to=_ATTACKER,
+                buff_id=_STACK_BUFF_ID,
+                stack_value=holder_stack,
+            )
+        )
+    return context
+
+
+@pytest.mark.parametrize("holder_stack", [0, 2])
+def test_keyword_roll_bonus_skips_stack_proportional_damage(holder_stack):
+    context = _make_stack_skill_context(holder_stack)
+    hp_before = context.characters[_TARGET].status.curr_hp
+    _run(context, f"[StackSkill+/{_TARGET.name}]")
+
+    stack_damage = holder_stack * _STACK_DAMAGE_PERCENT // 100
+    assert (
+        hp_before - context.characters[_TARGET].status.curr_hp
+        == _FIXED_DAMAGE + KEYWORD_BOOST_SKILL_BONUS + stack_damage
+    )
+
+
+def test_keyword_blocked_on_skill_without_roll_damage():
+    context = _make_context(attacker_revival=1)
+    with pytest.raises(CommandValidationError, match="보정을 받을 대미지가 없고"):
+        _run(context, f"[HpRatioSkill+/{_TARGET.name}]")
 
 
 # ── 키워드 보정: 적군 선언 경로 ────────────────────────────────────────────────
