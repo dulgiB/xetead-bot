@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 
 
 class SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction(SkillEffectBase):
-    """대상 각각에 대해 [Formation] 버프 보유 여부를 확인해, 보유 중이면 대체
+    """대상 각각에 대해 `BuffTeamDamageReduction` 버프 보유 여부를 확인해, 보유 중이면 대체
     버프를, 아니면 기본 버프(`buff_id_N`)를 부여한다.
     대체 버프는 시트의 `reference_buff_id_N`에서 온다.
     """

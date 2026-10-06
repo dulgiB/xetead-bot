@@ -40,7 +40,7 @@ class TeamDamageReductionModEvent(BuffEvent):
 
 
 class BuffTeamDamageReduction(BuffBase):
-    """진형 밀집 시 받는 대미지를 감소시키는 팀 버프.
+    """받는 대미지를 감소시키는 팀 버프.
 
     받는 대미지 증감이라는 점에서는 BuffReceivedDamage와 동일하지만, 다른 스킬
     효과(SkillEffectAddBuffIfHolderHasTeamDamageReduction 등)가 "이 버프를 보유했는지"를

@@ -28,7 +28,7 @@ from bot.practice_state import PracticeBattleState  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
 from test_practice_duel_mode import _FakeSpreadsheet  # noqa: E402
 
-_ALLY = CharacterId("Catastrophe")
+_ALLY = CharacterId("Bearer")
 _ENEMY = CharacterId("Adversary")
 
 

@@ -42,7 +42,7 @@ from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
 from helpers import get_test_preset
 
-_ATTACKER = CharacterId("Catastrophe")
+_ATTACKER = CharacterId("Bearer")
 _TARGET = CharacterId("Adversary")
 
 

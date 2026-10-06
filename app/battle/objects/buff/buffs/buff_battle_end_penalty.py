@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class BattleEndPenaltyNoopEvent(BuffEvent):
-    """[재앙]은 자연적으로 발동하는 효과가 없는 순수 카운터 버프다. 스킬 효과
+    """[잔여 대가]는 자연적으로 발동하는 효과가 없는 순수 카운터 버프다. 스킬 효과
     (SkillEffectConsumeStackForDamage 등)가 스택을 직접 조회·소모하므로 여기서는
     아무 일도 하지 않는다."""
 
@@ -37,7 +37,7 @@ _DEFAULT_DAMAGE_PER_STACK = 3
 
 
 class BuffBattleEndPenalty(BuffBase):
-    """[재앙]: 버프도 디버프도 아닌 순수 적층형 마커. 해제할 수 없고(패시브
+    """[잔여 대가]: 버프도 디버프도 아닌 순수 적층형 마커. 해제할 수 없고(패시브
     지속시간이라 라운드 종료 시 자동 제거되지 않으며, type이 NEUTRAL이라
     디버프 해제 효과의 대상이 되지 않는다), 전투가 끝나면 남은 스택 ×
     (스택당 대미지)만큼 시전자의 체력을 깎는다. 스택당 대미지는 "버프" 시트의

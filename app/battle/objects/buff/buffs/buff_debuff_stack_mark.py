@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True)
 class DebuffStackMarkNoopEvent(BuffEvent):
-    """[균열]은 자연적으로 발동하는 효과가 없는 순수 적층 마커 디버프다. 스킬 효과
+    """[누적 표식]은 자연적으로 발동하는 효과가 없는 순수 적층 마커 디버프다. 스킬 효과
     (SkillEffectDamageByDebuffStackTier 등)가 스택을 직접 조회해 활용하므로 여기서는
     아무 일도 하지 않는다."""
 
@@ -31,7 +31,7 @@ class DebuffStackMarkNoopEvent(BuffEvent):
 
 
 class BuffDebuffStackMark(BuffBase):
-    """[균열]: 디버프. 최대 5회까지 적층되며, 단독으로는 아무 효과가 없는 순수
+    """[누적 표식]: 디버프. 최대 5회까지 적층되며, 단독으로는 아무 효과가 없는 순수
     마커다. 다른 스킬/패시브가 스택 여부·수치를 조회해 대미지 보너스나 계수
     분기에 활용한다."""
 

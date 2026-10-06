@@ -503,7 +503,7 @@ class TestPassiveSkill:
         assert enemy_hp_before - enemy_hp_after == 12
 
     def test_reply_summary_labels_counter_damage_with_buff_id_and_holder(self):
-        """반격 대미지는 명아_테스트(공격받은 아군) 본인이 아니라 Sentinel이
+        """반격 대미지는 공격받은 아군(아군2) 본인이 아니라 Sentinel이
         대신 가한 대미지이므로, 답글 요약에도 "[PassiveSkill: Sentinel]"로
         발생 원인이 드러나야 한다 — 원래 피격 아군 줄에는 라벨이 붙지 않는다."""
         ctx = _make_context()

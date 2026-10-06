@@ -1728,7 +1728,7 @@ def _practice_round_end_text(ps: PracticeBattleState) -> str:
 def _apply_practice_battle_end_effects(
     state: "BotState", ps: PracticeBattleState
 ) -> str:
-    """전투 종료 시점 버프 훅([재앙] 등, BuffBase.on_battle_end())을 처리하고,
+    """전투 종료 시점 버프 훅([잔여 대가] 등, BuffBase.on_battle_end())을 처리하고,
     그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
     없으면 빈 문자열). 양 팀이 모두 살아 있을 때는 **반드시 ps.winner()
     호출보다 먼저 불러야 한다** — 이 훅으로 바뀐 HP가 승패 판정에도 반영돼야

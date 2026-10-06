@@ -887,7 +887,7 @@ def test_round_end_returns_empty_string_when_nothing_fires():
 
 def test_round_end_stack_proportional_dot_shows_calculation_line():
     """다른 버프의 스택 수에 비례하는 라운드 종료 DoT(예:
-    BuffDamageOverTimePerReferencedBuffStack)는 재앙/균열 계열과 동일하게
+    BuffDamageOverTimePerReferencedBuffStack)는 잔여 대가/누적 표식 계열과 동일하게
     "{스택}[{버프id}] × {배율}" 형태의 계산식이 함께 표시돼야 한다."""
     mark = BuffData.from_dict(
         {

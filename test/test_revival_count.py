@@ -20,7 +20,7 @@ from battle.objects.skill.effects import SkillEffectDamage
 from battle.objects.skill.models import SkillData
 from helpers import get_test_preset
 
-_ATTACKER = CharacterId("Catastrophe")
+_ATTACKER = CharacterId("Bearer")
 _TARGET = CharacterId("Adversary")
 
 _FIXED_DAMAGE = 30
