@@ -160,14 +160,14 @@ def field_effect_config_error(data: PassiveSkillData) -> Optional[str]:
     if holder_dependent:
         return (
             f"필드 효과 '{data.id}'의 효과 {', '.join(holder_dependent)}은(는)"
-            " 시전자가 전장에 있어야 동작합니다. 필드 효과에는 시전자가 없으므로"
+            " 시전자가 필드에 있어야 동작합니다. 필드 효과에는 시전자가 없으므로"
             " 대미지는 커맨드를 실패시키고 회복은 조용히 사라집니다."
         )
 
     if data.buff_mod_event is not None:
         return (
             f"필드 효과 '{data.id}'의 buff_id는 적용되지 않습니다 — 버프"
-            " 모디파이어는 보유자에게만 걸리는데 필드 효과의 보유자는 전장에"
+            " 모디파이어는 보유자에게만 걸리는데 필드 효과의 보유자는 필드에"
             " 없는 자리이기 때문입니다. effect_N으로 실제 버프를 부여하세요."
         )
 

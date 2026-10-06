@@ -19,7 +19,7 @@ def error_span_out_of_board(pos: BattlefieldColumnIndex, span: int) -> str:
     """지정하는 위치는 언제나 가장 왼쪽 열이므로, 왼쪽 끝이 아니라 span이
     문제라는 것을 문구에 드러낸다."""
     return (
-        f"{span}개 열을 차지하는 대상은 지정한 위치({pos})에서 전장 밖으로 "
+        f"{span}개 열을 차지하는 대상은 지정한 위치({pos})에서 필드 밖으로 "
         f"벗어나 배치할 수 없습니다."
     )
 
@@ -95,7 +95,7 @@ def error_skill_or_item_not_registered() -> str:
 
 
 def error_character_already_defeated(char_id: CharacterId) -> str:
-    return f"'{char_id.name}'은(는) 이미 전투불능(체력 0) 상태이므로 전장에 배치할 수 없습니다."
+    return f"'{char_id.name}'은(는) 이미 전투불능(체력 0) 상태이므로 필드에 배치할 수 없습니다."
 
 
 def error_character_already_on_field(char_id: CharacterId) -> str:

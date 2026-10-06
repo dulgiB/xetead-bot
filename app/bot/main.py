@@ -2351,7 +2351,7 @@ def _handle_practice_command(
     char_id = CharacterId(char_data.name)
 
     if char_id not in ps.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None, None, False
+        return "◊ 해당 캐릭터는 현재 필드에 배치되지 않았습니다.", "", None, None, False
 
     if _RE_PRACTICE_RETIRE.search(text):
         # 탈락은 턴 순서와 무관한 자진 기권 커맨드라, 선공/후공 페이즈

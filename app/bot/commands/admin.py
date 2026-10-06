@@ -506,7 +506,7 @@ def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
     if remove:
         removed = context.remove_field_effect(name)
         if removed is None:
-            return f"◊ 필드 효과({escape_markdown(name)})는 전장에 걸려 있지 않습니다."
+            return f"◊ 필드 효과({escape_markdown(name)})는 필드에 걸려 있지 않습니다."
         reply = f"◊ 필드 효과 **「{escape_markdown(removed.id)}」** 해제"
     else:
         try:
@@ -515,7 +515,7 @@ def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
             # 메시지에 사용자가 입력한 id가 그대로 들어 있다.
             return f"◊ {escape_markdown(str(e))}"
         if added is None:
-            return f"◊ 필드 효과({escape_markdown(name)})는 이미 전장에 걸려 있습니다."
+            return f"◊ 필드 효과({escape_markdown(name)})는 이미 필드에 걸려 있습니다."
         reply = f"◊ 필드 효과 **「{escape_markdown(added.id)}」** 적용"
         if added.description:
             reply += f"\n\n▹ {escape_markdown(added.description)}"
