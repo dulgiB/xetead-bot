@@ -1327,19 +1327,23 @@ class MastodonBotListener(StreamListener):
             # 사라진다.
             if result.game_post_text is not None:
                 prep = result.practice_to_register
+                mention_accts = (
+                    _practice_mention_accts(prep, acct) if prep is not None else None
+                )
                 post = self._reply(
                     status_id,
                     acct,
                     visibility,
                     result.game_post_text,
-                    mention_accts=(
-                        _practice_mention_accts(prep, acct)
-                        if prep is not None
-                        else None
-                    ),
+                    mention_accts=mention_accts,
                 )
                 _apply_game_post_side_effects(state, result, post["id"])
-                self._post_calc_followups(post["id"], None, result.game_post_calc_text)
+                self._post_calc_followups(
+                    post["id"],
+                    None,
+                    result.game_post_calc_text,
+                    prefix=self._mention_prefix(status_id, acct, mention_accts),
+                )
         else:
             # 필드 시트 이미지는 아래 페이즈 게시물에만 첨부한다.
             if result.post_as_new_status:
@@ -1587,6 +1591,7 @@ class MastodonBotListener(StreamListener):
                 post["id"],
                 ps.visibility,
                 ps.context.format_status_summary(),
+                prefix=prefix,
                 label="버프 목록",
             )
         return post
@@ -1608,10 +1613,10 @@ class MastodonBotListener(StreamListener):
         계정 기본값을 따르는 경우) 이 후속 게시물도 동일하게 visibility
         인자 자체를 생략해 계정 기본값을 따르게 한다.
 
-        `prefix`는 매 조각 앞에 반복해서 붙일 고정 접두어다 — 개별 커맨드
-        답글은 그 답글을 단 계정에게 알림이 가도록 "@계정\\n"을 넘긴다. 게임
-        진행 공지(game_post)처럼 특정 수신자가 없는 경우는 빈 문자열이면
-        된다.
+        `prefix`는 매 조각 앞에 반복해서 붙일 멘션 접두어다. 스레드 안에서는
+        바로 앞 게시물과 같은 멘션을 넘긴다 — 봇 게시물에 이어 단 답글은
+        멘션이 없으면 봇 자신에게만 달린 글이 되어 참여자에게 알림이 가지
+        않는다. 본 전투 페이즈 게시물처럼 스레드 밖 공지면 빈 문자열이다.
 
         반환값은 마지막으로 올린 게시물이고, 올린 것이 없으면 None이다."""
         if not calc_text:
