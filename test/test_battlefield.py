@@ -143,6 +143,23 @@ def test_add_character_with_zero_hp_raises(empty_context):
         )
 
 
+def test_add_character_already_on_field_raises(empty_context):
+    data = get_test_preset("중복캐릭터")
+    empty_context.add_character(data, FactionType.ALLY, BattlefieldColumnIndex(0))
+
+    with pytest.raises(CommandValidationError):
+        empty_context.add_character(data, FactionType.ALLY, BattlefieldColumnIndex(2))
+
+    char_id = CharacterId("중복캐릭터")
+    assert empty_context.find_character_position(char_id) == BattlefieldColumnIndex(0)
+    assert not any(
+        char_id in chars.values()
+        for chars in empty_context.position_map[FactionType.ALLY].values()
+        if chars
+        is not empty_context.position_map[FactionType.ALLY][BattlefieldColumnIndex(0)]
+    )
+
+
 def test_eliminated_character_removed_at_round_end(battle_setup):
     """체력이 0이 된 캐릭터는 라운드 종료 시점에 필드에서 자동으로 제거되고,
     RoundManager가 그 목록을 노출해야 한다."""

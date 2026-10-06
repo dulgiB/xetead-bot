@@ -105,7 +105,7 @@ def handle_character_command(
     char_id = CharacterId(char_data.name)
 
     if char_id not in session.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None
+        return "◊ 해당 캐릭터는 현재 필드에 배치되지 않았습니다.", "", None
 
     phase = session.current_phase
     char = session.context.characters[char_id]

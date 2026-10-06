@@ -1876,19 +1876,7 @@ def _apply_duel_damage_settlement(
 
 def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> str:
     """상시전투 포지션 선언 완료 후 아군을 배치하고 첫 라운드 게시 문자열을 반환한다."""
-    errors: list[str] = []
-
-    for acct, (side, column) in ps.declared.items():
-        data = state.char_dict.get(acct)
-        if data is None:
-            errors.append(f"{acct}의 캐릭터를 찾을 수 없습니다.")
-            continue
-        try:
-            ps.context.add_character(data, side, column)
-        except CommandValidationError as e:
-            errors.append(str(e))
-
-    _begin_practice_rounds(state, ps)
+    errors = _place_declared_characters(state, ps)
 
     mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
@@ -1901,6 +1889,43 @@ def _start_investigation_battle(state: "BotState", ps: PracticeBattleState) -> s
     if errors:
         game_post += "\n\n⚠️ 오류:\n" + "\n".join(errors)
     return game_post
+
+
+def _place_declared_characters(state: "BotState", ps: PracticeBattleState) -> list[str]:
+    """선언된 포지션대로 배치하고 첫 라운드를 연다. 배치 오류 문구를 돌려준다.
+
+    시작 공지 게시가 실패하면 세션은 준비 단계로 남아 다음 선언이 이 함수를
+    다시 부른다. 그때는 이미 배치와 라운드 개시가 끝나 있으므로, 마지막 선언
+    위치로 옮기기만 한다.
+    """
+    already_begun = ps.round_n > 0
+    errors: list[str] = []
+    for acct, (side, column) in ps.declared.items():
+        data = state.char_dict.get(acct)
+        if data is None:
+            errors.append(f"{acct}의 캐릭터를 찾을 수 없습니다.")
+            continue
+        char_id = CharacterId(data.name)
+        try:
+            if char_id not in ps.context.characters:
+                ps.context.add_character(data, side, column)
+            elif ps.context.get_side(char_id) == side:
+                # 다시 넣으면 "전투 시작" 트리거로 받은 효과가 사라진다.
+                if ps.context.find_character_position(char_id) != column:
+                    ps.context.move_character_to(char_id, column)
+            else:
+                ps.context.remove_character(char_id)
+                ps.context.add_character(data, side, column)
+        except CommandValidationError as e:
+            errors.append(str(e))
+
+    if already_begun:
+        _upsert_practice_field_row(
+            state, ps, phase_value=ps.phase.value if ps.phase else ""
+        )
+    else:
+        _begin_practice_rounds(state, ps)
+    return errors
 
 
 def _round_limit_text(ps: PracticeBattleState) -> str:
@@ -1930,19 +1955,7 @@ def _begin_practice_rounds(state: "BotState", ps: PracticeBattleState) -> None:
 def _start_practice_battle(state: "BotState", ps: PracticeBattleState) -> str:
     """대련/결투 포지션 선언 완료 후 전투를 시작하고 첫 라운드 게시 문자열을
     반환한다."""
-    errors: list[str] = []
-
-    for acct, (side, column) in ps.declared.items():
-        data = state.char_dict.get(acct)
-        if data is None:
-            errors.append(f"{acct}의 캐릭터를 찾을 수 없습니다.")
-            continue
-        try:
-            ps.context.add_character(data, side, column)
-        except CommandValidationError as e:
-            errors.append(str(e))
-
-    _begin_practice_rounds(state, ps)
+    errors = _place_declared_characters(state, ps)
 
     mover_label = _mover_label(ps, ps.first_mover)
     game_post = (
@@ -2338,7 +2351,7 @@ def _handle_practice_command(
     char_id = CharacterId(char_data.name)
 
     if char_id not in ps.context.characters:
-        return "◊ 해당 캐릭터는 현재 전장에 배치되지 않았습니다.", "", None, None, False
+        return "◊ 해당 캐릭터는 현재 필드에 배치되지 않았습니다.", "", None, None, False
 
     if _RE_PRACTICE_RETIRE.search(text):
         # 탈락은 턴 순서와 무관한 자진 기권 커맨드라, 선공/후공 페이즈
