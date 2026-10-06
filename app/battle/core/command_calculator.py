@@ -22,12 +22,12 @@ from battle.objects.field_effect.models import (
     is_field_effect_holder,
 )
 from battle.objects.define import (
-    FATE_INTERVENTION_ATTACK_BONUS,
+    KEYWORD_BOOST_ATTACK_BONUS,
     ActionType,
     BuffApplyTiming,
     BuffCountDeductCondition,
     CombatStatType,
-    FateBoostMode,
+    KeywordBoostMode,
     ValueSourceType,
 )
 from battle.objects.models import (
@@ -85,15 +85,15 @@ class CalculatorMutableData:
         self.extra_log_entries: list[BattleLogEntry] = []
 
 
-_FATE_BOOST_LABEL = "키워드 보정"
+_KEYWORD_BOOST_LABEL = "키워드 보정"
 
 
-def _apply_fate_boost_modifier(
+def _apply_keyword_boost_modifier(
     original_part: Optional["CommandPart"],
     data_by_effect: list[CalculatorMutableData],
     context: "BattlefieldContext",
 ) -> None:
-    """운명간섭("+")으로 선언된 커맨드의 대미지/회복에 보정을 얹는다.
+    """키워드 보정("+")으로 선언된 커맨드의 대미지/회복에 보정을 얹는다.
 
     보정을 굴림값에 더하는 정수로 넣는 이유: 고정 대미지(FIXED)와 달리 뒤이은
     주는/받는 대미지 배율의 영향을 함께 받아야 하므로, IntValueModifier로 넣어
@@ -108,11 +108,11 @@ def _apply_fate_boost_modifier(
     버프를 강화하는 모드(BUFF_*)와 대상을 늘리는 모드(EXTRA_TARGET)는 계산이
     아니라 전개/검증 단계에서 이미 반영되므로 여기서는 아무 것도 하지 않는다.
     """
-    if original_part is None or not original_part.fate_boost:
+    if original_part is None or not original_part.keyword_boost:
         return
 
     if original_part.type_ == ActionType.ATTACK:
-        _add_flat_bonus(data_by_effect, FATE_INTERVENTION_ATTACK_BONUS)
+        _add_flat_bonus(data_by_effect, KEYWORD_BOOST_ATTACK_BONUS)
         return
     if original_part.type_ != ActionType.SKILL:
         # 아이템 등은 try_expansion_if_valid()에서 이미 걸러진다.
@@ -120,34 +120,34 @@ def _apply_fate_boost_modifier(
 
     assert original_part.skill_id is not None
     skill_data = context.get_skill_data_by_id(original_part.skill_id)
-    mode = skill_data.fate_mode
+    mode = skill_data.keyword_mode
 
-    if mode is None or mode is FateBoostMode.ROLL_BONUS:
-        _add_flat_bonus(data_by_effect, skill_data.fate_boost_value)
+    if mode is None or mode is KeywordBoostMode.ROLL_BONUS:
+        _add_flat_bonus(data_by_effect, skill_data.keyword_boost_value)
         return
 
-    if mode is not FateBoostMode.VALUE_BOOST:
+    if mode is not KeywordBoostMode.VALUE_BOOST:
         return
 
-    index = skill_data.fate_effect_index
-    effect = skill_data.fate_effect
+    index = skill_data.keyword_effect_index
+    effect = skill_data.keyword_effect
     if effect is None or not (0 <= index < len(data_by_effect)):
-        # 설정 오류는 fate_config_error가 이미 admin에게 알렸다. 커맨드를 통째로
+        # 설정 오류는 keyword_config_error가 이미 admin에게 알렸다. 커맨드를 통째로
         # 실패시키면 플레이어만 손해이므로 보정 없이 원래 스킬대로 진행한다.
         return
 
     # SkillValueType과 ValueType은 값("퍼센트")이 같은 별개의 str Enum이라,
     # 둘 중 무엇이 들어와도 같은 의미로 받으려면 `is`가 아니라 `==`여야 한다.
     if effect.value_type == SkillValueType.PERCENT:
-        _boost_coefficient(data_by_effect[index], skill_data.fate_boost_value)
+        _boost_coefficient(data_by_effect[index], skill_data.keyword_boost_value)
     else:
-        _add_flat_bonus([data_by_effect[index]], skill_data.fate_boost_value)
+        _add_flat_bonus([data_by_effect[index]], skill_data.keyword_boost_value)
 
 
 def _add_flat_bonus(data_by_effect: list[CalculatorMutableData], bonus: int) -> None:
     """대미지·회복 굴림에 정수 보정을 더한다."""
     modifier = IntValueModifier(
-        source_name=_FATE_BOOST_LABEL, value=bonus, applies_to_fixed=True
+        source_name=_KEYWORD_BOOST_LABEL, value=bonus, applies_to_fixed=True
     )
     for effect_data in data_by_effect:
         for damage_calc in effect_data.damage_data_list:
@@ -163,7 +163,7 @@ def _boost_coefficient(effect_data: CalculatorMutableData, bonus: int) -> None:
     "+30%p"보다 강해진다. 계수 자체를 갈아끼우므로 계산식에도 바뀐 계수 하나만
     보이고, 라벨로 보정이 들어갔음을 드러낸다.
     """
-    label = f"계수+{_FATE_BOOST_LABEL}"
+    label = f"계수+{_KEYWORD_BOOST_LABEL}"
     calc_list: list[DamageCalculateData | HealCalculateData] = [
         *effect_data.damage_data_list,
         *effect_data.heal_data_list,
@@ -174,7 +174,7 @@ def _boost_coefficient(effect_data: CalculatorMutableData, bonus: int) -> None:
             # 계수가 없는 형태(FIXED 등)는 정수 가산으로 떨어뜨린다.
             calc.given_modifiers.append(
                 IntValueModifier(
-                    source_name=_FATE_BOOST_LABEL, value=bonus, applies_to_fixed=True
+                    source_name=_KEYWORD_BOOST_LABEL, value=bonus, applies_to_fixed=True
                 )
             )
             continue
@@ -248,7 +248,7 @@ class CommandPartCalculator:
         # ON_ATTACK/ON_HIT와 같은 "한 번의 타격" 기준이다.
         self._reactive_hooks_fired: set[tuple[CharacterId, CharacterId]] = set()
 
-        _apply_fate_boost_modifier(data.original_part, self.data_by_effect, context)
+        _apply_keyword_boost_modifier(data.original_part, self.data_by_effect, context)
 
     @classmethod
     def create_empty_for_buff(

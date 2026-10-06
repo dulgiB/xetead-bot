@@ -11,7 +11,7 @@ from battle.core.command_processors import process_ally_command
 from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.define import (
-    FATE_INTERVENTION_HP_COST,
+    KEYWORD_BOOST_HP_COST,
     BattlefieldColumnIndex,
     FactionType,
 )
@@ -66,7 +66,7 @@ def test_character_sheet_row_reads_hide_hp():
         "max_cost": 3,
         "hide_hp": True,
         "revival_count": 0,
-        "fate_date": "",
+        "keyword_date": "",
     }
 
     assert CombatCharacterDataFromSpreadsheet.from_dict(row).hide_hp is True
@@ -113,12 +113,12 @@ def test_every_practice_mode_hides_hp(mode):
 
 
 @pytest.mark.parametrize(("hide_hp", "shows_hp"), [(True, False), (False, True)])
-def test_fate_hp_shortage_error_respects_hide_hp(hide_hp, shows_hp):
+def test_keyword_hp_shortage_error_respects_hide_hp(hide_hp, shows_hp):
     context = BattlefieldContext(buff_dict={}, skill_dict={})
     context.add_character(
         get_test_preset(
             HIDDEN.name,
-            initial_hp=FATE_INTERVENTION_HP_COST,
+            initial_hp=KEYWORD_BOOST_HP_COST,
             revival_count=1,
             hide_hp=hide_hp,
         ),

@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, ClassVar, Literal, Optional, Type, cast
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import (
-    FATE_INTERVENTION_SKILL_BONUS,
+    KEYWORD_BOOST_SKILL_BONUS,
     MAX_EFFECT_COUNT,
     BattlefieldColumnIndex,
-    FateBoostMode,
+    KeywordBoostMode,
     SkillTargetOverrideType,
     ValueSourceType,
 )
@@ -342,15 +342,15 @@ class SkillData:
     # 대상으로 하는 스킬처럼 줄 수가 불어나 본문이 통째로 잘려 나가는 경우에
     # 쓴다 — 수치는 계산식 쪽에 그대로 남는다.
     hide_result_lines: bool = False
-    # 운명간섭("+")이 이 스킬에 무엇을 더해주는지. None이면 대미지 스킬은
+    # 키워드 보정("+")이 이 스킬에 무엇을 더해주는지. None이면 대미지 스킬은
     # 굴림 보정, 비대미지 스킬은 거부라는 기본 동작을 쓴다.
-    fate_mode: Optional[FateBoostMode] = None
+    keyword_mode: Optional[KeywordBoostMode] = None
     # 모드별 보정치. 단위는 모드가 정한다 — VALUE_BOOST는 대상 효과의
     # value_type(퍼센트면 계수 %p), BUFF_*는 버프 수치/스택, EXTRA_TARGET은
     # 추가 대상 수. ROLL_BONUS에서만 생략 가능하다.
-    fate_value: Optional[int] = None
+    keyword_value: Optional[int] = None
     # VALUE_BOOST/BUFF_* 모드가 어느 효과(effect_N)를 강화하는지. 비우면 0.
-    fate_effect_index: int = 0
+    keyword_effect_index: int = 0
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "SkillData":
@@ -373,20 +373,20 @@ class SkillData:
                 data.get("hide_result_lines", False)
             ),
             # 컬럼이 없는 "스킬_에너미"는 기본값으로 남는다 — 에너미는
-            # 부활 횟수가 0이라 애초에 운명간섭을 쓸 수 없다.
-            fate_mode=(
-                FateBoostMode(str(data["fate_mode"]).strip())
-                if str(data.get("fate_mode", "") or "").strip()
+            # 부활 횟수가 0이라 애초에 키워드 보정을 쓸 수 없다.
+            keyword_mode=(
+                KeywordBoostMode(str(data["keyword_mode"]).strip())
+                if str(data.get("keyword_mode", "") or "").strip()
                 else None
             ),
-            fate_value=(
-                int(data["fate_value"])
-                if str(data.get("fate_value", "") or "").strip()
+            keyword_value=(
+                int(data["keyword_value"])
+                if str(data.get("keyword_value", "") or "").strip()
                 else None
             ),
-            fate_effect_index=(
-                int(data["fate_effect_index"])
-                if str(data.get("fate_effect_index", "") or "").strip()
+            keyword_effect_index=(
+                int(data["keyword_effect_index"])
+                if str(data.get("keyword_effect_index", "") or "").strip()
                 else 0
             ),
         )
@@ -404,22 +404,22 @@ class SkillData:
         )
 
     @property
-    def fate_effect(self) -> Optional[SkillEffectBase]:
-        """fate_effect_index가 가리키는 효과. 범위를 벗어나면 None."""
-        if 0 <= self.fate_effect_index < len(self.effects):
-            return self.effects[self.fate_effect_index]
+    def keyword_effect(self) -> Optional[SkillEffectBase]:
+        """keyword_effect_index가 가리키는 효과. 범위를 벗어나면 None."""
+        if 0 <= self.keyword_effect_index < len(self.effects):
+            return self.effects[self.keyword_effect_index]
         return None
 
     @property
-    def fate_boost_value(self) -> int:
+    def keyword_boost_value(self) -> int:
         """모드별 보정치. ROLL_BONUS에서만 생략을 허용하고 기본값으로 채운다."""
-        if self.fate_value is not None:
-            return self.fate_value
-        return FATE_INTERVENTION_SKILL_BONUS
+        if self.keyword_value is not None:
+            return self.keyword_value
+        return KEYWORD_BOOST_SKILL_BONUS
 
 
-def fate_config_error(data: SkillData) -> Optional[str]:
-    """스킬의 운명간섭 설정이 실제로 동작할 수 있는 조합인지 확인하고, 문제가
+def keyword_config_error(data: SkillData) -> Optional[str]:
+    """스킬의 키워드 보정 설정이 실제로 동작할 수 있는 조합인지 확인하고, 문제가
     있으면 사람이 읽을 설명을 반환한다(없으면 None).
 
     조용히 무시되는 시트 설정을 만들지 않기 위한 것으로, 전투 개시 시점에
@@ -428,18 +428,16 @@ def fate_config_error(data: SkillData) -> Optional[str]:
     BattlefieldContext(전장)가 아직 없는 시점에도 부를 수 있도록 SkillData만
     받는다.
     """
-    mode = data.fate_mode
+    mode = data.keyword_mode
     if mode is None:
         return None
 
-    if mode is not FateBoostMode.ROLL_BONUS and data.fate_value is None:
-        return (
-            f"'{data.id}': fate_mode가 '{mode.value}'인데 fate_value가 비어 있습니다."
-        )
-    if data.fate_value is not None and data.fate_value <= 0:
-        return f"'{data.id}': fate_value는 1 이상이어야 합니다."
+    if mode is not KeywordBoostMode.ROLL_BONUS and data.keyword_value is None:
+        return f"'{data.id}': keyword_mode가 '{mode.value}'인데 keyword_value가 비어 있습니다."
+    if data.keyword_value is not None and data.keyword_value <= 0:
+        return f"'{data.id}': keyword_value는 1 이상이어야 합니다."
 
-    if mode is FateBoostMode.EXTRA_TARGET:
+    if mode is KeywordBoostMode.EXTRA_TARGET:
         target_rule_module = importlib.import_module(
             "battle.objects.skill.target_functions"
         )
@@ -457,22 +455,23 @@ def fate_config_error(data: SkillData) -> Optional[str]:
         return None
 
     if mode in (
-        FateBoostMode.VALUE_BOOST,
-        FateBoostMode.BUFF_VALUE_BOOST,
-        FateBoostMode.BUFF_STACK_BOOST,
+        KeywordBoostMode.VALUE_BOOST,
+        KeywordBoostMode.BUFF_VALUE_BOOST,
+        KeywordBoostMode.BUFF_STACK_BOOST,
     ):
-        effect = data.fate_effect
+        effect = data.keyword_effect
         if effect is None:
             return (
-                f"'{data.id}': fate_effect_index({data.fate_effect_index})에 해당하는"
-                f" effect_{data.fate_effect_index}가 비어 있습니다."
+                f"'{data.id}': keyword_effect_index({data.keyword_effect_index})에 해당하는"
+                f" effect_{data.keyword_effect_index}가 비어 있습니다."
             )
         if (
-            mode in (FateBoostMode.BUFF_VALUE_BOOST, FateBoostMode.BUFF_STACK_BOOST)
+            mode
+            in (KeywordBoostMode.BUFF_VALUE_BOOST, KeywordBoostMode.BUFF_STACK_BOOST)
             and effect.buff_id is None
         ):
             return (
-                f"'{data.id}': effect_{data.fate_effect_index}가 버프를 부여하지 않아"
+                f"'{data.id}': effect_{data.keyword_effect_index}가 버프를 부여하지 않아"
                 f" '{mode.value}'를 적용할 수 없습니다."
             )
     return None

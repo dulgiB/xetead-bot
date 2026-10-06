@@ -1,7 +1,7 @@
-"""스킬별 키워드 보정 모드("스킬_캐릭터" 시트 fate_mode) 테스트.
+"""스킬별 키워드 보정 모드("스킬_캐릭터" 시트 keyword_mode) 테스트.
 
-fate_mode를 비워 둔 스킬의 기존 동작(대미지 굴림 보정)은
-test_fate_intervention.py가 다룬다 — 여기서는 시트에 모드를 지정했을 때만
+keyword_mode를 비워 둔 스킬의 기존 동작(대미지 굴림 보정)은
+test_keyword_boost.py가 다룬다 — 여기서는 시트에 모드를 지정했을 때만
 생기는 동작을 검증한다.
 """
 
@@ -16,7 +16,7 @@ from battle.objects.define import (
     BattlefieldColumnIndex,
     BuffType,
     FactionType,
-    FateBoostMode,
+    KeywordBoostMode,
     ValueSourceType,
     ValueType,
 )
@@ -27,7 +27,7 @@ from battle.objects.skill.effects import (
     SkillEffectDamage,
     SkillEffectHeal,
 )
-from battle.objects.skill.models import SkillData, fate_config_error
+from battle.objects.skill.models import SkillData, keyword_config_error
 from helpers import get_test_preset
 
 _CASTER = CharacterId("Catastrophe")
@@ -62,9 +62,9 @@ def _skill(
     target_rule: str = "SkillTargetRuleNamed",
     target_count: int = 1,
     cost: int = 2,
-    fate_mode: FateBoostMode | None = None,
-    fate_value: int | None = None,
-    fate_effect_index: int = 0,
+    keyword_mode: KeywordBoostMode | None = None,
+    keyword_value: int | None = None,
+    keyword_effect_index: int = 0,
 ) -> SkillData:
     return SkillData(
         id=skill_id,
@@ -73,9 +73,9 @@ def _skill(
         cost=cost,
         effects=effects,
         description="",
-        fate_mode=fate_mode,
-        fate_value=fate_value,
-        fate_effect_index=fate_effect_index,
+        keyword_mode=keyword_mode,
+        keyword_value=keyword_value,
+        keyword_effect_index=keyword_effect_index,
     )
 
 
@@ -145,8 +145,8 @@ def test_value_boost_adds_percentage_points_to_coefficient():
                 ValueSourceType.STAT_ATK_ROLL, 100, SkillValueType.PERCENT, None, None
             )
         ],
-        fate_mode=FateBoostMode.VALUE_BOOST,
-        fate_value=50,
+        keyword_mode=KeywordBoostMode.VALUE_BOOST,
+        keyword_value=50,
     )
     context = _make_context(skill)
     result = _run(context, f"[Cost2Skill+/{_TARGET.name}]")
@@ -165,8 +165,8 @@ def test_value_boost_is_not_multiplicative():
                 ValueSourceType.STAT_ATK_ROLL, 200, SkillValueType.PERCENT, None, None
             )
         ],
-        fate_mode=FateBoostMode.VALUE_BOOST,
-        fate_value=50,
+        keyword_mode=KeywordBoostMode.VALUE_BOOST,
+        keyword_value=50,
     )
     context = _make_context(skill)
     result = _run(context, f"[Cost2Skill+/{_TARGET.name}]")
@@ -185,8 +185,8 @@ def test_value_boost_adds_flat_value_to_integer_heal():
                 ValueSourceType.FIXED, 10, SkillValueType.INTEGER, None, None
             )
         ],
-        fate_mode=FateBoostMode.VALUE_BOOST,
-        fate_value=15,
+        keyword_mode=KeywordBoostMode.VALUE_BOOST,
+        keyword_value=15,
     )
     context = _make_context(skill)
     context.characters[_ALLY].status.curr_hp = 10
@@ -198,7 +198,7 @@ def test_value_boost_adds_flat_value_to_integer_heal():
 
 
 def test_value_boost_targets_only_the_indexed_effect():
-    """fate_effect_index가 가리키는 효과에만 보정이 걸린다.
+    """keyword_effect_index가 가리키는 효과에만 보정이 걸린다.
 
     같은 대상에게 들어간 대미지는 로그 한 줄로 합산되므로(build_log_entries),
     합계를 "+"를 붙이지 않은 경우와 비교해 보정이 한 효과에만 들어갔는지 본다.
@@ -210,9 +210,9 @@ def test_value_boost_targets_only_the_indexed_effect():
             SkillEffectDamage(ValueSourceType.FIXED, 30, ValueType.INTEGER, None, None),
         ],
         cost=3,
-        fate_mode=FateBoostMode.VALUE_BOOST,
-        fate_value=7,
-        fate_effect_index=1,
+        keyword_mode=KeywordBoostMode.VALUE_BOOST,
+        keyword_value=7,
+        keyword_effect_index=1,
     )
     boosted_total = sum(
         entry.value
@@ -238,8 +238,8 @@ def test_buff_value_boost_overrides_buff_sheet_value():
     skill = _skill(
         "PassiveSkill",
         effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-        fate_mode=FateBoostMode.BUFF_VALUE_BOOST,
-        fate_value=4,
+        keyword_mode=KeywordBoostMode.BUFF_VALUE_BOOST,
+        keyword_value=4,
     )
     context = _make_context(skill, buff=_buff_data())
     _run(context, f"[PassiveSkill+/{_ALLY.name}]")
@@ -254,8 +254,8 @@ def test_buff_stack_boost_adds_stacks():
     skill = _skill(
         "PassiveSkill",
         effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-        fate_mode=FateBoostMode.BUFF_STACK_BOOST,
-        fate_value=2,
+        keyword_mode=KeywordBoostMode.BUFF_STACK_BOOST,
+        keyword_value=2,
     )
     context = _make_context(skill, buff=_buff_data(max_stack=5))
     _run(context, f"[PassiveSkill+/{_ALLY.name}]")
@@ -265,13 +265,13 @@ def test_buff_stack_boost_adds_stacks():
     assert buff.stack_count == 1 + 2
 
 
-def test_buff_boost_does_not_apply_without_fate_suffix():
+def test_buff_boost_does_not_apply_without_keyword_suffix():
     """ "+"를 붙이지 않으면 버프는 시트 그대로 부여된다."""
     skill = _skill(
         "PassiveSkill",
         effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-        fate_mode=FateBoostMode.BUFF_VALUE_BOOST,
-        fate_value=4,
+        keyword_mode=KeywordBoostMode.BUFF_VALUE_BOOST,
+        keyword_value=4,
     )
     context = _make_context(skill, buff=_buff_data())
     _run(context, f"[PassiveSkill/{_ALLY.name}]")
@@ -284,13 +284,13 @@ def test_buff_boost_does_not_apply_without_fate_suffix():
 # ── 대상 추가 ───────────────────────────────────────────────────────────────
 
 
-def test_extra_target_allows_one_more_target_with_fate_suffix():
+def test_extra_target_allows_one_more_target_with_keyword_suffix():
     """대상 추가 모드는 "+"를 붙였을 때만 대상을 하나 더 받는다."""
     skill = _skill(
         "PassiveSkill",
         effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-        fate_mode=FateBoostMode.EXTRA_TARGET,
-        fate_value=1,
+        keyword_mode=KeywordBoostMode.EXTRA_TARGET,
+        keyword_value=1,
     )
     context = _make_context(skill, buff=_buff_data())
     _run(context, f"[PassiveSkill+/{_ALLY.name}/{_CASTER.name}]")
@@ -299,13 +299,13 @@ def test_extra_target_allows_one_more_target_with_fate_suffix():
     assert context.buff_container.get_buff(_CASTER, _BUFF_ID) is not None
 
 
-def test_extra_target_rejected_without_fate_suffix():
+def test_extra_target_rejected_without_keyword_suffix():
     """ "+" 없이 대상을 더 적으면 기존대로 target_count 초과로 거부된다."""
     skill = _skill(
         "PassiveSkill",
         effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-        fate_mode=FateBoostMode.EXTRA_TARGET,
-        fate_value=1,
+        keyword_mode=KeywordBoostMode.EXTRA_TARGET,
+        keyword_value=1,
     )
     context = _make_context(skill, buff=_buff_data())
     with pytest.raises(CommandValidationError):
@@ -320,8 +320,8 @@ def test_non_damage_skill_with_mode_is_allowed():
     skill = _skill(
         "PassiveSkill",
         effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-        fate_mode=FateBoostMode.BUFF_VALUE_BOOST,
-        fate_value=1,
+        keyword_mode=KeywordBoostMode.BUFF_VALUE_BOOST,
+        keyword_value=1,
     )
     context = _make_context(skill, buff=_buff_data())
     _run(context, f"[PassiveSkill+/{_ALLY.name}]")  # 예외가 나지 않아야 한다
@@ -341,36 +341,36 @@ def test_non_damage_skill_without_mode_is_still_rejected():
 # ── 시트 설정 검증 ──────────────────────────────────────────────────────────
 
 
-def test_fate_config_error_none_when_mode_empty():
-    assert fate_config_error(_skill("Cost2Skill", effects=[])) is None
+def test_keyword_config_error_none_when_mode_empty():
+    assert keyword_config_error(_skill("Cost2Skill", effects=[])) is None
 
 
-def test_fate_config_error_requires_value():
-    error = fate_config_error(
+def test_keyword_config_error_requires_value():
+    error = keyword_config_error(
         _skill(
             "Cost2Skill",
             effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-            fate_mode=FateBoostMode.BUFF_STACK_BOOST,
+            keyword_mode=KeywordBoostMode.BUFF_STACK_BOOST,
         )
     )
-    assert error is not None and "fate_value가 비어 있습니다" in error
+    assert error is not None and "keyword_value가 비어 있습니다" in error
 
 
-def test_fate_config_error_rejects_extra_target_on_self_rule():
-    error = fate_config_error(
+def test_keyword_config_error_rejects_extra_target_on_self_rule():
+    error = keyword_config_error(
         _skill(
             "PassiveSkill",
             effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
             target_rule="SkillTargetRuleSelf",
-            fate_mode=FateBoostMode.EXTRA_TARGET,
-            fate_value=1,
+            keyword_mode=KeywordBoostMode.EXTRA_TARGET,
+            keyword_value=1,
         )
     )
     assert error is not None and "대상을 입력받지 않아" in error
 
 
-def test_fate_config_error_rejects_extra_target_on_area_rule():
-    error = fate_config_error(
+def test_keyword_config_error_rejects_extra_target_on_area_rule():
+    error = keyword_config_error(
         _skill(
             "Cost2Skill",
             effects=[
@@ -379,15 +379,15 @@ def test_fate_config_error_rejects_extra_target_on_area_rule():
                 )
             ],
             target_rule="SkillTargetRuleColumnRange",
-            fate_mode=FateBoostMode.EXTRA_TARGET,
-            fate_value=1,
+            keyword_mode=KeywordBoostMode.EXTRA_TARGET,
+            keyword_value=1,
         )
     )
     assert error is not None and "범위로 쓰고" in error
 
 
-def test_fate_config_error_rejects_buff_mode_on_non_buff_effect():
-    error = fate_config_error(
+def test_keyword_config_error_rejects_buff_mode_on_non_buff_effect():
+    error = keyword_config_error(
         _skill(
             "Cost2Skill",
             effects=[
@@ -395,15 +395,15 @@ def test_fate_config_error_rejects_buff_mode_on_non_buff_effect():
                     ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
                 )
             ],
-            fate_mode=FateBoostMode.BUFF_VALUE_BOOST,
-            fate_value=3,
+            keyword_mode=KeywordBoostMode.BUFF_VALUE_BOOST,
+            keyword_value=3,
         )
     )
     assert error is not None and "버프를 부여하지 않아" in error
 
 
-def test_fate_config_error_rejects_missing_effect_index():
-    error = fate_config_error(
+def test_keyword_config_error_rejects_missing_effect_index():
+    error = keyword_config_error(
         _skill(
             "Cost2Skill",
             effects=[
@@ -411,22 +411,22 @@ def test_fate_config_error_rejects_missing_effect_index():
                     ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None
                 )
             ],
-            fate_mode=FateBoostMode.VALUE_BOOST,
-            fate_value=3,
-            fate_effect_index=2,
+            keyword_mode=KeywordBoostMode.VALUE_BOOST,
+            keyword_value=3,
+            keyword_effect_index=2,
         )
     )
     assert error is not None and "effect_2" in error
 
 
-def test_fate_config_error_accepts_valid_config():
+def test_keyword_config_error_accepts_valid_config():
     assert (
-        fate_config_error(
+        keyword_config_error(
             _skill(
                 "PassiveSkill",
                 effects=[SkillEffectAddBuff(None, None, None, _BUFF_ID, None)],
-                fate_mode=FateBoostMode.BUFF_VALUE_BOOST,
-                fate_value=3,
+                keyword_mode=KeywordBoostMode.BUFF_VALUE_BOOST,
+                keyword_value=3,
             )
         )
         is None

@@ -37,7 +37,7 @@ def get_test_preset(
     skill_2_id: Optional[str] = None,
     skill_3_id: Optional[str] = None,
     revival_count: int = 0,
-    fate_date: str = "",
+    keyword_date: str = "",
     hide_hp: bool = False,
     span: int = 1,
 ) -> CombatCharacterDataFromSpreadsheet:
@@ -60,5 +60,5 @@ def get_test_preset(
         hide_hp=hide_hp,
         span=span,
         revival_count=revival_count,
-        fate_date=fate_date,
+        keyword_date=keyword_date,
     )

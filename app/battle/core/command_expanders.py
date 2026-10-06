@@ -28,7 +28,7 @@ from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     ActionType,
     BattlefieldColumnIndex,
-    FateBoostMode,
+    KeywordBoostMode,
     ValueSourceType,
 )
 from battle.objects.models import BaseValueIndicator, BuffUid, CharacterId, HealData
@@ -59,29 +59,32 @@ def _mark_ignores_taunt_if_column_target(
     return [replace(damage, ignores_taunt=True) for damage in damage_list]
 
 
-def _apply_fate_buff_boost(
+def _apply_keyword_buff_boost(
     skill_data: "SkillData",
     data_per_effect_list: list[CommandPartDataPerEffect],
     context: BattlefieldContext,
 ) -> None:
-    """운명간섭("+")의 버프 강화 모드를 부여 예정인 버프에 반영한다.
+    """키워드 보정("+")의 버프 강화 모드를 부여 예정인 버프에 반영한다.
 
     대미지/회복 보정(굴림 보정·수치 강화)과 달리 버프는 계산 단계에 수치가
     없으므로, 부여 데이터를 만드는 이 시점에 얹어야 한다. 설정 오류(모드에
-    맞지 않는 효과 등)는 전투 개시 시점 검증(fate_config_error)이 admin에게
+    맞지 않는 효과 등)는 전투 개시 시점 검증(keyword_config_error)이 admin에게
     미리 알리므로, 여기서는 조용히 원래 버프를 그대로 둔다.
     """
-    mode = skill_data.fate_mode
-    if mode not in (FateBoostMode.BUFF_VALUE_BOOST, FateBoostMode.BUFF_STACK_BOOST):
+    mode = skill_data.keyword_mode
+    if mode not in (
+        KeywordBoostMode.BUFF_VALUE_BOOST,
+        KeywordBoostMode.BUFF_STACK_BOOST,
+    ):
         return
-    index = skill_data.fate_effect_index
+    index = skill_data.keyword_effect_index
     if not (0 <= index < len(data_per_effect_list)):
         return
 
-    bonus = skill_data.fate_boost_value
+    bonus = skill_data.keyword_boost_value
     buff_add_list = data_per_effect_list[index].buff_add_list
     for i, buff_add in enumerate(buff_add_list):
-        if mode is FateBoostMode.BUFF_STACK_BOOST:
+        if mode is KeywordBoostMode.BUFF_STACK_BOOST:
             buff_add_list[i] = replace(
                 buff_add, stack_value=buff_add.stack_value + bonus
             )
@@ -294,8 +297,10 @@ def expand_character_command(
                     )
                 )
 
-            if part.fate_boost:
-                _apply_fate_buff_boost(skill_used.data, data_per_effect_list, context)
+            if part.keyword_boost:
+                _apply_keyword_buff_boost(
+                    skill_used.data, data_per_effect_list, context
+                )
 
             parts_list.append(
                 CommandPartData(

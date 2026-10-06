@@ -36,7 +36,7 @@ class CommandPart:
     targets: list[CharacterId | BattlefieldColumnIndex] = field(default_factory=list)
 
     # 커맨드 이름 뒤에 "+"를 붙여 선언했는지("[공격+/대상]"). parser.py가 채운다.
-    fate_boost: bool = False
+    keyword_boost: bool = False
 
 
 @dataclass(frozen=True)

@@ -50,9 +50,10 @@ def test_revival_count_value_is_parsed_as_int():
     assert data.revival_count == 3
 
 
-def test_fate_date_defaults_to_empty():
+def test_keyword_date_defaults_to_empty():
     """컬럼이 없거나 비어 있으면 "한 번도 안 씀"으로 읽는다."""
-    assert CombatCharacterDataFromSpreadsheet.from_dict(_raw()).fate_date == ""
+    assert CombatCharacterDataFromSpreadsheet.from_dict(_raw()).keyword_date == ""
     assert (
-        CombatCharacterDataFromSpreadsheet.from_dict(_raw(fate_date="")).fate_date == ""
+        CombatCharacterDataFromSpreadsheet.from_dict(_raw(keyword_date="")).keyword_date
+        == ""
     )

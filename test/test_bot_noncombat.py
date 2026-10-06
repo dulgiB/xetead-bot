@@ -131,14 +131,14 @@ def test_handle_roll_reply_labels_dice_part_with_1d6(monkeypatch):
     assert "◊ 판정: 2[육체] + 6[1d6] → 「8」" in result
 
 
-# ── [판정+/스탯] 운명간섭 ───────────────────────────────────────────────────
+# ── [판정+/스탯] 키워드 보정 ───────────────────────────────────────────────────
 
 
-def _fate_state(
+def _keyword_state(
     acct: str = "user1",
     *,
     revival_count: int = 1,
-    fate_date: str = "",
+    keyword_date: str = "",
     curr_hp: int = 100,
 ) -> BotState:
     state = _make_state(acct)
@@ -150,14 +150,14 @@ def _fate_state(
         curr_hp=curr_hp,
         max_hp=100,
         revival_count=revival_count,
-        fate_date=fate_date,
+        keyword_date=keyword_date,
     )
     return state
 
 
 @pytest.fixture
-def _stub_fate_sheet_writes(monkeypatch):
-    """운명간섭 대가 반영은 실제 스프레드시트 쓰기라 무력화하고, 호출된
+def _stub_keyword_sheet_writes(monkeypatch):
+    """키워드 보정 대가 반영은 실제 스프레드시트 쓰기라 무력화하고, 호출된
     인자만 기록해 검증할 수 있게 한다."""
     calls: dict[str, object] = {}
     monkeypatch.setattr(
@@ -167,97 +167,101 @@ def _stub_fate_sheet_writes(monkeypatch):
     )
     monkeypatch.setattr(
         noncombat_module,
-        "update_character_fate_date",
-        lambda _sheet, name, today, cache=None: calls.update(fate=(name, today)),
+        "update_character_keyword_date",
+        lambda _sheet, name, today, cache=None: calls.update(keyword=(name, today)),
     )
     return calls
 
 
-def test_parse_roll_command_detects_fate_suffix():
-    """[판정+/스탯]은 스탯명과 운명간섭 플래그로 갈라 파싱되어야 한다."""
+def test_parse_roll_command_detects_keyword_suffix():
+    """[판정+/스탯]은 스탯명과 키워드 보정 플래그로 갈라 파싱되어야 한다."""
     assert parse_roll_command("[판정+/육체]") == ("육체", True)
     assert parse_roll_command("[판정/육체]") == ("육체", False)
     assert parse_roll_command("사담") is None
 
 
-def test_handle_roll_fate_adds_bonus_and_costs_hp(monkeypatch, _stub_fate_sheet_writes):
-    """운명간섭 판정은 굴림에 +3을 더하고 체력 20을 소모해야 한다."""
+def test_handle_roll_keyword_adds_bonus_and_costs_hp(
+    monkeypatch, _stub_keyword_sheet_writes
+):
+    """키워드 보정 판정은 굴림에 +3을 더하고 체력 20을 소모해야 한다."""
     acct = "user1"
-    state = _fate_state(acct)
+    state = _keyword_state(acct)
     monkeypatch.setattr(random, "randint", lambda a, b: 6)
 
-    result, log_info = handle_roll(acct, "육체", state, fate_boost=True)
+    result, log_info = handle_roll(acct, "육체", state, keyword_boost=True)
 
     # 2[육체] + 6[1d6] + 3[키워드 보정] = 11
     assert "→ 「11」" in result
     assert "3[키워드 보정]" in result
-    assert _stub_fate_sheet_writes["hp"] == ("동료", 80)
-    assert _stub_fate_sheet_writes["fate"] == ("동료", date.today().isoformat())
+    assert _stub_keyword_sheet_writes["hp"] == ("동료", 80)
+    assert _stub_keyword_sheet_writes["keyword"] == ("동료", date.today().isoformat())
     assert log_info is not None
     assert log_info.command_text == "[판정+/육체]"
 
 
-def test_handle_roll_fate_updates_in_memory_character(_stub_fate_sheet_writes):
+def test_handle_roll_keyword_updates_in_memory_character(_stub_keyword_sheet_writes):
     """같은 멘션 안에서 재조회해도 소모가 반영되도록 인메모리 값도 갱신한다."""
     acct = "user1"
-    state = _fate_state(acct)
+    state = _keyword_state(acct)
 
-    handle_roll(acct, "육체", state, fate_boost=True)
+    handle_roll(acct, "육체", state, keyword_boost=True)
 
     updated = state.noncombat_char_dict[acct]
     assert updated.curr_hp == 80
-    assert updated.fate_date == date.today().isoformat()
+    assert updated.keyword_date == date.today().isoformat()
 
 
-def test_handle_roll_fate_requires_revival(_stub_fate_sheet_writes):
+def test_handle_roll_keyword_requires_revival(_stub_keyword_sheet_writes):
     """부활 경험이 없으면 판정 자체를 하지 않는다."""
-    state = _fate_state("user1", revival_count=0)
+    state = _keyword_state("user1", revival_count=0)
 
-    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+    result, _log_info = handle_roll("user1", "육체", state, keyword_boost=True)
 
     assert "부활 횟수" in result
     assert "「" not in result
-    assert not _stub_fate_sheet_writes
+    assert not _stub_keyword_sheet_writes
 
 
-def test_handle_roll_fate_blocked_when_used_today(_stub_fate_sheet_writes):
+def test_handle_roll_keyword_blocked_when_used_today(_stub_keyword_sheet_writes):
     """오늘 이미 썼으면 거부한다."""
-    state = _fate_state("user1", fate_date=date.today().isoformat())
+    state = _keyword_state("user1", keyword_date=date.today().isoformat())
 
-    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+    result, _log_info = handle_roll("user1", "육체", state, keyword_boost=True)
 
     assert "오늘 이미 사용" in result
-    assert not _stub_fate_sheet_writes
+    assert not _stub_keyword_sheet_writes
 
 
-def test_handle_roll_fate_allowed_when_used_on_another_day(_stub_fate_sheet_writes):
+def test_handle_roll_keyword_allowed_when_used_on_another_day(
+    _stub_keyword_sheet_writes,
+):
     """어제 썼다면 오늘은 다시 쓸 수 있다 — 별도 리셋 절차가 필요 없다."""
     yesterday = (date.today() - timedelta(days=1)).isoformat()
-    state = _fate_state("user1", fate_date=yesterday)
+    state = _keyword_state("user1", keyword_date=yesterday)
 
-    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+    result, _log_info = handle_roll("user1", "육체", state, keyword_boost=True)
 
     assert "키워드 보정" in result
-    assert _stub_fate_sheet_writes["fate"] == ("동료", date.today().isoformat())
+    assert _stub_keyword_sheet_writes["keyword"] == ("동료", date.today().isoformat())
 
 
-def test_handle_roll_fate_blocked_when_hp_too_low(_stub_fate_sheet_writes):
+def test_handle_roll_keyword_blocked_when_hp_too_low(_stub_keyword_sheet_writes):
     """체력이 소모량 이하면 거부한다."""
-    state = _fate_state("user1", curr_hp=20)
+    state = _keyword_state("user1", curr_hp=20)
 
-    result, _log_info = handle_roll("user1", "육체", state, fate_boost=True)
+    result, _log_info = handle_roll("user1", "육체", state, keyword_boost=True)
 
     assert "체력" in result
-    assert not _stub_fate_sheet_writes
+    assert not _stub_keyword_sheet_writes
 
 
-def test_handle_roll_without_fate_touches_nothing(_stub_fate_sheet_writes):
+def test_handle_roll_without_keyword_touches_nothing(_stub_keyword_sheet_writes):
     """일반 판정은 체력/사용 기록을 건드리지 않는다."""
-    state = _fate_state("user1")
+    state = _keyword_state("user1")
 
     handle_roll("user1", "육체", state)
 
-    assert not _stub_fate_sheet_writes
+    assert not _stub_keyword_sheet_writes
 
 
 def _quest_location(

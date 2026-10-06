@@ -14,7 +14,7 @@ os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
 from battle.objects.define import (  # noqa: E402
-    FATE_INTERVENTION_HP_COST,
+    KEYWORD_BOOST_HP_COST,
     BattlefieldColumnIndex,
     CombatStatType,
 )
@@ -160,20 +160,20 @@ def test_investigation_has_no_round_limit(monkeypatch):
     assert ps.round_limit is None
 
 
-def test_fate_boost_cost_comes_out_of_sheet_hp(monkeypatch):
+def test_keyword_boost_cost_comes_out_of_sheet_hp(monkeypatch):
     """상시전투의 키워드 보정 대가는 전장 체력(=실제 체력)에서 빠지고 시트에
     반영되며, 오늘 사용한 것으로 기록된다."""
     ps, state = _investigation_state(monkeypatch, ally_hp=70, revival_count=1)
     marked = []
     monkeypatch.setattr(
         main_module,
-        "mark_fate_used_if_needed",
+        "mark_keyword_used_if_needed",
         lambda state, char_id, command: marked.append(char_id),
     )
 
     main_module._handle_practice_command("acct_a", f"[공격+/{_ENEMY.name}]", state, ps)
 
     ally_hp = ps.context.characters[_ALLY].status.curr_hp
-    assert ally_hp == 70 - FATE_INTERVENTION_HP_COST
+    assert ally_hp == 70 - KEYWORD_BOOST_HP_COST
     assert state.spreadsheet.hp_of(_ALLY.name) == ally_hp
     assert marked == [_ALLY]

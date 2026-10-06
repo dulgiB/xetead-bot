@@ -21,7 +21,7 @@ from battle.core.command_processors import process_ally_command  # noqa: E402
 from battle.core.commands.parser import parse_character_command  # noqa: E402
 from battle.exceptions import CommandValidationError  # noqa: E402
 from battle.objects.define import (  # noqa: E402
-    FATE_INTERVENTION_HP_COST,
+    KEYWORD_BOOST_HP_COST,
     BattlefieldColumnIndex,
     ValueSourceType,
     ValueType,
@@ -101,7 +101,7 @@ def _duel_state(
     hp_by_name: dict[str, int],
     max_hp: int = 100,
     skill_dict: dict | None = None,
-    fate_date: str = "",
+    keyword_date: str = "",
     revival_count: int = 0,
     buff_dict: dict | None = None,
 ) -> tuple[PracticeBattlefieldContext, PracticeBattleState, BotState]:
@@ -117,7 +117,7 @@ def _duel_state(
             max_hp=max_hp,
             initial_hp=hp_by_name[_A.name],
             revival_count=revival_count,
-            fate_date=fate_date,
+            keyword_date=keyword_date,
             skill_1_id="Cost2Skill" if skill_dict else None,
         ),
         "acct_b": get_test_preset(
@@ -469,7 +469,7 @@ def _run(ctx, text: str):
     return process_ally_command(ctx, command)
 
 
-def test_duel_fate_boost_spends_sheet_hp_not_battle_hp(monkeypatch):
+def test_duel_keyword_boost_spends_sheet_hp_not_battle_hp(monkeypatch):
     _silence_field_sheet(monkeypatch)
     ctx, _ps, _state = _duel_state(
         hp_by_name={_A.name: 90, _B.name: 100},
@@ -481,14 +481,14 @@ def test_duel_fate_boost_spends_sheet_hp_not_battle_hp(monkeypatch):
     _run(ctx, f"[공격+/{_B.name}]")
 
     assert ctx.characters[_A].status.curr_hp == battle_hp_before
-    assert ctx.persistent_hp[_A].curr_hp == 90 - FATE_INTERVENTION_HP_COST
+    assert ctx.persistent_hp[_A].curr_hp == 90 - KEYWORD_BOOST_HP_COST
 
 
-def test_duel_fate_boost_rejected_when_sheet_hp_is_too_low(monkeypatch):
+def test_duel_keyword_boost_rejected_when_sheet_hp_is_too_low(monkeypatch):
     """임시 체력이 가득해도 실제 체력이 대가 이하면 쓸 수 없다."""
     _silence_field_sheet(monkeypatch)
     ctx, _ps, _state = _duel_state(
-        hp_by_name={_A.name: FATE_INTERVENTION_HP_COST, _B.name: 100},
+        hp_by_name={_A.name: KEYWORD_BOOST_HP_COST, _B.name: 100},
         skill_dict=_damage_skill(),
         revival_count=1,
     )
@@ -496,39 +496,41 @@ def test_duel_fate_boost_rejected_when_sheet_hp_is_too_low(monkeypatch):
     with pytest.raises(CommandValidationError, match="체력"):
         _run(ctx, f"[공격+/{_B.name}]")
 
-    assert ctx.persistent_hp[_A].curr_hp == FATE_INTERVENTION_HP_COST
+    assert ctx.persistent_hp[_A].curr_hp == KEYWORD_BOOST_HP_COST
 
 
-def test_duel_fate_boost_cost_is_written_back_to_the_sheet(monkeypatch):
+def test_duel_keyword_boost_cost_is_written_back_to_the_sheet(monkeypatch):
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(
         hp_by_name={_A.name: 90, _B.name: 100},
         skill_dict=_damage_skill(),
         revival_count=1,
     )
-    monkeypatch.setattr(main_module, "mark_fate_used_if_needed", lambda *a, **k: None)
+    monkeypatch.setattr(
+        main_module, "mark_keyword_used_if_needed", lambda *a, **k: None
+    )
 
     command = parse_character_command(_A, f"[공격+/{_B.name}]", ctx)
     assert command is not None
     process_ally_command(ctx, command)
-    warning = main_module._apply_practice_fate_cost(state, ps, _A, command)
+    warning = main_module._apply_practice_keyword_cost(state, ps, _A, command)
 
     assert warning == ""
-    assert state.spreadsheet.hp_of(_A.name) == 90 - FATE_INTERVENTION_HP_COST
+    assert state.spreadsheet.hp_of(_A.name) == 90 - KEYWORD_BOOST_HP_COST
 
 
-def test_investigation_allows_fate_boost():
+def test_investigation_allows_keyword_boost():
     ctx = PracticeBattlefieldContext(
         buff_dict={}, skill_dict={}, mode=PracticeBattleMode.INVESTIGATION
     )
-    assert ctx.allow_fate_intervention is True
+    assert ctx.allow_keyword_boost is True
 
 
-def test_practice_mode_still_rejects_fate_boost():
+def test_practice_mode_still_rejects_keyword_boost():
     ctx = PracticeBattlefieldContext(
         buff_dict={}, skill_dict={}, mode=PracticeBattleMode.PRACTICE
     )
-    assert ctx.allow_fate_intervention is False
+    assert ctx.allow_keyword_boost is False
 
 
 def test_duel_still_rejects_items():
@@ -536,4 +538,4 @@ def test_duel_still_rejects_items():
         buff_dict={}, skill_dict={}, mode=PracticeBattleMode.DUEL
     )
     assert ctx.allow_item_usage is False
-    assert ctx.allow_fate_intervention is True
+    assert ctx.allow_keyword_boost is True
