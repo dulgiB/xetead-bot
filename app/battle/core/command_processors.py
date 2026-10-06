@@ -1,3 +1,4 @@
+from datetime import date
 from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
@@ -492,7 +493,7 @@ def _apply_fate_intervention_cost(
         return
 
     hp_after, max_hp, hp_is_persistent = context.pay_fate_cost_hp(user)
-    user.fate_used = True
+    user.fate_date = date.today().isoformat()
     results_per_part[-1].log_entries.append(
         BattleLogEntry(
             target_name=user.id.name,

@@ -56,17 +56,3 @@ def test_fate_date_defaults_to_empty():
     assert (
         CombatCharacterDataFromSpreadsheet.from_dict(_raw(fate_date="")).fate_date == ""
     )
-
-
-def test_has_used_fate_on_compares_date():
-    """오늘 날짜와 같을 때만 "이미 씀"이다 — 날짜가 바뀌면 자동으로 풀린다."""
-    data = CombatCharacterDataFromSpreadsheet.from_dict(_raw(fate_date="2026-09-09"))
-    assert data.has_used_fate_on("2026-09-09") is True
-    assert data.has_used_fate_on("2026-09-10") is False
-
-
-def test_has_used_fate_on_is_false_when_never_used():
-    """빈 값은 어떤 날짜와도 일치하지 않아야 한다(빈 문자열끼리 비교 주의)."""
-    data = CombatCharacterDataFromSpreadsheet.from_dict(_raw())
-    assert data.has_used_fate_on("") is False
-    assert data.has_used_fate_on("2026-09-09") is False

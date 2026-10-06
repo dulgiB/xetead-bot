@@ -6,6 +6,8 @@
 
 from datetime import date, timedelta
 
+import battle.core.command_processors as command_processors_module
+import battle.objects.character.combat_character as combat_character_module
 import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_processors import (
@@ -257,6 +259,32 @@ def test_fate_second_use_blocked_within_same_battle():
     context.on_start_round()  # 코스트 회복
     with pytest.raises(CommandValidationError, match="이미 사용"):
         _run(context, f"[공격+/{_TARGET.name}]")
+
+
+def test_fate_unblocked_after_midnight_within_same_battle(monkeypatch):
+    """며칠 이어지는 전투(결투/상시전투)에서도 자정이 지나면 다시 쓸 수 있다."""
+    context = _make_context(attacker_revival=1)
+    _run(context, f"[공격+/{_TARGET.name}]")
+
+    tomorrow = date.today() + timedelta(days=1)
+
+    class _Tomorrow(date):
+        @classmethod
+        def today(cls):
+            return tomorrow
+
+    monkeypatch.setattr(combat_character_module, "date", _Tomorrow)
+    monkeypatch.setattr(command_processors_module, "date", _Tomorrow)
+    context.on_start_round()  # 코스트 회복
+    assert context.characters[_ATTACKER].fate_used is False
+    _run(context, f"[공격+/{_TARGET.name}]")
+    assert context.characters[_ATTACKER].fate_date == tomorrow.isoformat()
+
+
+def test_fate_empty_date_is_never_used():
+    """빈 fate_date는 어떤 날짜와도 일치하지 않아야 한다."""
+    context = _make_context(attacker_revival=1)
+    assert context.characters[_ATTACKER].fate_used is False
 
 
 def test_fate_attack_bonus_is_added_before_multipliers():

@@ -32,10 +32,6 @@ class CombatCharacterDataFromSpreadsheet:
     # 1번 제한이 성립한다 — 별도의 리셋 절차가 필요 없다.
     fate_date: str = ""
 
-    def has_used_fate_on(self, today: str) -> bool:
-        """`today`(YYYY-MM-DD)에 이미 운명간섭을 썼는지 여부."""
-        return bool(self.fate_date) and self.fate_date == today
-
     @classmethod
     def from_dict(cls, raw: SpreadsheetRow) -> "CombatCharacterDataFromSpreadsheet":
         return cls(

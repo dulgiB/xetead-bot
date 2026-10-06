@@ -1,6 +1,5 @@
 import copy
 from dataclasses import replace
-from datetime import date
 from typing import Optional
 
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -319,9 +318,7 @@ class BattlefieldContext:
             skills=skills,
             hide_hp=data.hide_hp,
             span=data.span,
-            # 배치 시점의 날짜로 한 번 확정해 두면 전투가 자정을 넘겨도
-            # 한 전투 안에서 판정 기준이 바뀌지 않는다.
-            fate_used=data.has_used_fate_on(date.today().isoformat()),
+            fate_date=data.fate_date,
         )
 
         if data.hide_hp:
