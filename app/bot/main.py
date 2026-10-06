@@ -1751,7 +1751,10 @@ def _move_battle_end_hp_to_sheet(
     반환한다.
 
     결투에서 전투 종료 처리는 이긴 쪽에게도 남는 대가라, 임시 체력에서만
-    깎이면 전투가 끝나는 순간 흔적 없이 사라진다."""
+    깎이면 전투가 끝나는 순간 흔적 없이 사라진다. 다만 결투의 다른 대가(피해
+    정산)와 같이 DUEL_SETTLEMENT_DAMAGE_PERCENT%만 옮긴다 — 같은 결투 안에서
+    전투 중 피해는 절반, 전투 종료 처리는 전부로 치르면 기준이 갈린다."""
+    entries = _scale_battle_end_entries_for_duel(entries)
     amounts: dict[str, int] = {}
     for entry in entries:
         if entry.value is None:
@@ -1819,6 +1822,39 @@ def _move_battle_end_hp_to_sheet(
             + ", ".join(escape_markdown(name) for name in failed)
         )
     return moved, notices
+
+
+def _scale_battle_end_entries_for_duel(
+    entries: list[BattleLogEntry],
+) -> list[BattleLogEntry]:
+    """대미지/회복 엔트리의 수치를 DUEL_SETTLEMENT_DAMAGE_PERCENT%(내림)로
+    줄인다."""
+    scaled: list[BattleLogEntry] = []
+    for entry in entries:
+        if entry.value is None or entry.kind not in (
+            BattleLogEntryKind.DAMAGE,
+            BattleLogEntryKind.HEAL,
+        ):
+            scaled.append(entry)
+            continue
+        value = entry.value * DUEL_SETTLEMENT_DAMAGE_PERCENT // 100
+        if value <= 0:
+            continue
+        label = "대미지" if entry.kind == BattleLogEntryKind.DAMAGE else "회복"
+        roll_display = (
+            f"{entry.roll_display} × {DUEL_SETTLEMENT_DAMAGE_PERCENT}%"
+            if entry.roll_display is not None
+            else None
+        )
+        scaled.append(
+            dataclasses.replace(
+                entry,
+                value=value,
+                result=f"{label} {value}",
+                roll_display=roll_display,
+            )
+        )
+    return scaled
 
 
 def _apply_duel_damage_settlement(
