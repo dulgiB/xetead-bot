@@ -162,12 +162,12 @@ def test_write_back_changed_hp_folds_extra_writes_into_the_same_call():
             value=10,
         )
     ]
-    fate_write = log_sheets.PendingCellWrite(
+    keyword_write = log_sheets.PendingCellWrite(
         worksheet_title="캐릭터", row=3, col=2, value="2026-09-09"
     )
 
     log_sheets.write_back_changed_hp(
-        spreadsheet, ctx, entries, extra_writes=[fate_write]
+        spreadsheet, ctx, entries, extra_writes=[keyword_write]
     )
 
     assert spreadsheet.values_batch_update_call_count == 1
@@ -180,11 +180,11 @@ def test_write_back_changed_hp_sends_extra_writes_without_hp_changes():
     """대미지 없이 키워드 보정만 쓰는 커맨드가 있다."""
     ctx = _make_context_with_two_characters()
     spreadsheet = _FakeSpreadsheetForHpLookup(["아군1", "아군2"])
-    fate_write = log_sheets.PendingCellWrite(
+    keyword_write = log_sheets.PendingCellWrite(
         worksheet_title="캐릭터", row=2, col=2, value="2026-09-09"
     )
 
-    log_sheets.write_back_changed_hp(spreadsheet, ctx, [], extra_writes=[fate_write])
+    log_sheets.write_back_changed_hp(spreadsheet, ctx, [], extra_writes=[keyword_write])
 
     assert spreadsheet.values_batch_update_call_count == 1
     assert (2, 2, "2026-09-09") in spreadsheet.worksheet("캐릭터").written

@@ -47,7 +47,7 @@ from bot.commands.admin import (
     build_field_meta,
     handle_admin_command,
 )
-from bot.commands.character import handle_character_command, mark_fate_used_if_needed
+from bot.commands.character import handle_character_command, mark_keyword_used_if_needed
 from bot.commands.noncombat import (
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
@@ -1145,8 +1145,8 @@ class MastodonBotListener(StreamListener):
         ):
             roll_command = parse_roll_command(text)
             if roll_command is not None:
-                stat_name, fate_boost = roll_command
-                if fate_boost:
+                stat_name, keyword_boost = roll_command
+                if keyword_boost:
                     # "+"를 조용히 무시하면 플레이어는 보정이 적용된 줄 안다.
                     self._reply(
                         status_id,
@@ -1207,12 +1207,12 @@ class MastodonBotListener(StreamListener):
             return
 
         # 9. [판정/스탯] — 독립 판정 (어떤 맥락에서도 사용 가능).
-        # [판정+/스탯]이면 운명간섭 보정이 붙는다.
+        # [판정+/스탯]이면 키워드 보정이 붙는다.
         roll_command = parse_roll_command(text)
         if roll_command is not None:
-            stat_name, fate_boost = roll_command
+            stat_name, keyword_boost = roll_command
             response, log_info = handle_roll(
-                acct, stat_name, state, fate_boost=fate_boost
+                acct, stat_name, state, keyword_boost=keyword_boost
             )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
@@ -2138,7 +2138,7 @@ def _advance_practice_phase(
     return game_post, False
 
 
-def _apply_practice_fate_cost(
+def _apply_practice_keyword_cost(
     state: "BotState",
     ps: PracticeBattleState,
     char_id: CharacterId,
@@ -2148,16 +2148,16 @@ def _apply_practice_fate_cost(
     반영한다(실패 안내 문구를 반환하며, 반영할 게 없거나 성공하면 빈 문자열).
 
     결투의 전장은 임시 체력 대신 실제 체력을 깎아 두기만 하므로
-    (PracticeBattlefieldContext.pay_fate_cost_hp), 그 값을 시트에 옮기는 것은
+    (PracticeBattlefieldContext.pay_keyword_cost_hp), 그 값을 시트에 옮기는 것은
     봇 계층의 몫이다. 상시전투는 대가가 전장 체력(=실제 체력)에서 빠지고
     _write_back_sheet_hp()가 다른 체력 변동과 함께 시트에 쓰므로, 여기서는
     사용 기록만 남긴다. 이미 커맨드가 처리된 뒤라 실패를 위로 던지면 답글
     자체가 사라지므로, write_back_changed_hp()와 같이 흡수하고 알리기만
     한다."""
-    if not any(part.fate_boost for part in command.parts):
+    if not any(part.keyword_boost for part in command.parts):
         return ""
     if ps.mode.uses_sheet_hp:
-        mark_fate_used_if_needed(state, char_id, command)
+        mark_keyword_used_if_needed(state, char_id, command)
         return ""
     if not ps.is_duel_match:
         return ""
@@ -2177,7 +2177,7 @@ def _apply_practice_fate_cost(
             "⚠️ 키워드 보정 대가(실제 체력 소모) 반영에 실패했습니다."
             " 관리자에게 문의해 주세요."
         )
-    mark_fate_used_if_needed(state, char_id, command)
+    mark_keyword_used_if_needed(state, char_id, command)
     return ""
 
 
@@ -2291,9 +2291,9 @@ def _handle_practice_proxy_command(
             reply_text, calc_text = format_battle_reply(
                 ps.context, char_id, result.part_results
             )
-            fate_warning = _apply_practice_fate_cost(state, ps, char_id, command)
-            if fate_warning:
-                reply_text += f"\n{fate_warning}"
+            keyword_warning = _apply_practice_keyword_cost(state, ps, char_id, command)
+            if keyword_warning:
+                reply_text += f"\n{keyword_warning}"
         except CommandValidationError as e:
             battle_logs.append(
                 log_sheets.BattleCommandLog(
@@ -2427,9 +2427,9 @@ def _handle_practice_command(
         reply_text, calc_text = format_battle_reply(
             ps.context, char_id, result.part_results
         )
-        fate_warning = _apply_practice_fate_cost(state, ps, char_id, command)
-        if fate_warning:
-            reply_text += f"\n{fate_warning}"
+        keyword_warning = _apply_practice_keyword_cost(state, ps, char_id, command)
+        if keyword_warning:
+            reply_text += f"\n{keyword_warning}"
     except CommandValidationError as e:
         battle_log = log_sheets.BattleCommandLog(
             field_id=field_id,

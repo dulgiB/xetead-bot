@@ -249,7 +249,7 @@ _SYMBOL_NAME = CharacterId("◇◆")
         (
             "[공격+/◇◆]",
             CommandPart(
-                type_=ActionType.ATTACK, targets=[_SYMBOL_NAME], fate_boost=True
+                type_=ActionType.ATTACK, targets=[_SYMBOL_NAME], keyword_boost=True
             ),
         ),
         (

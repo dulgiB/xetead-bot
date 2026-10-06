@@ -23,7 +23,7 @@ class SkillTargetRule(abc.ABC):
     skill_holder_id: CharacterId
 
     # 커맨드에 적힌 대상 입력을 무시하고 규칙이 스스로 대상을 정하는지.
-    # ClassVar이라 인스턴스 없이도 판정할 수 있다 — fate_config_error가 쓴다.
+    # ClassVar이라 인스턴스 없이도 판정할 수 있다 — keyword_config_error가 쓴다.
     ignores_input_targets: ClassVar[bool] = False
     # 시트의 target_count가 "입력할 수 있는 대상 수"가 아니라 규칙의 범위를
     # 뜻하는지. 그런 규칙은 입력을 하나만 받으므로 대상 수 검증과 "대상 추가"

@@ -1,3 +1,4 @@
+from datetime import date
 from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
@@ -21,13 +22,13 @@ from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
     error_character_is_defeated,
-    error_fate_already_used,
-    error_fate_not_available_here,
-    error_fate_not_enough_hp,
-    error_fate_only_once_per_command,
-    error_fate_requires_revival,
-    error_fate_skill_without_damage,
-    error_fate_unsupported_command,
+    error_keyword_already_used,
+    error_keyword_not_available_here,
+    error_keyword_not_enough_hp,
+    error_keyword_only_once_per_command,
+    error_keyword_requires_revival,
+    error_keyword_skill_without_damage,
+    error_keyword_unsupported_command,
     error_item_does_not_exist,
     error_item_has_no_effect,
     error_item_not_usable_here,
@@ -41,12 +42,12 @@ from battle.exceptions import (
     error_too_many_targets,
 )
 from battle.objects.define import (
-    FATE_INTERVENTION_HP_COST,
-    FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT,
+    KEYWORD_BOOST_HP_COST,
+    KEYWORD_BOOST_REQUIRED_REVIVAL_COUNT,
     ActionType,
     BattlefieldColumnIndex,
     CombatStatType,
-    FateBoostMode,
+    KeywordBoostMode,
     ItemType,
 )
 from battle.objects.extensions import get_total_cost
@@ -131,7 +132,7 @@ def process_ally_command(
     # 코스트·체력·아이템은 검증과 실제 처리를 모두 통과한 뒤에만 소모한다.
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
-    _apply_fate_intervention_cost(context, user, command, results_per_part)
+    _apply_keyword_boost_cost(context, user, command, results_per_part)
     for part in command.parts:
         if part.type_ == ActionType.USE_ITEM and part.item_id is not None:
             context.inventory.consume(command.user_id.name, part.item_id)
@@ -179,9 +180,9 @@ def process_enemy_command_on_pre_action(
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
 
-    # 운명간섭 대가도 코스트와 같이 선언 시점에 소모한다 — POST에서 소모하면
+    # 키워드 보정 대가도 코스트와 같이 선언 시점에 소모한다 — POST에서 소모하면
     # 재전개마다 중복 소모되거나 아예 누락된다.
-    _apply_fate_intervention_cost(context, user, command, results_per_part)
+    _apply_keyword_boost_cost(context, user, command, results_per_part)
 
     return CommandProcessResult(original_command=command, part_results=results_per_part)
 
@@ -313,7 +314,7 @@ def try_expansion_if_valid(
       3. 코스트가 충분한지
       4. 이동 목적지에 자리가 남아있는지 (이동 후 user_pos 갱신)
       5. 공격/스킬 대상이 전장에 존재하고 사거리 내인지 (갱신된 위치 기준)
-      6. 운명간섭("+")을 붙였다면 그 사용 조건을 만족하는지
+      6. 키워드 보정("+")을 붙였다면 그 사용 조건을 만족하는지
     """
 
     if command.user_id not in context.characters:
@@ -348,7 +349,7 @@ def try_expansion_if_valid(
         for part in command.parts
     ]
 
-    fate_part = _validate_fate_boost(context, user, command)
+    keyword_part = _validate_keyword_boost(context, user, command)
 
     for part in command.parts:
         if part.type_ == ActionType.SKILL and part.skill_id is not None:
@@ -360,9 +361,9 @@ def try_expansion_if_valid(
                 allowed_target_count = 1
             else:
                 allowed_target_count = skill.data.target_count + (
-                    skill.data.fate_boost_value
-                    if part is fate_part
-                    and skill.data.fate_mode is FateBoostMode.EXTRA_TARGET
+                    skill.data.keyword_boost_value
+                    if part is keyword_part
+                    and skill.data.keyword_mode is KeywordBoostMode.EXTRA_TARGET
                     else 0
                 )
             if len(part.targets) > allowed_target_count:
@@ -446,36 +447,36 @@ def try_expansion_if_valid(
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
-    # fate_mode가 없는 스킬은 대미지 스킬에만 운명간섭을 허용한다. 대미지가
+    # keyword_mode가 없는 스킬은 대미지 스킬에만 키워드 보정을 허용한다. 대미지가
     # 실제로 나오는지는 효과 구현체마다 달라 전개해 봐야 알 수 있다.
     if (
-        fate_part is not None
-        and fate_part.type_ == ActionType.SKILL
-        and _fate_skill_data(user, fate_part).fate_mode is None
+        keyword_part is not None
+        and keyword_part.type_ == ActionType.SKILL
+        and _keyword_skill_data(user, keyword_part).keyword_mode is None
     ):
-        assert fate_part.skill_id is not None
+        assert keyword_part.skill_id is not None
         has_damage = any(
             sub_data.damage_list
             for command_data in expanded_command_data_list
-            if command_data.original_part is fate_part
+            if command_data.original_part is keyword_part
             for sub_data in command_data.data_per_effect
             if sub_data is not None
         )
         if not has_damage:
             raise CommandValidationError(
-                error_fate_skill_without_damage(fate_part.skill_id)
+                error_keyword_skill_without_damage(keyword_part.skill_id)
             )
 
     return expanded_command_data_list, needed_cost
 
 
-def _apply_fate_intervention_cost(
+def _apply_keyword_boost_cost(
     context: BattlefieldContext,
     user: "CombatCharacter",
     command: CharacterCommand,
     results_per_part: list[CommandPartProcessResult],
 ) -> None:
-    """운명간섭을 쓴 커맨드라면 체력을 소모하고 "이번 진행에 사용함"을 표시한다.
+    """키워드 보정을 쓴 커맨드라면 체력을 소모하고 "이번 진행에 사용함"을 표시한다.
 
     소모량은 대미지 계산 파이프라인을 타지 않는 순수 자원 소비다 — 반사/방어
     버프가 개입하거나 "피격" 반응형 버프가 발동해서는 안 되기 때문이다. 대신
@@ -483,22 +484,22 @@ def _apply_fate_intervention_cost(
     결과에 얹는다(로그 엔트리의 `result`를 보고 체력을 write-back하는
     `bot/log_sheets.py`의 write_back_changed_hp() 참고).
 
-    어느 체력에서 빼는지는 전장이 정한다(`pay_fate_cost_hp()`) — 결투는
+    어느 체력에서 빼는지는 전장이 정한다(`pay_keyword_cost_hp()`) — 결투는
     임시 체력이 아니라 시트의 실제 체력에서 뺀다.
     """
-    if not any(part.fate_boost for part in command.parts):
+    if not any(part.keyword_boost for part in command.parts):
         return
     if not results_per_part:
         return
 
-    hp_after, max_hp, hp_is_persistent = context.pay_fate_cost_hp(user)
-    user.fate_used = True
+    hp_after, max_hp, hp_is_persistent = context.pay_keyword_cost_hp(user)
+    user.keyword_date = date.today().isoformat()
     results_per_part[-1].log_entries.append(
         BattleLogEntry(
             target_name=user.id.name,
             kind=BattleLogEntryKind.DAMAGE,
-            result=f"대미지 {FATE_INTERVENTION_HP_COST}",
-            value=FATE_INTERVENTION_HP_COST,
+            result=f"대미지 {KEYWORD_BOOST_HP_COST}",
+            value=KEYWORD_BOOST_HP_COST,
             hp_after=hp_after,
             max_hp=max_hp,
             source_labels=("키워드 보정",),
@@ -507,52 +508,52 @@ def _apply_fate_intervention_cost(
     )
 
 
-def _fate_skill_data(user: "CombatCharacter", part: CommandPart) -> "SkillData":
-    """운명간섭이 붙은 스킬 파트의 SkillData. 스킬 등록 여부는 이 함수를 부르기
+def _keyword_skill_data(user: "CombatCharacter", part: CommandPart) -> "SkillData":
+    """키워드 보정이 붙은 스킬 파트의 SkillData. 스킬 등록 여부는 이 함수를 부르기
     전에 이미 검증돼 있다(error_skill_not_registered)."""
     skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
     assert skill is not None
     return skill.data
 
 
-def _validate_fate_boost(
+def _validate_keyword_boost(
     context: BattlefieldContext, user: "CombatCharacter", command: CharacterCommand
 ) -> Optional[CommandPart]:
-    """운명간섭("+") 선언의 사전 조건을 검증하고, 대상 파트를 반환한다.
+    """키워드 보정("+") 선언의 사전 조건을 검증하고, 대상 파트를 반환한다.
 
     "+"가 없으면 None을 반환한다. 대미지 스킬 여부는 커맨드를 전개해 봐야
     알 수 있어 여기서 확인하지 않는다 (try_expansion_if_valid 후반부 참고).
     """
-    fate_parts = [part for part in command.parts if part.fate_boost]
-    if not fate_parts:
+    keyword_parts = [part for part in command.parts if part.keyword_boost]
+    if not keyword_parts:
         return None
 
-    if not context.allow_fate_intervention:
-        raise CommandValidationError(error_fate_not_available_here())
+    if not context.allow_keyword_boost:
+        raise CommandValidationError(error_keyword_not_available_here())
     # 1회 제한이 있는 자원이므로 한 커맨드에 두 번 붙이는 것 자체를 막는다.
-    if len(fate_parts) > 1:
-        raise CommandValidationError(error_fate_only_once_per_command())
+    if len(keyword_parts) > 1:
+        raise CommandValidationError(error_keyword_only_once_per_command())
 
-    fate_part = fate_parts[0]
-    if fate_part.type_ not in (ActionType.ATTACK, ActionType.SKILL):
-        raise CommandValidationError(error_fate_unsupported_command())
+    keyword_part = keyword_parts[0]
+    if keyword_part.type_ not in (ActionType.ATTACK, ActionType.SKILL):
+        raise CommandValidationError(error_keyword_unsupported_command())
 
-    if user.status.revival_count < FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT:
+    if user.status.revival_count < KEYWORD_BOOST_REQUIRED_REVIVAL_COUNT:
         raise CommandValidationError(
-            error_fate_requires_revival(FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT)
+            error_keyword_requires_revival(KEYWORD_BOOST_REQUIRED_REVIVAL_COUNT)
         )
-    if user.fate_used:
-        raise CommandValidationError(error_fate_already_used())
+    if user.keyword_used:
+        raise CommandValidationError(error_keyword_already_used())
     # 체력 소모가 곧 전투불능을 뜻하지 않도록 "초과"를 요구한다.
-    available_hp = context.fate_cost_hp(user)
-    if available_hp <= FATE_INTERVENTION_HP_COST:
+    available_hp = context.keyword_cost_hp(user)
+    if available_hp <= KEYWORD_BOOST_HP_COST:
         raise CommandValidationError(
-            error_fate_not_enough_hp(
-                FATE_INTERVENTION_HP_COST,
+            error_keyword_not_enough_hp(
+                KEYWORD_BOOST_HP_COST,
                 None if user.hide_hp else available_hp,
             )
         )
-    return fate_part
+    return keyword_part
 
 
 def _resolve_target(

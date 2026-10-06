@@ -34,7 +34,7 @@ class NoncombatCharacterDataFromSpreadsheet:
     # 전투용 캐릭터 시트와 공유. [판정+/스탯]이 "부활 1회 이상 & 오늘 미사용"을
     # 확인하는 데 쓴다.
     revival_count: int = 0
-    fate_date: str = ""
+    keyword_date: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict[str, str | int | bool]):
@@ -51,7 +51,7 @@ class NoncombatCharacterDataFromSpreadsheet:
             curr_hp=int(raw.get("curr_hp", 0) or 0),
             max_hp=int(raw.get("max_hp", 0) or 0),
             revival_count=int(raw.get("revival_count", 0) or 0),
-            fate_date=str(raw.get("fate_date", "") or ""),
+            keyword_date=str(raw.get("keyword_date", "") or ""),
         )
 
     def get_noncombat_stat(self, stat_type: NoncombatStatType) -> int:

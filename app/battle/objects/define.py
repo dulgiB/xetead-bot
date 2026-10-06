@@ -5,18 +5,18 @@ MAX_SKILL_SLOT_COUNT = 3
 MAX_EFFECT_COUNT = 3
 MAX_PASSIVE_EFFECT_COUNT = 3
 
-# --- 운명간섭(플레이어 표기: "키워드 보정") ---------------------------------
+# --- 키워드 보정 ---------------------------------------------------------------
 # 부활 경험이 있는 캐릭터가 커맨드에 "+" 접미사를 붙여 굴림을 끌어올리는 기능.
 # 대가로 체력을 소모하며, 스토리 진행(전투) 1회당 1번만 쓸 수 있다.
-FATE_INTERVENTION_HP_COST = 20
+KEYWORD_BOOST_HP_COST = 20
 # 비전투 판정([판정+/스탯])에 더해지는 고정 보정.
-FATE_INTERVENTION_ROLL_BONUS = 3
+KEYWORD_BOOST_ROLL_BONUS = 3
 # 기본 공격([공격+/대상])의 공격 굴림에 더해지는 보정. 고정 대미지와 달리
 # 주는/받는 대미지 배율이 곱해지기 전에 더해지므로 배율 보정을 함께 받는다.
-FATE_INTERVENTION_ATTACK_BONUS = 15
-# 대미지 스킬의 굴림 보정. fate_mode를 비워 둔 스킬이 쓰는 기본값이다.
-FATE_INTERVENTION_SKILL_BONUS = 10
-FATE_INTERVENTION_REQUIRED_REVIVAL_COUNT = 1
+KEYWORD_BOOST_ATTACK_BONUS = 15
+# 대미지 스킬의 굴림 보정. keyword_mode를 비워 둔 스킬이 쓰는 기본값이다.
+KEYWORD_BOOST_SKILL_BONUS = 10
+KEYWORD_BOOST_REQUIRED_REVIVAL_COUNT = 1
 
 # --- 부활 횟수 --------------------------------------------------------------
 # revival_count는 GM이 시트에서 직접 관리한다 — 봇은 배치 시점에 읽어 아래
@@ -192,12 +192,12 @@ class BuffType(str, Enum):
     NEUTRAL = "기타"
 
 
-class FateBoostMode(str, Enum):
-    """운명간섭("+", 플레이어 표기 "키워드 보정")이 이 스킬에 무엇을 더해주는지.
+class KeywordBoostMode(str, Enum):
+    """키워드 보정("+")이 이 스킬에 무엇을 더해주는지.
 
-    "스킬_캐릭터" 시트의 fate_mode 컬럼(enum 시트 FateBoostMode 드롭다운)에서
+    "스킬_캐릭터" 시트의 keyword_mode 컬럼(enum 시트 KeywordBoostMode 드롭다운)에서
     온다. 비워 두면 기본 동작 — 대미지가 나오는 스킬은 굴림에
-    FATE_INTERVENTION_SKILL_BONUS를 더하고, 대미지가 없는 스킬은 "+"를
+    KEYWORD_BOOST_SKILL_BONUS를 더하고, 대미지가 없는 스킬은 "+"를
     거부한다. 값을 채우면 그 모드가 기본 동작을 대신한다.
 
     ROLL_BONUS/VALUE_BOOST는 대미지·회복 수치에 걸리므로 계산 시점

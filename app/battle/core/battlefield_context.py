@@ -1,6 +1,5 @@
 import copy
 from dataclasses import replace
-from datetime import date
 from typing import Optional
 
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
@@ -32,7 +31,7 @@ from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.character.combat_stats import CombatStats
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
-    FATE_INTERVENTION_HP_COST,
+    KEYWORD_BOOST_HP_COST,
     MAX_SKILL_SLOT_COUNT,
     BattlefieldColumnIndex,
     CombatStatType,
@@ -319,9 +318,7 @@ class BattlefieldContext:
             skills=skills,
             hide_hp=data.hide_hp,
             span=data.span,
-            # 배치 시점의 날짜로 한 번 확정해 두면 전투가 자정을 넘겨도
-            # 한 전투 안에서 판정 기준이 바뀌지 않는다.
-            fate_used=data.has_used_fate_on(date.today().isoformat()),
+            keyword_date=data.keyword_date,
         )
 
         if data.hide_hp:
@@ -707,28 +704,28 @@ class BattlefieldContext:
         return self.field_effects.remove(passive_skill_id)
 
     @property
-    def allow_fate_intervention(self) -> bool:
-        """이 전장에서 운명간섭("+" 접미사) 커맨드를 쓸 수 있는지 여부.
+    def allow_keyword_boost(self) -> bool:
+        """이 전장에서 키워드 보정("+" 접미사) 커맨드를 쓸 수 있는지 여부.
 
-        운명간섭은 체력 20을 실제로 소모하고 "이번 진행에 사용함"을 캐릭터
+        키워드 보정은 체력 20을 실제로 소모하고 "이번 진행에 사용함"을 캐릭터
         시트에 영구 기록하는, 되돌릴 수 없는 자원 소비다. 대련은 체력이
         절반인 임시 캐릭터로 진행하고 체력 변동을 시트에 반영하지도 않으므로
         그런 소비를 걸 수 없다(PracticeBattlefieldContext 참고).
         """
         return True
 
-    def fate_cost_hp(self, character: CombatCharacter) -> int:
-        """운명간섭 체력 대가를 낼 체력. 사용 가능 여부 검증에 쓴다."""
+    def keyword_cost_hp(self, character: CombatCharacter) -> int:
+        """키워드 보정 체력 대가를 낼 체력. 사용 가능 여부 검증에 쓴다."""
         return character.status.curr_hp
 
-    def pay_fate_cost_hp(self, character: CombatCharacter) -> tuple[int, int, bool]:
-        """운명간섭 체력 대가를 실제로 차감하고
+    def pay_keyword_cost_hp(self, character: CombatCharacter) -> tuple[int, int, bool]:
+        """키워드 보정 체력 대가를 실제로 차감하고
         (차감 후 체력, 최대 체력, 그 체력이 시트의 실제 체력인지)를 반환한다.
 
         결투는 임시 체력이 아니라 시트의 실제 체력에서 빼야 해서
         (PracticeBattlefieldContext) 차감 대상 자체가 전장마다 다르다.
         """
-        character.status.curr_hp -= FATE_INTERVENTION_HP_COST
+        character.status.curr_hp -= KEYWORD_BOOST_HP_COST
         return (
             character.status.curr_hp,
             character.status[CombatStatType.MAX_HP],

@@ -363,7 +363,7 @@ def write_cells(
     나가 분당 할당량을 금방 소진한다. 한 스프레드시트 안이면 시트가 달라도
     ("캐릭터"/"에너미") 요청 하나에 담을 수 있다.
 
-    `valueInputOption`은 RAW다 — USER_ENTERED면 `fate_date` 같은 날짜
+    `valueInputOption`은 RAW다 — USER_ENTERED면 `keyword_date` 같은 날짜
     문자열이 날짜 시리얼이 될 수 있다.
 
     실패하면 전부 반영되지 않는다. 라이브 상태는 이미 정확하므로 다음

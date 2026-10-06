@@ -106,37 +106,37 @@ def error_character_is_defeated() -> str:
     return "체력이 0인 캐릭터는 행동할 수 없습니다."
 
 
-def error_fate_not_available_here() -> str:
+def error_keyword_not_available_here() -> str:
     return "이 전투에서는 키워드 보정을 사용할 수 없습니다."
 
 
-def error_fate_requires_revival(required_count: int) -> str:
+def error_keyword_requires_revival(required_count: int) -> str:
     return (
         f"키워드 보정은 부활 횟수가 {required_count}회 이상인 캐릭터만"
         " 사용할 수 있습니다."
     )
 
 
-def error_fate_already_used() -> str:
+def error_keyword_already_used() -> str:
     return "키워드 보정은 오늘 이미 사용했습니다."
 
 
-def error_fate_only_once_per_command() -> str:
+def error_keyword_only_once_per_command() -> str:
     return "키워드 보정은 한 커맨드에 하나의 행동에만 붙일 수 있습니다."
 
 
-def error_fate_unsupported_command() -> str:
+def error_keyword_unsupported_command() -> str:
     return "키워드 보정은 공격 또는 스킬 커맨드에만 붙일 수 있습니다."
 
 
-def error_fate_skill_without_damage(skill_id: str) -> str:
+def error_keyword_skill_without_damage(skill_id: str) -> str:
     return (
         f"지정한 스킬({skill_id})은 대미지를 주지 않고 키워드 보정 효과도"
         " 설정되어 있지 않아 적용할 수 없습니다."
     )
 
 
-def error_fate_not_enough_hp(hp_cost: int, curr_hp: Optional[int]) -> str:
+def error_keyword_not_enough_hp(hp_cost: int, curr_hp: Optional[int]) -> str:
     """체력을 가리는 캐릭터는 curr_hp를 None으로 넘겨 현재 체력을 빼고 알린다."""
     message = f"키워드 보정은 체력 {hp_cost}을 소모하므로 체력이 그보다 많아야 합니다."
     if curr_hp is None:

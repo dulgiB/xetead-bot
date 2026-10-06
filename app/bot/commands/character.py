@@ -11,9 +11,9 @@ from battle.objects.models import CharacterId
 from bot.battle_reply_text import format_battle_reply
 from bot.field_sheet_renderer import render_public_field_sheet
 from bot.load_data import (
-    build_fate_date_write,
+    build_keyword_date_write,
     reveal_declared_enemy_skills,
-    update_character_fate_date,
+    update_character_keyword_date,
 )
 from bot.log_sheets import (
     BattleCommandLog,
@@ -31,37 +31,37 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def mark_fate_used_if_needed(
+def mark_keyword_used_if_needed(
     state: "BotState",
     char_id: CharacterId,
     command: "CharacterCommand",
     collect: "Optional[list[PendingCellWrite]]" = None,
 ) -> None:
-    """방금 처리된 커맨드가 운명간섭("+")을 썼다면 캐릭터 시트에 오늘 날짜를
+    """방금 처리된 커맨드가 키워드 보정("+")을 썼다면 캐릭터 시트에 오늘 날짜를
     기록한다.
 
     커맨드가 실제로 처리된 뒤에만 호출해야 한다. `write_back_changed_hp()`와
     같은 이유로 실패는 흡수하고 로깅만 한다 — 라이브 세션의
-    `character.fate_used`는 이미 True라 이번 전투 안에서의 재사용은 시트 반영
-    여부와 무관하게 막힌다.
+    `character.keyword_date`는 이미 오늘이라 이번 전투 안에서의 오늘 재사용은 시트
+    반영 여부와 무관하게 막힌다.
 
     `collect`가 주어지면 바로 쓰지 않고 그 목록에 셀 쓰기를 적어 둔다 — 같은
     커맨드의 체력 반영과 한 요청으로 묶기 위해서다. 그 요청이 실패하면 이
     기록도 빠지지만, 하루에 전투가 하나라는 전제라 위의 라이브 상태만으로
     충분하다.
     """
-    if not any(part.fate_boost for part in command.parts):
+    if not any(part.keyword_boost for part in command.parts):
         return
     try:
         if collect is None:
-            update_character_fate_date(
+            update_character_keyword_date(
                 state.spreadsheet,
                 char_id.name,
                 date.today().isoformat(),
                 cache=state.sheet_cache,
             )
             return
-        write = build_fate_date_write(
+        write = build_keyword_date_write(
             state.spreadsheet,
             char_id.name,
             date.today().isoformat(),
@@ -70,7 +70,7 @@ def mark_fate_used_if_needed(
         if write is not None:
             collect.append(write)
     except Exception:
-        logger.exception("운명간섭 사용 기록 반영 실패: %s", char_id.name)
+        logger.exception("키워드 보정 사용 기록 반영 실패: %s", char_id.name)
 
 
 def handle_character_command(
@@ -141,15 +141,15 @@ def handle_character_command(
         session.process_command(command)
         new_results = session.context.results[before:]
         entries = [entry for result in new_results for entry in result.log_entries]
-        fate_writes: list[PendingCellWrite] = []
-        mark_fate_used_if_needed(state, char_id, command, collect=fate_writes)
+        keyword_writes: list[PendingCellWrite] = []
+        mark_keyword_used_if_needed(state, char_id, command, collect=keyword_writes)
         write_back_changed_hp(
             state.spreadsheet,
             session.context,
             entries,
             cache=state.sheet_cache,
             written_hp=session.sheet_hp,
-            extra_writes=fate_writes,
+            extra_writes=keyword_writes,
         )
 
         if battle_type == FieldBattleType.MAIN:

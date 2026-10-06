@@ -155,7 +155,7 @@ def load_character_skill_dict(
     """'스킬_캐릭터' 시트만 읽어 스킬 id → SkillData dict를 반환한다.
 
     load_enemy_skill_dict()와 같은 이유로 존재한다 — 캐릭터 스킬에만 있는
-    설정(운명간섭 fate_mode 등)을 따로 검사해야 하는 곳에서 쓴다.
+    설정(키워드 보정 keyword_mode 등)을 따로 검사해야 하는 곳에서 쓴다.
     """
     char_skill_raw = _worksheet(spreadsheet, "스킬_캐릭터", cache).get_all_records(
         value_render_option=_UNFORMATTED
@@ -638,43 +638,43 @@ def _find_character_row_number(
     raise RuntimeError(f"캐릭터 '{char_name}'을 캐릭터 시트에서 찾을 수 없습니다.")
 
 
-def update_character_fate_date(
+def update_character_keyword_date(
     spreadsheet: gspread.Spreadsheet,
     char_name: str,
     today: str,
     cache: Optional[SheetCache] = None,
 ) -> None:
-    """캐릭터 시트에서 해당 캐릭터 행의 fate_date를 오늘 날짜로 갱신한다.
+    """캐릭터 시트에서 해당 캐릭터 행의 keyword_date를 오늘 날짜로 갱신한다.
 
-    "fate_date" 컬럼이 없는 시트에서는 경고만 남기고 넘어간다(그 경우
-    운명간섭은 항상 "미사용"으로 읽혀 제한이 걸리지 않는다).
+    "keyword_date" 컬럼이 없는 시트에서는 경고만 남기고 넘어간다(그 경우
+    키워드 보정은 항상 "미사용"으로 읽혀 제한이 걸리지 않는다).
     """
-    write = build_fate_date_write(spreadsheet, char_name, today, cache)
+    write = build_keyword_date_write(spreadsheet, char_name, today, cache)
     if write is None:
         return
-    write_cells(spreadsheet, [write], cache, "운명간섭 사용 기록")
+    write_cells(spreadsheet, [write], cache, "키워드 보정 사용 기록")
 
 
-def build_fate_date_write(
+def build_keyword_date_write(
     spreadsheet: gspread.Spreadsheet,
     char_name: str,
     today: str,
     cache: Optional[SheetCache] = None,
 ) -> Optional[PendingCellWrite]:
-    """update_character_fate_date()가 쓸 셀을 쓰지 않고 돌려준다 — 호출측이
-    다른 쓰기와 한 요청으로 묶을 수 있게. "fate_date" 컬럼이 없으면 None.
+    """update_character_keyword_date()가 쓸 셀을 쓰지 않고 돌려준다 — 호출측이
+    다른 쓰기와 한 요청으로 묶을 수 있게. "keyword_date" 컬럼이 없으면 None.
     """
     _ws, header, rows = _load_character_sheet(spreadsheet, cache)
-    if "fate_date" not in header:
+    if "keyword_date" not in header:
         logger.warning(
-            "캐릭터 시트에 'fate_date' 컬럼이 없어 운명간섭 사용 기록을 건너뜁니다"
+            "캐릭터 시트에 'keyword_date' 컬럼이 없어 키워드 보정 사용 기록을 건너뜁니다"
         )
         return None
-    fate_col = header.index("fate_date") + 1
+    keyword_col = header.index("keyword_date") + 1
     row_number = _find_character_row_number(header, rows, char_name)
     # 컬럼 타입이 TEXT여야 날짜 시리얼로 바뀌지 않는다.
     return PendingCellWrite(
-        worksheet_title="캐릭터", row=row_number, col=fate_col, value=today
+        worksheet_title="캐릭터", row=row_number, col=keyword_col, value=today
     )
 
 

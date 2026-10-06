@@ -385,7 +385,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillTargetRuleAllAllies`    | 입력 무시, 시전자와 같은 진영 전원(시전자 자신 제외)              | `True`                   |
 
 `ignores_input_targets`는 커맨드에 적힌 대상 입력을 규칙이 무시하는지만
-뜻한다 — `fate_config_error()`가 "대상 추가" 모드를 걸러내는 데만 쓰고,
+뜻한다 — `keyword_config_error()`가 "대상 추가" 모드를 걸러내는 데만 쓰고,
 도발 리다이렉트 여부와는 무관하다(그쪽은 `ignores_taunt`가 정한다).
 `SkillTargetRuleColumn`/`SkillTargetRuleAllyColumn`/`SkillTargetRuleColumnRange`는 입력이 열 번호일 뿐 대상
 진영은 입력값과 무관하게 규칙이 고정한다는 점에 주의(`SkillTargetRuleColumnRange`는
@@ -627,9 +627,9 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
 
 ---
 
-## 운명간섭 · 부활 횟수
+## 키워드 보정 · 부활 횟수
 
-"캐릭터" 시트의 `revival_count`(정수)와 `fate_date`(YYYY-MM-DD) 두 컬럼이
+"캐릭터" 시트의 `revival_count`(정수)와 `keyword_date`(YYYY-MM-DD) 두 컬럼이
 근간이다. 컬럼 스키마는 [README.md#캐릭터-시트](README.md#캐릭터-시트) 참고.
 
 ### revival_count는 읽기 전용이다
@@ -655,47 +655,49 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
 | 턴당 코스트 +1 (4회 이상)  | `CombatStats[COST_PER_TURN]`이 읽을 때마다 반영 (`on_start_round()`가 매 라운드 이 값으로 회복하므로 하한 변동은 다음 라운드부터) |
 | 이동 코스트 +1 (4회 이상)  | `extensions.get_total_cost()`가 이동 파트마다 `extra_move_cost`를 얹는다     |
 
-### 운명간섭("+" 접미사)
+### 키워드 보정("+" 접미사)
 
-> **플레이어에게 보이는 이름은 "키워드 보정"이다.** 코드/문서의 내부 명칭만
-> `운명간섭`(`fate_*`)이고, 답글·계산식에 나가는 문구는 전부 "키워드 보정"으로
-> 통일한다.
+> 코드의 내부 명칭은 `keyword_*`이고, 문서와 답글·계산식에 나가는 문구는 전부
+> "키워드 보정"으로 통일한다.
 
-`parser.py`가 `[공격+/대상]`/`[스킬명+/대상]`을 `CommandPart.fate_boost=True`로
+`parser.py`가 `[공격+/대상]`/`[스킬명+/대상]`을 `CommandPart.keyword_boost=True`로
 파싱하고, 비전투 판정은 `bot/commands/noncombat.py`의 `parse_roll_command()`가
 `[판정+/스탯]`을 따로 다룬다(전투 시스템에는 판정 커맨드가 없다).
 
-- **보정치**: 기본 공격은 `FATE_INTERVENTION_ATTACK_BONUS`(15) 고정이고,
-  스킬은 "스킬_캐릭터" 시트의 `fate_mode`가 정한다(아래 "스킬별 보정 모드").
-  `command_calculator._apply_fate_boost_modifier()`가 계산기 생성 시점의
+- **보정치**: 기본 공격은 `KEYWORD_BOOST_ATTACK_BONUS`(15) 고정이고,
+  스킬은 "스킬_캐릭터" 시트의 `keyword_mode`가 정한다(아래 "스킬별 보정 모드").
+  `command_calculator._apply_keyword_boost_modifier()`가 계산기 생성 시점의
   대미지/회복에만 얹는다 — 이후 반격/반사가 만드는 파생 대미지는 시전자의
   선언 행동이 아니므로 대상이 아니다. 정수 보정은
   `IntValueModifier(applies_to_fixed=True)`라 배율보다 먼저 더해져 배율 보정을
   함께 받는다(스펙이 요구하는 "고정 대미지와 다른" 동작이 여기서 나온다).
-- **사용 조건**: `command_processors._validate_fate_boost()`가 전개 전에
-  검사하고, `fate_mode`를 비워 둔 스킬에 한해 "대미지 스킬인지"만 전개 후에
+- **사용 조건**: `command_processors._validate_keyword_boost()`가 전개 전에
+  검사하고, `keyword_mode`를 비워 둔 스킬에 한해 "대미지 스킬인지"만 전개 후에
   확인한다(효과 구현체마다 달라 전개해 봐야 알 수 있다). 어느 쪽이든 실패하면
   체력도 코스트도 소모되지 않는다.
-- **체력 20 소모**: `_apply_fate_intervention_cost()`가 대미지 파이프라인을
+- **체력 20 소모**: `_apply_keyword_boost_cost()`가 대미지 파이프라인을
   타지 않고 HP를 직접 깎는다(반사/방어 버프가 개입하면 안 되므로). 대신 결과를
   `source_labels=("키워드 보정",)`인 대미지 로그 엔트리로 남겨, 답글 표시와
   `write_back_changed_hp()`의 시트 반영이 기존 경로를 그대로 타게 한다.
 - **하루 1번 제한**: 일일 의뢰(`daily_quest_date`)와 같은 날짜 비교 방식이다.
-  영속 상태는 시트의 `fate_date`이고, 라이브 상태
-  (`CombatCharacter.fate_used`)는 배치 시점에
-  `CombatCharacterDataFromSpreadsheet.has_used_fate_on(오늘)`으로 한 번
-  확정한다 — 전투가 자정을 넘겨도 한 전투 안에서 판정 기준이 바뀌지 않는다.
-  봇 계층(`bot/commands/character.py`의 `mark_fate_used_if_needed()`)이 커맨드
-  처리 성공 후 시트에 오늘 날짜를 적는다. 하루에 전투가 두 번 이상 열리지
+  영속 상태는 시트의 `keyword_date`이고, 라이브 상태는 배치 시점에 그 값을
+  옮겨 받은 `CombatCharacter.keyword_date`다. `keyword_used`는 이 날짜를 **판정할
+  때마다** 오늘과 비교하므로, 결투/상시전투처럼 라운드 상한 없이 며칠 이어지는
+  전투에서도 자정이 지나면 제한이 풀린다(배치 시점에 bool로 확정해 두면 한
+  번 쓴 캐릭터가 그 전투가 끝날 때까지 막힌다). "오늘"은 `date.today()`라
+  컨테이너 시간대를 따르며, Dockerfile이 아니라 compose의 `TZ: Asia/Seoul`이
+  KST 자정 기준을 보장한다. 봇 계층(`bot/commands/character.py`의
+  `mark_keyword_used_if_needed()`)이 커맨드 처리 성공 후 시트에 오늘 날짜를
+  적는다. 하루에 전투가 두 번 이상 열리지
   않는다는 전제 덕에 리셋 절차 자체가 필요 없다는 것이 이 방식의 이점이다.
-  **`fate_date` 컬럼은 반드시 테이블 컬럼 타입이 `TEXT`여야 한다** —
+  **`keyword_date` 컬럼은 반드시 테이블 컬럼 타입이 `TEXT`여야 한다** —
   "캐릭터" 시트는 Google Sheets 테이블이고, 컬럼 타입이 `DATE`면
   `valueInputOption`이 RAW든 USER_ENTERED든 상관없이 `"YYYY-MM-DD"`가 날짜
   시리얼(예: 46274)로 저장되어 이후 비교가 영원히 거짓이 된다(2026-09-09에
   실제로 이 상태로 배포돼 하루 1번 제한이 무력화된 적이 있다). RAW 기록은
   방어선이 아니다 — `daily_quest_date`가 무사한 진짜 이유도 그 컬럼 타입이
   `TEXT`이기 때문이다.
-- **대련 제외**: `BattlefieldContext.allow_fate_intervention`을
+- **대련 제외**: `BattlefieldContext.allow_keyword_boost`를
   `PracticeBattlefieldContext`가 대련에서만 `False`로 덮는다 — 대련은 체력
   절반인 임시 캐릭터로 진행하고 체력 변동을 시트에 반영하지 않아, 되돌릴 수
   없는 자원 소비를 걸 수 없기 때문이다(`allow_item_usage`와 같은 패턴).
@@ -703,11 +705,11 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
   실제 체력에서 따로 빼고(아래 "결투" 참고), 상시전투는 아군이 애초에 실제
   체력으로 싸워 대가가 다른 체력 변동과 함께 시트에 반영된다.
 
-### 스킬별 보정 모드 (`fate_mode`)
+### 스킬별 보정 모드 (`keyword_mode`)
 
-스킬에 붙는 보정은 "스킬_캐릭터" 시트의 `fate_mode`/`fate_value`/
-`fate_effect_index` 세 컬럼이 정한다(값 목록은
-[SPREADSHEET_SCHEMA.md#fateboostmode](SPREADSHEET_SCHEMA.md#fateboostmode)).
+스킬에 붙는 보정은 "스킬_캐릭터" 시트의 `keyword_mode`/`keyword_value`/
+`keyword_effect_index` 세 컬럼이 정한다(값 목록은
+[SPREADSHEET_SCHEMA.md#keywordboostmode](SPREADSHEET_SCHEMA.md#keywordboostmode)).
 **비워 두면 기존 동작 그대로**라 마이그레이션이 필요 없다 — 대미지가 나오는
 스킬은 굴림 +10, 대미지가 없는 스킬은 "+"를 거부한다.
 
@@ -717,15 +719,15 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
 
 | 모드 | 반영 지점 |
 |---|---|
-| `굴림 보정` / `수치 강화` | `command_calculator._apply_fate_boost_modifier()` |
-| `버프 수치 강화` / `버프 스택 강화` | `command_expanders._apply_fate_buff_boost()` (`BuffAddData.value_override` / `stack_value`) |
+| `굴림 보정` / `수치 강화` | `command_calculator._apply_keyword_boost_modifier()` |
+| `버프 수치 강화` / `버프 스택 강화` | `command_expanders._apply_keyword_buff_boost()` (`BuffAddData.value_override` / `stack_value`) |
 | `대상 추가` | `command_processors.try_expansion_if_valid()`의 `target_count` 검증 |
 
 `수치 강화`가 퍼센트 효과에 걸릴 때는 배율을 하나 더 곱하지 않고 **계수 자체에
 %p를 더한다**(`_boost_coefficient()`) — 곱하면 시트에 적은 "+30%p"보다 강해진다.
 
 조합상 동작할 수 없는 설정(입력을 받지 않는 `target_rule`에 `대상 추가` 등)은
-`skill/models.py`의 `fate_config_error()`가 잡아 `[전투개시]` 시점에 admin
+`skill/models.py`의 `keyword_config_error()`가 잡아 `[전투개시]` 시점에 admin
 DM으로 경고한다. 전투를 세우지는 않는다 — 잘못 설정된 스킬도 보정만 빠질 뿐
 정상 동작하므로, 전투 전체를 막는 편이 손해가 크다.
 
@@ -805,9 +807,9 @@ DM으로 경고한다. 전투를 세우지는 않는다 — 잘못 설정된 스
 시점에 시트에서 읽어 채우고, 자진 기권으로 필드에서 빠져도 지우지 않는다
 (피해 정산이 기권자에게도 적용되므로).
 
-- **키워드 보정 대가**: `BattlefieldContext.fate_cost_hp()` /
-  `pay_fate_cost_hp()`를 결투 컨텍스트가 덮어 실제 체력에서 뺀다. 시트 반영은
-  봇 계층(`main.py`의 `_apply_duel_fate_cost()`)이 커맨드 처리 성공 후에 한다.
+- **키워드 보정 대가**: `BattlefieldContext.keyword_cost_hp()` /
+  `pay_keyword_cost_hp()`를 결투 컨텍스트가 덮어 실제 체력에서 뺀다. 시트 반영은
+  봇 계층(`main.py`의 `_apply_duel_keyword_cost()`)이 커맨드 처리 성공 후에 한다.
 - **피해 정산**: 결투가 끝나면 **승패와 무관하게** 참가자 전원이 그 결투에서
   받은 임시 체력 피해의 `DUEL_SETTLEMENT_DAMAGE_PERCENT`%(내림)를 실제 체력에서
   잃는다. 결투는 최대 체력 그대로 싸우므로 전멸한 쪽은 최대 체력의 절반을
@@ -872,7 +874,7 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
   `PendingCellWrite`를 모아 `write_back_changed_hp(extra_writes=...)`로
   넘기면 체력과 한 요청에 들어간다(키워드 보정 사용 날짜가 그렇게 탄다).
   쓸 시점을 호출측이 잡아야 하므로, 그런 쓰기 함수는 "바로 쓰기"와 "셀만
-  만들어 돌려주기"(`load_data.build_fate_date_write()`)를 나눠 둔다.
+  만들어 돌려주기"(`load_data.build_keyword_date_write()`)를 나눠 둔다.
 - 값·메모·병합처럼 종류가 다른 변경도 `spreadsheets.batchUpdate`의
   `updateCells`/`mergeCells` 요청으로 한 배열에 담으면 한 번이다
   (`field_sheet_renderer.render_public_field_sheet()`). gspread의

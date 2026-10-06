@@ -33,7 +33,7 @@ from battle.objects.passive_skill.models import (
     character_passive_config_error,
     field_effect_config_error,
 )
-from battle.objects.skill.models import fate_config_error
+from battle.objects.skill.models import keyword_config_error
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeBattleMode, SideType
 from battle.practice.round_manager import PracticeRoundManager
@@ -56,7 +56,7 @@ from bot.battle_reply_text import (
     merge_stackable_buff_add_lines,
     with_persistent_hp_footnote,
 )
-from bot.commands.character import mark_fate_used_if_needed
+from bot.commands.character import mark_keyword_used_if_needed
 from bot.field_sheet_renderer import (
     CHARM_ROW_COUNT,
     render_public_field_sheet,
@@ -754,8 +754,8 @@ def _check_enemy_skill_timing_config(state: "BotState") -> Optional[str]:
     )
 
 
-def _check_fate_boost_config(state: "BotState") -> Optional[str]:
-    """'스킬_캐릭터' 시트의 운명간섭 설정(fate_mode/fate_value/fate_effect_index)
+def _check_keyword_boost_config(state: "BotState") -> Optional[str]:
+    """'스킬_캐릭터' 시트의 키워드 보정 설정(keyword_mode/keyword_value/keyword_effect_index)
     중 조용히 무시될 조합이 있으면 admin에게만 보낼 경고 문구를 만든다.
 
     _check_enemy_skill_timing_config()와 같은 이유로 전투 개시 전에 확인하지만,
@@ -767,20 +767,20 @@ def _check_fate_boost_config(state: "BotState") -> Optional[str]:
             state.spreadsheet, cache=state.sheet_cache
         )
     except Exception:
-        _log_system_error("스킬 운명간섭 설정 검증")
+        _log_system_error("스킬 키워드 보정 설정 검증")
         return None
 
     problems = [
         error
         for skill_data in skill_dict.values()
-        if (error := fate_config_error(skill_data)) is not None
+        if (error := keyword_config_error(skill_data)) is not None
     ]
     if not problems:
         return None
 
     lines = "\n".join(f"- {problem}" for problem in problems)
     return (
-        "◊ '스킬_캐릭터' 시트의 키워드 보정(fate_mode) 설정에 문제가 있어 해당 "
+        "◊ '스킬_캐릭터' 시트의 키워드 보정(keyword_mode) 설정에 문제가 있어 해당 "
         f"스킬에는 보정이 적용되지 않습니다.\n{lines}"
     )
 
@@ -789,7 +789,7 @@ def _check_field_effect_config(state: "BotState") -> Optional[str]:
     """ "스킬_패시브" 시트에서 필드 효과와 캐릭터 패시브가 서로의 자리에 잘못
     들어간 조합을 찾아 admin에게만 보낼 경고를 만든다.
 
-    _check_fate_boost_config()와 같은 이유로 전투를 세우지는 않는다 — 어긋난
+    _check_keyword_boost_config()와 같은 이유로 전투를 세우지는 않는다 — 어긋난
     행 하나가 빠질 뿐인데 전투 전체를 막으면 손해가 크다. 다만 그 어긋남은
     전투 중에 "아무 일도 일어나지 않음"으로 드러나 원인을 짚기 어려우므로,
     개시 시점에 알려 둔다.
@@ -891,7 +891,7 @@ def _cmd_battle_start(
 
     # 키워드 보정 설정 오류는 전투를 세우지 않고, 아래에서 개시 결과와 함께
     # admin DM으로만 보낸다.
-    fate_config_warning = _check_fate_boost_config(state)
+    keyword_config_warning = _check_keyword_boost_config(state)
     field_effect_warning = _check_field_effect_config(state)
     charm_warning = _check_charm_config(state)
 
@@ -989,7 +989,7 @@ def _cmd_battle_start(
         admin_dm_text="\n\n".join(
             warning
             for warning in (
-                fate_config_warning,
+                keyword_config_warning,
                 field_effect_warning,
                 charm_warning,
                 charm_row_warning,
@@ -1358,7 +1358,7 @@ def _cmd_proxy(
             cache=state.sheet_cache,
             written_hp=state.session.sheet_hp,
         )
-        mark_fate_used_if_needed(state, char_id, command)
+        mark_keyword_used_if_needed(state, char_id, command)
 
         try:
             render_public_field_sheet(

@@ -6,7 +6,7 @@ from battle.core.battlefield_context import BattlefieldContext
 from battle.objects.buff.models import BuffData
 from battle.objects.character.combat_character import CombatCharacter
 from battle.objects.define import (
-    FATE_INTERVENTION_HP_COST,
+    KEYWORD_BOOST_HP_COST,
     BattlefieldColumnIndex,
     FactionType,
 )
@@ -94,25 +94,25 @@ class PracticeBattlefieldContext(BattlefieldContext):
         return False
 
     @property
-    def allow_fate_intervention(self) -> bool:
+    def allow_keyword_boost(self) -> bool:
         """결투와 상시전투에서 허용한다 — 대련을 막는 이유인 "되돌릴 수 없는
         자원을 임시 캐릭터에게 걸 수 없다"가 둘에는 해당하지 않는다. 결투는
-        대가를 시트의 실제 체력에서 따로 빼고(`pay_fate_cost_hp()`), 상시전투는
+        대가를 시트의 실제 체력에서 따로 빼고(`pay_keyword_cost_hp()`), 상시전투는
         애초에 실제 체력으로 싸운다."""
         return self.mode.stakes_sheet_hp
 
-    def fate_cost_hp(self, character: CombatCharacter) -> int:
+    def keyword_cost_hp(self, character: CombatCharacter) -> int:
         if self.mode != PracticeBattleMode.DUEL:
-            return super().fate_cost_hp(character)
+            return super().keyword_cost_hp(character)
         return self.persistent_hp[character.id].curr_hp
 
-    def pay_fate_cost_hp(self, character: CombatCharacter) -> tuple[int, int, bool]:
+    def pay_keyword_cost_hp(self, character: CombatCharacter) -> tuple[int, int, bool]:
         if self.mode != PracticeBattleMode.DUEL:
-            return super().pay_fate_cost_hp(character)
+            return super().pay_keyword_cost_hp(character)
         # 임시 체력은 그대로 두고 실제 체력만 깎는다. 시트 반영은 봇 계층이
         # 커맨드 처리 성공 후에 이 값을 읽어 수행한다.
         hp = self.persistent_hp[character.id]
-        hp.curr_hp -= FATE_INTERVENTION_HP_COST
+        hp.curr_hp -= KEYWORD_BOOST_HP_COST
         return hp.curr_hp, hp.max_hp, True
 
     def is_eliminated(self, char_id: CharacterId) -> bool:
