@@ -488,6 +488,35 @@ def test_investigation_start_uses_location_description_as_menu_intro(monkeypatch
     assert "▸ [항구]" in result
 
 
+def test_investigation_start_offers_free_explore_without_active_quests(monkeypatch):
+    state = _make_state("user1")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(description_quest="항구 마을이다."),
+            [],
+        ),
+    )
+
+    result, _log_info = handle_investigation_start("user1", state)
+
+    assert result == "항구 마을이다.\n▸ [자율 탐사]"
+
+
+def test_investigation_start_unavailable_without_active_location(monkeypatch):
+    state = _make_state("user1")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (None, []),
+    )
+
+    result, _log_info = handle_investigation_start("user1", state)
+
+    assert result == "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
+
+
 def test_investigation_venue_choice_formats_quest_card(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
@@ -982,6 +1011,21 @@ def test_daily_quest_start_unavailable_when_any_pool_empty(monkeypatch):
     result, log_info = handle_daily_quest_start(acct, state)
 
     assert "받을 수 있는 의뢰가 없습니다" in result
+
+
+def test_investigation_venue_choice_free_explore_without_quests(monkeypatch):
+    state = _make_state("user1")
+    session = _investigation_session(acct="user1")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), []),
+    )
+
+    result, _log_info = handle_investigation_venue_choice(session, "자율 탐사", state)
+
+    assert result.endswith("@test-world")
+    assert session.ended is True
 
 
 def test_failed_venue_choice_clears_stale_quest_mapping(monkeypatch):
