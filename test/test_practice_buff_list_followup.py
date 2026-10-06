@@ -74,6 +74,14 @@ def test_buff_list_goes_to_folded_followup():
     assert followup["visibility"] == "unlisted"
 
 
+def test_buff_list_followup_mentions_participants_like_game_post():
+    calls, _ = _post(_ps(), "◊ [2라운드] 선공")
+
+    main, followup = calls
+    assert main["status"].startswith("@a ")
+    assert followup["status"].startswith("@a ")
+
+
 def test_no_followup_when_battle_ended():
     calls, _ = _post(_ps(), "◊ 상시전투 종료", ended=True)
 

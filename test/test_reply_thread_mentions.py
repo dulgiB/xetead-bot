@@ -6,6 +6,7 @@ import os
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
+from bot.commands import admin as admin_module  # noqa: E402
 from bot import main as main_module  # noqa: E402
 from bot.main import ADMIN_MASTODON_ID, MastodonBotListener  # noqa: E402
 from test_bot_admin import (  # noqa: E402
@@ -97,3 +98,20 @@ def test_split_reply_repeats_the_mentions_on_every_chunk():
     calls = mastodon.status_post_calls
     assert len(calls) > 1
     assert all(c["status"].startswith("@user_b @user_a ") for c in calls)
+
+
+def test_game_post_calc_followup_repeats_the_thread_mentions():
+    mastodon = _FakeMastodon()
+    state = _make_state()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+    listener._reply_mentions = {10: ["user_b", "user_a"]}
+    result = admin_module.AdminCommandResult(
+        reply_text="", game_post_text="◊ 결투 종료", game_post_calc_text="1d6 = 3"
+    )
+
+    listener._post_admin_result(result, 10, "user_b", "public", state)
+
+    main, calc = mastodon.status_post_calls
+    assert calc["spoiler_text"] == "계산식"
+    assert main["status"].startswith("@user_b @user_a ")
+    assert calc["status"].startswith("@user_b @user_a ")
