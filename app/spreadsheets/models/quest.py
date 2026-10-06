@@ -43,10 +43,9 @@ class DailyQuestPools:
 class QuestLocationData:
     """'일반 의뢰' 시트에서 장소 자체를 나타내는 행.
 
-    `id`가 장소 이름이고 `name`이 비어 있는 행이 장소 행이다. 그 장소에
-    속한 의뢰 행들의 `id`는 `{장소 이름}_{의뢰 type}`로 고정된다
-    (`load_general_quest_sheet` 참고). 장소 행에는 수주 상태 개념이 없어
-    `description_normal`은 쓰지 않고 `description_quest`만 읽는다.
+    `name`이 비어 있는 행이 장소 행이다. 현재 장소와 그 장소의 의뢰는 둘 다
+    `active`로 고른다(`load_general_quest_sheet` 참고). 장소 행에는 수주 상태
+    개념이 없어 `description_normal`은 쓰지 않고 `description_quest`만 읽는다.
     """
 
     id: str
@@ -64,7 +63,7 @@ class QuestLocationData:
 
 @dataclass(frozen=True)
 class QuestData:
-    """'일반 의뢰' 시트에서 실제 의뢰를 나타내는 행 (`id` = `{장소 이름}_{type}`)."""
+    """'일반 의뢰' 시트에서 실제 의뢰를 나타내는 행."""
 
     id: str
     active: bool

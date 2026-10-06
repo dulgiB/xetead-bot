@@ -812,7 +812,9 @@ def handle_daily_quest_roll(
 def handle_investigation_start(
     acct: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[상시조사] → '일반 의뢰' 시트의 활성 장소를 읽어 선택지 메뉴 반환."""
+    """[상시조사] → '일반 의뢰' 시트의 활성 장소를 읽어 선택지 메뉴 반환.
+
+    활성 의뢰가 하나도 없어도 [자율 탐사]는 남는다."""
     command_text = "[상시조사]"
 
     try:
@@ -825,18 +827,19 @@ def handle_investigation_start(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    if location is None or not quests:
+    if location is None:
         msg = "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    lines = [location.description_quest]
+    lines = [location.description_quest, ""]
     for quest in quests:
         lines.append(f"▸ [{quest.location}]")
     lines.append(f"▸ [{FREE_EXPLORE_LABEL}]")
     reply = "\n".join(lines)
+    venues = [q.location for q in quests] + [FREE_EXPLORE_LABEL]
     return reply, NoncombatLogInfo(
         command_text=command_text,
-        result=f"메뉴 제공: {', '.join(q.location for q in quests)}",
+        result=f"메뉴 제공: {', '.join(venues)}",
     )
 
 
@@ -868,24 +871,25 @@ def handle_investigation_venue_choice(
             command_text=command_text, result=msg, error_trace=traceback.format_exc()
         )
 
-    if location is None or not quests:
+    if location is None:
         msg = "◊ 등록되지 않은 장소입니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    if resolve_matching_key(venue_name, [FREE_EXPLORE_LABEL]) == FREE_EXPLORE_LABEL:
+        session.ended = True
+        upsert_investigation_session(
+            state.spreadsheet, session, cache=state.sheet_cache
+        )
+        msg = (
+            "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
+            f"정보를 수집할 수 있다. @{WORLD_MASTODON_ID}"
+        )
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     venue_lookup = {q.location: q for q in quests}
     matched_venue = resolve_matching_key(venue_name, venue_lookup.keys())
     quest = venue_lookup.get(matched_venue)
     if quest is None:
-        if resolve_matching_key(venue_name, [FREE_EXPLORE_LABEL]) == FREE_EXPLORE_LABEL:
-            session.ended = True
-            upsert_investigation_session(
-                state.spreadsheet, session, cache=state.sheet_cache
-            )
-            msg = (
-                "다른 곳에 가보기로 했다. 자유롭게 일대를 돌아다니며 "
-                f"정보를 수집할 수 있다. @{WORLD_MASTODON_ID}"
-            )
-            return msg, NoncombatLogInfo(command_text=command_text, result=msg)
         # 남아 있는 quest_id를 지우지 않으면, 이 답글이 옛 의뢰의 개요로
         # 등록되어 [수락] 시 엉뚱한 의뢰가 수주된다.
         session.quest_id = None
