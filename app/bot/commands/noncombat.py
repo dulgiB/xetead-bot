@@ -831,7 +831,7 @@ def handle_investigation_start(
         msg = "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    lines = [location.description_quest]
+    lines = [location.description_quest, ""]
     for quest in quests:
         lines.append(f"▸ [{quest.location}]")
     lines.append(f"▸ [{FREE_EXPLORE_LABEL}]")
