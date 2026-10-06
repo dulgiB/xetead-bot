@@ -40,7 +40,7 @@ from battle.objects.skill.target_functions import (
 )
 
 if TYPE_CHECKING:
-    from battle.objects.skill.models import SkillData
+    from battle.objects.skill.models import SkillData, SkillEffectBase
 
 
 def _mark_ignores_taunt_if_column_target(
@@ -96,6 +96,20 @@ def _apply_keyword_buff_boost(
             else context.get_buff_data_by_id(buff_add.buff_id).value
         )
         buff_add_list[i] = replace(buff_add, value_override=base_value + bonus)
+
+
+def _keyword_boosted_effect(
+    skill_data: "SkillData", effect_index: int, effect: "SkillEffectBase"
+) -> "SkillEffectBase":
+    """수치를 전개 시점에 확정하는 효과(precomputes_value)에 '수치 강화'를 얹는다."""
+    if (
+        skill_data.keyword_mode is not KeywordBoostMode.VALUE_BOOST
+        or skill_data.keyword_effect_index != effect_index
+        or not effect.precomputes_value
+        or effect.value is None
+    ):
+        return effect
+    return replace(effect, value=effect.value + skill_data.keyword_boost_value)
 
 
 def expand_admin_command(
@@ -268,7 +282,11 @@ def expand_character_command(
 
             data_per_effect_list: list[CommandPartDataPerEffect] = []
 
-            for skill_effect in skill_used.data.effects:
+            for effect_index, skill_effect in enumerate(skill_used.data.effects):
+                if part.keyword_boost:
+                    skill_effect = _keyword_boosted_effect(
+                        skill_used.data, effect_index, skill_effect
+                    )
                 # expand()가 즉시 부수효과를 일으키므로 그 전에 확정해야 한다.
                 debuff_clear_list = skill_effect.get_debuff_clear_targets(
                     context, target_characters

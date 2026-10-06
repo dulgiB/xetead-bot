@@ -135,6 +135,8 @@ def _apply_keyword_boost_modifier(
         # 설정 오류는 keyword_config_error가 이미 admin에게 알렸다. 커맨드를 통째로
         # 실패시키면 플레이어만 손해이므로 보정 없이 원래 스킬대로 진행한다.
         return
+    if effect.precomputes_value:
+        return
 
     # SkillValueType과 ValueType은 값("퍼센트")이 같은 별개의 str Enum이라,
     # 둘 중 무엇이 들어와도 같은 의미로 받으려면 `is`가 아니라 `==`여야 한다.

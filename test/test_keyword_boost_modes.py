@@ -13,6 +13,7 @@ from battle.core.commands.parser import parse_character_command
 from battle.exceptions import CommandValidationError
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
+    KEYWORD_BOOST_HP_COST,
     BattlefieldColumnIndex,
     BuffType,
     FactionType,
@@ -26,6 +27,7 @@ from battle.objects.skill.effects import (
     SkillEffectAddBuff,
     SkillEffectDamage,
     SkillEffectHeal,
+    SkillEffectHealAndFillBuffStack,
 )
 from battle.objects.skill.models import SkillData, keyword_config_error
 from helpers import get_test_preset
@@ -195,6 +197,46 @@ def test_value_boost_adds_flat_value_to_integer_heal():
     entries = _heal_entries(result)
     assert len(entries) == 1
     assert entries[0].value == 10 + 15
+
+
+@pytest.mark.parametrize(
+    "target_missing_hp, expected_target_heal, expected_overflow",
+    [(80, 60, 0), (50, 50, 10)],
+)
+def test_value_boost_raises_coefficient_of_precomputed_heal(
+    target_missing_hp, expected_target_heal, expected_overflow
+):
+    skill = _skill(
+        "HealSkill",
+        effects=[
+            SkillEffectHealAndFillBuffStack(
+                ValueSourceType.INCREASED_BUFF_STACK,
+                300,
+                SkillValueType.PERCENT,
+                _BUFF_ID,
+                None,
+            )
+        ],
+        keyword_mode=KeywordBoostMode.VALUE_BOOST,
+        keyword_value=300,
+    )
+    context = _make_context(skill, buff=_buff_data(max_stack=10))
+    context.characters[_ALLY].status.curr_hp -= target_missing_hp
+    context.characters[_CASTER].status.curr_hp -= 50
+    caster_hp_before = context.characters[_CASTER].status.curr_hp
+    ally_hp_before = context.characters[_ALLY].status.curr_hp
+
+    _run(context, f"[HealSkill+/{_ALLY.name}]")
+
+    # 빈 스택 10 × 600% = 60
+    assert (
+        context.characters[_ALLY].status.curr_hp - ally_hp_before
+        == expected_target_heal
+    )
+    assert (
+        context.characters[_CASTER].status.curr_hp - caster_hp_before
+        == expected_overflow - KEYWORD_BOOST_HP_COST
+    )
 
 
 def test_value_boost_targets_only_the_indexed_effect():
