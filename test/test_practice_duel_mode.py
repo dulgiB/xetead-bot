@@ -385,6 +385,7 @@ def test_settlement_floors_at_zero_and_calls_world(monkeypatch):
     assert f"▹ {_B.name} | -15 → 0/100※" in post
     assert (
         f"◊ {_B.name}의 체력이 0이 되어 사망 처리됩니다."
+        " 이후 운명간섭 키워드가 공지되기 전까지 일시적으로 활동할 수 없습니다."
         f" @{main_module.WORLD_MASTODON_ID}" in post
     )
 
