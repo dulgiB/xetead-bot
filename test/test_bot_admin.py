@@ -2146,14 +2146,14 @@ def test_world_account_can_start_investigation_battle(monkeypatch):
             1,
             0,
             "[상시전투] [배치/적 캐릭터/적군 1열]",
-            extra_mentions=["moirak_test"],
+            extra_mentions=["ally_acct"],
         )
     )
 
     assert len(state.practices) == 1
     ps = _only_practice(state)
     assert ps.is_investigation
-    assert ps.expected_accts == ["moirak_test"]
+    assert ps.expected_accts == ["ally_acct"]
     assert "상시전투 준비" in mastodon.status_post_calls[-1]["status"]
 
 
@@ -2182,7 +2182,7 @@ def test_world_account_cannot_use_other_admin_commands(monkeypatch):
 def _start_active_investigation(
     state: BotState,
     *,
-    ally_acct: str = "ally_test",
+    ally_acct: str = "ally_acct",
     active_post_id: int = 5000,
     enemy_max_hp: int = 500,
 ) -> PracticeBattleState:
