@@ -141,3 +141,37 @@ def test_investigation_start_calls_on_battle_start_after_placement(monkeypatch):
     main_module._start_investigation_battle(state, ps)
 
     assert placed_when_called == [2]
+
+
+def test_restart_after_failed_post_moves_instead_of_duplicating(monkeypatch):
+    ctx, ps, state = _state_and_session()
+    placed_when_called = _record_on_battle_start(monkeypatch, ctx)
+    main_module._start_practice_battle(state, ps)
+
+    ps.declared["acct_b"] = (SideType.SIDE_2, BattlefieldColumnIndex(3))
+    main_module._start_practice_battle(state, ps)
+
+    b = CharacterId("B")
+    b_faction = ctx.characters[b].faction
+    slots = [
+        col for col, chars in ctx.position_map[b_faction].items() if b in chars.values()
+    ]
+    assert slots == [BattlefieldColumnIndex(3)]
+    assert ps.round_n == 1
+    assert placed_when_called == [2]
+
+
+def test_restart_after_failed_post_can_switch_team(monkeypatch):
+    ctx, ps, state = _state_and_session()
+    _record_on_battle_start(monkeypatch, ctx)
+    ps.declared["acct_c"] = (SideType.SIDE_1, BattlefieldColumnIndex(1))
+    state.char_dict["acct_c"] = get_test_preset("C")
+    main_module._start_practice_battle(state, ps)
+
+    ps.declared["acct_c"] = (SideType.SIDE_2, BattlefieldColumnIndex(1))
+    main_module._start_practice_battle(state, ps)
+
+    assert ctx.get_side(CharacterId("C")) == SideType.SIDE_2
+    assert [c.id for c in ctx.get_side_characters(SideType.SIDE_1)] == [
+        CharacterId("A")
+    ]
