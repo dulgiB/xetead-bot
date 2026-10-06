@@ -287,7 +287,7 @@ def _quest(
 ) -> QuestData:
     return QuestData(
         id=f"{location_id}_{quest_type}",
-        active=False,
+        active=True,
         location=venue,
         name=name,
         description_quest=description_quest,

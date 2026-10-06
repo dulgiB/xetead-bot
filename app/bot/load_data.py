@@ -437,12 +437,11 @@ def load_daily_quest_result_messages(
 def load_general_quest_sheet(
     spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache] = None
 ) -> tuple[Optional[QuestLocationData], list[QuestData]]:
-    """'일반 의뢰' 시트를 읽어 (활성 장소, 그 장소에 속한 의뢰 목록)을 반환한다.
+    """'일반 의뢰' 시트를 읽어 (활성 장소, 활성 의뢰 목록)을 반환한다.
 
-    시트의 각 행은 `name`이 비어 있으면 장소 행(id=장소 이름), 채워져 있으면
-    의뢰 행(id=`{장소 이름}_{type}`)이다. `active=TRUE`인 장소 행이 현재
-    위치이며, 그 장소의 id를 접두사로 갖는 의뢰 행들만 반환한다. 활성 장소가
-    없으면 (None, [])을 반환한다.
+    시트의 각 행은 `name`이 비어 있으면 장소 행, 채워져 있으면 의뢰 행이다.
+    `active=TRUE`인 장소 행이 현재 위치이고, 의뢰 행도 `active=TRUE`인 것만
+    반환한다. 활성 장소가 없으면 (None, [])을 반환한다.
     """
     ws = _worksheet(spreadsheet, "일반 의뢰", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
@@ -458,11 +457,10 @@ def load_general_quest_sheet(
     if active_location is None:
         return None, []
 
-    prefix = f"{active_location.id}_"
     quests = [
         QuestData.from_dict(r)
         for r in records
-        if r.get("name") and str(r.get("id", "")).startswith(prefix)
+        if r.get("name") and parse_spreadsheet_bool(r.get("active", False))
     ]
     return active_location, quests
 
