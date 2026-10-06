@@ -1743,6 +1743,14 @@ def _apply_practice_battle_end_effects(
     return "\n\n".join(block for block in [body, *notices] if block)
 
 
+def _duel_death_notice(name: str) -> str:
+    return (
+        f"◊ {escape_markdown(name)}의 체력이 0이 되어 사망 처리됩니다."
+        " 이후 운명간섭 키워드가 공지되기 전까지 일시적으로 활동할 수 없습니다."
+        f" @{WORLD_MASTODON_ID}"
+    )
+
+
 def _move_battle_end_hp_to_sheet(
     state: "BotState", ps: PracticeBattleState, entries: list[BattleLogEntry]
 ) -> tuple[list[BattleLogEntry], list[str]]:
@@ -1810,10 +1818,7 @@ def _move_battle_end_hp_to_sheet(
             persistent.curr_hp = change.curr_hp
 
     notices = [
-        f"◊ {escape_markdown(change.name)}의 체력이 0이 되어 사망 처리됩니다."
-        f" @{WORLD_MASTODON_ID}"
-        for change in changes
-        if change.curr_hp == 0
+        _duel_death_notice(change.name) for change in changes if change.curr_hp == 0
     ]
     if failed:
         notices.append(
@@ -1897,11 +1902,7 @@ def _apply_duel_damage_settlement(
             dead_names.append(change.name)
 
     blocks = [format_log_entry_block(ps.context, entries, "결투 피해 정산")]
-    blocks += [
-        f"◊ {escape_markdown(name)}의 체력이 0이 되어 사망 처리됩니다."
-        f" @{WORLD_MASTODON_ID}"
-        for name in dead_names
-    ]
+    blocks += [_duel_death_notice(name) for name in dead_names]
     if failed:
         blocks.append(
             "⚠️ 다음 캐릭터의 실제 체력 반영에 실패했습니다. 관리자가 직접"
