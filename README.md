@@ -543,9 +543,9 @@ SSH로 붙어 체크아웃을 갱신하고 `bot` 컨테이너를 재빌드·재�
 | `BuffReflect`                             | 반사 — 받은 대미지를 공격자에게 되돌림                        |
 | `BuffGuardReflect`                        | 물리 대미지 80% 경감 + 마법 대미지 무효화 + 경감 전 원래 대미지 50% 공격자에게 반사 (물리/마법 공통, 도트 등 FIXED 값 파생 대미지 포함) |
 | `BuffSacrifice`                           | 희생 방어 — 보호 대상이 받을 공격을 대신 맞음                   |
-| `BuffFormation`                           | 진형 밀집 시 받는 대미지 감소                            |
-| `BuffFracture`                            | [균열] 적층형 순수 마커 디버프 (다른 효과가 스택을 조회해 활용)        |
-| `BuffCatastrophe`                         | [재앙] 적층형 순수 마커 — 전투 종료 시 스택×3만큼 자신의 체력 소모     |
+| `BuffTeamDamageReduction`                           | 진형 밀집 시 받는 대미지 감소                            |
+| `BuffDebuffStackMark`                            | [균열] 적층형 순수 마커 디버프 (다른 효과가 스택을 조회해 활용)        |
+| `BuffBattleEndPenalty`                         | [재앙] 적층형 순수 마커 — 전투 종료 시 스택×3만큼 자신의 체력 소모     |
 | `BuffStackingMark`                        | 범용 적층형 순수 마커 (재앙/균열과 동일 목적, 별도 식별가 필요할 때)     |
 | `BuffConditionalDamage`                   | 적 후행 시 조건이 만족되면 고정 대미지 부여 (Condition 조합 필수) |
 | `BuffApplyDebuffOnDealingDamage`          | 대미지를 줄 때마다 대상에게 지정 버프(디버프) 부여               |
@@ -555,7 +555,7 @@ SSH로 붙어 체크아웃을 갱신하고 `bot` 컨테이너를 재빌드·재�
 | `BuffCounterDamageOnEnemyMove`            | 사거리 내 적이 이동할 때마다 반격 대미지 (대상 디버프 스택에 비례)     |
 | `BuffHealAndBuffStackOnDealingDamage`     | 대미지를 줄 때마다 그 대미지의 %만큼 자가 회복 + 조건 충족 시 참조 버프 1스택 부여 (버프_패시브 전용) |
 | `BuffReduceCostNextRound`                 | 다음 라운드 시작 시 1회, 코스트를 지정한 만큼 감소             |
-| `BuffIgnite`                              | 부여 시점 대상의 열을 저장해두는 디버프. 지속시간이 끝나는 라운드 종료 시점에 대상이 그 열에 그대로 있으면 부여자 공격 굴림 150% 대미지. 서로 다른 열로 부여되면 동시에 여러 개 유지 가능(재부여 판정에 열 값도 반영) |
+| `BuffDelayedColumnBurst`                              | 부여 시점 대상의 열을 저장해두는 디버프. 지속시간이 끝나는 라운드 종료 시점에 대상이 그 열에 그대로 있으면 부여자 공격 굴림 150% 대미지. 서로 다른 열로 부여되면 동시에 여러 개 유지 가능(재부여 판정에 열 값도 반영) |
 | `BuffNextBasicAttackPercentOfTargetMaxHp` | 홀더의 기본 공격(스킬 아님)이 가하는 대미지를 대상 최대체력의 value%로 대체 (피격 시에는 미발동) |
 
 ### 도발 상세

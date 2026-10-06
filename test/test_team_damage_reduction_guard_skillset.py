@@ -38,7 +38,7 @@ def _buff_dict() -> dict[str, BuffData]:
         "Formation": BuffData.from_dict(
             {
                 "id": "Formation",
-                "buff_name": "BuffFormation",
+                "buff_name": "BuffTeamDamageReduction",
                 "duration_turn_value": 1,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
@@ -201,7 +201,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "buff_id_1": "도발",
                 "buff_stack_cap_1": "",
                 "target_override_1": "",
-                "effect_2": "SkillEffectAddBuffIfHolderHasFormationBuff",
+                "effect_2": "SkillEffectAddBuffIfHolderHasTeamDamageReduction",
                 "condition_2": "",
                 "condition_value_2": "",
                 "value_source_2": "",
@@ -223,7 +223,7 @@ def _skill_dict() -> dict[str, SkillData]:
                 "target_rule": "SkillTargetRuleAllyColumn",
                 "target_count": 1,
                 "cost": 3,
-                "effect_0": "SkillEffectShieldOrReflectIfTargetHasFormationBuff",
+                "effect_0": "SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction",
                 "condition_0": "",
                 "condition_value_0": "",
                 "value_source_0": "",

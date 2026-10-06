@@ -967,7 +967,7 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
 - **예시가 필요한 코드 주석**(정규식 문자 집합 설명 등)도 마찬가지다. "실제
   스프레드시트에 이런 사례가 있어서"라는 이유로 실제 캐릭터/스킬명을 예시로
   드는 대신, 지어낸 일반 이름(`스킬_1`, `대상_1` 등)을 쓴다.
-- 버프처럼 여러 캐릭터가 공유하는 범용 게임 시스템 명칭(`재앙`/`BuffCatastrophe`,
+- 버프처럼 여러 캐릭터가 공유하는 범용 게임 시스템 명칭(`재앙`/`BuffBattleEndPenalty`,
   `도발`/`BuffTaunt` 등)은 특정 캐릭터를 특정하지 않으므로 예외로 둔다.
 - **커밋하기 전에** diff와 커밋 메시지 초안에 실제 고유명사가 없는지 스스로
   확인한다 — 실수로 들어간 뒤 발견하는 것보다 애초에 안 넣는 편이 훨씬 싸다.
@@ -1020,17 +1020,17 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
 4. 스프레드시트 "버프" 시트에 `buff_name` 컬럼(데이터클래스 필드명은 `buff_class_name`)에 클래스 이름 등록
 
 같은 부여자가 같은 대상에게 값(예: 열 번호)만 다르게 여러 번 부여했을 때 하나로
-병합되지 않고 동시에 여러 개 유지돼야 하는 버프(`BuffIgnite` 등)는
+병합되지 않고 동시에 여러 개 유지돼야 하는 버프(`BuffDelayedColumnBurst` 등)는
 `PARTITION_UID_BY_VALUE: ClassVar[bool] = True`를 오버라이드한다. 기본값
 `False`는 기존처럼 (given_by, applied_to, buff_class_name) 기준으로만
 재부여를 판정한다(값이 달라도 지속시간만 갱신하고 값을 덮어씀).
 
 부여자가 전장의 캐릭터여야 동작하는 버프(부여자에게 공격을 유도하거나
 부여자의 스탯으로 대미지를 굴리는 것 — `BuffTaunt`/`BuffSacrifice`/
-`BuffIgnite`)는 `REQUIRES_GIVER_CHARACTER: ClassVar[bool] = True`를 켠다.
+`BuffDelayedColumnBurst`)는 `REQUIRES_GIVER_CHARACTER: ClassVar[bool] = True`를 켠다.
 admin의 `[버프부여]`가 부여자 생략("시스템")을 거부하는 근거다 — 빠뜨리면
 공격이 전장에 없는 "시스템"으로 유도돼 조용히 사라진다. 부여 시점의 대상
-상태를 값으로 잡아 두는 버프(`BuffIgnite`의 열)는 `snapshot_value_on_add()`도
+상태를 값으로 잡아 두는 버프(`BuffDelayedColumnBurst`의 열)는 `snapshot_value_on_add()`도
 오버라이드해야 admin 부여에서 그 값이 채워진다(스킬 경로는 효과 구현체가
 `value_override`로 채운다).
 

@@ -31,7 +31,7 @@ def _buff_dict() -> dict[str, BuffData]:
         "재앙": BuffData.from_dict(
             {
                 "id": "재앙",
-                "buff_name": "BuffCatastrophe",
+                "buff_name": "BuffBattleEndPenalty",
                 "duration_turn_value": "",
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",

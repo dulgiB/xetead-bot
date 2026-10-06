@@ -46,7 +46,7 @@ PASSIVE_SKILL_ID = "PassiveSkill"
 def make_ignite_buff_data(duration_turn_value: int = 2) -> BuffData:
     return BuffData(
         id=IGNITE_BUFF_ID,
-        buff_class_name="BuffIgnite",
+        buff_class_name="BuffDelayedColumnBurst",
         duration_turn_value=duration_turn_value,
         duration_count_value=None,
         duration_count_deduct_condition=None,

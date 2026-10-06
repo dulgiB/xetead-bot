@@ -73,7 +73,7 @@ def _make_state(started: bool = True) -> BotState:
         _buff(TAUNT_BUFF_ID, "BuffTaunt", turns=1),
         _buff(DOT_BUFF_ID, "BuffDamageOverTime", value=7),
         _buff(HOT_BUFF_ID, "BuffHealOverTime", value=5),
-        _buff(IGNITE_BUFF_ID, "BuffIgnite", turns=1),
+        _buff(IGNITE_BUFF_ID, "BuffDelayedColumnBurst", turns=1),
         _buff(STACK_BUFF_ID, "BuffStackingMark", turns=3, max_stack=3),
     ]
     state.session = BattleSession(buff_dict={b.id: b for b in buffs}, skill_dict={})

@@ -2,8 +2,8 @@ from .effect_add_buff import SkillEffectAddBuff  # noqa: F401
 from .effect_add_buff_at_target_column import (  # noqa: F401
     SkillEffectAddBuffAtTargetColumn,
 )
-from .effect_add_buff_if_holder_has_formation_buff import (  # noqa: F401
-    SkillEffectAddBuffIfHolderHasFormationBuff,
+from .effect_add_buff_if_holder_has_team_damage_reduction import (  # noqa: F401
+    SkillEffectAddBuffIfHolderHasTeamDamageReduction,
 )
 from .effect_add_buff_if_target_has_referenced_buff import (  # noqa: F401
     SkillEffectAddBuffIfTargetHasReferencedBuff,
@@ -35,7 +35,7 @@ from .effect_heal_and_fill_buff_stack import (  # noqa: F401
 from .effect_move import SkillEffectMove  # noqa: F401
 from .effect_remove_debuffs import SkillEffectRemoveDebuffs  # noqa: F401
 from .effect_revival_count_floor import SkillEffectRevivalCountFloor  # noqa: F401
-from .effect_shield_or_reflect_if_target_has_formation_buff import (  # noqa: F401
-    SkillEffectShieldOrReflectIfTargetHasFormationBuff,
+from .effect_shield_or_reflect_if_target_has_team_damage_reduction import (  # noqa: F401
+    SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction,
 )
 from .effect_splash_along_path import SkillEffectSplashAlongPath  # noqa: F401

@@ -55,7 +55,7 @@ def _dot_buff(value: int) -> BuffData:
 def _catastrophe_buff() -> BuffData:
     return BuffData(
         id="재앙",
-        buff_class_name="BuffCatastrophe",
+        buff_class_name="BuffBattleEndPenalty",
         duration_turn_value=None,
         duration_count_value=None,
         duration_count_deduct_condition=None,

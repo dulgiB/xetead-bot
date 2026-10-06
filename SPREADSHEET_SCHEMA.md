@@ -237,8 +237,8 @@
 | `SkillEffectAddBuffAtTargetColumn`               | 대상의 현재 위치(열)를 스냅샷한 수치로 buff_id 버프 부여(부여 이후 대상이 이동해도 이미 부여된 버프의 수치는 갱신되지 않음) |
 | `SkillEffectAddBuffPerDamagedColumn`             | holder 기준 좌우 value열(자신의 열 포함) 중 이번 라운드에 아군이 피격된 **열의 개수**만큼 buff_id 스택 부여(한 열에서 여러 명이 맞아도 1스택). value는 수치가 아니라 반경. 패시브 전용 — 라운드 확정 후에 평가된다 |
 | `SkillEffectRemoveDebuffs`                       | 대상의 패시브가 아닌 디버프를 전부 제거                                         |
-| `SkillEffectAddBuffIfHolderHasFormationBuff`     | 시전자가 [Formation] 버프를 보유한 상태일 때만 대상에게 버프 부여                     |
-| `SkillEffectShieldOrReflectIfTargetHasFormationBuff` | 대상이 [Formation] 계열 버프 보유 시 `reference_buff_id_N` 버프를, 아니면 `buff_id_N` 버프를 부여. `reference_buff_id_N`을 비우면 항상 `buff_id_N`만 부여한다 |
+| `SkillEffectAddBuffIfHolderHasTeamDamageReduction`     | 시전자가 [Formation] 버프를 보유한 상태일 때만 대상에게 버프 부여                     |
+| `SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction` | 대상이 [Formation] 계열 버프 보유 시 `reference_buff_id_N` 버프를, 아니면 `buff_id_N` 버프를 부여. `reference_buff_id_N`을 비우면 항상 `buff_id_N`만 부여한다 |
 | `SkillEffectConsumeStackForDamage`               | 시전자 자신의 적층형 버프 스택을 소모하며 그 소모량 × value%만큼 **고정 대미지**. 주는/받는 대미지 버프의 배율을 받지 않는다(부활 페널티 등 버프가 아닌 상시 메커니즘은 그대로 적용되고, 마법 저항은 적용되지 않는다) — "…만큼 최종 대미지가 고정으로 증가"류 항목용이기 때문 |
 | `SkillEffectHealAndFillBuffStack`                | 적층형 버프의 여유 스택 수 × value%만큼 회복 + 시전자 스택을 즉시 최대치로 채움          |
 | `SkillEffectDamageByDebuffStackTier`             | 대상의 적층형 디버프 스택 수(최대 5 기준 3단계)에 따라 대미지 계수/처리 방식이 갈림. 최대 스택 분기의 스택 제거는 대미지 **뒤에** 일어나, 터뜨리는 그 일격도 그 디버프를 조건으로 하는 패시브 보정을 받는다 |

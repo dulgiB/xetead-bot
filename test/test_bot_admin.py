@@ -2500,7 +2500,7 @@ def test_practice_battle_end_applies_hooks_before_computing_winner_and_shows_cal
     나와야 한다."""
     curse_buff = BuffData(
         id="재앙",
-        buff_class_name="BuffCatastrophe",
+        buff_class_name="BuffBattleEndPenalty",
         duration_turn_value=None,
         duration_count_value=None,
         duration_count_deduct_condition=None,

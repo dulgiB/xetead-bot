@@ -1,7 +1,7 @@
 """
 test_buff_stacking.py
 적층형(스택) 버프 지원과 관련 기능(CONSUMED_BUFF_STACK, ALLY_DAMAGED 관전 훅,
-SkillEffectConsumeStackForDamage, SkillEffectHealAndFillBuffStack, BuffCatastrophe의
+SkillEffectConsumeStackForDamage, SkillEffectHealAndFillBuffStack, BuffBattleEndPenalty의
 전투 종료 훅)에 대한 단위 테스트 모음.
 """
 
@@ -41,7 +41,7 @@ def make_curse_data(max_stack: int = 10) -> BuffData:
     return BuffData(
         id="재앙",
         description="",
-        buff_class_name="BuffCatastrophe",
+        buff_class_name="BuffBattleEndPenalty",
         duration_turn_value=None,
         duration_count_value=None,
         duration_count_deduct_condition=None,
@@ -587,7 +587,7 @@ class TestSkillEffectHealAndFillBuffStack:
         assert [entry.result for entry in heal_entries] == ["회복 5"]
 
 
-class TestBuffCatastropheBattleEnd:
+class TestBuffBattleEndPenaltyBattleEnd:
     def test_battle_end_reduces_hp_by_triple_stack(self):
         curse = make_curse_data()
         ctx = BattlefieldContext(buff_dict={"재앙": curse}, skill_dict={})

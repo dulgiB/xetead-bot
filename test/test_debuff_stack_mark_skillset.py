@@ -33,7 +33,7 @@ def _buff_dict() -> dict[str, BuffData]:
         "균열": BuffData.from_dict(
             {
                 "id": "균열",
-                "buff_name": "BuffFracture",
+                "buff_name": "BuffDebuffStackMark",
                 "duration_turn_value": 2,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
@@ -49,9 +49,9 @@ def _buff_dict() -> dict[str, BuffData]:
         "다른디버프": BuffData.from_dict(
             {
                 "id": "다른디버프",
-                # BuffFracture는 순수 마커라 수치 부작용이 없다 — [균열]과 구분되는
+                # BuffDebuffStackMark는 순수 마커라 수치 부작용이 없다 — [균열]과 구분되는
                 # "그냥 디버프가 있다"는 상태만 재현하기 위해 재사용한다.
-                "buff_name": "BuffFracture",
+                "buff_name": "BuffDebuffStackMark",
                 "duration_turn_value": 2,
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",

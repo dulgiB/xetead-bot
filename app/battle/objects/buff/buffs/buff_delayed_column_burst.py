@@ -20,7 +20,7 @@ _EXPIRE_DAMAGE_COEFFICIENT = 150.0
 
 
 @dataclass(frozen=True)
-class IgniteExpireEvent(BuffEvent):
+class DelayedColumnBurstExpireEvent(BuffEvent):
     """[발화]가 이번 라운드 종료로 소멸할 때(remaining_turns가 1 -> 0이 되는
     라운드 종료 시점)만 발동한다. 대상이 부여 당시 스냅샷해둔 열에 그대로
     있으면 부여자 공격 굴림 기반 대미지를 입힌다."""
@@ -66,7 +66,7 @@ class IgniteExpireEvent(BuffEvent):
         )
 
 
-class BuffIgnite(BuffBase):
+class BuffDelayedColumnBurst(BuffBase):
     """[발화: N열]: 부여 시점 대상의 열을 value에 스냅샷해두는 디버프.
 
     지속시간이 끝나는(remaining_turns가 0이 되는) 라운드 종료 시점에 대상이
@@ -89,8 +89,8 @@ class BuffIgnite(BuffBase):
     def timing(self) -> BuffApplyTiming:
         return BuffApplyTiming.ON_ROUND_END
 
-    def create_event(self) -> IgniteExpireEvent:
-        return IgniteExpireEvent(
+    def create_event(self) -> DelayedColumnBurstExpireEvent:
+        return DelayedColumnBurstExpireEvent(
             condition=self.condition,
             column=self.value,
             is_expiring_this_round=self.duration.remaining_turns == 1,

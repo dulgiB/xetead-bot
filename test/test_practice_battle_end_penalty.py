@@ -6,7 +6,7 @@
 buff_container.on_enemy_post_action()/on_enemy_post_action_resolved()를
 전혀 호출하지 않았다 — 그 결과 이 타이밍(예: 피격 시 [재앙] 스택을 쌓는
 패시브)을 쓰는 패시브가 대련에서는 한 번도 발동하지 않는 문제가 있었다.
-test_catastrophe_full_skillset.py(본 전투)의 TestPassiveSkill과 동일한
+test_battle_end_penalty_skillset.py(본 전투)의 TestPassiveSkill과 동일한
 버프/패시브 데이터를 대련 컨텍스트에 그대로 옮겨, PracticeRoundManager가
 라운드 종료 시 이 훅을 호출하도록 고친 뒤에도 같은 결과가 나오는지
 검증한다.
@@ -32,7 +32,7 @@ def _buff_dict() -> dict[str, BuffData]:
         "재앙": BuffData.from_dict(
             {
                 "id": "재앙",
-                "buff_name": "BuffCatastrophe",
+                "buff_name": "BuffBattleEndPenalty",
                 "duration_turn_value": "",
                 "duration_count_value": "",
                 "duration_count_deduct_condition": "",
