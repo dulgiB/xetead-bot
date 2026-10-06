@@ -20,6 +20,7 @@ from battle.core.commands.models import BattleLogEntry, CommandPartProcessResult
 from battle.exceptions import (
     CommandValidationError,
     error_character_already_defeated,
+    error_character_already_on_field,
     error_field_effect_not_found,
     error_not_a_field_effect,
     error_span_out_of_board,
@@ -281,6 +282,9 @@ class BattlefieldContext:
         column_idx: BattlefieldColumnIndex,
     ):
         char_id = CharacterId(data.name)
+
+        if char_id in self.characters:
+            raise CommandValidationError(error_character_already_on_field(char_id))
 
         # curr_hp가 비어 있으면(None) CombatStats가 max_hp로 채우므로 "체력
         # 미기재"와 "체력 0"을 구분해서 후자만 막는다.

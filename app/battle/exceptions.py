@@ -98,6 +98,10 @@ def error_character_already_defeated(char_id: CharacterId) -> str:
     return f"'{char_id.name}'은(는) 이미 전투불능(체력 0) 상태이므로 전장에 배치할 수 없습니다."
 
 
+def error_character_already_on_field(char_id: CharacterId) -> str:
+    return f"'{char_id.name}'은(는) 이미 필드에 배치되어 있습니다."
+
+
 def error_character_is_defeated() -> str:
     return "체력이 0인 캐릭터는 행동할 수 없습니다."
 
