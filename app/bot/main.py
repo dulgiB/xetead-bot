@@ -49,6 +49,7 @@ from bot.commands.admin import (
 )
 from bot.commands.character import handle_character_command, mark_keyword_used_if_needed
 from bot.commands.noncombat import (
+    RollTarget,
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
     finalize_investigation_overview_post,
@@ -65,6 +66,7 @@ from bot.commands.noncombat import (
     handle_use_item,
     parse_bare_item_command,
     parse_roll_command,
+    parse_roll_target,
     parse_transfer_item_args,
 )
 from bot import field_restore, log_sheets
@@ -851,6 +853,28 @@ class MastodonBotListener(StreamListener):
             return None, "", False
         return best[1], best[2], False
 
+    def _find_roll_target(
+        self, status_id: int, in_reply_to_id: Optional[int]
+    ) -> Optional[RollTarget]:
+        """스레드에서 가장 가까운 world/admin 게시물이 요구한 판정 목표치를 찾는다.
+
+        플레이어들은 진행 게시물에 바로 달지 않고 서로의 판정에 이어 달기
+        때문에 직속 부모만으로는 부족하다. 가장 가까운 진행 게시물에 목표치가
+        없으면 None이다 — 그보다 위의 요구는 이미 결과를 서술하며 넘어간
+        판정이다.
+        """
+        if in_reply_to_id is None:
+            return None
+        try:
+            context = self._mastodon.status_context(status_id)
+        except Exception:
+            logger.exception("판정 목표치 조회 실패 (status_id=%s)", status_id)
+            return None
+        for ancestor in reversed(context.get("ancestors", [])):
+            if ancestor["account"]["acct"] in (WORLD_MASTODON_ID, ADMIN_MASTODON_ID):
+                return parse_roll_target(_strip_html(ancestor["content"]))
+        return None
+
     def __dispatch(
         self,
         acct: str,
@@ -1212,7 +1236,11 @@ class MastodonBotListener(StreamListener):
         if roll_command is not None:
             stat_name, keyword_boost = roll_command
             response, log_info = handle_roll(
-                acct, stat_name, state, keyword_boost=keyword_boost
+                acct,
+                stat_name,
+                state,
+                keyword_boost=keyword_boost,
+                target=self._find_roll_target(status_id, in_reply_to_id),
             )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))

@@ -30,6 +30,7 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_use_item,
     parse_bare_item_command,
     parse_roll_command,
+    parse_roll_target,
     parse_transfer_item_args,
 )
 from bot.main import BotState  # noqa: E402
@@ -262,6 +263,150 @@ def test_handle_roll_without_keyword_touches_nothing(_stub_keyword_sheet_writes)
     handle_roll("user1", "육체", state)
 
     assert not _stub_keyword_sheet_writes
+
+
+# ── world/admin이 요구한 판정 목표치 ────────────────────────────────────────────────
+
+
+def test_parse_roll_target_reads_subject_thresholds_and_penalty():
+    target = parse_roll_target(
+        "어떻게 할까? **[판정: 최소 1인] [지식 7/기술 6, 실패 시 패널티]**"
+    )
+
+    assert target is not None
+    assert target.thresholds == {"지식": 7, "기술": 6}
+    assert target.subject == "최소 1인"
+    assert target.penalty
+
+
+def test_parse_roll_target_accepts_bare_tag_without_subject():
+    target = parse_roll_target("**[판정] [지식 8]**")
+
+    assert target is not None
+    assert target.thresholds == {"지식": 8}
+    assert target.subject == ""
+    assert not target.penalty
+
+
+def test_parse_roll_target_accepts_value_without_space():
+    target = parse_roll_target("[판정: 최소 1인] [지식8/ 「대상」 지식 4]")
+
+    assert target is not None
+    assert target.thresholds == {"지식": 8}
+    assert target.character_thresholds == (("대상", "지식", 4),)
+
+
+def test_parse_roll_target_ignores_player_roll_command():
+    assert parse_roll_target("[판정/지식]") is None
+
+
+@pytest.mark.parametrize(("dice", "verdict"), [(5, "성공"), (4, "실패")])
+def test_handle_roll_reports_verdict_at_threshold(monkeypatch, dice, verdict):
+    """목표치와 같으면 성공이다."""
+    state = _make_state("user1")  # stat_physical=2
+    monkeypatch.setattr(random, "randint", lambda a, b: dice)
+    target = parse_roll_target("[판정: 최소 1인] [육체 7/지식 4]")
+
+    result, log_info = handle_roll("user1", "육체", state, target=target)
+
+    assert result.splitlines()[1] == f"↳ 목표치: 육체 7 — **{verdict}**"
+    assert log_info is not None
+    assert verdict in log_info.result
+
+
+def test_handle_roll_marks_penalty_only_on_failure(monkeypatch):
+    state = _make_state("user1")
+    target = parse_roll_target("[판정: 최소 1인] [육체 7, 실패 시 패널티]")
+
+    monkeypatch.setattr(random, "randint", lambda a, b: 1)
+    failed, _log_info = handle_roll("user1", "육체", state, target=target)
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)
+    passed, _log_info = handle_roll("user1", "육체", state, target=target)
+
+    assert "↳ 목표치: 육체 7 — **실패** (패널티 적용)" in failed
+    assert "↳ 목표치: 육체 7 — **성공**" in passed
+    assert "패널티" not in passed
+
+
+def test_handle_roll_without_matching_stat_is_plain_roll():
+    state = _make_state("user1")
+    target = parse_roll_target("[판정: 최소 1인] [지식 7]")
+
+    result, _log_info = handle_roll("user1", "육체", state, target=target)
+
+    assert "목표치" not in result
+
+
+def test_handle_roll_for_other_named_character_is_plain_roll():
+    """대상으로 지목되지 않은 캐릭터의 판정은 일반 판정으로 취급한다."""
+    state = _make_state("user1")
+    state.noncombat_char_dict["user2"] = NoncombatCharacterDataFromSpreadsheet(
+        name="대상 캐릭터", gold=0, daily_quest_date=""
+    )
+    target = parse_roll_target("[판정: 대상 캐릭터] [육체 7]")
+
+    result, _log_info = handle_roll("user1", "육체", state, target=target)
+
+    assert "목표치" not in result
+
+
+def test_handle_roll_for_one_of_several_named_characters_reports_verdict():
+    state = _make_state("user1")  # name="동료"
+    target = parse_roll_target("[판정: 다른 캐릭터, 동료] [육체 7]")
+
+    result, _log_info = handle_roll("user1", "육체", state, target=target)
+
+    assert "↳ 목표치: 육체 7" in result
+
+
+def test_handle_roll_for_named_character_reports_verdict():
+    state = _make_state("user1")  # name="동료"
+    target = parse_roll_target("[판정: 동료] [육체 7]")
+
+    result, _log_info = handle_roll("user1", "육체", state, target=target)
+
+    assert "↳ 목표치: 육체 7" in result
+
+
+def test_parse_roll_target_reads_character_specific_threshold():
+    target = parse_roll_target("[판정: 최소 1인] [지식 7/「대상」 지식 5]")
+
+    assert target is not None
+    assert target.thresholds == {"지식": 7}
+    assert target.character_thresholds == (("대상", "지식", 5),)
+
+
+@pytest.mark.parametrize(("name", "threshold"), [("동료", "5"), ("다른 캐릭터", "7")])
+def test_handle_roll_uses_character_specific_threshold(name, threshold):
+    """「이름」이 붙은 목표치는 그 캐릭터에게만 기본 목표치를 대신한다."""
+    state = _make_state("user1")
+    state.noncombat_char_dict["user1"] = NoncombatCharacterDataFromSpreadsheet(
+        name=name, gold=0, daily_quest_date=""
+    )
+    target = parse_roll_target("[판정: 최소 1인] [육체 7/「동료」 육체 5]")
+
+    result, _log_info = handle_roll("user1", "육체", state, target=target)
+
+    assert f"↳ 목표치: 육체 {threshold}" in result
+
+
+def test_handle_roll_keyword_verdict_uses_boosted_total(
+    monkeypatch, _stub_keyword_sheet_writes
+):
+    """키워드 보정이 더해진 합계로 판정하고, 목표치 줄은 체력 소모 줄 앞에 온다."""
+    state = _keyword_state("user1")
+    monkeypatch.setattr(random, "randint", lambda a, b: 3)
+    target = parse_roll_target("[판정: 최소 1인] [육체 8]")
+
+    result, _log_info = handle_roll(
+        "user1", "육체", state, keyword_boost=True, target=target
+    )
+
+    # 2[육체] + 3[1d6] + 3[키워드 보정] = 8
+    lines = result.splitlines()
+    assert lines[0].endswith("→ 「8」")
+    assert lines[1] == "↳ 목표치: 육체 8 — **성공**"
+    assert lines[2].startswith("↳ 키워드 보정 사용")
 
 
 def _quest_location(
