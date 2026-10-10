@@ -58,6 +58,8 @@ class BuffContainer:
             uid_value,
         )
         existing = next((b for b in self._buffs if b.uid == target_uid), None)
+        if existing is None and buff_data.merge_across_givers:
+            existing = self.get_buff(add_event.applied_to, add_event.buff_id)
 
         if existing is not None:
             # 적층 불가 버프도 재부여 시 지속시간은 갱신(리셋)한다.
