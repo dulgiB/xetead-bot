@@ -229,6 +229,8 @@ class CommandPartCalculator:
             None
         )
 
+        self.processed_phase: Optional[RoundPhaseType] = None
+
         # 대미지 리다이렉트(도발/희생 방어) 결과. {원래 대상: 치환 대상}
         # 같은 커맨드(스킬)의 buff_add 등 부가 효과도 이 매핑을 따라 함께 이동한다.
         self._redirect_map: dict[CharacterId, CharacterId] = {}
@@ -284,6 +286,7 @@ class CommandPartCalculator:
         self,
         phase: Optional[RoundPhaseType],
     ):
+        self.processed_phase = phase
         self._prepare_redirects(phase)
 
         # 필드 효과 부여/해제는 대상이 없어 페이즈별 분기가 따로 필요 없다.
@@ -944,6 +947,35 @@ def build_buff_add_log_entry(
     )
 
 
+def _is_deferred_to_post(
+    calculator: "CommandPartCalculator",
+    effect_data: CalculatorMutableData,
+    buff_add: "BuffAddData",
+) -> bool:
+    """적 선언(PRE) 처리에서 아직 걸리지 않고 정산(POST)으로 미뤄진 부여인지.
+    _process_buff_add()/_process_all_buff_add()의 PRE 분기와 같은 기준이다."""
+    return (
+        calculator.processed_phase == RoundPhaseType.ENEMY_PRE_ACTION
+        and effect_data.apply_timing != RoundPhaseType.ENEMY_PRE_ACTION
+        and buff_add.add_timing != RoundPhaseType.ENEMY_PRE_ACTION
+    )
+
+
+def _build_deferred_buff_add_log_entry(
+    calculator: "CommandPartCalculator", buff_add: "BuffAddData"
+) -> BattleLogEntry:
+    # 정산 때 사거리 이탈·처치로 빠질 수 있어 확정된 부여처럼 쓰면 안 된다.
+    # 대미지가 있는 행동이면 대상이 공격을 피할 때 함께 빠진다.
+    has_damage = any(effect.damage_data_list for effect in calculator.data_by_effect)
+    condition = "공격 성공 시" if has_damage else "정산 시"
+    return BattleLogEntry(
+        target_name=buff_add.applied_to.name,
+        kind=BattleLogEntryKind.BUFF_ADD,
+        result=f"{condition} [{buff_add.buff_id}] 부여",
+        buff_id=buff_add.buff_id,
+    )
+
+
 def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntry]:
     """process() 완료 후 calculator.data_by_effect를 순회해 대상별 로그 엔트리를 만든다.
 
@@ -989,6 +1021,9 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
             # 게이트에 막혀 실제로는 부여되지 않은 버프의 로그가 남지 않도록
             # _process_buff_add()와 동일한 게이트를 다시 통과시킨다.
             if not calculator._buff_add_gate_passes(buff_add, idx):
+                continue
+            if _is_deferred_to_post(calculator, effect_data, buff_add):
+                entries.append(_build_deferred_buff_add_log_entry(calculator, buff_add))
                 continue
             entries.append(build_buff_add_log_entry(context, buff_add))
         for target_id, message in effect_data.nullified_effect_list:
