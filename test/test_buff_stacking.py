@@ -168,6 +168,104 @@ class TestBuffStackAccumulation:
         assert refreshed.duration.remaining_turns == 3
 
 
+def _received_damage_data(merge_across_givers: bool) -> BuffData:
+    return BuffData(
+        id="받는 대미지 증가",
+        description="",
+        buff_class_name="BuffReceivedDamage",
+        duration_turn_value=2,
+        duration_count_value=None,
+        duration_count_deduct_condition=None,
+        value_type=ValueType.PERCENT,
+        value=10,
+        condition_=None,
+        condition_value=None,
+        buff_type=BuffType.DEBUFF,
+        merge_across_givers=merge_across_givers,
+    )
+
+
+def _two_giver_context(merge_across_givers: bool) -> BattlefieldContext:
+    ctx = BattlefieldContext(
+        buff_dict={"받는 대미지 증가": _received_damage_data(merge_across_givers)},
+        skill_dict={},
+    )
+    ctx.add_character(
+        get_test_preset("대상"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    for name in ("부여자1", "부여자2"):
+        ctx.add_character(
+            get_test_preset(name), FactionType.ENEMY, BattlefieldColumnIndex(0)
+        )
+    return ctx
+
+
+class TestMergeAcrossGivers:
+    """merge_across_givers: 부여자가 달라도 대상당 한 인스턴스만 유지."""
+
+    def test_different_givers_stack_by_default(self):
+        ctx = _two_giver_context(merge_across_givers=False)
+        target = CharacterId("대상")
+        for giver in ("부여자1", "부여자2"):
+            ctx.buff_container.add(
+                BuffAddData(
+                    given_by=CharacterId(giver),
+                    applied_to=target,
+                    buff_id="받는 대미지 증가",
+                )
+            )
+        assert len(ctx.buff_container.get_buffs_by(target, None)) == 2
+
+    def test_merged_buff_keeps_one_instance_and_refreshes_duration(self):
+        ctx = _two_giver_context(merge_across_givers=True)
+        target = CharacterId("대상")
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("부여자1"),
+                applied_to=target,
+                buff_id="받는 대미지 증가",
+            )
+        )
+        ctx.buff_container.on_round_end()
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=CharacterId("부여자2"),
+                applied_to=target,
+                buff_id="받는 대미지 증가",
+            )
+        )
+
+        buffs = ctx.buff_container.get_buffs_by(target, None)
+        assert len(buffs) == 1
+        assert buffs[0].duration.remaining_turns == 2
+
+    def test_column_from_sheet_row(self):
+        row = {
+            "id": "받는 대미지 증가",
+            "buff_name": "BuffReceivedDamage",
+            "duration_turn_value": 2,
+            "duration_count_value": "",
+            "duration_count_deduct_condition": "",
+            "value_type_0": "퍼센트",
+            "value_0": 10,
+            "condition": "",
+            "condition_value": "",
+            "type": "디버프",
+            "description": "",
+        }
+        assert BuffData.from_dict(row).merge_across_givers is False
+        assert (
+            BuffData.from_dict(
+                row | {"merge_across_givers": "FALSE"}
+            ).merge_across_givers
+            is False
+        )
+        assert (
+            BuffData.from_dict(row | {"merge_across_givers": True}).merge_across_givers
+            is True
+        )
+
+
 class TestConsumeStackForDamage:
     """SkillEffectConsumeStackForDamage: 스택 소모 clamp + CONSUMED_BUFF_STACK
     기반 대미지 가산, ConsumedBuffStackCountCondition 기반 조건부 버프 부여."""

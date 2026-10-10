@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Optional, Type
 from battle.objects.buff.conditions import Condition
 from battle.objects.define import BuffCountDeductCondition, BuffType, ValueType
 from battle.objects.models import CharacterId
+from utils.spreadsheet_bool import parse_spreadsheet_bool
 from utils.spreadsheet_row import SpreadsheetRow
 
 if TYPE_CHECKING:
@@ -45,6 +46,10 @@ class BuffData:
     # 동일한 시트-필드명 불일치 관례).
     value_2: int = 0
 
+    # True면 부여자가 달라도 대상당 한 인스턴스만 유지한다(다시 걸리면 지속시간만
+    # 갱신). 도발처럼 부여자마다 인스턴스가 따로 있어야 하는 버프가 있어 기본값은 False다.
+    merge_across_givers: bool = False
+
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "BuffData":
         return BuffData(
@@ -76,6 +81,9 @@ class BuffData:
             if data.get("reference_buff_id")
             else None,
             value_2=int(data["value_1"]) if data.get("value_1") else 0,
+            merge_across_givers=parse_spreadsheet_bool(
+                data.get("merge_across_givers", False)
+            ),
         )
 
     @property
