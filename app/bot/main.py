@@ -735,6 +735,41 @@ class MastodonBotListener(StreamListener):
                 return ps
         return None
 
+    def _in_main_battle_thread(
+        self,
+        acct: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        state: "BotState",
+    ) -> bool:
+        """이 답글이 본 전투의 현재 페이즈 공지 스레드에 속하는지.
+
+        _resolve_practice()와 같은 규칙이다 — 직속 답글이 아니어도 스레드
+        조상에 페이즈 공지가 있으면 인정해, 선언을 여러 답글로 나눠 쓰거나
+        봇의 오류 안내 답글에 다시 선언해도 받는다. 지난 페이즈의 공지는
+        보지 않는다(그 스레드의 늦은 답글이 현재 페이즈 커맨드로 처리되면 안
+        된다). 조상 조회는 API 호출이 한 번 더 드는 경로라 필드에 배치된
+        캐릭터의 답글일 때만 한다."""
+        phase_post_id = state.active_phase_post_id
+        if phase_post_id is None or in_reply_to_id is None:
+            return False
+        if in_reply_to_id == phase_post_id:
+            return True
+        char_data = state.char_dict.get(acct)
+        if (
+            state.session is None
+            or char_data is None
+            or CharacterId(char_data.name) not in state.session.context.characters
+        ):
+            return False
+
+        try:
+            context = self._mastodon.status_context(status_id)
+        except Exception:
+            logger.exception("스레드 본 전투 조회 실패 (status_id=%s)", status_id)
+            return False
+        return any(a["id"] == phase_post_id for a in context.get("ancestors", []))
+
     def _resolve_practice_for_proxy(
         self,
         status_id: int,
@@ -1139,13 +1174,13 @@ class MastodonBotListener(StreamListener):
                 logger.info("참전 신청: %s (%s)", acct, state.char_dict[acct].name)
             return
 
-        # 5. 전투 중 캐릭터 커맨드 (active_phase_post_id에 대한 답글)
-        if (
-            state.active_phase_post_id is not None
-            and in_reply_to_id == state.active_phase_post_id
-        ):
+        # 5. 전투 중 캐릭터 커맨드 (active_phase_post_id 스레드의 답글)
+        if self._in_main_battle_thread(acct, status_id, in_reply_to_id, state):
             # active_phase_post_id와 session은 항상 같이 산다(admin.py 참고).
             assert state.session is not None
+            if count_bracket_groups(text) == 0:
+                # 선언을 여러 답글로 나눠 쓰는 중의 사담 — 대련과 같이 무시한다.
+                return
             response, calc_text, battle_log = handle_character_command(
                 acct,
                 text,
