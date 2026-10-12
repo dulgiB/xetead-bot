@@ -546,9 +546,7 @@ class BattlefieldContext:
         # 코스트 회복이 ON_ROUND_START 버프보다 먼저여야 "다음 라운드 코스트
         # 감소" 버프가 덮어써지지 않는다.
         for character in self.characters.values():
-            character.status.remaining_cost = character.status[
-                CombatStatType.COST_PER_TURN
-            ]
+            character.status.refill_cost_for_round()
         self.buff_container.on_round_start()
 
     def on_finish_round(self) -> tuple[list[BattleLogEntry], list[CharacterId]]:

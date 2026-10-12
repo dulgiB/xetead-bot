@@ -553,7 +553,7 @@ def _format_name_line(char: "CombatCharacter") -> str:
     else:
         hp_text = f"{char.status.curr_hp}/{char.status[CombatStatType.MAX_HP]}"
     remaining_cost = char.status.remaining_cost
-    max_cost = char.status[CombatStatType.COST_PER_TURN]
+    max_cost = char.status.round_max_cost
     return f"{char.id.name}\n[{hp_text}] [{remaining_cost}/{max_cost}]"
 
 

@@ -41,6 +41,7 @@ class CombatStats:
         self._stat_offsets: dict[CombatStatType, int] = {}
 
         self._curr_cost = self[CombatStatType.COST_PER_TURN]
+        self._round_max_cost: Optional[int] = None
 
     def __getitem__(self, item: CombatStatType) -> int:
         return self._base_stat(item) + self._stat_offsets.get(item, 0)
@@ -82,6 +83,23 @@ class CombatStats:
     @curr_hp.setter
     def curr_hp(self, new_hp: int):
         self._curr_hp = new_hp
+
+    def refill_cost_for_round(self) -> None:
+        self._round_max_cost = self[CombatStatType.COST_PER_TURN]
+        self._curr_cost = self._round_max_cost
+
+    @property
+    def round_max_cost(self) -> int:
+        """이번 라운드 시작 때 채운 코스트. 표시용 상한이다.
+
+        턴당 코스트는 부적처럼 위치를 따라가는 효과로 라운드 도중에도
+        바뀌지만, 실제로 쓸 수 있는 코스트는 라운드 시작 때만 채워진다.
+        살아 있는 값을 상한으로 보여주면 [5/4]처럼 남은 코스트와 어긋나
+        보인다. 라운드 시작을 거치지 않은 경우(재기동 복원, 도중 참전)는
+        현재 값을 쓴다."""
+        if self._round_max_cost is None:
+            return self[CombatStatType.COST_PER_TURN]
+        return self._round_max_cost
 
     @property
     def remaining_cost(self):
