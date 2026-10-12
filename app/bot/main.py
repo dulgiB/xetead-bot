@@ -1252,9 +1252,13 @@ class MastodonBotListener(StreamListener):
             and investigation_stage == "overview"
             and _RE_ACCEPT.search(text)
         ):
-            thread_mentions = self._thread_participants(
-                status_id, in_reply_to_id, mentions or [], acct
-            )
+            thread_mentions = [
+                a
+                for a in self._thread_participants(
+                    status_id, in_reply_to_id, mentions or [], acct
+                )
+                if a in state.char_dict
+            ]
             response, log_info = handle_investigation_accept(
                 investigation_session, acct, thread_mentions, state
             )

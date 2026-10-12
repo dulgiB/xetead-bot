@@ -1,3 +1,4 @@
+import os
 from typing import Optional
 
 from battle.core.battlefield_context import BattlefieldContext
@@ -21,6 +22,20 @@ _PHASE_ORDER: list[RoundPhaseType] = [
 ]
 
 
+def _parse_attack_dice_count(raw: str) -> int:
+    count = int(raw)
+    if count < 1:
+        raise ValueError(f"ATTACK_DICE_COUNT는 1 이상이어야 합니다: {raw}")
+    return count
+
+
+# 공격 굴림에 쓰는 d6 개수. 성장 마일스톤마다 운영진이 올린다. 검증을 전장을
+# 만들 때로 미루면 잘못된 값이 전투 도중 커맨드를 통째로 실패시킨다.
+ATTACK_DICE_COUNT: int = _parse_attack_dice_count(
+    os.environ.get("ATTACK_DICE_COUNT", "1")
+)
+
+
 class BattleSession:
     def __init__(
         self,
@@ -31,7 +46,12 @@ class BattleSession:
         inventory: Optional[Inventory] = None,
     ) -> None:
         self.context = BattlefieldContext(
-            buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
+            buff_dict,
+            skill_dict,
+            passive_skill_dict,
+            item_dict,
+            inventory,
+            milestone_n=ATTACK_DICE_COUNT,
         )
         self.manager = RoundManager(self.context)
         self.started: bool = False

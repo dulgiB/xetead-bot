@@ -114,6 +114,9 @@ _ITEM_TARGET_RULE_LABELS: dict[str, str] = {
 
 FREE_EXPLORE_LABEL = "자율 탐사"
 
+# 한 의뢰에 함께 참여할 수 있는 최대 인원(수락한 캐릭터 포함).
+MAX_QUEST_PARTICIPANTS = 4
+
 # bot.main이 이 모듈을 import하므로 거기서 가져오지 못하고 따로 읽는다.
 # 상시조사를 수동 진행으로 인계할 때 admin이 아니라 이 계정을 태그한다.
 WORLD_MASTODON_ID: str = os.environ["WORLD_MASTODON_ID"]
@@ -257,6 +260,24 @@ def _parse_item_args(raw: str) -> tuple[str, Optional[str], int]:
         else:
             target = token
     return item_name, target, count
+
+
+def _main_battle_participants(state: "BotState") -> set[str]:
+    """본 전투에 배치된 캐릭터 이름.
+
+    본 전투는 GM이 고친 시트 체력을 페이즈 전환 때 전장으로 들이므로, 전투
+    밖에서 시트 체력을 바꾸면 코스트 없이 회복하는 구멍이 된다. 상시전투는
+    비실시간으로 며칠씩 이어지므로 그동안 아이템을 묶어 두지 않는다.
+    """
+    if state.session is None:
+        return set()
+    return {char_id.name for char_id in state.session.context.characters}
+
+
+_IN_BATTLE_ITEM_USE_MESSAGE = (
+    "◊ 전투 도중에는 전투 커맨드로만 아이템을 사용할 수 있습니다."
+)
+_IN_BATTLE_TRANSFER_MESSAGE = "◊ 전투 도중에는 아이템을 양도할 수 없습니다."
 
 
 # ---------------------------------------------------------------------------
@@ -455,6 +476,11 @@ def handle_use_item(
 
     user_name = char_data.name
     target_char_name = target_name or user_name
+    in_battle = _main_battle_participants(state)
+    if user_name in in_battle:
+        return _IN_BATTLE_ITEM_USE_MESSAGE, NoncombatLogInfo(
+            command_text=command_text, result=_IN_BATTLE_ITEM_USE_MESSAGE
+        )
 
     try:
         item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
@@ -512,6 +538,10 @@ def handle_use_item(
     if target_data is None:
         msg = f"◊ 대상 캐릭터('{target_char_name}')를 찾을 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+    if target_char_name in in_battle:
+        return _IN_BATTLE_ITEM_USE_MESSAGE, NoncombatLogInfo(
+            command_text=command_text, result=_IN_BATTLE_ITEM_USE_MESSAGE
+        )
 
     heal_amount = _compute_heal_amount(item.effect, target_data.max_hp, count)
     if heal_amount is None:
@@ -635,6 +665,11 @@ def handle_transfer_item(
     if target_name not in state.name_dict:
         msg = f"◊ 대상 캐릭터('{target_name}')를 찾을 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    if {user_name, target_name} & _main_battle_participants(state):
+        return _IN_BATTLE_TRANSFER_MESSAGE, NoncombatLogInfo(
+            command_text=command_text, result=_IN_BATTLE_TRANSFER_MESSAGE
+        )
 
     try:
         item_dict = load_item_data(state.spreadsheet, cache=state.sheet_cache)
@@ -1082,6 +1117,16 @@ def handle_investigation_accept(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     participants = [acct] + [m for m in mentions if m != acct]
+    if len(participants) > MAX_QUEST_PARTICIPANTS:
+        msg = (
+            f"◊ 의뢰 하나에는 최대 {MAX_QUEST_PARTICIPANTS}명까지 참여할 수"
+            f" 있습니다. (현재 {len(participants)}명: "
+            + ", ".join(f"@{p}" for p in participants)
+            + ")"
+        )
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=f"인원 초과: {len(participants)}명"
+        )
 
     already_busy = {a for q in quests for a in q.taken_by_list()}
     conflicts = [p for p in participants if p in already_busy]
