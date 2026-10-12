@@ -230,6 +230,20 @@ class TestRevivalFloor:
 
         assert ctx.characters[NEAR].status.remaining_cost == 4
 
+    def test_displayed_max_cost_holds_until_next_round_start(self):
+        """남은 코스트는 라운드 시작 때만 채워지므로, 라운드 도중 범위를
+        드나들어도 표시 상한이 함께 출렁이면 [4/3]처럼 어긋나 보인다."""
+        ctx = _standard_field()
+        ctx.on_start_round()
+
+        ctx.move_character_to(NEAR, BattlefieldColumnIndex(6))
+        assert ctx.characters[NEAR].status.remaining_cost == 4
+        assert ctx.characters[NEAR].status.round_max_cost == 4
+
+        ctx.on_start_round()
+        assert ctx.characters[NEAR].status.remaining_cost == 3
+        assert ctx.characters[NEAR].status.round_max_cost == 3
+
     def test_move_cost_uses_the_real_revival_count(self):
         ctx = _standard_field()
 

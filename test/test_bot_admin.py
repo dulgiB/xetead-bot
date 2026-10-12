@@ -1165,6 +1165,79 @@ def test_character_command_reply_has_no_image_but_keeps_text(monkeypatch):
     assert char_reply["status"].startswith("@ally_acct ")
 
 
+def _start_main_battle_ally_phase(monkeypatch):
+    """아군 1명·적 1명 본 전투를 아군 행동 페이즈까지 진행하고
+    (mastodon, listener, state)를 반환한다."""
+    state = _make_state(
+        pending_placements=[
+            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
+        ]
+    )
+    state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.pending_placements.append(
+        ("적 캐릭터", FactionType.ENEMY, BattlefieldColumnIndex(0))
+    )
+    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
+    monkeypatch.setattr(
+        main_module,
+        "load_char_data",
+        lambda spreadsheet, cache=None: (
+            state.char_dict,
+            state.name_dict,
+            state.noncombat_char_dict,
+        ),
+    )
+    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
+    monkeypatch.setattr(character_module, "write_back_changed_hp", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
+
+    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
+    listener._process_notification(_make_notification("test-admin", 2, 0, "[진행]"))
+    return mastodon, listener, state
+
+
+def test_main_battle_command_works_from_anywhere_in_the_phase_thread(monkeypatch):
+    """본 전투도 선언을 여러 답글로 나눠 쓰거나(공지 ← 사담 ← 커맨드) 봇의
+    오류 안내 답글에 다시 선언하면, 페이즈 공지가 스레드 조상에 있는 한
+    처리돼야 한다. 커맨드 없는 사담은 오류 답글 없이 무시한다."""
+    mastodon, listener, state = _start_main_battle_ally_phase(monkeypatch)
+    active_post_id = state.active_phase_post_id
+    calls_before = len(mastodon.status_post_calls)
+
+    listener._process_notification(
+        _make_notification("ally_acct", 10, active_post_id, "묘사만 길게 적는 답글")
+    )
+    assert len(mastodon.status_post_calls) == calls_before
+
+    mastodon.status_context_ancestors = [
+        {"id": active_post_id, "account": {"acct": "bot"}, "mentions": []}
+    ]
+    listener._process_notification(
+        _make_notification("ally_acct", 11, 10, "[공격/적 캐릭터]")
+    )
+
+    reply = mastodon.status_post_calls[-1]
+    assert reply["in_reply_to_id"] == 11
+    assert "공격" in reply["status"]
+
+
+def test_main_battle_command_from_unrelated_thread_is_not_adopted(monkeypatch):
+    """지난 페이즈 공지나 무관한 스레드의 답글은 현재 페이즈 커맨드로
+    받으면 안 된다."""
+    mastodon, listener, state = _start_main_battle_ally_phase(monkeypatch)
+    calls_before = len(mastodon.status_post_calls)
+
+    mastodon.status_context_ancestors = [
+        {"id": 777, "account": {"acct": "bot"}, "mentions": []}
+    ]
+    listener._process_notification(
+        _make_notification("ally_acct", 20, 19, "[공격/적 캐릭터]")
+    )
+
+    assert len(mastodon.status_post_calls) == calls_before
+
+
 def test_character_command_reply_merges_calc_into_single_cw_post(monkeypatch):
     """계산식이 있는 커맨드 답글은 게시물 두 개(본문 + CW 후속)가 아니라,
     본문을 spoiler_text로, 계산식을 status로 넣은 게시물 하나로 합쳐
@@ -1219,42 +1292,6 @@ def test_character_command_reply_merges_calc_into_single_cw_post(monkeypatch):
     assert call["status"].startswith("@ally_acct ")
     assert "**【공격 ▸ 적 캐릭터】**" in call["status"]
     assert f"→ -{dealt}" in call["status"]
-
-
-def test_main_battle_idle_chat_still_gets_error_reply(monkeypatch):
-    """본 전투는 대련과 달리 페이즈마다 게시물이 새로 바뀌는
-    구조라 스레드 하나가 계속 이어지지 않는다 — 사담을 조용히 무시하는
-    대상이 아니므로, 대괄호 커맨드가 없으면 기존처럼 에러 답글을 보내야
-    한다(silent_on_unrecognized 기본값이 False로 유지되는지 확인)."""
-    state = _make_state(
-        pending_placements=[
-            ("유효 캐릭터", FactionType.ALLY, BattlefieldColumnIndex(0)),
-        ]
-    )
-    state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
-    monkeypatch.setattr(
-        main_module,
-        "load_char_data",
-        lambda spreadsheet, cache=None: (
-            state.char_dict,
-            state.name_dict,
-            state.noncombat_char_dict,
-        ),
-    )
-    monkeypatch.setattr(main_module, "capture_field_sheet_image", _fake_capture)
-    mastodon = _FakeMastodon()
-    listener = MastodonBotListener(mastodon, state, bot_acct="bot")
-
-    listener._process_notification(_make_notification("test-admin", 1, 0, "[전투개시]"))
-    listener._process_notification(_make_notification("test-admin", 2, 0, "[진행]"))
-    active_post_id = state.active_phase_post_id
-
-    listener._process_notification(
-        _make_notification("ally_acct", 3, active_post_id, "화이팅!")
-    )
-
-    reply_calls = [c for c in mastodon.status_post_calls if "in_reply_to_id" in c]
-    assert "인식할 수 없습니다" in reply_calls[-1]["status"]
 
 
 def test_character_command_with_two_bracket_groups_is_rejected_with_explicit_error(

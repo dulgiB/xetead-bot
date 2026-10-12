@@ -11,6 +11,7 @@ import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
 from battle.objects.buff.buff_base import BuffAddData
@@ -1298,6 +1299,14 @@ class TestBuffTaunt:
         )
         assert not any(b.id == "디버프" for b in dealer_buffs)
         assert any(b.id == "디버프" for b in taunter_buffs)
+
+        buff_add_targets = [
+            entry.target_name
+            for result in manager.get_last_post_action_results()[CharacterId("적군")]
+            for entry in result.log_entries
+            if entry.kind == BattleLogEntryKind.BUFF_ADD
+        ]
+        assert buff_add_targets == ["도발자"]
 
     def test_taunt_does_not_redirect_column_aoe_damage(self, monkeypatch):
         """열 광역 스킬(SkillTargetRuleColumn)은 시전자가 도발 상태여도

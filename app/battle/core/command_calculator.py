@@ -1022,6 +1022,8 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
             # _process_buff_add()와 동일한 게이트를 다시 통과시킨다.
             if not calculator._buff_add_gate_passes(buff_add, idx):
                 continue
+            # 실제 부여와 같이 도발로 옮겨진 대상 기준으로 적어야 한다.
+            buff_add = calculator._redirect_applied_to(buff_add)
             if _is_deferred_to_post(calculator, effect_data, buff_add):
                 entries.append(_build_deferred_buff_add_log_entry(calculator, buff_add))
                 continue
