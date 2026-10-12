@@ -114,6 +114,9 @@ _ITEM_TARGET_RULE_LABELS: dict[str, str] = {
 
 FREE_EXPLORE_LABEL = "자율 탐사"
 
+# 한 의뢰에 함께 참여할 수 있는 최대 인원(수락한 캐릭터 포함).
+MAX_QUEST_PARTICIPANTS = 4
+
 # bot.main이 이 모듈을 import하므로 거기서 가져오지 못하고 따로 읽는다.
 # 상시조사를 수동 진행으로 인계할 때 admin이 아니라 이 계정을 태그한다.
 WORLD_MASTODON_ID: str = os.environ["WORLD_MASTODON_ID"]
@@ -1114,6 +1117,16 @@ def handle_investigation_accept(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     participants = [acct] + [m for m in mentions if m != acct]
+    if len(participants) > MAX_QUEST_PARTICIPANTS:
+        msg = (
+            f"◊ 의뢰 하나에는 최대 {MAX_QUEST_PARTICIPANTS}명까지 참여할 수"
+            f" 있습니다. (현재 {len(participants)}명: "
+            + ", ".join(f"@{p}" for p in participants)
+            + ")"
+        )
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=f"인원 초과: {len(participants)}명"
+        )
 
     already_busy = {a for q in quests for a in q.taken_by_list()}
     conflicts = [p for p in participants if p in already_busy]

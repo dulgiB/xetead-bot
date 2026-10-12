@@ -2230,3 +2230,47 @@ def test_transfer_item_allowed_during_investigation_battle(monkeypatch, potion_i
     handle_transfer_item("user1", "포션", "동료2", 1, state)
 
     assert inventory.get_count("동료2", "포션") == 1
+
+
+def test_investigation_accept_rejects_more_than_four_participants(monkeypatch):
+    state = _make_state("user1")
+    session = _investigation_session(acct="user1", quest_id="항구 마을_운반")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_quest_taken_by",
+        lambda *a, **k: calls.append(a),
+    )
+
+    result, _log = handle_investigation_accept(
+        session, "user1", ["user2", "user3", "user4", "user5"], state
+    )
+
+    assert result.startswith("◊ 의뢰 하나에는 최대 4명까지 참여할 수 있습니다.")
+    assert calls == []
+    assert session.ended is False
+
+
+def test_investigation_accept_allows_exactly_four_participants(monkeypatch):
+    state = _make_state("user1")
+    session = _investigation_session(acct="user1", quest_id="항구 마을_운반")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
+    )
+    calls: list = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_quest_taken_by",
+        lambda spreadsheet, quest_id, taken_by, cache=None: calls.append(taken_by),
+    )
+
+    handle_investigation_accept(session, "user1", ["user2", "user3", "user4"], state)
+
+    assert calls == ["user1,user2,user3,user4"]
