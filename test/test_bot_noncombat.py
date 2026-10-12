@@ -2118,3 +2118,115 @@ def test_investigation_start_in_shared_thread_tracks_all_characters(monkeypatch)
     # 답글을 단 user2가 맨 앞이다.
     assert overview_post["status"].startswith("@user2 @user1 ")
     assert session.quest_id == "항구 마을_운반"
+
+
+def _put_in_main_battle(state: BotState, char_name: str) -> None:
+    from battle.objects.define import BattlefieldColumnIndex, FactionType
+    from bot.session import BattleSession
+
+    state.session = BattleSession({}, {})
+    state.session.context.add_character(
+        get_test_preset(char_name), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+
+
+def _put_in_practice(state: BotState, char_name: str, mode) -> None:
+    from battle.objects.define import BattlefieldColumnIndex
+    from battle.practice.context import PracticeBattlefieldContext
+    from battle.practice.define import SideType
+    from battle.practice.round_manager import PracticeRoundManager
+    from bot.practice_state import PracticeBattleState
+
+    context = PracticeBattlefieldContext({}, {}, mode=mode)
+    context.add_character(
+        get_test_preset(char_name), SideType.SIDE_1, BattlefieldColumnIndex(0)
+    )
+    state.practices[1] = PracticeBattleState(
+        context=context, manager=PracticeRoundManager(context), mode=mode
+    )
+
+
+def _stub_item_sheets(monkeypatch, item: ItemData, inventory: Inventory) -> list:
+    recorded_hp: list = []
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_item_data",
+        lambda spreadsheet, cache=None: {item.id: item},
+    )
+    monkeypatch.setattr(
+        noncombat_module, "load_inventory", lambda spreadsheet, cache=None: inventory
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_character_curr_hp",
+        lambda spreadsheet, name, hp, cache=None: recorded_hp.append((name, hp)),
+    )
+    return recorded_hp
+
+
+def test_use_item_rejected_for_main_battle_participant(monkeypatch, potion_item):
+    state = _make_state_with_name_dict("user1", "동료", curr_hp=50)
+    _put_in_main_battle(state, "동료")
+    inventory = Inventory({("동료", "포션"): 1})
+    recorded_hp = _stub_item_sheets(monkeypatch, potion_item, inventory)
+
+    reply, _log = handle_use_item("user1", "포션", None, 1, state)
+
+    assert reply == "◊ 전투 도중에는 전투 커맨드로만 아이템을 사용할 수 있습니다."
+    assert recorded_hp == []
+    assert inventory.get_count("동료", "포션") == 1
+
+
+def test_use_item_rejected_when_target_is_in_battle(monkeypatch, potion_item):
+    state = _make_state_with_name_dict("user1", "동료", curr_hp=50)
+    state.name_dict["참전자"] = get_test_preset("참전자", initial_hp=50)
+    _put_in_main_battle(state, "참전자")
+    inventory = Inventory({("동료", "포션"): 1})
+    recorded_hp = _stub_item_sheets(monkeypatch, potion_item, inventory)
+
+    reply, _log = handle_use_item("user1", "포션", "참전자", 1, state)
+
+    assert reply == "◊ 전투 도중에는 전투 커맨드로만 아이템을 사용할 수 있습니다."
+    assert recorded_hp == []
+    assert inventory.get_count("동료", "포션") == 1
+
+
+def test_use_item_allowed_during_investigation_battle(monkeypatch, potion_item):
+    from battle.practice.define import PracticeBattleMode
+
+    state = _make_state_with_name_dict("user1", "동료", curr_hp=50)
+    _put_in_practice(state, "동료", PracticeBattleMode.INVESTIGATION)
+    inventory = Inventory({("동료", "포션"): 1})
+    recorded_hp = _stub_item_sheets(monkeypatch, potion_item, inventory)
+
+    handle_use_item("user1", "포션", None, 1, state)
+
+    assert recorded_hp == [("동료", 70)]
+
+
+def test_transfer_item_rejected_when_receiver_in_main_battle(monkeypatch, potion_item):
+    state = _make_state_with_name_dict("user1", "동료", curr_hp=50)
+    state.name_dict["동료2"] = get_test_preset("동료2")
+    _put_in_main_battle(state, "동료2")
+    inventory = Inventory({("동료", "포션"): 3})
+    _stub_item_sheets(monkeypatch, potion_item, inventory)
+
+    reply, _log = handle_transfer_item("user1", "포션", "동료2", 1, state)
+
+    assert reply == "◊ 전투 도중에는 아이템을 양도할 수 없습니다."
+    assert inventory.get_count("동료", "포션") == 3
+    assert inventory.get_count("동료2", "포션") == 0
+
+
+def test_transfer_item_allowed_during_investigation_battle(monkeypatch, potion_item):
+    from battle.practice.define import PracticeBattleMode
+
+    state = _make_state_with_name_dict("user1", "동료", curr_hp=50)
+    state.name_dict["동료2"] = get_test_preset("동료2")
+    _put_in_practice(state, "동료2", PracticeBattleMode.INVESTIGATION)
+    inventory = Inventory({("동료", "포션"): 3})
+    _stub_item_sheets(monkeypatch, potion_item, inventory)
+
+    handle_transfer_item("user1", "포션", "동료2", 1, state)
+
+    assert inventory.get_count("동료2", "포션") == 1
