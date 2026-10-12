@@ -58,6 +58,7 @@ class PracticeBattlefieldContext(BattlefieldContext):
         item_dict: "dict[str, ItemData] | None" = None,
         *,
         mode: PracticeBattleMode = PracticeBattleMode.PRACTICE,
+        milestone_n: int = 1,
     ):
         self.mode = mode
         # 결투 한정으로 캐릭터별 실제 체력을 들고 있는다. 필드에서 빠진
@@ -72,7 +73,7 @@ class PracticeBattlefieldContext(BattlefieldContext):
             skill_dict,
             passive_skill_dict=passive_skill_dict,
             item_dict=item_dict,
-            milestone_n=1,
+            milestone_n=milestone_n,
         )
 
     @property

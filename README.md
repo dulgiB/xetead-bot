@@ -21,6 +21,7 @@ TRPG 캠페인의 전투를 자동 정산하는 Mastodon 봇.
 | `FIELD_SPREADSHEET_KEY`          | 스프레드시트 ID (관중 공개용 실시간 전투 UI "필드" 시트)     |
 | `LOG_SPREADSHEET_KEY`            | 스프레드시트 ID ("로그_전투"/"로그_비전투" 기록 전용, `DB_SPREADSHEET_KEY`와 별개) |
 | `FIELD_LOG_SHEET_NAME`           | (선택) `DB_SPREADSHEET_KEY` 내 크래시 복구용 "필드" 워크시트 이름. 기본값 `필드`. 여러 배포(예: 운영/테스트)가 같은 `DB_SPREADSHEET_KEY`를 공유하면 반드시 배포별로 다른 값을 지정해야 한다 — 아니면 서로의 진행 중 전투 행을 upsert로 덮어쓴다 |
+| `ATTACK_DICE_COUNT`              | (선택) 공격 굴림에 쓰는 d6 개수. 기본값 `1`. 성장 마일스톤마다 운영진이 올린다(1막 2부 종료 → `2`, 2막 1부 종료 → `3`). 본 전투·대련·결투·상시전투와 아군·에너미 모두에 같은 값이 적용되며, 바꾼 값은 컨테이너를 다시 만들어야(`docker compose up -d`) 반영된다 — `restart`는 env 파일을 다시 읽지 않는다. 1 미만이거나 정수가 아니면 봇이 기동하지 않는다 |
 
 ### 봇 시작
 

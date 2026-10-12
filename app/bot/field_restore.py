@@ -32,7 +32,7 @@ from battle.practice.round_manager import PracticeRoundManager
 from bot.log_sheets import FieldBattleType, FieldRow, load_open_battle_rows
 from bot.noncombat_state import InvestigationSession
 from bot.practice_state import PracticeBattleState
-from bot.session import BattleSession
+from bot.session import ATTACK_DICE_COUNT, BattleSession
 
 if TYPE_CHECKING:
     from bot.main import BotState
@@ -307,6 +307,7 @@ def _restore_practice_prep(
         passive_skill_dict,
         item_dict,
         mode=mode,
+        milestone_n=ATTACK_DICE_COUNT,
     )
     # 게시물 id는 메타에 실린 값을 그대로 쓴다 — mastodon.py가 돌려주는 id가
     # 문자열이라 state.practices의 키도 문자열이다. 여기서만 int로 바꾸면
@@ -389,6 +390,7 @@ def _restore_practice_battle(
         passive_skill_dict,
         item_dict,
         mode=mode,
+        milestone_n=ATTACK_DICE_COUNT,
     )
     manager = PracticeRoundManager(context)
 

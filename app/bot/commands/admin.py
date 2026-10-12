@@ -77,7 +77,7 @@ from bot.log_sheets import (
     write_back_changed_hp,
 )
 from bot.practice_state import PracticeBattleState
-from bot.session import BattleSession
+from bot.session import ATTACK_DICE_COUNT, BattleSession
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -1290,7 +1290,12 @@ def _cmd_practice_prep(
         state.noncombat_char_dict,
     ) = load_battle_data(state.spreadsheet, cache=state.sheet_cache)
     context = PracticeBattlefieldContext(
-        buff_dict, skill_dict, passive_skill_dict, item_dict, mode=mode
+        buff_dict,
+        skill_dict,
+        passive_skill_dict,
+        item_dict,
+        mode=mode,
+        milestone_n=ATTACK_DICE_COUNT,
     )
     manager = PracticeRoundManager(context)
     ps = PracticeBattleState(
@@ -1729,6 +1734,7 @@ def _cmd_investigation_battle(
         passive_skill_dict,
         item_dict,
         mode=PracticeBattleMode.INVESTIGATION,
+        milestone_n=ATTACK_DICE_COUNT,
     )
     manager = PracticeRoundManager(context)
     ps = PracticeBattleState(
