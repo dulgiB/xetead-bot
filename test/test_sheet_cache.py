@@ -79,13 +79,14 @@ class _RecordingSleep:
         self.delays.append(delay)
 
 
-def _make_cache(spreadsheet: _FakeSpreadsheet, sleep=None) -> SheetCache:
+def _make_cache(spreadsheet: _FakeSpreadsheet, sleep=None, clock=None) -> SheetCache:
     return SheetCache(
         spreadsheet,
         worksheet_factory=lambda properties: spreadsheet._worksheets[
             properties["title"]
         ],
         sleep=sleep or _RecordingSleep(),
+        clock=clock or (lambda: 0.0),
     )
 
 
@@ -273,3 +274,76 @@ def test_retry_does_not_repeat_after_cached():
     cache.get_all_values("캐릭터")
 
     assert ws.get_values_call_count == 2
+
+
+def test_reset_values_keeps_metadata_but_rereads_values():
+    """멘션이 바뀌면 시트 값은 다시 읽되, 시트 구성은 그대로라 메타데이터는
+    다시 읽지 않는다."""
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name"], ["아군1"]]})
+    ws = spreadsheet._worksheets["캐릭터"]
+    cache = _make_cache(spreadsheet)
+
+    cache.get_all_values("캐릭터")
+    cache.reset_values()
+    cache.get_all_values("캐릭터")
+
+    assert ws.get_values_call_count == 2
+    assert spreadsheet.fetch_sheet_metadata_call_count == 1
+
+
+def test_unknown_name_refetches_metadata_read_in_earlier_mention():
+    """이전 멘션에서 읽은 메타데이터 뒤에 새로 생긴 시트도 찾을 수 있어야 한다."""
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name"], ["아군1"]]})
+    cache = _make_cache(spreadsheet)
+    cache.worksheet("캐릭터")
+    cache.reset_values()
+
+    spreadsheet._worksheets["로그"] = _FakeWorksheet([["time"]])
+
+    assert cache.worksheet("로그") is spreadsheet._worksheets["로그"]
+    assert spreadsheet.fetch_sheet_metadata_call_count == 2
+
+
+def test_unknown_name_does_not_refetch_metadata_read_in_same_mention():
+    """없는 선택 시트를 조회할 때마다 메타데이터를 다시 읽지 않는다."""
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name"], ["아군1"]]})
+    cache = _make_cache(spreadsheet)
+    cache.worksheet("캐릭터")
+
+    for _ in range(2):
+        try:
+            cache.worksheet("없는시트")
+        except gspread.exceptions.WorksheetNotFound:
+            pass
+
+    assert spreadsheet.fetch_sheet_metadata_call_count == 1
+
+
+def test_invalidate_metadata_refetches_on_next_lookup():
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name"], ["아군1"]]})
+    cache = _make_cache(spreadsheet)
+    cache.worksheet("캐릭터")
+
+    cache.invalidate_metadata()
+    cache.worksheet("캐릭터")
+
+    assert spreadsheet.fetch_sheet_metadata_call_count == 2
+
+
+def test_reset_values_refetches_metadata_after_ttl():
+    """한참 쉬었다 온 멘션은 시트를 다시 만든 경우(id 변경)를 놓치지 않도록
+    메타데이터를 새로 읽는다."""
+    now = [0.0]
+    spreadsheet = _FakeSpreadsheet({"캐릭터": [["name"], ["아군1"]]})
+    cache = _make_cache(spreadsheet, clock=lambda: now[0])
+    cache.worksheet("캐릭터")
+
+    now[0] = 299.0
+    cache.reset_values()
+    cache.worksheet("캐릭터")
+    assert spreadsheet.fetch_sheet_metadata_call_count == 1
+
+    now[0] = 300.0
+    cache.reset_values()
+    cache.worksheet("캐릭터")
+    assert spreadsheet.fetch_sheet_metadata_call_count == 2

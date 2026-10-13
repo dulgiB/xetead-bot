@@ -460,10 +460,8 @@ class BotState:
     # active_post_id). 여러 대련/상시전투가 동시에 진행될 수 있다.
     practices: dict[int, PracticeBattleState] = field(default_factory=dict)
     noncombat: NonCombatState = field(default_factory=NonCombatState)
-    # 멘션 하나를 처리하는 동안에만 유효한 읽기 캐시. 스프레드시트마다 따로
-    # 두는 이유는 gspread에 worksheet 이름별 캐싱이 없어, 부를 때마다 시트
-    # 메타데이터를 통째로 다시 읽기 때문이다. on_notification 시작마다 새로
-    # 교체되므로 이전 멘션의 값이 다음 멘션으로 새지 않는다.
+    # 스프레드시트별 읽기 캐시. 시트 값은 멘션마다 비우고 메타데이터만
+    # 멘션을 넘어 재사용한다(SheetCache 참고).
     sheet_cache: Optional[SheetCache] = None
     field_sheet_cache: Optional[SheetCache] = None
     log_sheet_cache: Optional[SheetCache] = None
@@ -471,6 +469,18 @@ class BotState:
     # TTL이 만료될 때까지 여러 멘션에 걸쳐 재사용된다.
     item_name_cache: Optional[frozenset[str]] = None
     item_name_cache_loaded_at: float = 0.0
+
+
+def _reset_sheet_caches(state: BotState) -> None:
+    """전투 중 시트를 실시간으로 고쳐도 다음 멘션부터는 최신 값을 읽게 한다."""
+    if state.sheet_cache is None:
+        state.sheet_cache = SheetCache(state.spreadsheet)
+    if state.field_sheet_cache is None:
+        state.field_sheet_cache = SheetCache(state.field_spreadsheet)
+    if state.log_sheet_cache is None:
+        state.log_sheet_cache = SheetCache(state.log_spreadsheet)
+    for cache in (state.sheet_cache, state.field_sheet_cache, state.log_sheet_cache):
+        cache.reset_values()
 
 
 def reload_char_data(state: BotState) -> None:
@@ -614,11 +624,7 @@ class MastodonBotListener(StreamListener):
             if not command_text:
                 return
 
-            # 멘션마다 캐시를 새로 교체해, 전투 중 시트를 실시간으로 고쳐도
-            # 다음 멘션부터는 최신 값을 읽게 한다.
-            self._state.sheet_cache = SheetCache(self._state.spreadsheet)
-            self._state.field_sheet_cache = SheetCache(self._state.field_spreadsheet)
-            self._state.log_sheet_cache = SheetCache(self._state.log_spreadsheet)
+            _reset_sheet_caches(self._state)
 
             reload_char_data(self._state)
 

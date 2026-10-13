@@ -1022,6 +1022,10 @@ def append_ledger_row(
     if target_row is None:
         target_row = len(all_values) + 1
     row_values: list[str | int] = [date_str, char_name, reason, amount]
+    if target_row > ws.row_count and cache is not None:
+        # 캐시된 행 수는 GM이 그 뒤에 늘린 행을 모른다.
+        cache.invalidate_metadata()
+        ws = cache.worksheet(_LEDGER_SHEET)
     if target_row <= ws.row_count:
         ws.update(
             [row_values],
@@ -1030,5 +1034,8 @@ def append_ledger_row(
         )
     else:
         ws.append_row(row_values, value_input_option=ValueInputOption.user_entered)
+        if cache is not None:
+            # 시트 행 수가 늘었으므로 캐시된 row_count가 낡았다.
+            cache.invalidate_metadata()
     if cache is not None:
         cache.invalidate(_LEDGER_SHEET)
