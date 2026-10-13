@@ -6,6 +6,8 @@
 """
 
 import os
+import threading
+from types import SimpleNamespace
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
@@ -13,7 +15,7 @@ os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 from battle.practice.context import PracticeBattlefieldContext  # noqa: E402
 from battle.practice.define import PracticeBattleMode  # noqa: E402
 from battle.practice.round_manager import PracticeRoundManager  # noqa: E402
-from bot import log_sheets  # noqa: E402
+from bot import log_sheets, sheet_writer  # noqa: E402
 from bot import main as main_module  # noqa: E402
 from bot.main import BotState  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
@@ -85,3 +87,40 @@ def test_practice_command_updates_field_row(monkeypatch):
 
     assert len(upserts) == 1
     assert upserts[0]["battle_type"] == log_sheets.FieldBattleType.PRACTICE
+
+
+def test_field_row_is_snapshotted_when_submitted(monkeypatch):
+    """기록이 백그라운드에서 늦게 실행돼도, 그 사이 다음 커맨드로 바뀐 전장이
+    아니라 이 커맨드 시점의 값을 쓴다."""
+    state, field_id = _state_with_practice(PracticeBattleMode.PRACTICE)
+    state.spreadsheet = SimpleNamespace(id="db")  # type: ignore[assignment]
+    state.log_spreadsheet = SimpleNamespace(id="log")  # type: ignore[assignment]
+    upserts: list[dict] = []
+    monkeypatch.setattr(log_sheets, "append_battle_log", lambda *a, **k: None)
+    monkeypatch.setattr(
+        log_sheets, "upsert_field_row", lambda *a, **k: upserts.append(k)
+    )
+    writer = sheet_writer.SheetWriter()
+    sheet_writer.install(writer)
+    try:
+        gate = threading.Event()
+        sheet_writer.submit(lambda: gate.wait(timeout=5))
+        main_module._persist_battle_log(
+            state,
+            log_sheets.BattleCommandLog(
+                field_id=field_id,
+                round_n=2,
+                phase="선공 행동",
+                battle_type=log_sheets.FieldBattleType.PRACTICE,
+                command_text="[이동/2]",
+                mastodon_id="acct_a",
+            ),
+            reply_ref="1",
+        )
+        state.practices[777].round_n = 3
+        gate.set()
+        sheet_writer.wait_idle()
+    finally:
+        sheet_writer._writer = None
+
+    assert [upsert["round_n"] for upsert in upserts] == [2]

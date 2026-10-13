@@ -54,6 +54,7 @@ from battle.objects.define import (
 )
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
+from bot import sheet_writer
 from bot.sheet_cache import SheetCache
 
 if TYPE_CHECKING:
@@ -127,12 +128,61 @@ def render_public_field_sheet(
     cache: Optional[SheetCache] = None,
     ensure_merged: bool = False,
 ) -> None:
-    ws = (
+    sheet_writer.wait_idle()
+    requests = _build_render_requests(
+        _field_worksheet(spreadsheet, cache),
+        context,
+        round_n,
+        phase,
+        enemy_declared,
+        battle_name,
+        ensure_merged,
+    )
+    spreadsheet.batch_update({"requests": requests})
+
+
+def submit_public_field_sheet_render(
+    spreadsheet: gspread.Spreadsheet,
+    context: "BattlefieldContext",
+    round_n: int,
+    phase: str,
+    enemy_declared: dict[CharacterId, list[CharacterCommand]],
+    battle_name: Optional[str] = None,
+    cache: Optional[SheetCache] = None,
+) -> None:
+    """`render_public_field_sheet()`와 같은 내용을 백그라운드 기록기로 보낸다.
+    요청은 지금의 전장으로 여기서 다 만든다."""
+    requests = _build_render_requests(
+        _field_worksheet(spreadsheet, cache),
+        context,
+        round_n,
+        phase,
+        enemy_declared,
+        battle_name,
+        ensure_merged=False,
+    )
+    sheet_writer.submit(lambda: spreadsheet.batch_update({"requests": requests}))
+
+
+def _field_worksheet(
+    spreadsheet: gspread.Spreadsheet, cache: Optional[SheetCache]
+) -> gspread.Worksheet:
+    return (
         cache.worksheet(_FIELD_SHEET)
         if cache is not None
         else spreadsheet.worksheet(_FIELD_SHEET)
     )
 
+
+def _build_render_requests(
+    ws: gspread.Worksheet,
+    context: "BattlefieldContext",
+    round_n: int,
+    phase: str,
+    enemy_declared: dict[CharacterId, list[CharacterCommand]],
+    battle_name: Optional[str],
+    ensure_merged: bool,
+) -> list[dict]:
     enemy_grid, enemy_declare_text, notes, enemy_merges = _build_faction_block(
         context,
         FactionType.ENEMY,
@@ -203,8 +253,7 @@ def render_public_field_sheet(
         (_ALLY_MAIN_ROW_START, ally_grid),
     ):
         requests.append(_grid_request(ws.id, first_row, grid, notes))
-
-    spreadsheet.batch_update({"requests": requests})
+    return requests
 
 
 _GRID_FIRST_COL = 2  # B

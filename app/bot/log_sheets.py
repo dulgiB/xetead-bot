@@ -30,6 +30,7 @@ from battle.objects.define import CombatStatType
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 
+from bot import sheet_writer
 from bot.noncombat_state import InvestigationSession
 from bot.sheet_cache import SheetCache
 
@@ -642,6 +643,7 @@ def upsert_field_row(
     같은 커맨드 처리 중 upsert_field_row가 다시 호출됐을 때 방금 쓴 내용을
     못 보고 중복 삽입하는 것을 막기 위함이다.
     """
+    sheet_writer.wait_idle()
     ws = _get_or_create_worksheet(
         spreadsheet, _FIELD_SHEET, _FIELD_HEADERS, cache=cache
     )
@@ -713,6 +715,11 @@ def upsert_field_row(
         cache.invalidate(_FIELD_SHEET)
 
 
+def invalidate_field_rows(cache: SheetCache) -> None:
+    """백그라운드 기록기가 "필드" 행을 고칠 것이므로, 그 뒤에 다시 읽게 한다."""
+    cache.invalidate(_FIELD_SHEET)
+
+
 def update_field_meta(
     spreadsheet: gspread.Spreadsheet,
     field_id: str,
@@ -727,6 +734,7 @@ def update_field_meta(
     field_id에 해당하는 행이 없으면(아직 upsert_field_row가 호출되지 않은
     경우) 조용히 건너뛴다.
     """
+    sheet_writer.wait_idle()
     ws = _get_or_create_worksheet(
         spreadsheet, _FIELD_SHEET, _FIELD_HEADERS, cache=cache
     )
@@ -901,6 +909,7 @@ def append_battle_log(
     entries가 비어 있으면(검증 실패 등) 에러 행 1개만 남긴다.
     entries가 있으면 대상별로 행을 하나씩 추가한다.
     """
+    sheet_writer.wait_idle()
     ws = _get_or_create_worksheet(
         spreadsheet, _BATTLE_LOG_SHEET, _BATTLE_LOG_HEADERS, cache=cache
     )
