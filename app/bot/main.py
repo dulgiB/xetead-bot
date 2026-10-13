@@ -69,7 +69,7 @@ from bot.commands.noncombat import (
     parse_roll_target,
     parse_transfer_item_args,
 )
-from bot import field_restore, log_sheets
+from bot import field_restore, log_sheets, sheet_writer
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data, update_character_curr_hp
 from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCombatState
@@ -358,7 +358,9 @@ def _persist_battle_log(
     battle_log: Optional[log_sheets.BattleCommandLog],
     reply_ref: str,
 ) -> None:
-    """커맨드 정산 결과를 로그_전투(내부 자동화 DB)에 기록한다.
+    """커맨드 정산 결과를 로그_전투(내부 자동화 DB)에 기록하고 필드 DB 행을
+    갱신한다. 답글과 무관하므로 백그라운드 기록기로 보낸다 — 기록할 값은
+    지금의 전장으로 여기서 다 만든다.
 
     스프레드시트 기록 실패가 전투 진행 자체를 막지 않도록 예외를 흡수한다.
     """
@@ -366,56 +368,70 @@ def _persist_battle_log(
         return
 
     try:
-        log_sheets.append_battle_log(
-            state.log_spreadsheet,
-            battle_log.field_id,
-            battle_log.round_n,
-            battle_log.phase,
-            battle_log.command_text,
-            battle_log.entries,
-            reply_ref=reply_ref,
-            error_trace=battle_log.error_trace,
-            mastodon_id=battle_log.mastodon_id,
-            cache=state.log_sheet_cache,
-        )
-
+        field_row: Optional[dict] = None
         if (
             battle_log.battle_type == log_sheets.FieldBattleType.MAIN
             and state.session is not None
         ):
-            log_sheets.upsert_field_row(
-                state.spreadsheet,
-                battle_log.field_id,
-                battle_type=log_sheets.FieldBattleType.MAIN,
-                round_n=state.session.round_n,
-                phase=state.session.current_phase.value,
-                characters=log_sheets.build_field_characters(
+            field_row = {
+                "battle_type": log_sheets.FieldBattleType.MAIN,
+                "round_n": state.session.round_n,
+                "phase": state.session.current_phase.value,
+                "characters": log_sheets.build_field_characters(
                     state.session.context, include_hp=False
                 ),
-                meta={
+                "meta": {
                     **build_field_meta(state),
                     "active_phase_post_id": state.active_phase_post_id,
                 },
-                cache=state.sheet_cache,
-            )
+            }
         elif battle_log.battle_type in _PRACTICE_FIELD_TYPES:
             ps = admin_commands.find_practice_by_field_id(state, battle_log.field_id)
             if ps is not None:
                 phase = ps.phase
+                field_row = {
+                    "battle_type": battle_log.battle_type,
+                    "round_n": ps.round_n,
+                    "phase": phase.value if phase is not None else "",
+                    "characters": log_sheets.build_field_characters(
+                        ps.context, include_hp=True
+                    ),
+                    "meta": _practice_field_meta(ps),
+                }
+    except Exception:
+        logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
+        return
+
+    if field_row is not None and state.sheet_cache is not None:
+        log_sheets.invalidate_field_rows(state.sheet_cache)
+
+    def job() -> None:
+        try:
+            log_sheets.append_battle_log(
+                state.log_spreadsheet,
+                battle_log.field_id,
+                battle_log.round_n,
+                battle_log.phase,
+                battle_log.command_text,
+                battle_log.entries,
+                reply_ref=reply_ref,
+                error_trace=battle_log.error_trace,
+                mastodon_id=battle_log.mastodon_id,
+                cache=sheet_writer.job_cache(
+                    state.log_spreadsheet, state.log_sheet_cache
+                ),
+            )
+            if field_row is not None:
                 log_sheets.upsert_field_row(
                     state.spreadsheet,
                     battle_log.field_id,
-                    battle_type=battle_log.battle_type,
-                    round_n=ps.round_n,
-                    phase=phase.value if phase is not None else "",
-                    characters=log_sheets.build_field_characters(
-                        ps.context, include_hp=True
-                    ),
-                    meta=_practice_field_meta(ps),
-                    cache=state.sheet_cache,
+                    **field_row,
+                    cache=sheet_writer.job_cache(state.spreadsheet, state.sheet_cache),
                 )
-    except Exception:
-        logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
+        except Exception:
+            logger.exception("전투 로그 기록 실패 (field_id=%s)", battle_log.field_id)
+
+    sheet_writer.submit(job)
 
 
 def _persist_noncombat_log(
@@ -460,10 +476,8 @@ class BotState:
     # active_post_id). 여러 대련/상시전투가 동시에 진행될 수 있다.
     practices: dict[int, PracticeBattleState] = field(default_factory=dict)
     noncombat: NonCombatState = field(default_factory=NonCombatState)
-    # 멘션 하나를 처리하는 동안에만 유효한 읽기 캐시. 스프레드시트마다 따로
-    # 두는 이유는 gspread에 worksheet 이름별 캐싱이 없어, 부를 때마다 시트
-    # 메타데이터를 통째로 다시 읽기 때문이다. on_notification 시작마다 새로
-    # 교체되므로 이전 멘션의 값이 다음 멘션으로 새지 않는다.
+    # 스프레드시트별 읽기 캐시. 시트 값은 멘션마다 비우고 메타데이터만
+    # 멘션을 넘어 재사용한다(SheetCache 참고).
     sheet_cache: Optional[SheetCache] = None
     field_sheet_cache: Optional[SheetCache] = None
     log_sheet_cache: Optional[SheetCache] = None
@@ -471,6 +485,18 @@ class BotState:
     # TTL이 만료될 때까지 여러 멘션에 걸쳐 재사용된다.
     item_name_cache: Optional[frozenset[str]] = None
     item_name_cache_loaded_at: float = 0.0
+
+
+def _reset_sheet_caches(state: BotState) -> None:
+    """전투 중 시트를 실시간으로 고쳐도 다음 멘션부터는 최신 값을 읽게 한다."""
+    if state.sheet_cache is None:
+        state.sheet_cache = SheetCache(state.spreadsheet)
+    if state.field_sheet_cache is None:
+        state.field_sheet_cache = SheetCache(state.field_spreadsheet)
+    if state.log_sheet_cache is None:
+        state.log_sheet_cache = SheetCache(state.log_spreadsheet)
+    for cache in (state.sheet_cache, state.field_sheet_cache, state.log_sheet_cache):
+        cache.reset_values()
 
 
 def reload_char_data(state: BotState) -> None:
@@ -614,11 +640,7 @@ class MastodonBotListener(StreamListener):
             if not command_text:
                 return
 
-            # 멘션마다 캐시를 새로 교체해, 전투 중 시트를 실시간으로 고쳐도
-            # 다음 멘션부터는 최신 값을 읽게 한다.
-            self._state.sheet_cache = SheetCache(self._state.spreadsheet)
-            self._state.field_sheet_cache = SheetCache(self._state.field_spreadsheet)
-            self._state.log_sheet_cache = SheetCache(self._state.log_spreadsheet)
+            _reset_sheet_caches(self._state)
 
             reload_char_data(self._state)
 
@@ -2659,6 +2681,7 @@ def main() -> None:
     # 재연결만 재시도하고 프로세스는 살아 있다. 기본값에는 재연결 로직이
     # 없어, 네트워크 순단 한 번에 프로세스가 죽고 시트 전체 재로드와
     # 미종료 전투 복원을 거치는 콜드 재시작을 한다.
+    sheet_writer.install(sheet_writer.SheetWriter())
     listener = MastodonBotListener(mastodon, state, me["acct"])
     handle = mastodon.stream_user(
         listener,

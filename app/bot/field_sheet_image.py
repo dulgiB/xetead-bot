@@ -26,6 +26,7 @@ import fitz
 import gspread
 from PIL import Image, ImageChops
 
+from bot import sheet_writer
 from bot.field_sheet_renderer import EXPORT_BOTTOM_ROW
 from bot.sheet_cache import SheetCache
 
@@ -92,6 +93,7 @@ def capture_field_sheet_image(
     인증은 별도로 만들지 않고 `spreadsheet`가 이미 들고 있는 gspread 인증
     세션(`spreadsheet.client.session`, `AuthorizedSession`)을 재사용한다.
     """
+    sheet_writer.wait_idle()
     ws = (
         cache.worksheet(_FIELD_SHEET)
         if cache is not None

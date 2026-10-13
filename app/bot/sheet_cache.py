@@ -1,22 +1,27 @@
-"""커맨드 하나를 처리하는 동안 스프레드시트 원본 값을 재사용하기 위한 캐시.
+"""스프레드시트 원본 값과 시트 메타데이터를 재사용하기 위한 캐시.
 
 봇이 멘션 하나를 처리할 때마다(reload_char_data → 실제 커맨드 처리 →
 write-back → 필드 시트 기록) "캐릭터"/"에너미" 시트를 여러 지점에서
 각자 다시 읽으면 Google Sheets 읽기 할당량(분당 60회/서비스 계정)을 금방
-소진한다. 이 클래스는 멘션 하나의 처리 범위 안에서만 유효한 캐시로,
-같은 (시트 이름, value_render_option) 조합을 두 번째 요청할 때부터는
-네트워크 호출 없이 이전 결과를 그대로 돌려준다.
+소진한다. 같은 (시트 이름, value_render_option) 조합을 두 번째 요청할
+때부터는 네트워크 호출 없이 이전 결과를 그대로 돌려준다.
 
-gspread.Spreadsheet.worksheet(name)은 이름이 무엇이든 매번 스프레드시트
-전체 메타데이터(fetch_sheet_metadata, 시트 목록 전체)를 새로 읽어온다 —
-"캐릭터"와 "에너미"처럼 서로 다른 이름을 조회할 때도 내용이 완전히 같은
-메타데이터를 두 번 읽는다. 이 캐시는 그 메타데이터 자체를
-인스턴스당 한 번만 가져와 모든 이름의 worksheet() 조회에 재사용한다.
+캐시는 수명이 다른 두 층으로 나뉜다.
 
-캐시는 `on_notification()` 시작 시 매번 새로 만들어(`BotState.sheet_cache`)
-그 멘션 처리가 끝나면 다음 멘션에서 새 인스턴스로 교체된다 — 커맨드 사이에는
-공유하지 않는다. 전투 중 스프레드시트를 실시간으로 고쳐도(참전 신청, GM의
-행 수정 등) 다음 멘션부터는 다시 최신 값을 읽는다.
+- **시트 값**: 멘션 하나의 처리 범위에서만 유효하다. 멘션마다
+  `reset_values()`로 비우므로, 전투 중 스프레드시트를 실시간으로 고쳐도
+  (참전 신청, GM의 행 수정 등) 다음 멘션부터는 다시 최신 값을 읽는다.
+- **시트 메타데이터**(시트 목록·id): 여러 멘션에 걸쳐 재사용하되, 읽은 지
+  `_METADATA_TTL_SEC`가 지나면 다음 멘션에서 다시 읽는다.
+  gspread.Spreadsheet.worksheet(name)은 이름이 무엇이든 매번 스프레드시트
+  전체 메타데이터를 새로 읽어오는데, 커맨드가 몰리는 전투 중에 멘션마다
+  다시 읽을 이유는 없다. 그렇다고 계속 들고 있으면 GM이 시트를 지우고 같은
+  이름으로 다시 만들었을 때(템플릿 재복사 등) 바뀐 시트 id를 끝내 모르고,
+  id로 요청하는 렌더링·이미지 캡처가 재기동 전까지 실패한다.
+  없는 이름을 찾았는데 메타데이터가 이전 멘션에서 읽은 것이면 한 번 다시
+  읽어 확인한다 — 그 사이 새로 생긴 시트(봇이 만든 로그 시트 등)를 놓치지
+  않기 위해서다. 행 수처럼 쓰기로 달라지는 속성을 읽는 쪽은 그 쓰기 뒤에
+  `invalidate_metadata()`를 부른다.
 
 쓰기(update_cell, batch_update 등)는 캐싱하지 않는다 — 이 캐시는 순수하게
 읽기 중복만 제거한다. 같은 멘션 처리 중 어떤 시트에 쓰기를 수행했다면
@@ -30,10 +35,16 @@ gspread.Spreadsheet.worksheet(name)은 이름이 무엇이든 매번 스프레�
 
 import logging
 import time
-from typing import Any, Callable, Mapping, Optional, TypeVar
+from typing import Any, Callable, Mapping, Optional, Sequence, TypeVar
 
 import gspread
-from gspread.utils import ValueRenderOption, numericise_all, to_records
+from gspread.utils import (
+    ValueRenderOption,
+    absolute_range_name,
+    fill_gaps,
+    numericise_all,
+    to_records,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +54,7 @@ _T = TypeVar("_T")
 # 같은 결과이므로 제외한다.
 _RETRYABLE_STATUS_CODES = frozenset({500, 502, 503, 504})
 _MAX_ATTEMPT_COUNT = 3
+_METADATA_TTL_SEC = 300.0
 _RETRY_BASE_DELAY_SEC = 1.0
 
 
@@ -54,6 +66,14 @@ def _is_retryable(error: gspread.exceptions.APIError) -> bool:
     return error.response.status_code in _RETRYABLE_STATUS_CODES
 
 
+def _padded(values: list[list]) -> list[list]:
+    """`Worksheet.get_values(pad_values=True)`와 같은 모양으로 맞춘다."""
+    try:
+        return fill_gaps(values)
+    except KeyError:
+        return [[]]
+
+
 class SheetCache:
     def __init__(
         self,
@@ -63,15 +83,19 @@ class SheetCache:
             Callable[[dict[str, Any]], gspread.Worksheet]
         ] = None,
         sleep: Optional[Callable[[float], None]] = None,
+        clock: Optional[Callable[[], float]] = None,
     ) -> None:
         self._spreadsheet = spreadsheet
         self._sheet_metadata: Optional[Mapping[str, Any]] = None
+        self._metadata_fetched_since_reset = False
+        self._metadata_fetched_at = 0.0
         self._worksheets: dict[str, gspread.Worksheet] = {}
         self._raw_values: dict[tuple[str, Optional[ValueRenderOption]], list[list]] = {}
         # HTTP 클라이언트 없이 캐싱 로직만 검증하기 위한 테스트 seam.
         self._worksheet_factory = worksheet_factory or self._build_worksheet
         # 재시도 백오프를 테스트에서 실제로 기다리지 않게 하기 위한 seam.
         self._sleep = sleep or time.sleep
+        self._clock = clock or time.monotonic
 
     def _call_with_retry(self, description: str, call: Callable[[], _T]) -> _T:
         """`call`이 재시도 가능한 5xx로 실패하면 지수 백오프 후 다시 부른다.
@@ -108,27 +132,34 @@ class SheetCache:
             self._spreadsheet.client,
         )
 
+    def _fetch_metadata(self) -> Mapping[str, Any]:
+        self._sheet_metadata = self._call_with_retry(
+            "메타데이터 조회", self._spreadsheet.fetch_sheet_metadata
+        )
+        self._metadata_fetched_since_reset = True
+        self._metadata_fetched_at = self._clock()
+        return self._sheet_metadata
+
+    @staticmethod
+    def _find_properties(
+        metadata: Mapping[str, Any], name: str
+    ) -> Optional[dict[str, Any]]:
+        for sheet in metadata["sheets"]:
+            if sheet["properties"]["title"] == name:
+                return sheet["properties"]
+        return None
+
     def worksheet(self, name: str) -> gspread.Worksheet:
-        """gspread.Spreadsheet.worksheet()는 이름과 무관하게 매번
-        fetch_sheet_metadata()(스프레드시트 전체 시트 목록)를 새로 호출한다 —
-        "캐릭터"/"에너미"/"필드" 등 이름이 다른 시트를 각각 조회하면 매번
-        똑같은 전체 메타데이터를 중복해서 읽어오는 셈이다. 여기서는 그
-        메타데이터 자체를 인스턴스당 한 번만 가져와 모든 이름 조회에
-        재사용한다."""
         if name not in self._worksheets:
-            if self._sheet_metadata is None:
-                self._sheet_metadata = self._call_with_retry(
-                    "메타데이터 조회", self._spreadsheet.fetch_sheet_metadata
-                )
-            try:
-                item = next(
-                    sheet
-                    for sheet in self._sheet_metadata["sheets"]
-                    if sheet["properties"]["title"] == name
-                )
-            except StopIteration:
+            metadata = self._sheet_metadata
+            if metadata is None:
+                metadata = self._fetch_metadata()
+            properties = self._find_properties(metadata, name)
+            if properties is None and not self._metadata_fetched_since_reset:
+                properties = self._find_properties(self._fetch_metadata(), name)
+            if properties is None:
                 raise gspread.exceptions.WorksheetNotFound(name)
-            self._worksheets[name] = self._worksheet_factory(item["properties"])
+            self._worksheets[name] = self._worksheet_factory(properties)
         return self._worksheets[name]
 
     def get_all_values(
@@ -146,6 +177,40 @@ class SheetCache:
                 ),
             )
         return self._raw_values[key]
+
+    def prefetch_values(
+        self,
+        names: Sequence[str],
+        value_render_option: Optional[ValueRenderOption] = None,
+    ) -> None:
+        """여러 시트의 값을 요청 한 번(`values:batchGet`)으로 읽어 캐시에 채운다.
+        결과는 시트마다 `get_all_values()`를 부른 것과 같다. 없는 시트는
+        건너뛰므로, 찾는 쪽이 `get_all_values()`에서 평소처럼
+        `WorksheetNotFound`를 받는다."""
+        pending: list[str] = []
+        for name in names:
+            if (name, value_render_option) in self._raw_values:
+                continue
+            try:
+                self.worksheet(name)
+            except gspread.exceptions.WorksheetNotFound:
+                continue
+            pending.append(name)
+        if not pending:
+            return
+        params: dict[str, Any] = {}
+        if value_render_option is not None:
+            params["valueRenderOption"] = value_render_option
+        response = self._call_with_retry(
+            f"{', '.join(pending)} 시트 일괄 읽기",
+            lambda: self._spreadsheet.values_batch_get(
+                [absolute_range_name(name) for name in pending], params=params
+            ),
+        )
+        for name, value_range in zip(pending, response["valueRanges"]):
+            self._raw_values[(name, value_render_option)] = _padded(
+                value_range.get("values", [[]])
+            )
 
     def get_all_records(
         self,
@@ -165,3 +230,13 @@ class SheetCache:
         self._raw_values = {
             key: value for key, value in self._raw_values.items() if key[0] != name
         }
+
+    def reset_values(self) -> None:
+        self._raw_values = {}
+        self._metadata_fetched_since_reset = False
+        if self._clock() - self._metadata_fetched_at >= _METADATA_TTL_SEC:
+            self.invalidate_metadata()
+
+    def invalidate_metadata(self) -> None:
+        self._sheet_metadata = None
+        self._worksheets = {}

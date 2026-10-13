@@ -9,7 +9,7 @@ from battle.exceptions import CommandValidationError
 from battle.objects.models import CharacterId
 
 from bot.battle_reply_text import format_battle_reply
-from bot.field_sheet_renderer import render_public_field_sheet
+from bot.field_sheet_renderer import submit_public_field_sheet_render
 from bot.load_data import (
     build_keyword_date_write,
     reveal_declared_enemy_skills,
@@ -154,7 +154,7 @@ def handle_character_command(
 
         if battle_type == FieldBattleType.MAIN:
             try:
-                render_public_field_sheet(
+                submit_public_field_sheet_render(
                     state.field_spreadsheet,
                     session.context,
                     round_n=round_n,

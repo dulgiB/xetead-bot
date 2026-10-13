@@ -320,6 +320,7 @@ def load_char_data(
       - noncombat_char_dict: mastodon_id → NoncombatCharacterDataFromSpreadsheet (mastodon_id 있는 것만, 캐릭터만)
     """
     if cache is not None:
+        cache.prefetch_values(("캐릭터", "에너미"), value_render_option=_UNFORMATTED)
         char_raw = cache.get_all_records("캐릭터", value_render_option=_UNFORMATTED)
     else:
         char_raw = spreadsheet.worksheet("캐릭터").get_all_records(
