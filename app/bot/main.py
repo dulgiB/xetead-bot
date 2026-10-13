@@ -100,6 +100,8 @@ _RE_DECLARATION = re.compile(
 _RE_INVESTIGATION_DECLARATION = re.compile(r"\[\s*(\d[^\[\]/]*)]")
 _RE_PRACTICE_RETIRE = re.compile(rf"\[{whitespace_tolerant_literal('탈락')}]")
 _PRACTICE_PHASE_GUIDE = "해당 팀 전원이 타래로 이어서 커맨드를 입력해 주세요."
+# 운영 기록에서 판정과 그 진행 게시물 사이는 최대 11단계였다.
+_ROLL_TARGET_MAX_DEPTH = 15
 _RE_INVESTIGATION_BATTLE_SELF = re.compile(
     rf"\[{whitespace_tolerant_literal('상시전투')}]"
 )
@@ -887,26 +889,31 @@ class MastodonBotListener(StreamListener):
             return None, "", False
         return best[1], best[2], False
 
-    def _find_roll_target(
-        self, status_id: int, in_reply_to_id: Optional[int]
-    ) -> Optional[RollTarget]:
+    def _find_roll_target(self, in_reply_to_id: Optional[int]) -> Optional[RollTarget]:
         """스레드에서 가장 가까운 world/admin 게시물이 요구한 판정 목표치를 찾는다.
 
         플레이어들은 진행 게시물에 바로 달지 않고 서로의 판정에 이어 달기
         때문에 직속 부모만으로는 부족하다. 가장 가까운 진행 게시물에 목표치가
         없으면 None이다 — 그보다 위의 요구는 이미 결과를 서술하며 넘어간
         판정이다.
+
+        부모를 하나씩 조회하되 `_ROLL_TARGET_MAX_DEPTH`까지만 올라간다. 그
+        위에 진행 게시물이 있으면 목표치 없이 굴림만 나가고 GM이 직접
+        확인한다.
         """
-        if in_reply_to_id is None:
-            return None
+        current = in_reply_to_id
         try:
-            context = self._mastodon.status_context(status_id)
+            for _ in range(_ROLL_TARGET_MAX_DEPTH):
+                if current is None:
+                    return None
+                status = self._mastodon.status(current)
+                parent = status.get("in_reply_to_id")
+                self._threads.record(current, parent)
+                if status["account"]["acct"] in (WORLD_MASTODON_ID, ADMIN_MASTODON_ID):
+                    return parse_roll_target(_strip_html(status["content"]))
+                current = parent
         except Exception:
-            logger.exception("판정 목표치 조회 실패 (status_id=%s)", status_id)
-            return None
-        for ancestor in reversed(context.get("ancestors", [])):
-            if ancestor["account"]["acct"] in (WORLD_MASTODON_ID, ADMIN_MASTODON_ID):
-                return parse_roll_target(_strip_html(ancestor["content"]))
+            logger.exception("판정 목표치 조회 실패 (status_id=%s)", current)
         return None
 
     def __dispatch(
@@ -1263,7 +1270,7 @@ class MastodonBotListener(StreamListener):
                 stat_name,
                 state,
                 keyword_boost=keyword_boost,
-                target=self._find_roll_target(status_id, in_reply_to_id),
+                target=self._find_roll_target(in_reply_to_id),
             )
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))

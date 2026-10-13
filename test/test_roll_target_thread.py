@@ -5,7 +5,11 @@ import os
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
-from bot.main import BotState, MastodonBotListener  # noqa: E402
+from bot.main import (  # noqa: E402
+    _ROLL_TARGET_MAX_DEPTH,
+    BotState,
+    MastodonBotListener,
+)
 from test_bot_admin import _FakeMastodon  # noqa: E402
 
 
@@ -25,10 +29,13 @@ def _post(acct: str, text: str) -> dict:
 
 
 def _find_roll_target(ancestors: list[dict]):
+    """`ancestors`를 루트부터 이어진 스레드로 두고, 마지막 게시물에 단 판정의
+    목표치를 찾는다."""
+    posts = [{**post, "id": i} for i, post in enumerate(ancestors, start=1)]
     listener = MastodonBotListener(
-        _FakeMastodon(ancestors=ancestors), _make_state(), bot_acct="bot"
+        _FakeMastodon(ancestors=posts), _make_state(), bot_acct="bot"
     )
-    return listener._find_roll_target(900, 899)
+    return listener._find_roll_target(len(posts))
 
 
 def test_find_roll_target_walks_up_past_player_replies():
@@ -73,3 +80,18 @@ def test_find_roll_target_reads_admin_post():
 
     assert target is not None
     assert target.thresholds == {"육체": 7}
+
+
+def test_find_roll_target_gives_up_beyond_max_depth():
+    replies = [_post("user2", "[판정/지식]")] * _ROLL_TARGET_MAX_DEPTH
+
+    assert (
+        _find_roll_target([_post("test-world", "[판정: 최소 1인] [지식 8]")] + replies)
+        is None
+    )
+    assert (
+        _find_roll_target(
+            [_post("test-world", "[판정: 최소 1인] [지식 8]")] + replies[1:]
+        )
+        is not None
+    )

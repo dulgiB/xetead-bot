@@ -875,13 +875,13 @@ class _FakeMastodon:
     def status(self, status_id):
         """status_context_ancestors를 루트부터 이어진 한 줄 스레드로 보고,
         거기 없는 게시물은 그 끝에 단 답글로 본다."""
-        chain = [a["id"] for a in self.status_context_ancestors if "id" in a]
+        posts = [a for a in self.status_context_ancestors if "id" in a]
+        chain = [a["id"] for a in posts]
         if status_id in chain:
             i = chain.index(status_id)
             parent = chain[i - 1] if i else None
-        else:
-            parent = chain[-1] if chain else None
-        return {"id": status_id, "in_reply_to_id": parent}
+            return {**posts[i], "id": status_id, "in_reply_to_id": parent}
+        return {"id": status_id, "in_reply_to_id": chain[-1] if chain else None}
 
 
 def _make_notification(
