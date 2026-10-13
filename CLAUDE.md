@@ -77,6 +77,7 @@ app/
     battle_reply_text.py         # 전투 커맨드 처리 결과 → 답글 텍스트 조립
     sheet_cache.py               # 시트 값(멘션 단위)·메타데이터(5분) 읽기 캐시
     sheet_writer.py              # 답글과 무관한 시트 기록을 넘기는 백그라운드 기록기
+    thread_index.py              # 봇이 본 게시물의 부모 관계로 스레드 조상 판정(API 조회 절감)
   spreadsheets/
     models/                       # 스프레드시트 행 ↔ dataclass 매핑 (combat/noncombat/quest)
     inventory.py                  # 아이템 인벤토리 조회/차감

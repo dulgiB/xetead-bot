@@ -8,7 +8,7 @@ import traceback
 import dataclasses
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from typing import Optional
+from typing import Iterable, Optional
 
 import gspread
 from battle.core.commands.define import RoundPhaseType
@@ -76,6 +76,7 @@ from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCom
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 from bot.sheet_cache import SheetCache
+from bot.thread_index import ThreadIndex
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -529,6 +530,27 @@ class MastodonBotListener(StreamListener):
         self._notification_queue: "queue.Queue[dict]" = queue.Queue()
         # 지금 처리 중인 멘션 게시물 id → 그 게시물에 답할 때 멘션할 계정.
         self._reply_mentions: dict[int, list[str]] = {}
+        self._threads = ThreadIndex()
+
+    def _status_post(self, *args, **kwargs) -> dict:
+        status = self._mastodon.status_post(*args, **kwargs)
+        self._threads.record(status["id"], kwargs.get("in_reply_to_id"))
+        return status
+
+    def _thread_ancestor_ids(
+        self, status_id: int, in_reply_to_id: int, wanted: Iterable[Optional[int]]
+    ) -> set[int]:
+        """이 게시물의 스레드 조상 id. `wanted` 중 하나에 닿으면 거기까지만
+        확인한다. 봇이 본 게시물만으로 따라갈 수 없을 때만 Mastodon에
+        스레드를 조회한다."""
+        known = self._threads.ancestor_ids(
+            in_reply_to_id, (post_id for post_id in wanted if post_id is not None)
+        )
+        if known is not None:
+            return known
+        ancestors = self._mastodon.status_context(status_id).get("ancestors", [])
+        self._threads.record_ancestors(ancestors)
+        return {a["id"] for a in ancestors}
 
     def on_abort(self, err: Exception) -> None:
         """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
@@ -636,6 +658,7 @@ class MastodonBotListener(StreamListener):
             status_id = status["id"]
             in_reply_to_id: Optional[int] = status.get("in_reply_to_id")
 
+            self._threads.record(status_id, in_reply_to_id)
             command_text = _extract_command(status["content"])
             if not command_text:
                 return
@@ -732,28 +755,22 @@ class MastodonBotListener(StreamListener):
         direct = state.practices.get(in_reply_to_id)
         if direct is not None:
             return direct
-        if not any(acct in ps.expected_accts for ps in state.practices.values()):
+        sessions = [ps for ps in state.practices.values() if acct in ps.expected_accts]
+        if not sessions:
             return None
 
         try:
-            context = self._mastodon.status_context(status_id)
+            ancestor_ids = self._thread_ancestor_ids(
+                status_id,
+                in_reply_to_id,
+                (post for ps in sessions for post in _practice_thread_posts(ps)),
+            )
         except Exception:
             logger.exception("스레드 대련 세션 조회 실패 (status_id=%s)", status_id)
             return None
-        ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
-        if not ancestor_ids:
-            return None
 
-        for ps in state.practices.values():
-            if acct not in ps.expected_accts:
-                continue
-            # field_id(전투 개시 게시물)는 세션 내내 고정이라 스레드 어느
-            # 위치에서든 조상으로 잡힌다. 아직 시작 전(field_id 미확정)이거나
-            # 페이즈가 막 넘어간 직후를 위해 prep/active 게시물도 함께 본다.
-            candidates = {ps.active_post_id, ps.prep_post_id}
-            if ps.field_id.isdigit():
-                candidates.add(int(ps.field_id))
-            if candidates & ancestor_ids:
+        for ps in sessions:
+            if _practice_thread_posts(ps) & ancestor_ids:
                 return ps
         return None
 
@@ -786,11 +803,13 @@ class MastodonBotListener(StreamListener):
             return False
 
         try:
-            context = self._mastodon.status_context(status_id)
+            ancestor_ids = self._thread_ancestor_ids(
+                status_id, in_reply_to_id, (phase_post_id,)
+            )
         except Exception:
             logger.exception("스레드 본 전투 조회 실패 (status_id=%s)", status_id)
             return False
-        return any(a["id"] == phase_post_id for a in context.get("ancestors", []))
+        return phase_post_id in ancestor_ids
 
     def _resolve_practice_for_proxy(
         self,
@@ -832,24 +851,19 @@ class MastodonBotListener(StreamListener):
         # 진행 중인 세션이 있을 때만 스레드를 조회한다 — 대련과 무관한
         # 고빈도 admin 멘션까지 매번 API를 한 번 더 쓰지 않도록.
         try:
-            context = self._mastodon.status_context(status_id)
+            ancestor_ids = self._thread_ancestor_ids(
+                status_id,
+                in_reply_to_id,
+                (post for ps in candidates for post in _practice_thread_posts(ps)),
+            )
         except Exception:
             logger.exception(
                 "스레드 대련 세션 조회 실패 (프록시, status_id=%s)", status_id
             )
             return None
-        ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
-        if not ancestor_ids:
-            return None
 
         for ps in candidates:
-            # field_id(전투 개시 게시물)는 세션 내내 고정이라 스레드 어느
-            # 위치에서든 조상으로 잡힌다. 페이즈가 막 넘어간 직후를 위해
-            # prep/active 게시물도 함께 본다.
-            posts = {ps.active_post_id, ps.prep_post_id}
-            if ps.field_id.isdigit():
-                posts.add(int(ps.field_id))
-            if posts & ancestor_ids:
+            if _practice_thread_posts(ps) & ancestor_ids:
                 return ps
         return None
 
@@ -890,8 +904,15 @@ class MastodonBotListener(StreamListener):
                 return session, "menu", True
 
         try:
-            context = self._mastodon.status_context(status_id)
-            ancestor_ids = {a["id"] for a in context.get("ancestors", [])}
+            ancestor_ids = self._thread_ancestor_ids(
+                status_id,
+                in_reply_to_id,
+                (
+                    post_id
+                    for session in sessions
+                    for post_id in (session.overview_post_id, session.menu_post_id)
+                ),
+            )
         except Exception:
             logger.exception("스레드 상시조사 세션 조회 실패 (status_id=%s)", status_id)
             return None, "", False
@@ -1436,7 +1457,7 @@ class MastodonBotListener(StreamListener):
         else:
             # 필드 시트 이미지는 아래 페이즈 게시물에만 첨부한다.
             if result.post_as_new_status:
-                reply_status = self._mastodon.status_post(
+                reply_status = self._status_post(
                     _truncate(result.reply_text), visibility="public"
                 )
             else:
@@ -1473,13 +1494,11 @@ class MastodonBotListener(StreamListener):
                 # 캐릭터가 많으면 500자를 넘을 수 있다 — 뒷부분을 잘라내지 않고
                 # 계산식과 동일하게 줄 단위로 나눠 스레드로 이어 보낸다.
                 chunks = _split_for_post(post_text, 0)
-                new_post = self._mastodon.status_post(
+                new_post = self._status_post(
                     chunks[0], media_ids=game_media_ids or None
                 )
                 for chunk in chunks[1:]:
-                    new_post = self._mastodon.status_post(
-                        chunk, in_reply_to_id=new_post["id"]
-                    )
+                    new_post = self._status_post(chunk, in_reply_to_id=new_post["id"])
                 _apply_game_post_side_effects(state, result, new_post["id"])
                 self._post_calc_followups(
                     new_post["id"], None, result.game_post_calc_text
@@ -1489,7 +1508,7 @@ class MastodonBotListener(StreamListener):
             # 공개 게시물과 별개로, admin에게만 알려야 하는 내용(시트 설정
             # 오류 등)을 DM으로 보낸다.
             try:
-                self._mastodon.status_post(
+                self._status_post(
                     f"@{ADMIN_MASTODON_ID} {result.admin_dm_text}",
                     visibility="direct",
                 )
@@ -1529,14 +1548,14 @@ class MastodonBotListener(StreamListener):
         아니어도 결과를 알려야 할 계정(대련 참여자 전원 등)이다."""
         mention_prefix = self._mention_prefix(in_reply_to_id, acct, mention_accts)
         chunks = _split_for_post(text, len(mention_prefix))
-        status = self._mastodon.status_post(
+        status = self._status_post(
             f"{mention_prefix}{chunks[0]}",
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
             media_ids=media_ids or None,
         )
         for chunk in chunks[1:]:
-            status = self._mastodon.status_post(
+            status = self._status_post(
                 f"{mention_prefix}{chunk}",
                 in_reply_to_id=status["id"],
                 visibility=visibility,
@@ -1614,7 +1633,7 @@ class MastodonBotListener(StreamListener):
         def _spoiler(i: int) -> str:
             return f"{text} ({i}/{len(calc_chunks)})" if multiple else text
 
-        first_status = self._mastodon.status_post(
+        first_status = self._status_post(
             f"{mention_prefix}{calc_chunks[0]}",
             in_reply_to_id=in_reply_to_id,
             visibility=visibility,
@@ -1623,7 +1642,7 @@ class MastodonBotListener(StreamListener):
         )
         last_status = first_status
         for i, chunk in enumerate(calc_chunks[1:], start=2):
-            last_status = self._mastodon.status_post(
+            last_status = self._status_post(
                 f"{mention_prefix}{chunk}",
                 in_reply_to_id=last_status["id"],
                 visibility=visibility,
@@ -1670,7 +1689,7 @@ class MastodonBotListener(StreamListener):
         prefix = _practice_mention_prefix(mention_accts)
         post: dict = {"id": in_reply_to_id}
         for chunk in _split_for_post(game_post, len(prefix)):
-            post = self._mastodon.status_post(
+            post = self._status_post(
                 f"{prefix}{chunk}",
                 visibility=ps.visibility,
                 in_reply_to_id=post["id"],
@@ -1719,9 +1738,22 @@ class MastodonBotListener(StreamListener):
             post_kwargs: dict = {"in_reply_to_id": reply_to, "spoiler_text": spoiler}
             if visibility is not None:
                 post_kwargs["visibility"] = visibility
-            calc_status = self._mastodon.status_post(f"{prefix}{chunk}", **post_kwargs)
+            calc_status = self._status_post(f"{prefix}{chunk}", **post_kwargs)
             reply_to = calc_status["id"]
         return calc_status
+
+
+def _practice_thread_posts(ps: PracticeBattleState) -> set[int]:
+    """스레드 조상에 하나라도 있으면 그 세션의 스레드로 보는 게시물들.
+
+    field_id(전투 개시 게시물)는 세션 내내 고정이라 스레드 어느 위치에서든
+    조상으로 잡힌다. 아직 시작 전(field_id 미확정)이거나 페이즈가 막 넘어간
+    직후를 위해 prep/active 게시물도 함께 본다.
+    """
+    posts = {post for post in (ps.active_post_id, ps.prep_post_id) if post is not None}
+    if ps.field_id.isdigit():
+        posts.add(int(ps.field_id))
+    return posts
 
 
 def _practice_mention_accts(ps: PracticeBattleState, sender: str) -> list[str]:
