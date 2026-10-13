@@ -1,3 +1,4 @@
+import gspread
 import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
@@ -361,6 +362,7 @@ class _FakeWorksheet:
         self._header = header
         self._rows = rows
         self.appended: list[list] = []
+        self.reject_delete = False
 
     def get_all_records(self):
         return [dict(zip(self._header, row)) for row in self._rows]
@@ -377,6 +379,19 @@ class _FakeWorksheet:
     def append_row(self, row, value_input_option=None):
         self.appended.append(row)
         self._rows.append(row)
+
+    def delete_rows(self, start_index, end_index=None):
+        if self.reject_delete:
+            raise gspread.exceptions.APIError(_RejectedResponse())
+        del self._rows[start_index - 2]
+
+
+class _RejectedResponse:
+    status_code = 400
+    text = "cannot delete rows"
+
+    def json(self):
+        return {"error": {"code": 400, "message": self.text, "status": "INVALID"}}
 
 
 class _FakeSpreadsheet:
@@ -446,3 +461,49 @@ def test_inventory_write_back_uses_cache_when_set():
 
     # consume 뒤 캐시가 무효화되지 않았다면 grant가 낡은 값을 읽어 엉뚱한
     # 행을 갱신했을 것이다.
+
+
+def _inventory_with_rows(rows):
+    ws = _FakeWorksheet(["character_name", "item_id", "count"], rows)
+    counts = {(name, item): int(count) for name, item, count in rows}
+    return ws, Inventory(counts, _FakeSpreadsheet(ws))
+
+
+def test_consuming_last_item_deletes_its_row():
+    ws, inv = _inventory_with_rows(
+        [["아군 1", "포션", "1"], ["아군 1", "폭탄", "2"], ["아군 2", "포션", "1"]]
+    )
+
+    inv.consume("아군 1", "포션", 1)
+
+    assert ws._rows == [["아군 1", "폭탄", "2"], ["아군 2", "포션", "1"]]
+    assert inv.get_count("아군 1", "포션") == 0
+    assert inv.items_for_character("아군 1") == {"폭탄": 2}
+
+
+def test_consuming_some_items_keeps_the_row():
+    ws, inv = _inventory_with_rows([["아군 1", "포션", "3"]])
+
+    inv.consume("아군 1", "포션", 1)
+
+    assert ws._rows == [["아군 1", "포션", 2]]
+
+
+def test_transferring_all_items_moves_the_row():
+    """양도는 차감 뒤 지급이다 — 차감으로 앞 행이 지워져 번호가 밀려도 받는
+    쪽 행을 정확히 찾아야 한다."""
+    ws, inv = _inventory_with_rows([["아군 1", "포션", "2"], ["아군 2", "포션", "1"]])
+
+    inv.consume("아군 1", "포션", 2)
+    inv.grant("아군 2", "포션", 2)
+
+    assert ws._rows == [["아군 2", "포션", 3]]
+
+
+def test_rejected_row_deletion_falls_back_to_zero_count():
+    ws, inv = _inventory_with_rows([["아군 1", "포션", "1"]])
+    ws.reject_delete = True
+
+    inv.consume("아군 1", "포션", 1)
+
+    assert ws._rows == [["아군 1", "포션", 0]]
