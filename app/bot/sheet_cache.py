@@ -35,10 +35,16 @@ write-back → 필드 시트 기록) "캐릭터"/"에너미" 시트를 여러 �
 
 import logging
 import time
-from typing import Any, Callable, Mapping, Optional, TypeVar
+from typing import Any, Callable, Mapping, Optional, Sequence, TypeVar
 
 import gspread
-from gspread.utils import ValueRenderOption, numericise_all, to_records
+from gspread.utils import (
+    ValueRenderOption,
+    absolute_range_name,
+    fill_gaps,
+    numericise_all,
+    to_records,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +64,14 @@ def _is_retryable(error: gspread.exceptions.APIError) -> bool:
     -1이 된다(실제 502가 이 형태로 온다). HTTP 상태 코드는 그런 경우에도
     정확하므로 이쪽을 판정 기준으로 쓴다."""
     return error.response.status_code in _RETRYABLE_STATUS_CODES
+
+
+def _padded(values: list[list]) -> list[list]:
+    """`Worksheet.get_values(pad_values=True)`와 같은 모양으로 맞춘다."""
+    try:
+        return fill_gaps(values)
+    except KeyError:
+        return [[]]
 
 
 class SheetCache:
@@ -163,6 +177,40 @@ class SheetCache:
                 ),
             )
         return self._raw_values[key]
+
+    def prefetch_values(
+        self,
+        names: Sequence[str],
+        value_render_option: Optional[ValueRenderOption] = None,
+    ) -> None:
+        """여러 시트의 값을 요청 한 번(`values:batchGet`)으로 읽어 캐시에 채운다.
+        결과는 시트마다 `get_all_values()`를 부른 것과 같다. 없는 시트는
+        건너뛰므로, 찾는 쪽이 `get_all_values()`에서 평소처럼
+        `WorksheetNotFound`를 받는다."""
+        pending: list[str] = []
+        for name in names:
+            if (name, value_render_option) in self._raw_values:
+                continue
+            try:
+                self.worksheet(name)
+            except gspread.exceptions.WorksheetNotFound:
+                continue
+            pending.append(name)
+        if not pending:
+            return
+        params: dict[str, Any] = {}
+        if value_render_option is not None:
+            params["valueRenderOption"] = value_render_option
+        response = self._call_with_retry(
+            f"{', '.join(pending)} 시트 일괄 읽기",
+            lambda: self._spreadsheet.values_batch_get(
+                [absolute_range_name(name) for name in pending], params=params
+            ),
+        )
+        for name, value_range in zip(pending, response["valueRanges"]):
+            self._raw_values[(name, value_render_option)] = _padded(
+                value_range.get("values", [[]])
+            )
 
     def get_all_records(
         self,

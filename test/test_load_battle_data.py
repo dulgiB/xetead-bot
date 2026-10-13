@@ -34,6 +34,14 @@ class _FakeSpreadsheet:
             raise gspread.exceptions.WorksheetNotFound(name)
         return self._sheets[name]
 
+    def values_batch_get(self, ranges, params=None):
+        return {
+            "valueRanges": [
+                {"values": self._sheets[name.strip("'")].get_values()}
+                for name in ranges
+            ]
+        }
+
     def fetch_sheet_metadata(self):
         self.fetch_sheet_metadata_call_count += 1
         return {"sheets": [{"properties": {"title": name}} for name in self._sheets]}
