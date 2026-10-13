@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 import gspread
+from gspread.utils import ValueInputOption
 
 if TYPE_CHECKING:
     # bot.sheet_cache가 이 모듈을 가져오므로 런타임 임포트는 순환 참조가 된다.
@@ -75,6 +76,47 @@ class Inventory:
             else self._spreadsheet.worksheet(_INVENTORY_SHEET)
         )
 
+    def _write_new_row(
+        self, ws: gspread.Worksheet, row_idx: int, row_values: list
+    ) -> None:
+        """내용이 있는 마지막 행 바로 아래(`row_idx`)에 쓴다.
+
+        `append_row`(values.append)는 시트가 테이블이면 범위 안의 빈 행까지
+        테이블로 보고 그 끝 다음에 붙인다. 행 번호를 정해 직접 쓰고, 그리드에
+        남은 행이 없으면 테이블 안쪽(마지막 행 앞)에 행을 넣는다 — 테이블 끝
+        바깥에 넣으면 범위가 따라 늘지 않는다.
+        """
+        if row_idx > ws.row_count and self.cache is not None:
+            # 캐시된 행 수는 GM이 그 뒤에 늘린 행을 모른다.
+            self.cache.invalidate_metadata()
+            ws = self._worksheet()
+        if row_idx > ws.row_count and self._spreadsheet is not None:
+            row_idx = max(ws.row_count, 2)
+            self._spreadsheet.batch_update(
+                {
+                    "requests": [
+                        {
+                            "insertDimension": {
+                                "range": {
+                                    "sheetId": ws.id,
+                                    "dimension": "ROWS",
+                                    "startIndex": row_idx - 1,
+                                    "endIndex": row_idx,
+                                },
+                                "inheritFromBefore": True,
+                            }
+                        }
+                    ]
+                }
+            )
+            if self.cache is not None:
+                self.cache.invalidate_metadata()
+        ws.update(
+            [row_values],
+            range_name=f"A{row_idx}:C{row_idx}",
+            value_input_option=ValueInputOption.user_entered,
+        )
+
     def _delete_row(self, ws: gspread.Worksheet, row_idx: int) -> bool:
         """행 삭제가 거부되면(테이블 제약 등) False — 호출측이 0을 기록한다."""
         try:
@@ -131,8 +173,8 @@ class Inventory:
                     return
 
             if create_if_missing:
-                ws.append_row(
-                    [char_name, item_id, new_count], value_input_option="USER_ENTERED"
+                self._write_new_row(
+                    ws, len(values) + 1, [char_name, item_id, new_count]
                 )
                 if self.cache is not None:
                     self.cache.invalidate(_INVENTORY_SHEET)
