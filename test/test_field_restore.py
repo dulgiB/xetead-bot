@@ -217,7 +217,10 @@ def test_restored_investigation_session_matches_notification_ids():
         "user1", MaybeSnowflakeIdType("1"), MaybeSnowflakeIdType(menu_id), state
     )
     via_thread = listener._resolve_investigation_session(
-        "user1", MaybeSnowflakeIdType("2"), MaybeSnowflakeIdType("3"), state
+        "user1",
+        MaybeSnowflakeIdType("117364518689834153"),
+        MaybeSnowflakeIdType("117364518689834152"),
+        state,
     )
 
     session = state.noncombat.investigations[menu_id]

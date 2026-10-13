@@ -2080,10 +2080,10 @@ def test_investigation_accept_puts_sender_first_even_if_not_starter(monkeypatch)
     assert calls == ["user2,user1"]
 
 
-def test_investigation_start_in_shared_thread_tracks_all_characters(monkeypatch):
-    """이미 여러 캐릭터가 참여 중인 스레드에서 [상시조사]를 보내면 캐릭터
-    전원을 멘션하고 세션에 올려, 다른 참여자의 장소 선택도 반영돼야 한다.
-    world처럼 캐릭터가 아닌 계정은 참여자로 잡지 않는다."""
+def test_investigation_start_tracks_all_mentioned_characters(monkeypatch):
+    """[상시조사]에 멘션된 캐릭터 전원을 멘션하고 세션에 올려, 다른 참여자의
+    장소 선택도 반영돼야 한다. world처럼 캐릭터가 아닌 계정은 참여자로 잡지
+    않는다."""
     from bot import main as main_module
     from test_bot_admin import _FakeMastodon
 
@@ -2095,16 +2095,14 @@ def test_investigation_start_in_shared_thread_tracks_all_characters(monkeypatch)
         lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
     )
     monkeypatch.setattr(main_module, "_persist_noncombat_log", lambda *a, **k: None)
-    mastodon = _FakeMastodon(
-        ancestors=[
-            {"account": {"acct": "test-world"}, "mentions": []},
-            {"account": {"acct": "user2"}, "mentions": [{"acct": "user1"}]},
-        ]
+    mastodon = _FakeMastodon()
+    monkeypatch.setattr(
+        mastodon, "status_context", lambda status_id: pytest.fail("스레드 조회")
     )
     listener = main_module.MastodonBotListener(mastodon, state, bot_acct="bot")
     dispatch = listener._MastodonBotListener__dispatch  # type: ignore[attr-defined]
 
-    dispatch("user1", 1, 50, "[상시조사]", "public", [])
+    dispatch("user1", 1, 50, "[상시조사]", "public", ["test-world", "user2"])
 
     menu_post = mastodon.status_post_calls[-1]
     assert menu_post["status"].startswith("@user1 @user2 ")
