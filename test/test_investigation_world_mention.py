@@ -28,7 +28,7 @@ _ALLY_ACCT = "ally_acct"
 _PREFIX = f"@{WORLD_MASTODON_ID} @{_ALLY_ACCT} "
 
 
-def _setup(monkeypatch, ancestors: list[dict] | None = None):
+def _setup(monkeypatch):
     state = _make_state()
     state.session = None
     ally = get_test_preset("아군", attack_range=3)
@@ -64,7 +64,7 @@ def _setup(monkeypatch, ancestors: list[dict] | None = None):
         "_persist_battle_log",
     ):
         monkeypatch.setattr(main_module, name, lambda *a, **k: None)
-    mastodon = _FakeMastodon(ancestors)
+    mastodon = _FakeMastodon()
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
     return state, mastodon, listener
 
@@ -163,9 +163,8 @@ def test_practice_duel_posts_do_not_mention_world():
 def test_world_can_start_mid_thread_as_a_reply(monkeypatch):
     """[대련]/[결투]처럼 진행 중인 스레드(상시조사 등) 중간에 답글로 시작할
     수 있어야 한다 — 그 스레드에 진행 중인 상시전투가 없으면 프록시로
-    해석되지 않는다. 스레드에 이미 등장한 계정은 멘션이 빠져도 참여한다."""
-    ancestors = [{"id": 500, "account": {"acct": _ALLY_ACCT}, "mentions": []}]
-    state, mastodon, listener = _setup(monkeypatch, ancestors)
+    해석되지 않는다."""
+    state, mastodon, listener = _setup(monkeypatch)
 
     listener._process_notification(
         _make_notification(
@@ -173,6 +172,7 @@ def test_world_can_start_mid_thread_as_a_reply(monkeypatch):
             501,
             500,
             "묘사 지문\n\n[상시전투] [배치/몬스터/적군 4열]",
+            extra_mentions=[_ALLY_ACCT],
         )
     )
 

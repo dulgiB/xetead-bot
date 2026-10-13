@@ -8,6 +8,8 @@ import itertools
 import threading
 from pathlib import Path
 
+import pytest
+
 from battle.core.commands.define import RoundPhaseType  # noqa: E402
 from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
 from battle.objects.buff.models import BuffData  # noqa: E402
@@ -1668,19 +1670,18 @@ def test_practice_settlement_post_mentions_all_participants(monkeypatch):
     assert "@archer_acct" in round_call["status"]
 
 
-def test_practice_prep_includes_thread_ancestors_not_just_direct_mentions(
-    monkeypatch,
-):
-    """[대련] 시작 시, 이 답글에 직접 멘션되지 않았어도 스레드의 조상
-    게시물에 등장했던 인원은 참여 대상에 포함돼야 한다 — 마스토돈
-    클라이언트가 답글 작성 시 이전 멘션을 지우거나 일부만 남겨도 실제
-    참여자 전원을 놓치지 않기 위함이다."""
+def test_practice_prep_takes_only_characters_mentioned_in_the_post(monkeypatch):
     state = _make_state()
     char_dict = {
         "swordsman_acct": get_test_preset("검사"),
         "archer_acct": get_test_preset("궁수"),
+        "mage_acct": get_test_preset("마법사"),
     }
-    name_dict = {"검사": get_test_preset("검사"), "궁수": get_test_preset("궁수")}
+    name_dict = {
+        "검사": get_test_preset("검사"),
+        "궁수": get_test_preset("궁수"),
+        "마법사": get_test_preset("마법사"),
+    }
     monkeypatch.setattr(
         main_module,
         "load_char_data",
@@ -1700,22 +1701,25 @@ def test_practice_prep_includes_thread_ancestors_not_just_direct_mentions(
             {},
         ),
     )
-    ancestors = [
-        {"account": {"acct": "archer_acct"}, "mentions": []},
-    ]
-    mastodon = _FakeMastodon(ancestors=ancestors)
+    mastodon = _FakeMastodon(
+        ancestors=[{"account": {"acct": "mage_acct"}, "mentions": []}]
+    )
+    monkeypatch.setattr(
+        mastodon, "status_context", lambda status_id: pytest.fail("스레드 조회")
+    )
     listener = MastodonBotListener(mastodon, state, bot_acct="bot")
 
-    # archer_acct를 명시적으로 멘션하지 않고 [대련]만 보낸다 — 스레드
-    # 조상(위 ancestors)에 archer_acct가 등장했으므로 그래도 포함돼야 한다.
     listener._process_notification(
-        _make_notification("swordsman_acct", 1, 500, "[대련]")
+        _make_notification(
+            "swordsman_acct",
+            1,
+            500,
+            "[대련]",
+            extra_mentions=["archer_acct", "test-admin", "archer_acct"],
+        )
     )
 
-    assert set(_only_practice(state).expected_accts) == {
-        "swordsman_acct",
-        "archer_acct",
-    }
+    assert _only_practice(state).expected_accts == ["swordsman_acct", "archer_acct"]
 
 
 def test_practice_can_be_started_directly_by_character_account(monkeypatch):
@@ -2151,6 +2155,7 @@ def test_world_account_can_start_investigation_battle(monkeypatch):
     적군 배치)를 admin과 동등하게 사용할 수 있어야 한다."""
     state = _make_state()
     state.name_dict["적 캐릭터"] = get_test_preset("적 캐릭터")
+    state.char_dict["ally_acct"] = get_test_preset("아군 캐릭터")
     monkeypatch.setattr(
         main_module,
         "load_char_data",

@@ -690,46 +690,6 @@ class MastodonBotListener(StreamListener):
                 "멘션 처리 중 오류 (acct=%s, status_id=%s)", acct, status_id
             )
 
-    def _thread_participants(
-        self,
-        status_id: int,
-        in_reply_to_id: Optional[int],
-        direct_mentions: list[str],
-        acct: str,
-    ) -> list[str]:
-        """이 게시물이 속한 스레드에 이미 등장한 모든 계정(조상 게시물의
-        작성자 + 그 게시물들의 멘션)을 direct_mentions에 더해 모은다.
-        마스토돈 클라이언트가 답글 작성 시 이전 멘션 중 일부만 남기거나
-        전부 지워도, [대련]/[상시전투]/[수락]처럼 참여자 목록을 만드는
-        커맨드가 스레드 참여자 전원을 놓치지 않게 하기 위함이다.
-
-        전투 중 커맨드(이동/공격/스킬 등)처럼 mentions를 쓰지 않는
-        고빈도 경로에서는 호출하지 않는다 — 매번 status_context()로 추가
-        API 호출이 들어가므로, 실제로 참여자 목록이 필요한 소수의 커맨드
-        호출부에서만 지연 호출한다."""
-        accounts: list[str] = []
-        seen: set[str] = set()
-
-        def add(candidate: str) -> None:
-            if candidate not in (self._bot_acct, acct) and candidate not in seen:
-                seen.add(candidate)
-                accounts.append(candidate)
-
-        for m in direct_mentions:
-            add(m)
-
-        if in_reply_to_id is not None:
-            try:
-                context = self._mastodon.status_context(status_id)
-                for ancestor in context.get("ancestors", []):
-                    add(ancestor["account"]["acct"])
-                    for m in ancestor.get("mentions", []):
-                        add(m["acct"])
-            except Exception:
-                logger.exception("스레드 참여자 조회 실패 (status_id=%s)", status_id)
-
-        return accounts
-
     def _resolve_practice(
         self,
         acct: str,
@@ -1032,14 +992,11 @@ class MastodonBotListener(StreamListener):
             _RE_INVESTIGATION_BATTLE_SELF.search(text)
         )
         if is_admin or is_investigation_self_mention:
-            thread_mentions = self._thread_participants(
-                status_id, in_reply_to_id, mentions or [], acct
-            )
             result: AdminCommandResult = handle_admin_command(
                 text,
                 state,
                 acct=acct,
-                mentions=thread_mentions,
+                mentions=_mentioned_characters(state, acct, mentions),
                 visibility=visibility,
                 in_reply_to_id=in_reply_to_id,
             )
@@ -1050,18 +1007,14 @@ class MastodonBotListener(StreamListener):
         # (배치는 이 명령 안에 [배치/이름/적군 N열]로 함께 실어 처리된다).
         # 그 외 admin 전용 커맨드([전투준비] 등)에는 접근할 수 없다.
         if is_world and admin_commands._RE_INVESTIGATION_BATTLE.search(text):
-            thread_mentions = self._thread_participants(
-                status_id, in_reply_to_id, mentions or [], acct
-            )
             result = admin_commands._cmd_investigation_battle(
-                text, thread_mentions, state, visibility
+                text, _mentioned_characters(state, acct, mentions), state, visibility
             )
             self._post_admin_result(result, status_id, acct, visibility, state)
             return
 
         # 1.5. 캐릭터 계정이 직접 [대련]/[결투]를 시작 — 상시전투와 달리 이
-        # 둘은 admin 커맨드가 아니다. 발신자와 함께 멘션된 상대가 참여 대상이
-        # 된다.
+        # 둘은 admin 커맨드가 아니다.
         if acct in state.char_dict:
             prep_mode = None
             if admin_commands._RE_DUEL_PREP.search(text):
@@ -1069,9 +1022,7 @@ class MastodonBotListener(StreamListener):
             elif admin_commands._RE_PRACTICE_PREP.search(text):
                 prep_mode = PracticeBattleMode.PRACTICE
             if prep_mode is not None:
-                expected_accts = [acct] + self._thread_participants(
-                    status_id, in_reply_to_id, mentions or [], acct
-                )
+                expected_accts = [acct] + _mentioned_characters(state, acct, mentions)
                 result = admin_commands._cmd_practice_prep(
                     expected_accts, state, visibility, prep_mode
                 )
@@ -1295,17 +1246,11 @@ class MastodonBotListener(StreamListener):
             and investigation_stage == "overview"
             and _RE_ACCEPT.search(text)
         ):
-            thread_mentions = [
-                a
-                for a in self._thread_participants(
-                    status_id, in_reply_to_id, mentions or [], acct
-                )
-                if a in state.char_dict
-            ]
+            mentioned = _mentioned_characters(state, acct, mentions)
             response, log_info = handle_investigation_accept(
-                investigation_session, acct, thread_mentions, state
+                investigation_session, acct, mentioned, state
             )
-            expected_accts = [acct] + thread_mentions
+            expected_accts = [acct] + mentioned
             reply_status = self._reply(
                 status_id, acct, visibility, response, mention_accts=expected_accts
             )
@@ -1336,16 +1281,10 @@ class MastodonBotListener(StreamListener):
             finalize_daily_quest_mid(acct, post["id"], state)
             return
 
-        # 11. [상시조사] — 상시조사 메뉴. 스레드에 이미 참여 중인 캐릭터
-        # 전원이 한 세션을 공유한다.
+        # 11. [상시조사] — 상시조사 메뉴. 발신자와 멘션된 캐릭터 전원이 한
+        # 세션을 공유한다.
         if _RE_INVESTIGATION_START.search(text):
-            investigation_accts = [acct] + [
-                a
-                for a in self._thread_participants(
-                    status_id, in_reply_to_id, mentions or [], acct
-                )
-                if a in state.char_dict
-            ]
+            investigation_accts = [acct] + _mentioned_characters(state, acct, mentions)
             response, log_info = handle_investigation_start(acct, state)
             post = self._reply(
                 status_id,
@@ -1741,6 +1680,17 @@ class MastodonBotListener(StreamListener):
             calc_status = self._status_post(f"{prefix}{chunk}", **post_kwargs)
             reply_to = calc_status["id"]
         return calc_status
+
+
+def _mentioned_characters(
+    state: "BotState", acct: str, mentions: Optional[list[str]]
+) -> list[str]:
+    """참여자를 등록하는 커맨드([대련]/[결투]/[상시전투]/[수락]/[상시조사])의
+    참여 대상 — 발신자를 뺀, 그 게시물에 멘션된 캐릭터 계정. 스레드의 다른
+    게시물은 보지 않는다."""
+    return [
+        m for m in dict.fromkeys(mentions or []) if m != acct and m in state.char_dict
+    ]
 
 
 def _practice_thread_posts(ps: PracticeBattleState) -> set[int]:
