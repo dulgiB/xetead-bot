@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING, Optional
 
 import gspread
+from gspread.utils import ValueInputOption
 
 if TYPE_CHECKING:
     # bot.sheet_cache가 이 모듈을 가져오므로 런타임 임포트는 순환 참조가 된다.
@@ -17,6 +18,8 @@ class Inventory:
 
     `(캐릭터 이름, 아이템 이름)` → 보유 개수 dict를 감싸며,
     아이템 소비 시 메모리 개수를 차감하고 스프레드시트에도 즉시 write-back한다.
+    다 써서 0개가 된 아이템은 시트에서 행째 지운다 — 0개짜리 행이 쌓이면
+    GM이 시트에서 실제 보유 현황을 읽기 어렵다.
     (spreadsheet가 None이면 메모리 상에서만 동작 — 테스트/대련용.)
 
     배틀 코어가 gspread에 직접 의존하지 않도록 시트 I/O를 이 객체에 캡슐화한다.
@@ -52,7 +55,10 @@ class Inventory:
     def consume(self, char_name: str, item_id: str, amount: int = 1) -> None:
         """아이템을 amount만큼 소비한다. 메모리 개수를 차감한 뒤 시트에 반영한다."""
         new_count = max(0, self.get_count(char_name, item_id) - amount)
-        self._counts[(char_name, item_id)] = new_count
+        if new_count > 0:
+            self._counts[(char_name, item_id)] = new_count
+        else:
+            self._counts.pop((char_name, item_id), None)
         self._write_back(char_name, item_id, new_count)
 
     def grant(self, char_name: str, item_id: str, amount: int = 1) -> None:
@@ -69,6 +75,61 @@ class Inventory:
             if self.cache is not None
             else self._spreadsheet.worksheet(_INVENTORY_SHEET)
         )
+
+    def _write_new_row(
+        self, ws: gspread.Worksheet, row_idx: int, row_values: list
+    ) -> None:
+        """내용이 있는 마지막 행 바로 아래(`row_idx`)에 쓴다.
+
+        `append_row`(values.append)는 시트가 테이블이면 범위 안의 빈 행까지
+        테이블로 보고 그 끝 다음에 붙인다. 행 번호를 정해 직접 쓰고, 그리드에
+        남은 행이 없으면 테이블 안쪽(마지막 행 앞)에 행을 넣는다 — 테이블 끝
+        바깥에 넣으면 범위가 따라 늘지 않는다.
+        """
+        if row_idx > ws.row_count and self.cache is not None:
+            # 캐시된 행 수는 GM이 그 뒤에 늘린 행을 모른다.
+            self.cache.invalidate_metadata()
+            ws = self._worksheet()
+        if row_idx > ws.row_count and self._spreadsheet is not None:
+            row_idx = max(ws.row_count, 2)
+            self._spreadsheet.batch_update(
+                {
+                    "requests": [
+                        {
+                            "insertDimension": {
+                                "range": {
+                                    "sheetId": ws.id,
+                                    "dimension": "ROWS",
+                                    "startIndex": row_idx - 1,
+                                    "endIndex": row_idx,
+                                },
+                                "inheritFromBefore": True,
+                            }
+                        }
+                    ]
+                }
+            )
+            if self.cache is not None:
+                self.cache.invalidate_metadata()
+        ws.update(
+            [row_values],
+            range_name=f"A{row_idx}:C{row_idx}",
+            value_input_option=ValueInputOption.user_entered,
+        )
+
+    def _delete_row(self, ws: gspread.Worksheet, row_idx: int) -> bool:
+        """행 삭제가 거부되면(테이블 제약 등) False — 호출측이 0을 기록한다."""
+        try:
+            ws.delete_rows(row_idx)
+        except gspread.exceptions.APIError:
+            logger.warning(
+                "'%s' 시트 %d행을 지우지 못해 개수 0으로 남깁니다.",
+                _INVENTORY_SHEET,
+                row_idx,
+                exc_info=True,
+            )
+            return False
+        return True
 
     def _write_back(
         self,
@@ -105,14 +166,15 @@ class Inventory:
                 row_name = row[name_col] if name_col < len(row) else None
                 row_item = row[item_col] if item_col < len(row) else None
                 if row_name == char_name and row_item == item_id:
-                    ws.update_cell(idx, count_col, new_count)
+                    if new_count > 0 or not self._delete_row(ws, idx):
+                        ws.update_cell(idx, count_col, new_count)
                     if self.cache is not None:
                         self.cache.invalidate(_INVENTORY_SHEET)
                     return
 
             if create_if_missing:
-                ws.append_row(
-                    [char_name, item_id, new_count], value_input_option="USER_ENTERED"
+                self._write_new_row(
+                    ws, len(values) + 1, [char_name, item_id, new_count]
                 )
                 if self.cache is not None:
                     self.cache.invalidate(_INVENTORY_SHEET)

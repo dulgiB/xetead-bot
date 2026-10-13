@@ -1,3 +1,4 @@
+import gspread
 import pytest
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
@@ -357,10 +358,14 @@ def test_practice_battle_blocks_item_with_specific_message(item_potion):
 class _FakeWorksheet:
     """append_row 호출을 기록하는 최소 gspread Worksheet 모사체."""
 
-    def __init__(self, header, rows):
+    id = 7
+
+    def __init__(self, header, rows, row_count=100):
         self._header = header
         self._rows = rows
         self.appended: list[list] = []
+        self.reject_delete = False
+        self.row_count = row_count
 
     def get_all_records(self):
         return [dict(zip(self._header, row)) for row in self._rows]
@@ -369,7 +374,17 @@ class _FakeWorksheet:
         return self._header
 
     def get_values(self, value_render_option=None, pad_values=True):
-        return [self._header] + [list(row) for row in self._rows]
+        # values API처럼 끝의 빈 행은 돌려주지 않는다.
+        values = [self._header] + [list(row) for row in self._rows]
+        while values and not any(values[-1]):
+            values.pop()
+        return values
+
+    def update(self, values, range_name, value_input_option=None):
+        row_idx = int(range_name.split(":")[0][1:])
+        while len(self._rows) < row_idx - 1:
+            self._rows.append(["", "", ""])
+        self._rows[row_idx - 2] = list(values[0])
 
     def update_cell(self, row_idx, col_idx, value):
         self._rows[row_idx - 2][col_idx - 1] = value
@@ -378,16 +393,37 @@ class _FakeWorksheet:
         self.appended.append(row)
         self._rows.append(row)
 
+    def delete_rows(self, start_index, end_index=None):
+        if self.reject_delete:
+            raise gspread.exceptions.APIError(_RejectedResponse())
+        del self._rows[start_index - 2]
+        self.row_count -= 1
+
+
+class _RejectedResponse:
+    status_code = 400
+    text = "cannot delete rows"
+
+    def json(self):
+        return {"error": {"code": 400, "message": self.text, "status": "INVALID"}}
+
 
 class _FakeSpreadsheet:
     def __init__(self, worksheet):
         self._worksheet = worksheet
         self.id = "fake-inventory-spreadsheet-id"
+        self.batch_requests: list[dict] = []
         self.client = None
         self.fetch_sheet_metadata_call_count = 0
 
     def worksheet(self, _name):
         return self._worksheet
+
+    def batch_update(self, body):
+        self.batch_requests.append(body)
+        insert = body["requests"][0]["insertDimension"]["range"]
+        self._worksheet._rows.insert(insert["startIndex"] - 1, ["", "", ""])
+        self._worksheet.row_count += 1
 
     def fetch_sheet_metadata(self):
         self.fetch_sheet_metadata_call_count += 1
@@ -415,8 +451,47 @@ def test_inventory_grant_appends_new_row_when_recipient_has_no_history():
 
     inv.grant("아군 2", "포션", 3)
 
-    assert ws.appended == [["아군 2", "포션", 3]]
+    assert ws._rows == [["아군 1", "포션", "1"], ["아군 2", "포션", 3]]
     assert inv.get_count("아군 2", "포션") == 3
+
+
+def test_new_row_goes_below_last_filled_row_skipping_gaps():
+    """테이블 범위 안의 빈 행 때문에 시트 맨 아래로 밀리지 않고, 내용이 있는
+    마지막 행 바로 아래에 쓴다."""
+    ws = _FakeWorksheet(
+        ["character_name", "item_id", "count"],
+        [["아군 1", "포션", "1"], ["", "", ""], ["아군 3", "폭탄", "1"]],
+        row_count=30,
+    )
+    inv = Inventory({}, _FakeSpreadsheet(ws))
+
+    inv.grant("아군 2", "포션", 1)
+
+    assert ws._rows[3] == ["아군 2", "포션", 1]
+    assert ws.appended == []
+
+
+def test_new_row_is_inserted_inside_table_when_grid_is_full():
+    ws = _FakeWorksheet(
+        ["character_name", "item_id", "count"],
+        [["아군 1", "포션", "1"], ["아군 3", "폭탄", "1"]],
+        row_count=3,
+    )
+    spreadsheet = _FakeSpreadsheet(ws)
+    inv = Inventory({}, spreadsheet)
+
+    inv.grant("아군 2", "포션", 1)
+
+    insert = spreadsheet.batch_requests[0]["requests"][0]["insertDimension"]
+    # 테이블 끝 바깥이 아니라 마지막 행 앞에 넣어야 테이블 범위가 늘어난다.
+    assert insert["range"]["startIndex"] == 2
+    assert insert["inheritFromBefore"] is True
+    assert sorted(map(tuple, ws._rows)) == [
+        ("아군 1", "포션", "1"),
+        ("아군 2", "포션", 1),
+        ("아군 3", "폭탄", "1"),
+    ]
+    assert ws.row_count == 4
 
 
 def test_inventory_write_back_uses_cache_when_set():
@@ -446,3 +521,49 @@ def test_inventory_write_back_uses_cache_when_set():
 
     # consume 뒤 캐시가 무효화되지 않았다면 grant가 낡은 값을 읽어 엉뚱한
     # 행을 갱신했을 것이다.
+
+
+def _inventory_with_rows(rows):
+    ws = _FakeWorksheet(["character_name", "item_id", "count"], rows)
+    counts = {(name, item): int(count) for name, item, count in rows}
+    return ws, Inventory(counts, _FakeSpreadsheet(ws))
+
+
+def test_consuming_last_item_deletes_its_row():
+    ws, inv = _inventory_with_rows(
+        [["아군 1", "포션", "1"], ["아군 1", "폭탄", "2"], ["아군 2", "포션", "1"]]
+    )
+
+    inv.consume("아군 1", "포션", 1)
+
+    assert ws._rows == [["아군 1", "폭탄", "2"], ["아군 2", "포션", "1"]]
+    assert inv.get_count("아군 1", "포션") == 0
+    assert inv.items_for_character("아군 1") == {"폭탄": 2}
+
+
+def test_consuming_some_items_keeps_the_row():
+    ws, inv = _inventory_with_rows([["아군 1", "포션", "3"]])
+
+    inv.consume("아군 1", "포션", 1)
+
+    assert ws._rows == [["아군 1", "포션", 2]]
+
+
+def test_transferring_all_items_moves_the_row():
+    """양도는 차감 뒤 지급이다 — 차감으로 앞 행이 지워져 번호가 밀려도 받는
+    쪽 행을 정확히 찾아야 한다."""
+    ws, inv = _inventory_with_rows([["아군 1", "포션", "2"], ["아군 2", "포션", "1"]])
+
+    inv.consume("아군 1", "포션", 2)
+    inv.grant("아군 2", "포션", 2)
+
+    assert ws._rows == [["아군 2", "포션", 3]]
+
+
+def test_rejected_row_deletion_falls_back_to_zero_count():
+    ws, inv = _inventory_with_rows([["아군 1", "포션", "1"]])
+    ws.reject_delete = True
+
+    inv.consume("아군 1", "포션", 1)
+
+    assert ws._rows == [["아군 1", "포션", 0]]
