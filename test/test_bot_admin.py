@@ -872,6 +872,17 @@ class _FakeMastodon:
     def status_context(self, status_id):
         return {"ancestors": self.status_context_ancestors, "descendants": []}
 
+    def status(self, status_id):
+        """status_context_ancestors를 루트부터 이어진 한 줄 스레드로 보고,
+        거기 없는 게시물은 그 끝에 단 답글로 본다."""
+        chain = [a["id"] for a in self.status_context_ancestors if "id" in a]
+        if status_id in chain:
+            i = chain.index(status_id)
+            parent = chain[i - 1] if i else None
+        else:
+            parent = chain[-1] if chain else None
+        return {"id": status_id, "in_reply_to_id": parent}
+
 
 def _make_notification(
     acct: str,
@@ -1207,20 +1218,20 @@ def test_main_battle_command_works_from_anywhere_in_the_phase_thread(monkeypatch
     active_post_id = state.active_phase_post_id
     calls_before = len(mastodon.status_post_calls)
 
+    chatter_id, command_id = active_post_id + 1, active_post_id + 2
     listener._process_notification(
-        _make_notification("ally_acct", 10, active_post_id, "묘사만 길게 적는 답글")
+        _make_notification(
+            "ally_acct", chatter_id, active_post_id, "묘사만 길게 적는 답글"
+        )
     )
     assert len(mastodon.status_post_calls) == calls_before
 
-    mastodon.status_context_ancestors = [
-        {"id": active_post_id, "account": {"acct": "bot"}, "mentions": []}
-    ]
     listener._process_notification(
-        _make_notification("ally_acct", 11, 10, "[공격/적 캐릭터]")
+        _make_notification("ally_acct", command_id, chatter_id, "[공격/적 캐릭터]")
     )
 
     reply = mastodon.status_post_calls[-1]
-    assert reply["in_reply_to_id"] == 11
+    assert reply["in_reply_to_id"] == command_id
     assert "공격" in reply["status"]
 
 

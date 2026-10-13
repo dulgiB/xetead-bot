@@ -28,7 +28,7 @@ from battle.practice.define import (
     SideType,
 )
 from dotenv import load_dotenv
-from mastodon import Mastodon, StreamListener
+from mastodon import Mastodon, MastodonNotFoundError, StreamListener
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
 from utils.name_matching import whitespace_tolerant_literal
@@ -538,19 +538,20 @@ class MastodonBotListener(StreamListener):
         return status
 
     def _thread_ancestor_ids(
-        self, status_id: int, in_reply_to_id: int, wanted: Iterable[Optional[int]]
+        self, in_reply_to_id: int, wanted: Iterable[Optional[int]]
     ) -> set[int]:
         """이 게시물의 스레드 조상 id. `wanted` 중 하나에 닿으면 거기까지만
-        확인한다. 봇이 본 게시물만으로 따라갈 수 없을 때만 Mastodon에
-        스레드를 조회한다."""
-        known = self._threads.ancestor_ids(
-            in_reply_to_id, (post_id for post_id in wanted if post_id is not None)
-        )
-        if known is not None:
-            return known
-        ancestors = self._mastodon.status_context(status_id).get("ancestors", [])
-        self._threads.record_ancestors(ancestors)
-        return {a["id"] for a in ancestors}
+        확인한다. 봇이 모르는 게시물에서 끊기면 그 게시물만 조회해 이어 간다."""
+        targets = [post_id for post_id in wanted if post_id is not None]
+        while True:
+            ancestors, missing = self._threads.ancestor_ids(in_reply_to_id, targets)
+            if missing is None:
+                return ancestors
+            try:
+                parent = self._mastodon.status(missing).get("in_reply_to_id")
+            except MastodonNotFoundError:
+                parent = None
+            self._threads.record(missing, parent)
 
     def on_abort(self, err: Exception) -> None:
         """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
@@ -721,7 +722,6 @@ class MastodonBotListener(StreamListener):
 
         try:
             ancestor_ids = self._thread_ancestor_ids(
-                status_id,
                 in_reply_to_id,
                 (post for ps in sessions for post in _practice_thread_posts(ps)),
             )
@@ -763,9 +763,7 @@ class MastodonBotListener(StreamListener):
             return False
 
         try:
-            ancestor_ids = self._thread_ancestor_ids(
-                status_id, in_reply_to_id, (phase_post_id,)
-            )
+            ancestor_ids = self._thread_ancestor_ids(in_reply_to_id, (phase_post_id,))
         except Exception:
             logger.exception("스레드 본 전투 조회 실패 (status_id=%s)", status_id)
             return False
@@ -812,7 +810,6 @@ class MastodonBotListener(StreamListener):
         # 고빈도 admin 멘션까지 매번 API를 한 번 더 쓰지 않도록.
         try:
             ancestor_ids = self._thread_ancestor_ids(
-                status_id,
                 in_reply_to_id,
                 (post for ps in candidates for post in _practice_thread_posts(ps)),
             )
@@ -837,7 +834,7 @@ class MastodonBotListener(StreamListener):
         """이 답글이 acct가 참여 중인 상시조사 세션 중 어느 것에 속하는지 찾는다.
 
         직속 답글이 가장 흔하고 저렴한 경로라 먼저 확인하고, 아니면
-        status_context()로 스레드 조상까지 거슬러 올라가 세션의 메뉴/개요
+        스레드 조상을 거슬러 올라가 세션의 메뉴/개요
         게시물이 그 안에 있는지 찾는다 — 사담이 몇 번을 이어지든 같은
         스레드인 이상 세션을 다시 찾아낼 수 있게 하기 위함이다. 활성
         세션이 아예 없는 acct는 이 조상 조회 자체를 하지 않는다(고빈도
@@ -865,7 +862,6 @@ class MastodonBotListener(StreamListener):
 
         try:
             ancestor_ids = self._thread_ancestor_ids(
-                status_id,
                 in_reply_to_id,
                 (
                     post_id

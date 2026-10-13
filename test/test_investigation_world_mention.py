@@ -199,17 +199,16 @@ def test_declarations_chained_in_a_thread_start_under_the_last_one(monkeypatch):
         )
     )
     ps = _only_practice(state)
+    first_id, second_id = ps.prep_post_id + 1, ps.prep_post_id + 2
     listener._process_notification(
-        _make_notification(_ALLY_ACCT, 2, ps.prep_post_id, "[3열]")
+        _make_notification(_ALLY_ACCT, first_id, ps.prep_post_id, "[3열]")
     )
-    mastodon.status_context_ancestors = [
-        {"id": ps.prep_post_id, "account": {"acct": "bot"}, "mentions": []},
-        {"id": 2, "account": {"acct": _ALLY_ACCT}, "mentions": []},
-    ]
 
-    listener._process_notification(_make_notification(other, 3, 2, "[ 5 열 ]"))
+    listener._process_notification(
+        _make_notification(other, second_id, first_id, "[ 5 열 ]")
+    )
 
     assert ps.active_post_id is not None
     start = mastodon.status_post_calls[-1]
-    assert start["in_reply_to_id"] == 3
+    assert start["in_reply_to_id"] == second_id
     assert "상시전투 시작" in start["status"]
