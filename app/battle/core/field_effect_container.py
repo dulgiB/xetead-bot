@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import TYPE_CHECKING, Iterator, Optional
 
 from battle.objects.buff.buff_base import BuffBase
@@ -31,7 +32,8 @@ class FieldEffectContainer:
     그대로 대상들에게 실제 버프를 부여한다. 이 컨테이너가 따로 소유하는 것은
     "무엇이 걸려 있는가"와 "제거할 때 무엇을 되돌리는가"다.
 
-    지속 턴수는 없다. 명시적으로 remove()하기 전까지 유지된다.
+    상시 효과는 remove()하기 전까지 유지되고, 일시 효과는 tick_turns()가
+    라운드 종료마다 남은 턴을 줄이다가 0이 되면 같은 remove() 경로로 걷는다.
     """
 
     def __init__(self, context: "BattlefieldContext") -> None:
@@ -56,19 +58,45 @@ class FieldEffectContainer:
         때문이다."""
         return list(self._effects.values())
 
+    def as_display_list(self) -> list[FieldEffect]:
+        effects = self.as_list()
+        return [e for e in effects if not e.is_temporary] + [
+            e for e in effects if e.is_temporary
+        ]
+
     def add(
         self,
         data: PassiveSkillData,
         source: FieldEffectSource,
         source_detail: str = "",
+        turns: Optional[int] = None,
     ) -> Optional[FieldEffect]:
-        """필드 효과를 전장에 올린다. 이미 같은 id가 걸려 있으면 아무것도
-        하지 않고 None을 반환한다 — 지속 턴수가 없어 갱신할 것이 없으므로
-        재부여는 무시가 곧 갱신이다."""
-        if data.id in self._effects:
-            return None
+        """필드 효과를 전장에 올린다. `turns`가 None이면 상시 효과다.
 
-        effect = FieldEffect(data=data, source=source, source_detail=source_detail)
+        이미 같은 id가 걸려 있으면 다시 올리지 않고 지속시간만 다룬다. 상시
+        효과는 그대로 두고 None을 반환한다. 일시 효과는 남은 턴을 새 값으로
+        바꾸고(`turns`가 None이면 상시로 바뀐다) 갱신된 효과를 반환한다 —
+        버프 재부여가 지속시간을 갱신하는 것과 같은 규칙이다.
+        """
+        existing = self._effects.get(data.id)
+        if existing is not None:
+            if not existing.is_temporary:
+                return None
+            refreshed = replace(
+                existing,
+                source=source,
+                source_detail=source_detail,
+                remaining_turns=turns,
+            )
+            self._effects[data.id] = refreshed
+            return refreshed
+
+        effect = FieldEffect(
+            data=data,
+            source=source,
+            source_detail=source_detail,
+            remaining_turns=turns,
+        )
         self._effects[data.id] = effect
 
         for wrapper in PassiveSkillWrapperBuff.create(effect.holder_id, data):
@@ -92,6 +120,21 @@ class FieldEffectContainer:
 
         self._context.buff_container.remove_buffs_given_by(effect.holder_id)
         return effect
+
+    def tick_turns(self) -> list[FieldEffect]:
+        """라운드 종료 처리. 일시 효과의 남은 턴을 1씩 줄이고, 0이 된 효과를
+        걷어 반환한다."""
+        expired: list[FieldEffect] = []
+        for effect in self.as_list():
+            if effect.remaining_turns is None:
+                continue
+            remaining = effect.remaining_turns - 1
+            if remaining > 0:
+                self._effects[effect.id] = replace(effect, remaining_turns=remaining)
+                continue
+            if (removed := self.remove(effect.id)) is not None:
+                expired.append(removed)
+        return expired
 
     def clear(self) -> None:
         for effect_id in list(self._effects):

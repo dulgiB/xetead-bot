@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import PassiveSkillData
@@ -50,6 +51,8 @@ class FieldEffectOp:
 
     effect_id: str
     remove: bool = False
+    # 부여 요청에만 쓴다.
+    turns: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -60,7 +63,10 @@ class FieldEffect:
     필드 범위 target_type(FIELD_SCOPE_TARGET_TYPES)이 그 행을 캐릭터
     패시브가 아닌 필드 효과로 구분한다.
 
-    지속 턴수는 없다 — 명시적으로 해제하기 전까지 유지된다.
+    `remaining_turns`가 None이면 해제 전까지 유지되는 상시 효과이고, 값이
+    있으면 버프처럼 라운드 종료마다 1씩 줄다가 0이 되면 걷히는 일시 효과다.
+    턴 수를 효과 행이 아니라 거는 쪽이 정하는 것은 같은 효과를 admin은
+    상시로, 스킬은 몇 턴만 걸 수 있게 하기 위해서다.
     """
 
     data: PassiveSkillData
@@ -68,6 +74,7 @@ class FieldEffect:
     # 출처를 사람이 읽을 수 있게 덧붙이는 꼬리표(시전자 이름 등).
     # 비어 있으면 표시에서 생략한다.
     source_detail: str = ""
+    remaining_turns: Optional[int] = None
 
     @property
     def id(self) -> str:
@@ -81,10 +88,19 @@ class FieldEffect:
     def description(self) -> str:
         return self.data.description
 
+    @property
+    def is_temporary(self) -> bool:
+        return self.remaining_turns is not None
+
     def display_label(self) -> str:
         """`이름[출처]` 형태의 표시 라벨.
 
         대괄호 안은 출처를 특정할 수 있으면 그 이름, 아니면 출처 종류다 —
         누가 걸었는지가 종류보다 쓸모 있는 정보다.
         """
-        return f"{self.id}[{self.source_detail or self.source.value}]"
+        label = f"{self.id}[{self.source_detail or self.source.value}]"
+        return label + format_field_effect_turns(self.remaining_turns)
+
+
+def format_field_effect_turns(turns: Optional[int]) -> str:
+    return "" if turns is None else f" ({turns}턴)"
