@@ -20,6 +20,7 @@ import re
 from typing import TYPE_CHECKING, Optional
 
 from battle.core.commands.models import (
+    FIELD_EFFECT_ADDED_RESULT,
     FIELD_EFFECT_REMOVED_RESULT,
     BattleLogEntry,
     BattleLogEntryKind,
@@ -542,7 +543,9 @@ def _format_entry(
         name = f"**「{escape_markdown(entry.target_name)}」**"
         if entry.result == FIELD_EFFECT_REMOVED_RESULT:
             return f"▹ 필드 효과 {name} 해제", None, None
-        line = f"▹ 필드 효과 {name} 적용"
+        # 일시 효과면 result 끝에 " (N턴)"이 붙어 있다.
+        turns_suffix = entry.result.removeprefix(FIELD_EFFECT_ADDED_RESULT)
+        line = f"▹ 필드 효과 {name} 적용{escape_markdown(turns_suffix)}"
         data = context.get_passive_skill_data_by_id(entry.target_name)
         if data is not None and data.description:
             line += f"\n ↳ {escape_markdown(data.description)}"

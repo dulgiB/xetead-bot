@@ -124,9 +124,9 @@ def _restore_characters_full(
 def _restore_field_effects(session: "BattleSession", row: FieldRow) -> None:
     """전장에 걸려 있던 필드 효과를 "필드" 시트 meta_json에서 되살린다.
 
-    필드 효과는 지속 턴수가 없어 해제하기 전까지 유지되므로, 복원하지 않으면
-    봇 재기동만으로 조용히 사라진다. 한 항목이 잘못돼도(시트에서 지워진 id 등)
-    복원 전체를 막지 않는다.
+    필드 효과는 어느 시트에도 진실 공급원이 없어, 복원하지 않으면 봇
+    재기동만으로 조용히 사라진다. 일시 효과는 남은 턴까지 이어받는다. 한
+    항목이 잘못돼도(시트에서 지워진 id 등) 복원 전체를 막지 않는다.
     """
     for entry in row.meta.get("field_effects", []) or []:
         effect_id = str(entry.get("id", "") or "")
@@ -136,9 +136,13 @@ def _restore_field_effects(session: "BattleSession", row: FieldRow) -> None:
             source = FieldEffectSource(entry.get("source", FieldEffectSource.ADMIN))
         except ValueError:
             source = FieldEffectSource.ADMIN
+        turns_raw = entry.get("remaining_turns")
         try:
             session.context.add_field_effect(
-                effect_id, source, str(entry.get("source_detail", "") or "")
+                effect_id,
+                source,
+                str(entry.get("source_detail", "") or ""),
+                turns=int(turns_raw) if turns_raw is not None else None,
             )
         except CommandValidationError as e:
             logger.warning("필드 효과 '%s' 복원 실패, 건너뜁니다: %s", effect_id, e)

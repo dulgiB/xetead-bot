@@ -27,7 +27,10 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.core.charm_aura_container import charm_config_error
-from battle.objects.field_effect.models import FieldEffectSource
+from battle.objects.field_effect.models import (
+    FieldEffectSource,
+    format_field_effect_turns,
+)
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.models import (
     character_passive_config_error,
@@ -105,7 +108,8 @@ _RE_FORCE_ELIMINATE = re.compile(
     rf"\[{whitespace_tolerant_literal('탈락')}\s*/\s*([^/\]]+?)]"
 )
 _RE_FIELD_EFFECT_ADD = re.compile(
-    rf"\[{whitespace_tolerant_literal('필드효과')}\s*/\s*([^/\]]+?)]"
+    rf"\[{whitespace_tolerant_literal('필드효과')}\s*/\s*([^/\]]+?)"
+    r"(?:\s*/\s*([^/\]]+?))?\s*]"
 )
 _RE_FIELD_EFFECT_REMOVE = re.compile(
     rf"\[{whitespace_tolerant_literal('필드효과해제')}\s*/\s*([^/\]]+?)]"
@@ -264,7 +268,7 @@ def handle_admin_command(
 
     if add_matches := list(_RE_FIELD_EFFECT_ADD.finditer(text)):
         replies = [
-            _cmd_field_effect(m.group(1).strip(), state, remove=False)
+            _cmd_field_effect(m.group(1).strip(), state, remove=False, turns=m.group(2))
             for m in add_matches
         ]
         return AdminCommandResult("\n".join(replies))
@@ -491,14 +495,21 @@ def _cmd_force_eliminate(name: str, state: "BotState") -> str:
     return format_eliminated_characters(removed)
 
 
-def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
-    """`[필드효과/이름]` / `[필드효과해제/이름]` — 전장 전체에 걸리는 효과를
-    admin이 직접 올리거나 걷는다. 이름은 "스킬_패시브" 시트의 id다.
-
-    필드 효과는 지속 턴수가 없어 해제하기 전까지 유지되므로, 올리는 것과
-    걷는 것이 한 쌍으로 필요하다."""
+def _cmd_field_effect(
+    name: str, state: "BotState", *, remove: bool, turns: Optional[str] = None
+) -> str:
+    """`[필드효과/이름]` / `[필드효과/이름/턴수]` / `[필드효과해제/이름]` —
+    전장 전체에 걸리는 효과를 admin이 직접 올리거나 걷는다. 이름은
+    "스킬_패시브" 시트의 id다. 턴 수를 생략하면 해제 전까지 유지된다."""
     if state.session is None or not state.session.started:
         return "◊ 진행 중인 전투가 없습니다."
+
+    turn_count: Optional[int] = None
+    if turns is not None:
+        turns = turns.strip()
+        if not turns.isdigit() or int(turns) < 1:
+            return f"◊ 필드 효과의 지속 턴 수는 1 이상의 정수여야 합니다: {escape_markdown(turns)}"
+        turn_count = int(turns)
 
     context = state.session.context
     # 필드 효과 id에 밑줄이 섞이면 마크다운 답글에서 강조로 먹히므로
@@ -510,13 +521,16 @@ def _cmd_field_effect(name: str, state: "BotState", *, remove: bool) -> str:
         reply = f"◊ 필드 효과 **「{escape_markdown(removed.id)}」** 해제"
     else:
         try:
-            added = context.add_field_effect(name, FieldEffectSource.ADMIN)
+            added = context.add_field_effect(
+                name, FieldEffectSource.ADMIN, turns=turn_count
+            )
         except CommandValidationError as e:
             # 메시지에 사용자가 입력한 id가 그대로 들어 있다.
             return f"◊ {escape_markdown(str(e))}"
         if added is None:
             return f"◊ 필드 효과({escape_markdown(name)})는 이미 필드에 걸려 있습니다."
-        reply = f"◊ 필드 효과 **「{escape_markdown(added.id)}」** 적용"
+        turns_suffix = format_field_effect_turns(added.remaining_turns)
+        reply = f"◊ 필드 효과 **「{escape_markdown(added.id)}」** 적용{turns_suffix}"
         if added.description:
             reply += f"\n\n▹ {escape_markdown(added.description)}"
 
@@ -712,6 +726,7 @@ def build_field_meta(state: "BotState") -> dict:
                 "id": effect.id,
                 "source": effect.source.value,
                 "source_detail": effect.source_detail,
+                "remaining_turns": effect.remaining_turns,
             }
             for effect in state.session.context.field_effects.as_list()
         ],
