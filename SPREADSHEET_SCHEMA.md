@@ -119,10 +119,11 @@
 조합은 `[전투개시]` 시점에 admin DM으로 경고가 간다.
 
 [부적](CLAUDE.md#부적-charmauracontainer)("아이템" 시트의 `passive_skill_id`)이
-가리키는 행도 이 시트에 둔다. 부적은 범위를 소지자 위치와 아이템 `range`로
-정하므로 그 행의 `trigger`/`target_type`은 읽지 않고(필수 컬럼이라 아무 값이나
-둔다), `effect_N`에는 `SkillEffectFieldStatOffset`/`SkillEffectRevivalCountFloor`
-처럼 범위에 있는 동안 유지되는 효과만 쓴다. `SkillEffectRevivalCountFloor`는
+가리키는 행도 이 시트에 둔다. 부적은 라운드 시작 때 소지자 위치와 아이템 `range`로
+범위를 정해 1턴짜리 버프로 걸므로 그 행의 `trigger`/`target_type`은 읽지
+않고(필수 컬럼이라 아무 값이나 둔다), `effect_N`에는
+`SkillEffectFieldStatOffset`/`SkillEffectRevivalCountFloor`처럼 버프가 걸린
+동안 유지되는 효과만 쓴다. `SkillEffectRevivalCountFloor`는
 `value_N`이 부활 횟수 하한이다.
 
 | 컬럼                                 | 설명                                                                          |
