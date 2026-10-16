@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 import gspread
 from gspread.utils import ValueInputOption, absolute_range_name, rowcol_to_a1
 
+from battle.core.charm_aura_container import CharmBuff
 from battle.core.commands.models import BattleLogEntry
 from battle.objects.define import CombatStatType
 from battle.objects.models import CharacterId
@@ -191,6 +192,17 @@ def build_field_buffs(
     )
     for buff in buffs:
         if isinstance(buff, PassiveSkillWrapperBuff):
+            continue
+        if isinstance(buff, CharmBuff):
+            # "버프" 시트에 없는 버프라 id 대신 부적 id로 남긴다. 범위는 라운드
+            # 시작 위치로 정해졌으므로 복원 때 위치로 다시 계산할 수 없다.
+            charm_row: dict = {
+                "charm": buff.aura.item.id,
+                "given_by": buff.given_by.name,
+            }
+            if buff.duration.remaining_turns is not None:
+                charm_row["turns"] = buff.duration.remaining_turns
+            rows.append(charm_row)
             continue
         buff_data = context.get_buff_data_by_id_or_none(buff.id)
         if buff_data is None:
