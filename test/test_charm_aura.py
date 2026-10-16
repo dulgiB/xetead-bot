@@ -1,11 +1,12 @@
-"""부적: 소지자 사거리 안의 같은 진영 캐릭터(소지자 포함)에게 패시브를 건다.
+"""부적: 라운드 시작 때 소지자 사거리 안의 같은 진영 캐릭터(소지자 포함)에게
+패시브를 1턴짜리 버프로 건다.
 
-사거리는 "아이템" 시트의 range이고, 범위는 위치가 바뀔 때마다 다시 계산된다.
+사거리는 "아이템" 시트의 range이고, 범위는 라운드 시작 시점의 위치로 정한다.
 본 전투에서만 발동한다.
 """
 
 from battle.core.battlefield_context import BattlefieldContext
-from battle.core.charm_aura_container import charm_config_error
+from battle.core.charm_aura_container import CharmBuff, charm_config_error
 from battle.core.command_processors import process_ally_command
 from battle.core.commands.parser import parse_character_command
 from battle.objects.define import (
@@ -32,6 +33,8 @@ from battle.objects.skill.effects import (
 from battle.objects.skill.models import SkillData
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import SideType
+from bot.field_restore import _restore_buffs
+from bot.log_sheets import build_field_buffs
 from helpers import get_test_preset
 from spreadsheets.inventory import Inventory
 
@@ -121,7 +124,16 @@ def _standard_field() -> BattlefieldContext:
     _place(ctx, NEAR, FactionType.ALLY, 4)
     _place(ctx, FAR, FactionType.ALLY, 5)
     _place(ctx, FOE, FactionType.ENEMY, 3)
+    ctx.on_start_round()
     return ctx
+
+
+def _charm_buffs(ctx, char_id) -> list[CharmBuff]:
+    return [
+        buff
+        for buff in ctx.buff_container.get_buffs_by(char_id, None)
+        if isinstance(buff, CharmBuff)
+    ]
 
 
 class TestRange:
@@ -148,50 +160,154 @@ class TestRange:
         ctx = _make_context(item=_charm_item(attack_range=2))
         _place(ctx, HOLDER, FactionType.ALLY, 3, attack_range=0)
         _place(ctx, FAR, FactionType.ALLY, 5)
+        ctx.on_start_round()
 
         assert _penalty(ctx, FAR) == 40
 
 
-class TestFollowsPositions:
-    def test_moving_out_of_range_removes_the_effect(self):
+class TestRoundStartBuff:
+    def test_nothing_applies_before_the_first_round_starts(self):
+        ctx = _make_context()
+        _place(ctx, HOLDER, FactionType.ALLY, 3)
+
+        assert _penalty(ctx, HOLDER) == 0
+
+    def test_effect_is_a_one_turn_buff(self):
         ctx = _standard_field()
 
-        ctx.move_character_to(NEAR, BattlefieldColumnIndex(6))
+        (buff,) = _charm_buffs(ctx, NEAR)
+        assert buff.given_by == HOLDER
+        assert buff.duration.remaining_turns == 1
+        assert buff.display_id_label() == f"{CHARM_ID}[{HOLDER.name}]"
+        assert _charm_buffs(ctx, FAR) == []
 
+    def test_round_end_removes_the_buff_and_its_effect(self):
+        ctx = _standard_field()
+
+        ctx.on_finish_round()
+
+        assert _charm_buffs(ctx, NEAR) == []
         assert _penalty(ctx, NEAR) == 0
         assert _cost_per_turn(ctx, NEAR) == 3
 
-    def test_moving_into_range_applies_the_effect(self):
+    def test_next_round_start_grants_again_without_stacking(self):
+        ctx = _standard_field()
+
+        ctx.on_finish_round()
+        ctx.on_start_round()
+
+        assert len(_charm_buffs(ctx, NEAR)) == 1
+        assert _penalty(ctx, NEAR) == 40
+
+    def test_regrant_while_still_active_does_not_double_count(self):
+        """복원 직후 등 버프가 남아 있는 채로 라운드가 시작돼도 하한이
+        두 번 얹히지 않는다 — 되돌릴 때 하나가 남으면 영구히 붙는다."""
+        ctx = _standard_field()
+
+        ctx.on_start_round()
+        ctx.on_finish_round()
+
+        assert _penalty(ctx, NEAR) == 0
+
+
+class TestRangeFixedAtRoundStart:
+    def test_moving_into_range_mid_round_does_not_apply(self):
+        """코스트 보너스 없이 받는 대미지 증가만 떠안는 경우를 막는다."""
         ctx = _standard_field()
 
         ctx.move_character_to(FAR, BattlefieldColumnIndex(2))
 
-        assert _penalty(ctx, FAR) == 40
+        assert _penalty(ctx, FAR) == 0
 
-    def test_holder_moving_drags_the_range_along(self):
+    def test_moving_out_of_range_mid_round_keeps_the_buff(self):
+        """코스트 보너스를 이미 받았으니 대가도 그 라운드 동안 유지된다."""
+        ctx = _standard_field()
+
+        ctx.move_character_to(NEAR, BattlefieldColumnIndex(6))
+
+        assert _penalty(ctx, NEAR) == 40
+        assert ctx.characters[NEAR].status.remaining_cost == 4
+
+    def test_new_position_counts_from_the_next_round(self):
+        ctx = _standard_field()
+        ctx.move_character_to(NEAR, BattlefieldColumnIndex(6))
+        ctx.move_character_to(FAR, BattlefieldColumnIndex(2))
+
+        ctx.on_finish_round()
+        ctx.on_start_round()
+
+        assert _penalty(ctx, NEAR) == 0
+        assert ctx.characters[NEAR].status.remaining_cost == 3
+        assert _penalty(ctx, FAR) == 40
+        assert ctx.characters[FAR].status.remaining_cost == 4
+
+    def test_holder_moving_changes_the_range_from_the_next_round(self):
         ctx = _standard_field()
 
         ctx.move_character_to(HOLDER, BattlefieldColumnIndex(6))
+        assert _penalty(ctx, NEAR) == 40
+        assert _penalty(ctx, FAR) == 0
 
+        ctx.on_finish_round()
+        ctx.on_start_round()
         assert _penalty(ctx, NEAR) == 0
         assert _penalty(ctx, FAR) == 40
         assert _penalty(ctx, HOLDER) == 40
 
-    def test_holder_leaving_the_field_removes_the_effect(self):
+    def test_holder_leaving_keeps_this_rounds_buffs(self):
         ctx = _standard_field()
 
         ctx.remove_character(HOLDER)
+        assert _penalty(ctx, NEAR) == 40
 
+        ctx.on_finish_round()
+        ctx.on_start_round()
         assert _penalty(ctx, NEAR) == 0
 
     def test_two_holders_overlap_without_double_counting(self):
         ctx = _make_context(owners=(HOLDER.name, NEAR.name))
         _place(ctx, HOLDER, FactionType.ALLY, 3)
         _place(ctx, NEAR, FactionType.ALLY, 4)
+        ctx.on_start_round()
 
+        assert len(_charm_buffs(ctx, HOLDER)) == 2
         assert _penalty(ctx, HOLDER) == 40
-        ctx.remove_character(NEAR)
-        assert _penalty(ctx, HOLDER) == 40
+        ctx.on_finish_round()
+        assert _penalty(ctx, HOLDER) == 0
+
+
+class TestRestore:
+    def test_snapshot_round_trip_keeps_the_round_start_range(self):
+        """복원은 위치로 다시 계산하지 않는다 — 라운드 도중 범위 밖으로
+        나간 캐릭터도 그 라운드의 버프를 이어받는다."""
+        ctx = _standard_field()
+        ctx.move_character_to(NEAR, BattlefieldColumnIndex(6))
+        snapshot = [
+            {"name": char_id.name, "buffs": build_field_buffs(ctx, char_id)}
+            for char_id in (HOLDER, NEAR, FAR)
+        ]
+
+        restored = _make_context()
+        _place(restored, HOLDER, FactionType.ALLY, 3)
+        _place(restored, NEAR, FactionType.ALLY, 6)
+        _place(restored, FAR, FactionType.ALLY, 5)
+        restored.on_battle_start()
+
+        assert _restore_buffs(restored, snapshot) == 2
+        assert _penalty(restored, NEAR) == 40
+        assert _penalty(restored, FAR) == 0
+        restored.on_finish_round()
+        assert _penalty(restored, NEAR) == 0
+
+    def test_unknown_charm_is_skipped(self):
+        ctx = _make_context()
+        _place(ctx, NEAR, FactionType.ALLY, 3)
+        snapshot = [
+            {"name": NEAR.name, "buffs": [{"charm": CHARM_ID, "given_by": "불참자"}]}
+        ]
+
+        assert _restore_buffs(ctx, snapshot) == 0
+        assert _penalty(ctx, NEAR) == 0
 
 
 class TestRevivalFloor:
@@ -199,12 +315,14 @@ class TestRevivalFloor:
         """받는 대미지가 (4 - 부활 횟수) × 10%만큼 더 늘어 총 40%가 된다."""
         ctx = _make_context()
         _place(ctx, HOLDER, FactionType.ALLY, 3, revival_count=2)
+        ctx.on_start_round()
 
         assert _penalty(ctx, HOLDER) == 40
 
     def test_more_revivals_than_the_floor_keep_their_own_count(self):
         ctx = _make_context()
         _place(ctx, HOLDER, FactionType.ALLY, 3, revival_count=5)
+        ctx.on_start_round()
 
         assert _penalty(ctx, HOLDER) == 50
         # 이미 4회 이상이라 받던 +1에 더 얹지 않는다.
@@ -215,6 +333,7 @@ class TestRevivalFloor:
         ctx = _make_context(owners=(FOE.name,))
         _place(ctx, NEAR, FactionType.ALLY, 3, skill_1_id="Cost2Skill")
         _place(ctx, FOE, FactionType.ENEMY, 3)
+        ctx.on_start_round()
 
         command = parse_character_command(NEAR, f"[Cost2Skill/{FOE.name}]", ctx)
         assert command is not None
@@ -229,20 +348,6 @@ class TestRevivalFloor:
         ctx.on_start_round()
 
         assert ctx.characters[NEAR].status.remaining_cost == 4
-
-    def test_displayed_max_cost_holds_until_next_round_start(self):
-        """남은 코스트는 라운드 시작 때만 채워지므로, 라운드 도중 범위를
-        드나들어도 표시 상한이 함께 출렁이면 [4/3]처럼 어긋나 보인다."""
-        ctx = _standard_field()
-        ctx.on_start_round()
-
-        ctx.move_character_to(NEAR, BattlefieldColumnIndex(6))
-        assert ctx.characters[NEAR].status.remaining_cost == 4
-        assert ctx.characters[NEAR].status.round_max_cost == 4
-
-        ctx.on_start_round()
-        assert ctx.characters[NEAR].status.remaining_cost == 3
-        assert ctx.characters[NEAR].status.round_max_cost == 3
 
     def test_move_cost_uses_the_real_revival_count(self):
         ctx = _standard_field()
@@ -262,6 +367,7 @@ class TestOwnership:
     def test_owner_not_in_battle_has_no_effect(self):
         ctx = _make_context(owners=("불참자",))
         _place(ctx, NEAR, FactionType.ALLY, 3)
+        ctx.on_start_round()
 
         assert _penalty(ctx, NEAR) == 0
 
@@ -269,6 +375,7 @@ class TestOwnership:
         ctx = _make_context()
         ctx.inventory = Inventory({(HOLDER.name, CHARM_ID): 0})
         _place(ctx, HOLDER, FactionType.ALLY, 3)
+        ctx.on_start_round()
 
         assert _penalty(ctx, HOLDER) == 0
 
@@ -284,12 +391,14 @@ class TestOwnership:
         )
         ctx = _make_context(item=item)
         _place(ctx, HOLDER, FactionType.ALLY, 3)
+        ctx.on_start_round()
 
         assert _penalty(ctx, HOLDER) == 0
 
     def test_missing_passive_does_not_break_placement(self):
         ctx = _make_context(item=_charm_item(passive_skill_id="사라진패시브"))
         _place(ctx, HOLDER, FactionType.ALLY, 3)
+        ctx.on_start_round()
 
         assert _penalty(ctx, HOLDER) == 0
 
@@ -308,6 +417,7 @@ class TestPracticeModesExcluded:
         ctx.add_character(
             get_test_preset("대련_1"), SideType.SIDE_1, BattlefieldColumnIndex(0)
         )
+        ctx.on_start_round()
 
         status = ctx.characters[CharacterId("대련_1")].status
         assert status.revival_penalty is None

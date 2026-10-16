@@ -85,6 +85,7 @@ class BuffContainer:
         )
         new_buff.applied_at = self._next_apply_seq()
         self._buffs.add(new_buff)
+        new_buff.on_added(self._context)
 
     def restore(
         self,
@@ -118,6 +119,7 @@ class BuffContainer:
                 given_by, applied_to, stack_count, value_override=value_override
             )
             self._buffs.add(buff)
+            buff.on_added(self._context)
         buff.stack_count = stack_count
         buff.duration.remaining_turns = remaining_turns
         buff.duration.remaining_count = remaining_count
@@ -136,10 +138,19 @@ class BuffContainer:
         """PassiveSkillWrapperBuff 등록 전용. BuffData 없이 직접 생성된 인스턴스를 추가한다."""
         self._buffs.add(buff)
 
+    def add_unlisted(self, buff: "BuffBase") -> None:
+        """ "버프" 시트를 거치지 않고 만든 인스턴스(부적 버프 등)를 새로
+        부여한다. 같은 uid가 이미 있으면 그쪽을 빼고 갈아 끼운다."""
+        self.remove(buff.uid)
+        buff.applied_at = self._next_apply_seq()
+        self._buffs.add(buff)
+        buff.on_added(self._context)
+
     def remove(self, buff_uid: BuffUid) -> None:
         for buff in self._buffs:
             if buff.uid == buff_uid:
                 self._buffs.remove(buff)
+                buff.on_removed(self._context)
                 return
 
     def remove_buffs_given_by(self, given_by: CharacterId) -> None:
@@ -147,10 +158,15 @@ class BuffContainer:
         래퍼 포함). 필드 효과를 걷을 때 그 효과가 뿌려 둔 버프까지 함께
         회수하는 용도다 — 필드 효과의 홀더 센티넬은 효과마다 고유하므로
         given_by만으로 자기 것과 남의 것이 갈린다."""
-        self._buffs = {buff for buff in self._buffs if buff.given_by != given_by}
+        removed = {buff for buff in self._buffs if buff.given_by == given_by}
+        self._buffs -= removed
+        for buff in removed:
+            buff.on_removed(self._context)
 
     def clear(self):
-        self._buffs = set()
+        removed, self._buffs = self._buffs, set()
+        for buff in removed:
+            buff.on_removed(self._context)
 
     def get_buffs_by(self, char_id: CharacterId, timing: Optional[BuffApplyTiming]):
         if timing is None:
@@ -422,6 +438,7 @@ class BuffContainer:
         if buffs_to_remove:
             for buff in buffs_to_remove:
                 self._buffs.remove(buff)
+                buff.on_removed(self._context)
             return log_entries, [buff.uid for buff in buffs_to_remove]
 
         return log_entries, []
