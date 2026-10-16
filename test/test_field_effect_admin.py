@@ -215,6 +215,7 @@ class TestPersistence:
                 "id": FIELD_EFFECT_ID,
                 "source": FieldEffectSource.SKILL.value,
                 "source_detail": "시전자_1",
+                "remaining_turns": None,
             }
         ]
 

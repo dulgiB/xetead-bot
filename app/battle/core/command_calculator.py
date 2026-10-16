@@ -19,6 +19,7 @@ from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.field_effect.models import (
     FieldEffectOp,
     FieldEffectSource,
+    format_field_effect_turns,
     is_field_effect_holder,
 )
 from battle.objects.define import (
@@ -77,7 +78,8 @@ class CalculatorMutableData:
         # 실제로 반영된 필드 효과의 (표시 이름, 걷었는지). 답글 표시용이며,
         # 이미 걸려 있어 무시됐거나 걸려 있지 않아 걷을 게 없었던 요청은
         # 남기지 않는다.
-        self.field_effect_results: list[tuple[str, bool]] = []
+        # (효과 id, 해제 여부, 부여된 남은 턴). 남은 턴은 상시 효과·해제면 None.
+        self.field_effect_results: list[tuple[str, bool, Optional[int]]] = []
         # 무효화된 대미지·회복의 (대상, 표시 메시지). NoDataEvent/ReflectEvent가 채운다.
         self.nullified_effect_list: list[tuple[CharacterId, str]] = []
         # 별도 계산기에서 이미 확정된 반응(ON_ENEMY_MOVE 반격 등)의 로그만
@@ -346,12 +348,16 @@ class CommandPartCalculator:
             if op.remove:
                 removed = self.context.remove_field_effect(op.effect_id)
                 if removed is not None:
-                    mutable.field_effect_results.append((removed.id, True))
+                    mutable.field_effect_results.append((removed.id, True, None))
                 continue
 
-            added = self.context.add_field_effect(op.effect_id, FieldEffectSource.SKILL)
+            added = self.context.add_field_effect(
+                op.effect_id, FieldEffectSource.SKILL, turns=op.turns
+            )
             if added is not None:
-                mutable.field_effect_results.append((added.id, False))
+                mutable.field_effect_results.append(
+                    (added.id, False, added.remaining_turns)
+                )
 
     def _process_move(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         for move_data in self.data_by_effect[effect_seq_number].move_list:
@@ -1079,7 +1085,7 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     result="모든 디버프 제거",
                 )
             )
-        for effect_id, removed in effect_data.field_effect_results:
+        for effect_id, removed, turns in effect_data.field_effect_results:
             # 필드 효과는 캐릭터가 아니라 전장에 걸리므로 대상 이름 자리에
             # 효과 이름을 넣는다. 답글 포매터가 kind로 분기해 "대상: 결과"가
             # 아닌 전용 문구로 내보낸다.
@@ -1091,6 +1097,7 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                         FIELD_EFFECT_REMOVED_RESULT
                         if removed
                         else FIELD_EFFECT_ADDED_RESULT
+                        + format_field_effect_turns(turns)
                     ),
                 )
             )

@@ -25,7 +25,14 @@ class _FieldEffectControlBase(SkillEffectBase):
     ) -> list[FieldEffectOp]:
         if not self.field_effect_id:
             return []
-        return [FieldEffectOp(effect_id=self.field_effect_id, remove=self._REMOVE)]
+        turns = None
+        if not self._REMOVE and self.value is not None and self.value > 0:
+            turns = self.value
+        return [
+            FieldEffectOp(
+                effect_id=self.field_effect_id, remove=self._REMOVE, turns=turns
+            )
+        ]
 
     def _expand(
         self,
@@ -44,7 +51,8 @@ class _FieldEffectControlBase(SkillEffectBase):
 
 
 class SkillEffectAddFieldEffect(_FieldEffectControlBase):
-    """`field_effect_id_N`이 가리키는 필드 효과를 전장에 올린다."""
+    """`field_effect_id_N`이 가리키는 필드 효과를 전장에 올린다.
+    `value_N`이 지속 턴 수이고, 비우면 해제 전까지 유지되는 상시 효과다."""
 
     _REMOVE: ClassVar[bool] = False
 

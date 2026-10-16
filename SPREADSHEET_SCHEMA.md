@@ -161,7 +161,7 @@
 | `effect_apply_timing_N`     | (선택) 에너미 스킬 전용, 이 effect가 어느 페이즈에 적용되는지 (`RoundPhaseType`). 비우면 아군 스킬 동작(페이즈별 기본값) |
 | `target_condition_N`        | (선택) **대상마다** 평가하는 조건 클래스명([버프 조건](#버프-조건-condition-클래스-참고)과 같은 목록). `condition_N`이 효과 전체를 켜고 끄는 것과 달리, 이미 정해진 대상 중 조건을 만족하지 않는 대상을 걸러낸다. 조건은 `holder` 자리에 각 대상을 넣어 평가하므로 `SelfHpBelowCondition`이 "그 대상의 체력이 N% 미만"이 된다 |
 | `target_condition_value_N`  | (선택) `target_condition_N`에 넘길 수치 |
-| `field_effect_id_N`         | (선택) `SkillEffectAddFieldEffect`/`SkillEffectRemoveFieldEffect` 전용. 올리거나 걷을 필드 효과의 id("스킬_패시브" 시트) |
+| `field_effect_id_N`         | (선택) `SkillEffectAddFieldEffect`/`SkillEffectRemoveFieldEffect` 전용. 올리거나 걷을 필드 효과의 id("스킬_패시브" 시트). `SkillEffectAddFieldEffect`는 `value_N`을 지속 턴 수로 읽고, 비우면 해제 전까지 유지되는 상시 효과로 건다 |
 | `buff_stack_cap_N`          | (선택) 적층형 버프 부여/제거 시 한 번에 적용할 스택 상한                                        |
 | `condition_N`               | (선택) 이 effect가 발동하는 조건 클래스명 ([Condition 클래스 참고](#condition-클래스-참고)). `ConsumedBuffStackCountCondition`은 예외적으로 지연 게이트(`gate_value_source`/`gate_value`)로 변환되어 커맨드 처리 중간값을 참조한다 |
 | `condition_value_N`         | (선택) `condition_N`이 참조하는 정수값                                                |

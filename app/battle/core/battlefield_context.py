@@ -15,7 +15,12 @@ from battle.core.buff_container import BuffContainer
 from battle.core.charm_aura_container import CharmAuraContainer
 from battle.core.field_effect_container import FieldEffectContainer
 from battle.core.command_calculator import CommandPartCalculator
-from battle.core.commands.models import BattleLogEntry, CommandPartProcessResult
+from battle.core.commands.models import (
+    FIELD_EFFECT_REMOVED_RESULT,
+    BattleLogEntry,
+    BattleLogEntryKind,
+    CommandPartProcessResult,
+)
 from battle.exceptions import (
     CommandValidationError,
     error_character_already_defeated,
@@ -152,7 +157,7 @@ class BattlefieldContext:
 
     def _format_field_effect_summary(self) -> str:
         """전장에 걸려 있는 필드 효과 목록. 걸린 것이 없으면 빈 문자열이다."""
-        effects = self.field_effects.as_list()
+        effects = self.field_effects.as_display_list()
         if not effects:
             return ""
         lines = ["**[필드 효과]**"]
@@ -551,6 +556,16 @@ class BattlefieldContext:
 
     def on_finish_round(self) -> tuple[list[BattleLogEntry], list[CharacterId]]:
         log_entries, _ = self.buff_container.on_round_end()
+        # 버프의 라운드 종료 처리 뒤에 줄여야, 마지막 턴인 필드 효과의
+        # "라운드 종료" 트리거도 한 번 발동하고 걷힌다.
+        log_entries.extend(
+            BattleLogEntry(
+                target_name=effect.id,
+                kind=BattleLogEntryKind.FIELD_EFFECT,
+                result=FIELD_EFFECT_REMOVED_RESULT,
+            )
+            for effect in self.field_effects.tick_turns()
+        )
         eliminated = self._remove_eliminated_characters()
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
@@ -674,9 +689,11 @@ class BattlefieldContext:
         passive_skill_id: str,
         source: FieldEffectSource,
         source_detail: str = "",
+        turns: Optional[int] = None,
     ) -> Optional[FieldEffect]:
-        """필드 효과를 전장에 올린다. 이미 걸려 있거나 이 전장이 필드 효과를
-        쓰지 않으면 None을 반환한다.
+        """필드 효과를 전장에 올린다. 이미 상시로 걸려 있거나 이 전장이 필드
+        효과를 쓰지 않으면 None을 반환한다(재부여 규칙은
+        FieldEffectContainer.add() 참고).
 
         passive_skill_id가 "스킬_패시브" 시트에 없거나 필드 범위 대상
         타입이 아니면 CommandValidationError를 낸다 — 캐릭터 패시브를 필드
@@ -694,7 +711,7 @@ class BattlefieldContext:
                 error_not_a_field_effect(passive_skill_id, data.target_type.value)
             )
 
-        return self.field_effects.add(data, source, source_detail)
+        return self.field_effects.add(data, source, source_detail, turns)
 
     def remove_field_effect(self, passive_skill_id: str) -> Optional[FieldEffect]:
         """필드 효과를 걷는다. 그 효과가 부여한 버프도 함께 회수된다.

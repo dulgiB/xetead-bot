@@ -139,7 +139,7 @@ class TestRegistration:
         assert [e.id for e in ctx.field_effects.as_list()] == [FIELD_EFFECT_ID]
 
     def test_duplicate_add_is_ignored(self):
-        """지속 턴수가 없어 갱신할 것이 없으므로 재부여는 무시된다."""
+        """상시 효과는 갱신할 지속시간이 없으므로 재부여는 무시된다."""
         ctx = _make_context()
         ctx.add_field_effect(FIELD_EFFECT_ID, FieldEffectSource.ADMIN)
 

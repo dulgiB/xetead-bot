@@ -656,7 +656,7 @@ def _format_field_effect_cell(context: "BattlefieldContext") -> tuple[str, str]:
     않는다. 설명은 버프 칸과 같은 방식으로 셀 메모에 담는다 — 그리드가
     좁아 본문에 설명까지 넣으면 이름이 밀린다.
     """
-    effects = context.field_effects.as_list()
+    effects = context.field_effects.as_display_list()
     if not effects:
         return _NO_FIELD_EFFECT_TEXT, ""
 
