@@ -557,6 +557,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillEffectFieldStatOffset` | 공격력·사거리·턴당 코스트 증감 |
 | `SkillEffectRevivalCountFloor` | 부활 `value_N`회 상태처럼 취급(받는 대미지·턴당 코스트만) |
 | `SkillEffectAddFieldEffect` / `SkillEffectRemoveFieldEffect` | 다른 필드 효과 부여·해제 |
+| `SkillEffectStackSkillBonus` / `SkillEffectPlainSkillDamageBonus` | 적층형 버프/디버프를 부여하는 스킬은 그 버프마다 `value_N`스택 추가, 그렇지 않은 스킬은 대미지 `value_N`% 증가 |
 
 **스탯 증감은 `CombatStats.__getitem__`에 직접 얹는다.** 버프(`BuffedStats`)로는
 안 되는데, `BuffedStats`는 `CommandPartCalculator` 안에서만 살기 때문에 사거리
@@ -642,11 +643,33 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
   `create_new_except_move()`가 이동과 함께 뺀다.
 - **코스트는 가득 찬 채 들어온다**(`refill_cost_for_round()`). 배치 뒤에
   채우므로 필드 효과의 턴당 코스트 증감도 반영된다.
+- **소환물은 최대 체력으로 들어온다.** 매번 새 개체를 들이는 것이라 시트
+  체력을 보지 않는다 — 쓰러져 시트 체력이 0으로 남은 소환물도 다시 부를
+  수 있어야 한다. 대신 `write_back_changed_hp()`가 `SUMMON` 엔트리도 체력
+  변동으로 보고 시트를 되돌린다. 안 그러면 재기동 복원이 그 소환물을
+  사망으로 보고 뺀다.
 - **검증은 선언 시점에 전부 한다**(`check_summon()`). 이미 필드에 있음,
-  명단에 없음, 체력 0, 전장 경계, 열 정원 중 하나라도 걸리면 커맨드 전체를
+  명단에 없음, 전장 경계, 열 정원 중 하나라도 걸리면 커맨드 전체를
   거부해 코스트가 소모되지 않는다. 사거리는 보지 않는다(열 광역 규칙과
   같다). `apply_timing`을 적 공격 정산으로 둔 소환은 그 사이 열이 찰 수
   있어, 처리 시점의 실패는 그 소환만 빼고 답글에 "소환 실패"로 남긴다.
+
+## 스킬 종류별 보정 (`SkillEffectStackSkillBonus` / `SkillEffectPlainSkillDamageBonus`)
+
+"적층형 버프/디버프를 부여하는 스킬이면 스택을 더, 아니면 대미지를 더"처럼
+스킬이 무엇을 하는지에 따라 갈리는 보정이다. 걸려 있는 동안 유지되는
+상태(`is_standing_state`)라 필드 효과·부적에 쓰고, 값은 `CombatStats`에
+얹는다 — 트리거형 버프로 두면 도중에 건 필드 효과가 다음 트리거까지 비고,
+버프 이벤트(`ON_ACTION`)는 대미지가 없는 스킬에서는 돌지 않는다.
+
+- 스택은 부여 데이터를 만드는 전개 시점(`command_expanders._apply_stack_skill_bonus()`),
+  대미지는 계산기 생성 시점(`command_calculator._apply_plain_skill_damage_bonus()`)에
+  얹는다. 키워드 보정의 버프 스택 강화·굴림 보정과 같은 자리다.
+- "적층형 버프를 부여하는 스킬"은 전개된 부여 데이터에 `max_stack`이 있는
+  버프가 하나라도 있는지로 판정한다. 그런 스킬은 대미지 보정을 받지 않아
+  둘이 겹치지 않는다.
+- 스킬 커맨드만 대상이다. 기본 공격·아이템과 반격 같은 파생 대미지는 받지
+  않는다. 대미지 보정은 배율이라 "고정" 대미지에는 붙지 않는다.
 
 ## 부적 (`CharmAuraContainer`)
 
