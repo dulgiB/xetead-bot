@@ -31,6 +31,9 @@ class CombatCharacterDataFromSpreadsheet:
     # 두 번 이상 열리지 않으므로 "오늘 이미 썼는가"만 보면 스토리 진행 1회당
     # 1번 제한이 성립한다 — 별도의 리셋 절차가 필요 없다.
     keyword_date: str = ""
+    # "에너미" 시트에서 읽은 행인지. 이름만으로는 두 시트를 가를 수 없어,
+    # 에너미만 대상으로 하는 효과(소환)가 이 값으로 고른다. load_char_data()가 채운다.
+    is_enemy: bool = False
 
     @classmethod
     def from_dict(cls, raw: SpreadsheetRow) -> "CombatCharacterDataFromSpreadsheet":

@@ -7,6 +7,7 @@ from utils.dice import DiceRollResult, nd6
 from battle.objects.define import (
     BattlefieldColumnIndex,
     CombatStatType,
+    FactionType,
     ValueSourceType,
 )
 
@@ -378,6 +379,19 @@ class MoveData:
     character_id: CharacterId
     to_position: BattlefieldColumnIndex
     is_forced: bool = False
+
+
+@dataclass(frozen=True)
+class SummonData:
+    """전장에 없는 캐릭터를 `column`에 새로 배치하라는 요청.
+
+    `character_id`는 "에너미" 시트의 이름으로 이미 맞춰 둔 값이다. 찾지 못했으면
+    입력 그대로 남아, 사전 검증이 "찾을 수 없음"으로 돌려준다.
+    """
+
+    character_id: CharacterId
+    column: BattlefieldColumnIndex
+    faction: FactionType
 
 
 @dataclass(frozen=True)

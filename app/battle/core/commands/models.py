@@ -12,6 +12,7 @@ from battle.objects.models import (
     DamageData,
     HealData,
     MoveData,
+    SummonData,
     ValueModifierBase,
 )
 
@@ -50,6 +51,8 @@ class CommandPartDataPerEffect:
     debuff_clear_list: list[CharacterId] = field(default_factory=list)
     # 이 effect가 전장에 올리거나 걷기를 요청한 필드 효과.
     field_effect_ops: list[FieldEffectOp] = field(default_factory=list)
+    # 이 effect가 전장에 새로 들이는 캐릭터. 이동과 같은 시점에 처리한다.
+    summon_list: list[SummonData] = field(default_factory=list)
     # 에너미 스킬 전용: None이면 페이즈별 기본값(이동→PRE, 대미지/힐→POST) 사용.
     apply_timing: Optional[
         Literal[RoundPhaseType.ENEMY_PRE_ACTION, RoundPhaseType.ENEMY_POST_ACTION]
@@ -92,6 +95,8 @@ class CommandPartData:
                 new_data_per_effect_list.append(
                     CommandPartDataPerEffect(
                         move_list=[],
+                        # 소환도 이동과 같이 PRE에서 이미 끝났다.
+                        summon_list=[],
                         damage_list=data.damage_list,
                         heal_list=data.heal_list,
                         buff_add_list=data.buff_add_list,
@@ -154,6 +159,7 @@ class BattleLogEntryKind(str, Enum):
     BUFF_REMOVE = "buff_remove"
     DEBUFF_CLEAR = "debuff_clear"
     FIELD_EFFECT = "field_effect"
+    SUMMON = "summon"
     # 방어막/반사 등이 항목 자체를 없앴을 때 "왜 대미지가 안 보이는지"를
     # 답글에 남기기 위한 종류.
     NO_EFFECT = "no_effect"

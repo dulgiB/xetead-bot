@@ -294,6 +294,9 @@ def expand_character_command(
                 field_effect_ops = skill_effect.get_field_effect_ops(
                     context, command.user_id
                 )
+                summon_list = skill_effect.get_summon_list(
+                    context, command.user_id, raw_targets
+                )
                 move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
                     skill_effect.expand(
                         context, command.user_id, target_characters, raw_targets
@@ -311,6 +314,7 @@ def expand_character_command(
                         buff_remove_list=buff_remove_list,
                         debuff_clear_list=debuff_clear_list,
                         field_effect_ops=field_effect_ops,
+                        summon_list=summon_list,
                         apply_timing=skill_effect.apply_timing,
                     )
                 )

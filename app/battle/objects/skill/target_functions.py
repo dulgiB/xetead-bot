@@ -9,6 +9,7 @@ from battle.exceptions import (
     error_invalid_command_format,
     error_invalid_move_destination,
     error_self_target_not_allowed,
+    error_summon_target_required,
 )
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
@@ -242,3 +243,25 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
                 raise CommandValidationError(error_invalid_move_destination(columns[0]))
 
         return characters
+
+
+@dataclass(frozen=True)
+class SkillTargetRuleSummon(SkillTargetRule):
+    """
+    열 1개와 필드에 없는 캐릭터 1명을 함께 지정하는 소환 스킬용 규칙.
+    - 지정한 캐릭터는 아직 필드에 없으므로 대상 목록은 비어 있다. 열과 이름은
+      효과(SkillEffectSummon)가 입력 그대로(raw_targets) 읽는다.
+    - 입력은 순서와 무관하게 열 하나, 이름 하나여야 한다. 시트의
+      target_count는 SkillTargetRuleNamedWithColumn과 같이 2로 적는다.
+
+    ex. 스킬/스킬명/3열/에너미A
+    """
+
+    def get_targets(
+        self, targets: list[BattlefieldColumnIndex | CharacterId]
+    ) -> list[CharacterId]:
+        characters = [t for t in targets if isinstance(t, CharacterId)]
+        columns = [t for t in targets if isinstance(t, BattlefieldColumnIndex)]
+        if len(characters) != 1 or len(columns) != 1:
+            raise CommandValidationError(error_summon_target_required())
+        return []

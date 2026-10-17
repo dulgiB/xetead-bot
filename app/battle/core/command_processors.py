@@ -21,6 +21,7 @@ from battle.core.taunt_redirect import assign_taunt_redirects
 from battle.exceptions import (
     CommandValidationError,
     error_attack_position_too_far,
+    error_character_already_on_field,
     error_character_is_defeated,
     error_keyword_already_used,
     error_keyword_not_available_here,
@@ -394,6 +395,7 @@ def try_expansion_if_valid(
         )
 
     expanded_command_data_list = expand_character_command(command, context)
+    summoned_names: set[CharacterId] = set()
     for command_data in expanded_command_data_list:
         effective_range = _effective_attack_range(
             context, user, command_data.original_part
@@ -402,6 +404,17 @@ def try_expansion_if_valid(
         for sub_data in command_data.data_per_effect:
             if sub_data is None:
                 continue
+
+            # 소환은 전장에 아직 없는 캐릭터를 다루므로 대상 검증과 따로 본다.
+            # 사거리는 보지 않는다 — 열 광역 규칙과 같이 입력한 열 자체에는
+            # 사거리 제한이 없다.
+            for summon in sub_data.summon_list:
+                if summon.character_id in summoned_names:
+                    raise CommandValidationError(
+                        error_character_already_on_field(summon.character_id)
+                    )
+                context.check_summon(summon)
+                summoned_names.add(summon.character_id)
 
             # 이동은 damage 검증보다 먼저 처리해 user_pos를 갱신한다. 슬롯 점유는
             # 시전자가 아니라 실제로 이동하는 캐릭터의 진영으로 봐야 한다 —
