@@ -63,6 +63,30 @@ class CombatStats:
         else:
             raise ValueError(f"Unknown CombatStatType: {item}")
 
+    def refresh_base(
+        self,
+        attack: int,
+        max_hp: int,
+        attack_range: int,
+        magic_resistance: MagicResistanceType,
+        is_magic_attacker: bool,
+        max_cost: int,
+        revival_count: int,
+    ) -> None:
+        """시트에서 다시 읽은 기본 스탯으로 바꾼다(admin `[갱신]` 전용).
+
+        필드 효과·부적이 얹은 증감과 부활 하한, 이번 라운드의 남은 코스트는
+        그대로 둔다 — 그것들은 시트가 아니라 전장이 들고 있는 상태라, 지우면
+        걸려 있는 효과가 걷히지 않은 채 수치만 사라진다. 턴당 코스트 변경은
+        다음 라운드 시작부터 반영된다. 현재 체력은 호출측이 정한다."""
+        self._base_atk = attack
+        self._max_hp = max_hp
+        self._base_attack_range = attack_range
+        self._m_res = magic_resistance
+        self._is_magic_attacker = is_magic_attacker
+        self._max_cost = max_cost
+        self._revival_count = revival_count
+
     def add_stat_offset(self, stat_type: CombatStatType, delta: int) -> None:
         """스탯 증감을 얹는다. 같은 스탯에 여러 필드 효과가 걸리면 합산된다.
 
@@ -123,6 +147,10 @@ class CombatStats:
             return FloatValueModifier(source_name="마법 저항", value=-15)
         else:
             raise ValueError(f"Unknown MagicResistanceType: {self._m_res}")
+
+    @property
+    def magic_resistance_type(self) -> MagicResistanceType:
+        return self._m_res
 
     @property
     def is_magic_attacker(self) -> bool:

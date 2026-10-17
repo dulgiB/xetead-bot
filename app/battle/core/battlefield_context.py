@@ -27,6 +27,7 @@ from battle.exceptions import (
     error_character_already_on_field,
     error_field_effect_not_found,
     error_not_a_field_effect,
+    error_skill_not_registered,
     error_span_out_of_board,
     error_target_does_not_exist,
     error_too_many_characters,
@@ -48,7 +49,7 @@ from battle.objects.item.models import ItemData
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
-from battle.objects.skill.models import SkillData
+from battle.objects.skill.models import Skill, SkillData
 from spreadsheets.inventory import Inventory
 
 
@@ -295,16 +296,7 @@ class BattlefieldContext:
         if data.curr_hp is not None and data.curr_hp <= 0:
             raise CommandValidationError(error_character_already_defeated(char_id))
 
-        skills = []
-        for i in range(MAX_SKILL_SLOT_COUNT):
-            if len(data.skill_id_list) <= i:
-                break
-            if data.skill_id_list[i]:
-                skills.append(
-                    self._skill_dictionary[data.skill_id_list[i]].to_skill_instance(
-                        self, char_id
-                    )
-                )
+        skills = self._build_skills(data, char_id)
 
         character = CombatCharacter(
             self,
@@ -329,15 +321,7 @@ class BattlefieldContext:
         if data.hide_hp:
             self.hp_hidden_ids.add(char_id)
 
-        if (
-            data.passive_skill_id
-            and data.passive_skill_id in self._passive_skill_dictionary
-        ):
-            wrappers = PassiveSkillWrapperBuff.create(
-                char_id, self._passive_skill_dictionary[data.passive_skill_id]
-            )
-            for wrapper in wrappers:
-                self.buff_container.add_passive_wrapper(wrapper)
+        self._register_passive(char_id, data.passive_skill_id)
 
         occupied = columns_for_span(column_idx, character.span)
         if len(occupied) < character.span:
@@ -364,6 +348,100 @@ class BattlefieldContext:
 
         if self.allow_charms:
             self.charm_auras.register_holder(char_id)
+            self.charm_auras.refresh()
+
+    def _build_skills(
+        self, data: CombatCharacterDataFromSpreadsheet, char_id: CharacterId
+    ) -> list[Skill]:
+        skills = []
+        for i in range(MAX_SKILL_SLOT_COUNT):
+            if len(data.skill_id_list) <= i:
+                break
+            if data.skill_id_list[i]:
+                skills.append(
+                    self._skill_dictionary[data.skill_id_list[i]].to_skill_instance(
+                        self, char_id
+                    )
+                )
+        return skills
+
+    def _register_passive(self, char_id: CharacterId, passive_skill_id: str) -> None:
+        if passive_skill_id and passive_skill_id in self._passive_skill_dictionary:
+            wrappers = PassiveSkillWrapperBuff.create(
+                char_id, self._passive_skill_dictionary[passive_skill_id]
+            )
+            for wrapper in wrappers:
+                self.buff_container.add_passive_wrapper(wrapper)
+
+    def passive_wrappers_of(
+        self, char_id: CharacterId
+    ) -> list[PassiveSkillWrapperBuff]:
+        return [
+            buff
+            for buff in self.buff_container.get_buffs_by(char_id, None)
+            if isinstance(buff, PassiveSkillWrapperBuff) and buff.given_by == char_id
+        ]
+
+    def refresh_character_data(
+        self, char_id: CharacterId, data: CombatCharacterDataFromSpreadsheet
+    ) -> None:
+        """전장에 있는 캐릭터의 스탯·스킬·패시브를 시트에서 다시 읽은 값으로
+        바꾼다(admin `[갱신]` 전용). 배치 때 한 번 복사해 두는 값들이라, 이
+        경로 말고는 전투 도중 시트 수정이 전장에 들어오지 않는다.
+
+        위치·진영·버프·남은 코스트는 그대로 두고, 현재 체력은 새 최대 체력을
+        넘지 않게만 자른다(시트 체력을 들일지는 호출측이 정한다). `span`은
+        바꾸지 않는다 — 점유 열이 달라지면 자리를 다시 잡아야 해서, 그건
+        배치의 일이다.
+
+        스킬/패시브 id가 이 전투 데이터에 없으면 아무것도 바꾸지 않고
+        CommandValidationError를 낸다. 스킬 데이터는 [전투준비] 때 읽으므로
+        그 뒤 시트에 새로 만든 스킬은 여기서 찾을 수 없다.
+        """
+        character = self.characters[char_id]
+        for skill_id in data.skill_id_list[:MAX_SKILL_SLOT_COUNT]:
+            if skill_id and skill_id not in self._skill_dictionary:
+                raise CommandValidationError(error_skill_not_registered(skill_id))
+        if (
+            data.passive_skill_id
+            and data.passive_skill_id not in self._passive_skill_dictionary
+        ):
+            raise CommandValidationError(
+                error_skill_not_registered(data.passive_skill_id)
+            )
+
+        character.status.refresh_base(
+            data.atk,
+            data.max_hp,
+            data.attack_range,
+            data.m_res,
+            data.is_magic_attacker,
+            data.max_cost,
+            data.revival_count,
+        )
+        character.status.curr_hp = min(
+            character.status.curr_hp, character.status[CombatStatType.MAX_HP]
+        )
+        character.skills = self._build_skills(data, char_id)
+        character.hide_hp = data.hide_hp
+        if data.hide_hp:
+            self.hp_hidden_ids.add(char_id)
+        else:
+            self.hp_hidden_ids.discard(char_id)
+
+        # 패시브는 id가 바뀐 경우에만 다시 건다 — 같은 패시브를 다시 걸면
+        # 래퍼가 들고 있던 상태가 초기화된다. 옛 패시브가 이미 다른 캐릭터에게
+        # 부여해 둔 버프는 남은 지속시간대로 둔다.
+        old_wrappers = self.passive_wrappers_of(char_id)
+        old_passive_ids = {wrapper.id for wrapper in old_wrappers}
+        new_passive_ids = {data.passive_skill_id} if data.passive_skill_id else set()
+        if old_passive_ids != new_passive_ids:
+            for wrapper in old_wrappers:
+                self.buff_container.remove(wrapper.uid)
+            self._register_passive(char_id, data.passive_skill_id)
+
+        # 사거리가 바뀌면 부적 범위 판정도 달라질 수 있다.
+        if self.allow_charms:
             self.charm_auras.refresh()
 
     def _remove_from_position_map(self, char_id: CharacterId) -> None:
