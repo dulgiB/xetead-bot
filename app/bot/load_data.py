@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+from dataclasses import replace
 from typing import TYPE_CHECKING, Optional
 
 import gspread
@@ -371,7 +372,9 @@ def load_char_data(
         if not name and not mastodon_id:
             continue
         try:
-            combat_data = CombatCharacterDataFromSpreadsheet.from_dict(r)
+            combat_data = replace(
+                CombatCharacterDataFromSpreadsheet.from_dict(r), is_enemy=True
+            )
         except Exception:
             logger.warning(
                 "'에너미' 시트 행을 읽는 중 오류가 발생해 건너뜁니다: name=%s, mastodon_id=%s",

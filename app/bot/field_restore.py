@@ -216,6 +216,7 @@ def _restore_main_battle(
     session = BattleSession(
         buff_dict, skill_dict, passive_skill_dict, item_dict, inventory
     )
+    session.context.summon_roster_source = lambda: state.name_dict
     restored = _restore_characters_full(session, state, row.characters)
     if restored == 0:
         logger.warning(
