@@ -385,7 +385,11 @@ class BattlefieldContext:
     def check_summon(self, summon: SummonData) -> CombatCharacterDataFromSpreadsheet:
         """소환할 수 있는지 확인하고 그 캐릭터의 시트 데이터를 돌려준다.
         안 되면 CommandValidationError를 낸다 — add_character()와 같은
-        조건이지만, 자리가 없을 때의 문구만 소환에 맞게 바꾼다."""
+        조건이지만, 자리가 없을 때의 문구만 소환에 맞게 바꾼다.
+
+        시트 체력은 보지 않는다. 소환은 매번 새 개체를 들이는 것이라 최대
+        체력으로 들어오고(summon_character()), 앞서 쓰러져 시트 체력이 0으로
+        남은 소환물도 다시 부를 수 있어야 한다."""
         data = self.summon_roster_source().get(summon.character_id.name)
         if data is None or not data.is_enemy:
             raise CommandValidationError(
@@ -394,10 +398,6 @@ class BattlefieldContext:
         if summon.character_id in self.characters:
             raise CommandValidationError(
                 error_character_already_on_field(summon.character_id)
-            )
-        if data.curr_hp is not None and data.curr_hp <= 0:
-            raise CommandValidationError(
-                error_character_already_defeated(summon.character_id)
             )
         if len(columns_for_span(summon.column, data.span)) < data.span:
             raise CommandValidationError(
@@ -412,7 +412,9 @@ class BattlefieldContext:
 
     def summon_character(self, summon: SummonData) -> CombatCharacter:
         data = self.check_summon(summon)
-        self.add_character(data, summon.faction, summon.column)
+        self.add_character(
+            replace(data, curr_hp=data.max_hp), summon.faction, summon.column
+        )
         return self.characters[summon.character_id]
 
     def _remove_from_position_map(self, char_id: CharacterId) -> None:

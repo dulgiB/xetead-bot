@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 import gspread
 from gspread.utils import ValueInputOption, absolute_range_name, rowcol_to_a1
 
-from battle.core.commands.models import BattleLogEntry
+from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
 from battle.objects.define import CombatStatType
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
@@ -490,10 +490,14 @@ def write_back_changed_hp(
 
     바뀐 캐릭터가 N명이어도 읽기는 시트당 1회, 쓰기는 1회로 고정된다.
     """
+    # 소환물은 최대 체력으로 들어오므로, 앞서 쓰러져 0으로 남은 시트 체력을
+    # 함께 되돌린다 — 안 그러면 재기동 복원이 그 소환물을 사망으로 보고 뺀다.
     changed_names = {
         entry.target_name
         for entry in entries
-        if entry.result.startswith("대미지 ") or entry.result.startswith("회복 ")
+        if entry.result.startswith("대미지 ")
+        or entry.result.startswith("회복 ")
+        or entry.kind == BattleLogEntryKind.SUMMON
     }
     write_back_character_hp(
         spreadsheet,

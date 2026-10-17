@@ -180,6 +180,23 @@ class TestSummon:
         assert post_entries == []
         assert list(ctx.characters).count(SUMMONED) == 1
 
+    def test_defeated_enemy_is_summoned_again_at_full_hp(self):
+        """소환은 매번 새 개체를 들이므로, 앞서 쓰러져 시트 체력이 0으로 남은
+        소환물도 다시 부를 수 있고 최대 체력으로 들어온다."""
+        ctx, manager = _setup()
+
+        _declare(ctx, manager, f"[{SUMMON_SKILL_ID}/3열/에너미_2]")
+
+        summoned = ctx.characters[CharacterId("에너미_2")]
+        assert summoned.status.curr_hp == summoned.status[CombatStatType.MAX_HP]
+        entry = next(
+            entry
+            for result in ctx.results
+            for entry in result.log_entries
+            if entry.kind == BattleLogEntryKind.SUMMON
+        )
+        assert (entry.hp_after, entry.max_hp) == (100, 100)
+
     def test_multi_column_enemy_occupies_every_column(self):
         ctx, manager = _setup()
 
@@ -201,8 +218,6 @@ class TestRejected:
             f"[{SUMMON_SKILL_ID}/3열/없는_이름]",
             # "캐릭터" 시트의 행이다
             f"[{SUMMON_SKILL_ID}/3열/동료_1]",
-            # 체력 0
-            f"[{SUMMON_SKILL_ID}/3열/에너미_2]",
             # 2열을 차지하는데 7열에서는 필드 밖으로 나간다
             f"[{SUMMON_SKILL_ID}/7열/에너미_3]",
             # 열이 없다

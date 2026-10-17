@@ -1117,11 +1117,16 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                 )
             )
         for summon in effect_data.summoned_list:
+            summoned = context.characters.get(summon.character_id)
             entries.append(
                 BattleLogEntry(
                     target_name=summon.character_id.name,
                     kind=BattleLogEntryKind.SUMMON,
                     result=f"{summon.column}열에 소환",
+                    hp_after=summoned.status.curr_hp if summoned else None,
+                    max_hp=(
+                        summoned.status[CombatStatType.MAX_HP] if summoned else None
+                    ),
                 )
             )
         for effect_id, removed, turns in effect_data.field_effect_results:
