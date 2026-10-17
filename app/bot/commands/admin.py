@@ -24,6 +24,7 @@ from battle.objects.define import (
     CHARACTER_PER_COLUMN,
     ActionType,
     BattlefieldColumnIndex,
+    CombatStatType,
     FactionType,
 )
 from battle.core.charm_aura_container import charm_config_error
@@ -84,6 +85,7 @@ from bot.session import ATTACK_DICE_COUNT, BattleSession
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.character.combat_character import CombatCharacter
     from bot.main import BotState
     from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
 
@@ -106,6 +108,9 @@ _RE_MANUAL_PLACE = re.compile(
 )
 _RE_FORCE_ELIMINATE = re.compile(
     rf"\[{whitespace_tolerant_literal('탈락')}\s*/\s*([^/\]]+?)]"
+)
+_RE_REFRESH_CHARACTER = re.compile(
+    rf"\[{whitespace_tolerant_literal('갱신')}\s*/\s*([^/\]]+?)\s*]"
 )
 _RE_FIELD_EFFECT_ADD = re.compile(
     rf"\[{whitespace_tolerant_literal('필드효과')}\s*/\s*([^/\]]+?)"
@@ -257,6 +262,14 @@ def handle_admin_command(
             for m in force_eliminate_matches
         ]
         return AdminCommandResult("\n".join(replies))
+
+    if refresh_matches := list(_RE_REFRESH_CHARACTER.finditer(text)):
+        refresh_outcomes = [
+            _cmd_refresh_character(m.group(1).strip(), state) for m in refresh_matches
+        ]
+        if any(refreshed for refreshed, _ in refresh_outcomes):
+            _save_main_field(state)
+        return AdminCommandResult("\n".join(reply for _, reply in refresh_outcomes))
 
     # "필드효과해제"는 "필드효과" 패턴에도 걸리므로 해제를 먼저 본다.
     if remove_matches := list(_RE_FIELD_EFFECT_REMOVE.finditer(text)):
@@ -464,7 +477,16 @@ def _cmd_force_eliminate(name: str, state: "BotState") -> str:
         return f"◊ 지정한 캐릭터({name})는 전투에 참여하고 있지 않습니다."
 
     removed = state.session.context.force_remove_character(char_id)
+    _save_main_field(state)
+    return format_eliminated_characters(removed)
 
+
+def _save_main_field(state: "BotState") -> None:
+    """페이즈 전환 없이 전장이 바뀐 admin 커맨드 뒤에 필드 DB 행과 공개
+    "필드" 시트를 갱신한다. 실패해도 커맨드 자체는 이미 적용됐으므로 로그만
+    남긴다. 진행 중인 본 전투가 없으면 아무것도 하지 않는다."""
+    if state.session is None or not state.session.started:
+        return
     try:
         upsert_field_row(
             state.spreadsheet,
@@ -492,7 +514,82 @@ def _cmd_force_eliminate(name: str, state: "BotState") -> str:
     except Exception:
         _log_system_error("공개 필드 시트 실시간 갱신")
 
-    return format_eliminated_characters(removed)
+
+def _cmd_refresh_character(name: str, state: "BotState") -> tuple[bool, str]:
+    """`[갱신/이름]` — 배치 때 한 번 복사해 두는 스탯·스킬·패시브를 지금
+    "캐릭터"/"에너미" 시트 값으로 다시 맞춘다. 시트는 멘션마다 새로 읽으므로
+    (`reload_char_data()`) `state.name_dict`가 곧 최신 값이다.
+
+    체력은 `sync_hp_from_sheet()`와 같은 기준으로 들인다 — 봇이 마지막으로
+    읽거나 쓴 값과 시트가 다를 때만 채택한다. 전장 체력과 비교하면 시트
+    쓰기가 실패해 낡은 값이 남은 캐릭터의 정산된 대미지가 되돌려진다.
+
+    본 전투 전용이다 — 대련/결투는 임시 체력으로 싸워 시트 스탯을 그대로
+    들이면 안 되고, 상시전투도 같은 세션 구조를 쓰지 않는다."""
+    if state.session is None or not state.session.started:
+        return False, "◊ 진행 중인 전투가 없습니다."
+
+    context = state.session.context
+    char_id = context.resolve_character_id(CharacterId(name))
+    if char_id not in context.characters:
+        return (
+            False,
+            f"◊ 지정한 캐릭터({escape_markdown(name)})는 전투에 참여하고 있지 않습니다.",
+        )
+    data = state.name_dict.get(char_id.name)
+    if data is None:
+        return (
+            False,
+            f"◊ 시트에서 캐릭터({escape_markdown(char_id.name)})를 찾을 수 없습니다.",
+        )
+
+    character = context.characters[char_id]
+    before = _refresh_summary(character)
+    try:
+        context.refresh_character_data(char_id, data)
+    except CommandValidationError as e:
+        return False, f"◊ {escape_markdown(char_id.name)} 갱신 실패: {e}"
+
+    if data.curr_hp is not None:
+        known_hp = state.session.sheet_hp.get(char_id.name)
+        state.session.sheet_hp[char_id.name] = data.curr_hp
+        if known_hp is not None and known_hp != data.curr_hp:
+            character.status.curr_hp = max(
+                0, min(data.curr_hp, character.status[CombatStatType.MAX_HP])
+            )
+
+    after = _refresh_summary(character)
+    changes = [
+        f"{label} {before[label]} → {after[label]}"
+        + (" (다음 라운드부터)" if label == "턴당 코스트" else "")
+        for label in after
+        if before[label] != after[label]
+    ]
+    if not changes:
+        return True, f"◊ {escape_markdown(char_id.name)} 갱신: 바뀐 값 없음"
+    return True, f"◊ {escape_markdown(char_id.name)} 갱신: " + ", ".join(
+        escape_markdown(change) for change in changes
+    )
+
+
+def _refresh_summary(character: "CombatCharacter") -> dict[str, str]:
+    """[갱신] 답글에 바뀐 항목만 보여주기 위한 전후 비교용 스냅샷."""
+    status = character.status
+    passive_ids = sorted(
+        {wrapper.id for wrapper in character.field.passive_wrappers_of(character.id)}
+    )
+    return {
+        "공격력": str(status[CombatStatType.ATK]),
+        "체력": f"{status.curr_hp}/{status[CombatStatType.MAX_HP]}",
+        "사거리": str(status[CombatStatType.RANGE]),
+        "마법 저항": status.magic_resistance_type.value,
+        "공격 형태": "마법" if status.is_magic_attacker else "물리",
+        "턴당 코스트": str(status[CombatStatType.COST_PER_TURN]),
+        "부활": str(status.revival_count),
+        "스킬": ", ".join(skill.data.id for skill in character.skills) or "없음",
+        "패시브": ", ".join(passive_ids) or "없음",
+        "체력 숨김": "켜짐" if character.hide_hp else "꺼짐",
+    }
 
 
 def _cmd_field_effect(
