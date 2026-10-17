@@ -191,6 +191,7 @@
 | `AllyInSameColumnCondition`             | holder와 같은 열에 같은 진영(자신 제외)이 1명 이상                                  | (없음)              |
 | `TargetAttackedHolderLastRoundCondition`| 직전 라운드에 대상이 holder를 공격함                                            | (없음)              |
 | `HolderDidNotMoveThisTurnCondition`     | 이번 라운드 holder가 이동하지 않음                                              | (없음)              |
+| `HolderMovedThisTurnCondition`          | 이번 라운드 holder가 이동함(강제 이동 포함). `target_condition_N`에 쓰면 "이번 라운드에 이동한 대상에게만" — 적 스킬 대미지는 적 공격 정산 때 전개되므로 그 라운드 아군 행동의 이동까지 본다 | (없음)              |
 | `SameTargetAsLastRoundCondition`        | 직전 라운드에도 holder가 같은 대상을 공격함                                        | (없음)              |
 | `SameTargetAsPreviousAttackCondition`   | 직전 라운드 또는 이번 라운드에 holder가 이미 그 대상을 공격함                            | (없음)              |
 | `HealedNonSelfCondition`                | holder가 자신 외 대상에게 회복을 부여하는 상황                                      | (없음)              |
@@ -244,7 +245,9 @@
 | `SkillEffectHealAndFillBuffStack`                | 적층형 버프의 여유 스택 수 × value%만큼 회복 + 시전자 스택을 즉시 최대치로 채움          |
 | `SkillEffectDamageByDebuffStackTier`             | 대상의 적층형 디버프 스택 수(최대 5 기준 3단계)에 따라 대미지 계수/처리 방식이 갈림. 최대 스택 분기의 스택 제거는 대미지 **뒤에** 일어나, 터뜨리는 그 일격도 그 디버프를 조건으로 하는 패시브 보정을 받는다 |
 | `SkillEffectSplashAlongPath`                     | 시전자의 원래 위치~주대상 위치 사이 전체 열(양 끝 포함)에 대미지, 주대상 본인은 제외          |
-| `SkillEffectSummon`                              | `SkillTargetRuleSummon`으로 지정한 열에, 지정한 "에너미" 시트의 캐릭터를 시전자 진영으로 소환. 시트의 현재 체력·스킬·패시브 그대로 들어오고 코스트는 가득 찬 상태라 같은 라운드에 바로 행동할 수 있다. 이동과 같은 시점에 처리돼 에너미 스킬이면 행동 선언 때 바로 나타난다. 이미 필드에 있거나, "에너미" 시트에 없거나, 체력이 0이거나, 그 열에 자리가 없으면 커맨드 전체를 거부한다. 본 전투 전용 |
+| `SkillEffectStackSkillBonus`                     | 필드 효과·부적 전용 상시 상태. 범위 안의 캐릭터가 적층형 버프/디버프를 부여하는 스킬을 쓰면 그 버프마다 `value_N`스택을 더 부여한다 |
+| `SkillEffectPlainSkillDamageBonus`               | 필드 효과·부적 전용 상시 상태. 범위 안의 캐릭터가 적층형 버프/디버프를 부여하지 않는 스킬을 쓰면 대미지가 `value_N`% 증가한다("고정" 대미지 제외). 기본 공격·아이템은 스킬이 아니라 해당하지 않는다 |
+| `SkillEffectSummon`                              | `SkillTargetRuleSummon`으로 지정한 열에, 지정한 "에너미" 시트의 캐릭터를 시전자 진영으로 소환. 최대 체력과 시트의 스킬·패시브로 들어오고(앞서 쓰러진 소환물도 다시 부를 수 있다) 코스트는 가득 찬 상태라 같은 라운드에 바로 행동할 수 있다. 이동과 같은 시점에 처리돼 에너미 스킬이면 행동 선언 때 바로 나타난다. 이미 필드에 있거나, "에너미" 시트에 없거나, 그 열에 자리가 없으면 커맨드 전체를 거부한다. 본 전투 전용 |
 
 ---
 
