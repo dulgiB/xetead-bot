@@ -386,6 +386,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillTargetRuleAllyColumn`   | 열 기준 광역, 항상 시전자와 같은 진영(아군)                  | `False`                  |
 | `SkillTargetRuleColumnRange`  | 열 1개 지정 → ±`target_count`열 광역(1 → 3열, 2 → 5열), 항상 시전자의 `foe_faction`(적 진영) | `False`                  |
 | `SkillTargetRuleAllAllies`    | 입력 무시, 시전자와 같은 진영 전원(시전자 자신 제외)              | `True`                   |
+| `SkillTargetRuleSummon`       | 열 1개 + 필드에 없는 캐릭터 1명. 대상 목록은 비고, `SkillEffectSummon`이 입력을 그대로 읽는다 | `False`                  |
 
 `ignores_input_targets`는 커맨드에 적힌 대상 입력을 규칙이 무시하는지만
 뜻한다 — `keyword_config_error()`가 "대상 추가" 모드를 걸러내는 데만 쓰고,
@@ -622,6 +623,30 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
 위쪽에 행이 늘면 아래가 조용히 잘렸다.
 
 ---
+
+## 소환 (`SkillEffectSummon`)
+
+열 1개와 필드에 없는 에너미 1명을 받아(`SkillTargetRuleSummon`) 그 열에
+시전자의 진영으로 배치한다. 배치 자체는 `add_character()`를 그대로 타므로
+열당 인원·`span`·필드 효과·부적 처리가 도중 참전과 같다.
+
+- **명단은 봇 계층이 넘긴다.** 전장은 "에너미" 시트를 모르므로
+  `BattlefieldContext.summon_roster_source`(시트 명단을 돌려주는 함수)로
+  받는다. 명단은 멘션마다 다시 읽히므로 값이 아니라 함수다. "캐릭터" 시트
+  행은 `CombatCharacterDataFromSpreadsheet.is_enemy`로 걸러 대상에서 뺀다.
+  명단을 넘기지 않는 전장(대련 계열)에서는 "찾을 수 없음"이 된다.
+- **처리 시점은 이동과 같다.** `get_summon_list()`가 `expand()` 옆에서 요청을
+  만들고(필드 효과 요청과 같은 방식), 계산기는 `_process_move()`와 같은
+  자리에서 `_process_summon()`을 부른다 — 에너미 스킬이면 행동 선언(PRE)
+  때 나타나 같은 PRE에 바로 선언할 수 있고, POST 재전개에서는
+  `create_new_except_move()`가 이동과 함께 뺀다.
+- **코스트는 가득 찬 채 들어온다**(`refill_cost_for_round()`). 배치 뒤에
+  채우므로 필드 효과의 턴당 코스트 증감도 반영된다.
+- **검증은 선언 시점에 전부 한다**(`check_summon()`). 이미 필드에 있음,
+  명단에 없음, 체력 0, 전장 경계, 열 정원 중 하나라도 걸리면 커맨드 전체를
+  거부해 코스트가 소모되지 않는다. 사거리는 보지 않는다(열 광역 규칙과
+  같다). `apply_timing`을 적 공격 정산으로 둔 소환은 그 사이 열이 찰 수
+  있어, 처리 시점의 실패는 그 소환만 빼고 답글에 "소환 실패"로 남긴다.
 
 ## 부적 (`CharmAuraContainer`)
 
