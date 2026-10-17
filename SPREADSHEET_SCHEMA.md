@@ -230,6 +230,7 @@
 |-------------------------------------------------|-------------------------------------------------------------------|
 | `SkillEffectDamage`                              | 대미지                                                              |
 | `SkillEffectDamageReverse`                       | 시전자의 공격 속성과 반대 속성으로 대미지                                         |
+| `SkillEffectDamageByTargetHpRatio`               | 대미지에 대상의 남은 체력 비율을 곱한다(50%면 × 0.5). 비율은 적용 순간의 체력으로 정해 같은 커맨드의 뒤 타격일수록 약해지며, 이 효과만으로는 대상을 쓰러뜨리지 못한다 |
 | `SkillEffectHeal`                                | 회복                                                                |
 | `SkillEffectMove`                                | 이동                                                                |
 | `SkillEffectAddBuff`                             | 대상에게 버프 부여                                                       |
