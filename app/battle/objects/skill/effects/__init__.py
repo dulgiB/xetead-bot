@@ -18,7 +18,11 @@ from .effect_conditional_buff import SkillEffectConditionalBuff  # noqa: F401
 from .effect_consume_stack_for_damage import (  # noqa: F401
     SkillEffectConsumeStackForDamage,
 )
-from .effect_damage import SkillEffectDamage, SkillEffectDamageReverse  # noqa: F401
+from .effect_damage import (  # noqa: F401
+    SkillEffectDamage,
+    SkillEffectDamageByTargetHpRatio,
+    SkillEffectDamageReverse,
+)
 from .effect_damage_by_debuff_stack_tier import (  # noqa: F401
     SkillEffectDamageByDebuffStackTier,
 )
