@@ -47,6 +47,7 @@ from battle.objects.skill.define import SkillValueType
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.character.combat_character import CombatCharacter
 
 
 @dataclass
@@ -231,6 +232,26 @@ def _boost_coefficient(effect_data: CalculatorMutableData, bonus: int) -> None:
             base.coefficient, source_name=label, value=base.coefficient.value + bonus
         )
         calc.base = replace(calc.base, value=replace(base, coefficient=boosted))
+
+
+def _scale_by_hp_ratio(
+    value: BaseValueIndicator, target: "CombatCharacter"
+) -> BaseValueIndicator:
+    """대상의 남은 체력 비율을 계수에 곱한다. 계수가 없는 고정값은 값 자체에
+    곱해 내린다. 비율을 계수에 합쳐 두므로 계산식에는 곱해진 계수 하나가
+    라벨과 함께 보인다."""
+    max_hp = target.status[CombatStatType.MAX_HP]
+    ratio = max(0, target.status.curr_hp) / max_hp if max_hp > 0 else 0
+    if value.coefficient is not None:
+        scaled = replace(
+            value.coefficient,
+            source_name=f"계수×남은 체력 {round(ratio * 100)}%",
+            value=value.coefficient.value * ratio,
+        )
+        return replace(value, coefficient=scaled)
+    if isinstance(value.value, int):
+        return replace(value, value=int(value.value * ratio))
+    return value
 
 
 class CommandPartCalculator:
@@ -740,6 +761,12 @@ class CommandPartCalculator:
             revival_penalty = target.status.revival_penalty
             if revival_penalty is not None:
                 damage_calc.received_modifiers.append(revival_penalty)
+
+            if damage_calc.base.scales_with_target_hp_ratio:
+                damage_calc.base = replace(
+                    damage_calc.base,
+                    value=_scale_by_hp_ratio(damage_calc.base.value, target),
+                )
 
             damage_value = ValueWithModifiers(
                 damage_calc.base.value,

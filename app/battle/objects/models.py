@@ -416,6 +416,10 @@ class DamageData:
     # 패시브에 막히는 것을 막는 용도. 같은 대상을 향한 다른 대미지 중
     # 하나라도 True면 정상 발동한다(OR로 합쳐짐).
     triggers_holder_action_buffs: bool = True
+    # True면 적용 시점의 대상 남은 체력 비율(현재/최대)을 계수에 곱한다.
+    # 전개가 아니라 적용 시점에 보는 이유는, 같은 커맨드의 앞선 타격으로 줄어든
+    # 체력이 다음 타격에 반영돼야 하기 때문이다.
+    scales_with_target_hp_ratio: bool = False
     # 반격/반사류처럼 실제로 대미지를 가한 쪽이 제3자(버프 보유자)일 때
     # 답글에 "[라벨]"로 밝히기 위한 문자열. None이면 본인의 직접 행동이다.
     source_label: Optional[str] = None
