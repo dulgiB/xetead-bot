@@ -98,6 +98,26 @@ def _apply_keyword_buff_boost(
         buff_add_list[i] = replace(buff_add, value_override=base_value + bonus)
 
 
+def _apply_stack_skill_bonus(
+    bonus: int,
+    data_per_effect_list: list[CommandPartDataPerEffect],
+    context: BattlefieldContext,
+) -> None:
+    """적층형 버프/디버프를 부여하는 스킬에 필드 효과 등이 얹은 추가 스택을
+    반영한다(SkillEffectStackSkillBonus). 키워드 보정의 버프 스택 강화와 같이
+    부여 데이터를 만드는 이 시점에만 손댈 수 있다."""
+    if bonus <= 0:
+        return
+    for data in data_per_effect_list:
+        for i, buff_add in enumerate(data.buff_add_list):
+            buff_data = context.get_buff_data_by_id_or_none(buff_add.buff_id)
+            if buff_data is None or buff_data.max_stack is None:
+                continue
+            data.buff_add_list[i] = replace(
+                buff_add, stack_value=buff_add.stack_value + bonus
+            )
+
+
 def _keyword_boosted_effect(
     skill_data: "SkillData", effect_index: int, effect: "SkillEffectBase"
 ) -> "SkillEffectBase":
@@ -323,6 +343,11 @@ def expand_character_command(
                 _apply_keyword_buff_boost(
                     skill_used.data, data_per_effect_list, context
                 )
+            _apply_stack_skill_bonus(
+                context.characters[command.user_id].status.stack_skill_bonus,
+                data_per_effect_list,
+                context,
+            )
 
             parts_list.append(
                 CommandPartData(

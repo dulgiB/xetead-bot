@@ -38,5 +38,9 @@ from .effect_revival_count_floor import SkillEffectRevivalCountFloor  # noqa: F4
 from .effect_shield_or_reflect_if_target_has_team_damage_reduction import (  # noqa: F401
     SkillEffectShieldOrReflectIfTargetHasTeamDamageReduction,
 )
+from .effect_skill_kind_bonus import (  # noqa: F401
+    SkillEffectPlainSkillDamageBonus,
+    SkillEffectStackSkillBonus,
+)
 from .effect_splash_along_path import SkillEffectSplashAlongPath  # noqa: F401
 from .effect_summon import SkillEffectSummon  # noqa: F401
