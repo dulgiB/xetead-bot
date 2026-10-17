@@ -116,6 +116,25 @@ def test_write_back_changed_hp_absorbs_failure():
     assert written_hp == {}
 
 
+def test_write_back_changed_hp_writes_summoned_enemy_hp():
+    """소환물은 최대 체력으로 들어오므로, 앞서 쓰러져 0으로 남은 시트 체력을
+    되돌려야 재기동 복원이 그 소환물을 사망으로 보지 않는다."""
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("적0", max_hp=40), FactionType.ENEMY, BattlefieldColumnIndex(0)
+    )
+    spreadsheet = _FakeSpreadsheetForHpLookup([], ["적0"])
+    entries = [
+        BattleLogEntry(
+            target_name="적0", kind=BattleLogEntryKind.SUMMON, result="1열에 소환"
+        )
+    ]
+
+    log_sheets.write_back_changed_hp(spreadsheet, ctx, entries)
+
+    assert [w[2] for w in spreadsheet.worksheet("에너미").written] == [40]
+
+
 def test_write_back_changed_hp_uses_one_api_call_for_many_characters():
     """두 시트("캐릭터"/"에너미")에 걸쳐 있어도 같은 스프레드시트라 요청
     하나에 담긴다."""

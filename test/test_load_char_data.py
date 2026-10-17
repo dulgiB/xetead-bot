@@ -108,6 +108,19 @@ def test_load_char_data_merges_enemy_sheet_by_name_and_mastodon_id():
     assert "boss@example.com" not in noncombat_char_dict
 
 
+def test_load_char_data_marks_only_enemy_sheet_rows_as_enemy():
+    """소환은 "에너미" 시트의 행만 대상으로 하므로, 어느 시트에서 읽었는지가
+    데이터에 남아야 한다."""
+    spreadsheet = _FakeSpreadsheet(
+        [_row(name="동료")], enemy_rows=[_row(name="에너미_1", mastodon_id="")]
+    )
+
+    _, name_dict, _ = load_char_data(spreadsheet)
+
+    assert name_dict["에너미_1"].is_enemy is True
+    assert name_dict["동료"].is_enemy is False
+
+
 def test_load_char_data_skips_invalid_enemy_row():
     """에너미 시트에서 파싱에 실패하는 행은 건너뛰고 나머지는 정상 로드되어야 한다."""
     rows = [_row()]

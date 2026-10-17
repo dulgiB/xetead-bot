@@ -296,6 +296,22 @@ class HolderDidNotMoveThisTurnCondition(Condition):
 
 
 @dataclass(frozen=True)
+class HolderMovedThisTurnCondition(Condition):
+    """이번 라운드에 holder가 이동했을 때 True. 밀어내기 같은 강제 이동도
+    센다. target_condition_N에 쓰면 "이번 라운드에 이동한 대상에게만"이 된다
+    — 적 스킬의 대미지는 적 공격 정산 때 전개되므로 그 라운드 아군 행동의
+    이동까지 본다."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        return holder in context.moved_this_round
+
+
+@dataclass(frozen=True)
 class SameTargetAsLastRoundCondition(Condition):
     """직전 라운드에도 holder가 attacker_or_target을 공격했을 때 True."""
 

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
@@ -86,3 +87,33 @@ class SkillEffectDamageReverse(SkillEffectDamage):
             for d in damage_list
         ]
         return [], reversed_damage_list, [], [], []
+
+
+class SkillEffectDamageByTargetHpRatio(SkillEffectDamage):
+    """대미지에 대상의 남은 체력 비율을 곱한다(체력 50%면 × 0.5). 비율은
+    대미지가 적용되는 순간의 체력으로 정하므로, 같은 커맨드에서 여러 번
+    맞으면 뒤의 타격일수록 약해진다. 이 효과만으로는 대상을 쓰러뜨릴 수 없다."""
+
+    def _expand(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        targets: list[CharacterId],
+        raw_targets: tuple = (),
+    ) -> tuple[
+        list[MoveData],
+        list[DamageData],
+        list[HealData],
+        list[BuffAddData],
+        list[BuffRemoveData],
+    ]:
+        moves, damage_list, heals, buff_adds, buff_removes = super()._expand(
+            context, holder, targets, raw_targets
+        )
+        return (
+            moves,
+            [replace(d, scales_with_target_hp_ratio=True) for d in damage_list],
+            heals,
+            buff_adds,
+            buff_removes,
+        )

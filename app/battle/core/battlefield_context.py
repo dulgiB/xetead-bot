@@ -1,4 +1,5 @@
 import copy
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Optional
 
@@ -28,6 +29,8 @@ from battle.exceptions import (
     error_field_effect_not_found,
     error_not_a_field_effect,
     error_span_out_of_board,
+    error_summon_column_full,
+    error_summon_target_not_found,
     error_target_does_not_exist,
     error_too_many_characters,
 )
@@ -45,7 +48,7 @@ from battle.objects.define import (
 )
 from battle.objects.field_effect.models import FieldEffect, FieldEffectSource
 from battle.objects.item.models import ItemData
-from battle.objects.models import CharacterId, ValueWithModifiers
+from battle.objects.models import CharacterId, SummonData, ValueWithModifiers
 from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import SkillData
@@ -73,6 +76,12 @@ class BattlefieldContext:
         self.milestone_n: int = milestone_n
 
         self.characters: dict[CharacterId, CombatCharacter] = {}
+        # 소환할 수 있는 캐릭터 명단. 봇 계층이 "캐릭터"/"에너미" 시트 명단을
+        # 넘긴다 — 명단은 멘션마다 다시 읽히므로 값이 아니라 읽는 함수로 받는다.
+        # 기본값(빈 명단)인 전장에서는 소환이 항상 "찾을 수 없음"이 된다.
+        self.summon_roster_source: Callable[
+            [], Mapping[str, CombatCharacterDataFromSpreadsheet]
+        ] = dict
         # 체력을 "?/?"로 가리는 캐릭터. 필드에서 빠져도 지우지 않는다 — 결투
         # 기권자의 피해 정산처럼 빠진 뒤에도 체력이 답글에 나가는 경로가 있다.
         self.hp_hidden_ids: set[CharacterId] = set()
@@ -365,6 +374,48 @@ class BattlefieldContext:
         if self.allow_charms:
             self.charm_auras.register_holder(char_id)
             self.charm_auras.refresh()
+
+    def resolve_summon_id(self, raw: CharacterId) -> CharacterId:
+        """공백 차이를 무시하고 소환 명단의 에너미 이름으로 맞춘다. 없으면 raw."""
+        names = [
+            name for name, data in self.summon_roster_source().items() if data.is_enemy
+        ]
+        return CharacterId(resolve_matching_key(raw.name, names))
+
+    def check_summon(self, summon: SummonData) -> CombatCharacterDataFromSpreadsheet:
+        """소환할 수 있는지 확인하고 그 캐릭터의 시트 데이터를 돌려준다.
+        안 되면 CommandValidationError를 낸다 — add_character()와 같은
+        조건이지만, 자리가 없을 때의 문구만 소환에 맞게 바꾼다.
+
+        시트 체력은 보지 않는다. 소환은 매번 새 개체를 들이는 것이라 최대
+        체력으로 들어오고(summon_character()), 앞서 쓰러져 시트 체력이 0으로
+        남은 소환물도 다시 부를 수 있어야 한다."""
+        data = self.summon_roster_source().get(summon.character_id.name)
+        if data is None or not data.is_enemy:
+            raise CommandValidationError(
+                error_summon_target_not_found(summon.character_id)
+            )
+        if summon.character_id in self.characters:
+            raise CommandValidationError(
+                error_character_already_on_field(summon.character_id)
+            )
+        if len(columns_for_span(summon.column, data.span)) < data.span:
+            raise CommandValidationError(
+                error_span_out_of_board(summon.column, data.span)
+            )
+        if (
+            self.try_find_empty_slot(summon.faction, summon.column, span=data.span)
+            is None
+        ):
+            raise CommandValidationError(error_summon_column_full(summon.column))
+        return data
+
+    def summon_character(self, summon: SummonData) -> CombatCharacter:
+        data = self.check_summon(summon)
+        self.add_character(
+            replace(data, curr_hp=data.max_hp), summon.faction, summon.column
+        )
+        return self.characters[summon.character_id]
 
     def _remove_from_position_map(self, char_id: CharacterId) -> None:
         char = self.characters[char_id]

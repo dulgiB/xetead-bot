@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from battle.objects.buff.conditions import Condition
     from battle.objects.character.combat_stats import CombatStats
     from battle.objects.field_effect.models import FieldEffectOp
+    from battle.objects.models import SummonData
 
 
 @dataclass(frozen=True)
@@ -184,6 +185,16 @@ class SkillEffectBase(abc.ABC):
         제거(get_debuff_clear_targets)와 같이 expand() 옆에서 따로 불리는
         훅으로 둔다 — 튜플을 넓히면 기존 효과 구현체가 전부 바뀐다.
         """
+        return []
+
+    def get_summon_list(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]",
+    ) -> list["SummonData"]:
+        """필드에 캐릭터를 새로 들이는 효과(SkillEffectSummon)만 오버라이드한다.
+        get_field_effect_ops()와 같은 이유로 expand() 옆의 훅으로 둔다."""
         return []
 
     def get_debuff_clear_targets(
