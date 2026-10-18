@@ -113,7 +113,8 @@ def format_battle_reply(
 
     `show_skill_preview=True`이면 SKILL 파트마다 그 스킬의 효과 설명을
     예고 줄로 덧붙인다 (적군 PRE 선언 답글 전용 — 본 전투에서만
-    사용된다). 스킬이 아직 공개되지 않았으면(`SkillData.revealed=False`)
+    사용된다). 같은 라운드에 이미 예고한 스킬은 헤더만 남긴다
+    (`BattlefieldContext.previewed_skill_ids`). 스킬이 아직 공개되지 않았으면(`SkillData.revealed=False`)
     설명 대신 블라인드 문구를 보여준다.
 
     `_merged_lines`/`_emitted`/`_last_buff_adds`는 admin.py의 `_format_named_reply()`처럼
@@ -415,7 +416,11 @@ def _format_part(
         # 선언했는지 알 수 있도록 헤더를 항상 함께 보여준다.
         if show_skill_preview or skill_data.reveal_effect:
             body_lines.append(header)
-            body_lines.append(_format_skill_preview(skill_data))
+            # 같은 라운드에 같은 스킬을 여러 번 선언하면 설명은 처음 한 번만
+            # 붙인다. 헤더는 무엇을 선언했는지 알아야 하므로 매번 남긴다.
+            if skill_data.id not in context.previewed_skill_ids:
+                context.previewed_skill_ids.add(skill_data.id)
+                body_lines.append(_format_skill_preview(skill_data))
 
     calc_lines = []
     for entry in log_entries:

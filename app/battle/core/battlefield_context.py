@@ -115,6 +115,9 @@ class BattlefieldContext:
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
         self.moved_this_round: set[CharacterId] = set()
+        # 이번 라운드에 답글에서 효과 예고 줄을 이미 보여 준 스킬 id. 같은
+        # 스킬을 여러 번 선언해도 설명이 반복되지 않게 한다.
+        self.previewed_skill_ids: set[str] = set()
         self.damaged_this_round: set[CharacterId] = set()
         # 이번 라운드에 대미지가 실제로 적용된 (공격자, 대상) 조합.
         # results는 커맨드 하나가 끝나야 채워지므로, 같은 커맨드 안에서
@@ -713,6 +716,7 @@ class BattlefieldContext:
 
     def on_start_round(self):
         self.moved_this_round = set()
+        self.previewed_skill_ids = set()
         self.attacked_this_round = set()
         # 지우기 전에 스냅샷해 둬야 ON_ROUND_START 조건이 지난 라운드의
         # 피격 기록을 읽을 수 있다.

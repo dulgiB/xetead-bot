@@ -429,6 +429,12 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 아니라 스킬 id 단위 전역 상태다(스킬 데이터 자체가 에너미별이 아니라 id로
 공유되므로).
 
+예고 줄은 같은 라운드에 같은 스킬당 한 번만 붙는다
+(`BattlefieldContext.previewed_skill_ids`, `on_start_round()`에서 비운다). 한
+에너미가 같은 스킬을 여러 번 쓰거나 여러 에너미가 같은 스킬을 쓰면 설명이
+답글마다 반복돼 읽기 어렵기 때문이다. 헤더는 무엇을 선언했는지 보여야 하므로
+매번 남는다.
+
 대련/결투/상시전투(`PracticeRoundManager`)는 페이즈 구조가 달라 이 기능
 대상이 아니다.
 
