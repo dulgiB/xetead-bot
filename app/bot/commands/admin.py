@@ -453,6 +453,7 @@ def _cmd_manual_place(
                 round_n=state.session.round_n,
                 phase=state.session.current_phase.value,
                 enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                ally_declared=state.session.manager.get_ally_declared_commands(),
                 battle_name=state.session.name,
                 cache=state.field_sheet_cache,
             )
@@ -509,6 +510,7 @@ def _save_main_field(state: "BotState") -> None:
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -804,6 +806,7 @@ def _sync_field_sheets(state: "BotState") -> None:
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1073,6 +1076,7 @@ def _cmd_battle_start(
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
             ensure_merged=True,
@@ -1161,6 +1165,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             round_n=state.session.round_n,
             phase=new_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1267,6 +1272,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             round_n=state.session.round_n,
             phase=new_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1353,6 +1359,7 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1485,6 +1492,7 @@ def _cmd_proxy(
                 round_n=round_n,
                 phase=phase.value,
                 enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                ally_declared=state.session.manager.get_ally_declared_commands(),
                 battle_name=state.session.name,
                 cache=state.field_sheet_cache,
             )
