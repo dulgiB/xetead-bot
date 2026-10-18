@@ -947,6 +947,12 @@ admin의 페이즈 전환(`[진행]`/`[전투속행]`) **직전**에
 되돌려 버린다. 그래서 본 전투에서 체력을 쓰는 경로는 `write_back_changed_hp()`에
 `written_hp=session.sheet_hp`를 넘겨야 한다.
 
+체력 외의 스탯·스킬·패시브는 배치 때 한 번 복사되고 시트를 다시 보지 않는다.
+전투 도중 시트에서 고친 값은 admin `[갱신/이름]`
+(`BattlefieldContext.refresh_character_data()`)으로만 들어온다. 이때도
+기본 스탯만 바꾸고(`CombatStats.refresh_base()`) 필드 효과·부적 증감과 남은
+코스트는 전장 상태로 남긴다. 체력은 위와 같은 `sheet_hp` 기준을 쓴다.
+
 ## 스프레드시트 API 쓰기 할당량
 
 Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, 봇이 쓰는 세
