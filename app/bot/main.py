@@ -111,6 +111,9 @@ _RE_INVESTIGATION_START = re.compile(rf"\[{whitespace_tolerant_literal('상시�
 _RE_BAG = re.compile(rf"\[{whitespace_tolerant_literal('가방')}]")
 _RE_1D100 = re.compile(r"\[\s*1\s*d\s*100\s*]", re.IGNORECASE)
 _MAX_POST_LENGTH = 500
+# 계산식을 CW 합본 본문에 실을 때 남겨야 하는 최소 자리. 계산식 한 줄이
+# 대개 이보다 짧아, 이만큼도 안 남으면 따로 후속 게시물로 보낸다.
+_MIN_CALC_CHUNK_LENGTH = 120
 
 # 커맨드를 수신하는 페이즈 (active_phase_post_id 설정 대상)
 _COMMAND_PHASES = {
@@ -1551,9 +1554,13 @@ class MastodonBotListener(StreamListener):
             if len(provisional_chunks) > 1
             else 0
         )
-        # spoiler_text가 접미사까지 합쳐 한도를 넘으면 CW 합본으로는 표현할
-        # 수 없다. 접미사를 빼고 재면 한도에 근접한 text에서 422가 난다.
-        if len(text) + suffix_len > _MAX_POST_LENGTH:
+        # Mastodon은 spoiler_text와 본문을 합쳐 한도를 센다. 본문 자리에는 멘션
+        # 접두어와 계산식이 들어가므로, 접두어를 빼고 재면 한도 근처의 text에서
+        # 422가 나고, 계산식 자리가 거의 없으면 몇 글자짜리 조각이 쏟아진다.
+        if (
+            len(mention_prefix) + len(text) + suffix_len
+            > _MAX_POST_LENGTH - _MIN_CALC_CHUNK_LENGTH
+        ):
             return self._reply_then_calc_followup(
                 in_reply_to_id,
                 acct,

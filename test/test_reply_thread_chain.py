@@ -41,3 +41,18 @@ def test_reply_too_long_for_cw_returns_calc_followup_as_tail():
     assert calls[-1]["spoiler_text"] == "계산식"
     assert calls[-1]["in_reply_to_id"] == head["id"]
     assert tail["id"] == 9000 + len(calls) - 1
+
+
+def test_reply_near_limit_with_mention_prefix_never_exceeds_post_limit():
+    """멘션 접두어까지 합치면 한도를 넘는 본문은 CW 합본으로 보내지 않는다 —
+    Mastodon은 spoiler_text와 본문을 합쳐 500자를 세므로 422로 답글이 통째로
+    사라진다."""
+    mastodon, listener = _listener()
+    text = "가" * 495
+    calc = "\n".join(f"▹ 대상_{i} | (6 + 3[1d6]) × 2[계수] → -18" for i in range(5))
+
+    listener._reply_with_calc(1, "a", "unlisted", text, calc)
+
+    for call in mastodon.status_post_calls:
+        assert len(call["status"]) + len(call.get("spoiler_text") or "") <= 500
+    assert mastodon.status_post_calls[-1]["spoiler_text"] == "계산식"
