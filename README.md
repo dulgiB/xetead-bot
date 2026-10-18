@@ -591,6 +591,7 @@ SSH로 붙어 체크아웃을 갱신하고 `bot` 컨테이너를 재빌드·재�
 | `SkillTargetRuleAllyColumn`     | 열 번호로 지정, 해당 열의 **아군** 전원                       |
 | `SkillTargetRuleColumnRange`    | 열 번호 1개로 지정, 그 열 ±`target_count`열(1이면 3열, 2면 5열)의 **적군** 전원 — 필드 경계를 넘는 열은 자연히 제외 |
 | `SkillTargetRuleAllAllies`      | 입력 없이 시전자와 같은 진영 전원(시전자 자신 제외)                 |
+| `SkillTargetRuleSummon`         | 열 1개 + 필드에 없는 에너미 1명(순서 무관, 예: `스킬명/3열/에너미`) — `SkillEffectSummon`과 함께 써서 그 열에 소환 |
 
 ---
 

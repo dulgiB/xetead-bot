@@ -333,6 +333,7 @@ def _cmd_battle_prep(state: "BotState") -> AdminCommandResult:
         item_dict,
         inventory,
     )
+    state.session.context.summon_roster_source = lambda: state.name_dict
     reply = "◊ 전투 준비\n\n참여를 희망하는 인원은 이곳에 답글을 남겨주세요."
     return AdminCommandResult(reply, set_preparation_post=True, post_as_new_status=True)
 

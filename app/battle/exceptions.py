@@ -102,6 +102,20 @@ def error_character_already_on_field(char_id: CharacterId) -> str:
     return f"'{char_id.name}'은(는) 이미 필드에 배치되어 있습니다."
 
 
+def error_summon_target_required() -> str:
+    return (
+        "소환은 열 1개와 소환할 에너미 1명을 함께 지정해야 합니다. (예시: 3열/에너미)"
+    )
+
+
+def error_summon_target_not_found(char_id: CharacterId) -> str:
+    return f"소환할 에너미({char_id.name})를 찾을 수 없습니다."
+
+
+def error_summon_column_full(pos: BattlefieldColumnIndex) -> str:
+    return f"지정한 위치({pos})에 이미 {CHARACTER_PER_COLUMN}명이 위치하고 있어 소환할 수 없습니다."
+
+
 def error_character_is_defeated() -> str:
     return "체력이 0인 캐릭터는 행동할 수 없습니다."
 

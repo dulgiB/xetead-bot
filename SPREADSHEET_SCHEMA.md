@@ -95,7 +95,7 @@
 | `id`           | 스킬 id (고유)                                             |
 | `description`  | 봇이 그대로 노출할 스킬 설명. **스킬_캐릭터에서는 B열 고정**(바깥 스프레드시트가 위치로 참조), 스킬_에너미에서는 마지막 컬럼 |
 | `target_rule`  | 대상 규칙 클래스명 ([README.md#스킬-대상-규칙](README.md#스킬-대상-규칙) 참조) |
-| `target_count` | 지정 가능한 대상 수 상한. 단 `SkillTargetRuleColumnRange`에서는 지정한 열 양옆으로 넓힐 열 수다(1 → 3열, 2 → 5열) — 입력은 열 1개로 고정 |
+| `target_count` | 지정 가능한 대상 수 상한. 단 `SkillTargetRuleColumnRange`에서는 지정한 열 양옆으로 넓힐 열 수다(1 → 3열, 2 → 5열) — 입력은 열 1개로 고정. 열과 이름을 함께 받는 `SkillTargetRuleNamedWithColumn`/`SkillTargetRuleSummon`은 2 |
 | `cost`         | 코스트                                                   |
 | `keyword_mode` (선택, 스킬_캐릭터 전용) | 이 스킬에 키워드 보정("+")을 붙였을 때 무엇이 강해지는지 (`KeywordBoostMode`, [값 목록](#keywordboostmode)). **비우면 기존 동작** — 대미지가 나오는 스킬은 굴림에 `KEYWORD_BOOST_SKILL_BONUS`(10)를 더하고, 대미지가 없는 스킬은 "+"를 거부한다. 값 소스가 공격 굴림·공격력·고정값이 아닌 대미지(소모한 스택 수 × 계수, 체력 비례 등)는 보정을 받지 않으며, 그런 대미지만 있는 스킬도 "+"를 거부한다 |
 | `keyword_value` (선택, 스킬_캐릭터 전용) | `keyword_mode`별 보정치. `굴림 보정`에서만 생략 가능(생략 시 10). 단위는 모드가 정한다 — 아래 값 목록 참조 |
@@ -230,6 +230,7 @@
 |-------------------------------------------------|-------------------------------------------------------------------|
 | `SkillEffectDamage`                              | 대미지                                                              |
 | `SkillEffectDamageReverse`                       | 시전자의 공격 속성과 반대 속성으로 대미지                                         |
+| `SkillEffectDamageByTargetHpRatio`               | 대미지에 대상의 남은 체력 비율을 곱한다(50%면 × 0.5). 비율은 적용 순간의 체력으로 정해 같은 커맨드의 뒤 타격일수록 약해지며, 이 효과만으로는 대상을 쓰러뜨리지 못한다 |
 | `SkillEffectHeal`                                | 회복                                                                |
 | `SkillEffectMove`                                | 이동                                                                |
 | `SkillEffectAddBuff`                             | 대상에게 버프 부여                                                       |
@@ -244,6 +245,9 @@
 | `SkillEffectHealAndFillBuffStack`                | 적층형 버프의 여유 스택 수 × value%만큼 회복 + 시전자 스택을 즉시 최대치로 채움          |
 | `SkillEffectDamageByDebuffStackTier`             | 대상의 적층형 디버프 스택 수(최대 5 기준 3단계)에 따라 대미지 계수/처리 방식이 갈림. 최대 스택 분기의 스택 제거는 대미지 **뒤에** 일어나, 터뜨리는 그 일격도 그 디버프를 조건으로 하는 패시브 보정을 받는다 |
 | `SkillEffectSplashAlongPath`                     | 시전자의 원래 위치~주대상 위치 사이 전체 열(양 끝 포함)에 대미지, 주대상 본인은 제외          |
+| `SkillEffectStackSkillBonus`                     | 필드 효과·부적 전용 상시 상태. 범위 안의 캐릭터가 적층형 버프/디버프를 부여하는 스킬을 쓰면 그 버프마다 `value_N`스택을 더 부여한다 |
+| `SkillEffectPlainSkillDamageBonus`               | 필드 효과·부적 전용 상시 상태. 범위 안의 캐릭터가 적층형 버프/디버프를 부여하지 않는 스킬을 쓰면 대미지가 `value_N`% 증가한다("고정" 대미지 제외). 기본 공격·아이템은 스킬이 아니라 해당하지 않는다 |
+| `SkillEffectSummon`                              | `SkillTargetRuleSummon`으로 지정한 열에, 지정한 "에너미" 시트의 캐릭터를 시전자 진영으로 소환. 최대 체력과 시트의 스킬·패시브로 들어오고(앞서 쓰러진 소환물도 다시 부를 수 있다) 코스트는 가득 찬 상태라 같은 라운드에 바로 행동할 수 있다. 이동과 같은 시점에 처리돼 에너미 스킬이면 행동 선언 때 바로 나타난다. 이미 필드에 있거나, "에너미" 시트에 없거나, 그 열에 자리가 없으면 커맨드 전체를 거부한다. 본 전투 전용 |
 
 ---
 

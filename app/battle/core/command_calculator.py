@@ -14,6 +14,7 @@ from battle.core.commands.models import (
     DamageCalculateData,
     HealCalculateData,
 )
+from battle.exceptions import CommandValidationError
 from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffRemoveData
 from battle.objects.character.buffed_stats import BuffedStats
 from battle.objects.field_effect.models import (
@@ -39,12 +40,14 @@ from battle.objects.models import (
     HealData,
     IntValueModifier,
     MoveData,
+    SummonData,
     ValueWithModifiers,
 )
 from battle.objects.skill.define import SkillValueType
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.character.combat_character import CombatCharacter
 
 
 @dataclass
@@ -59,6 +62,7 @@ class CalculatorMutableData:
         apply_timing: Optional[RoundPhaseType] = None,
         debuff_clear_list: Optional[list[CharacterId]] = None,
         field_effect_ops: Optional[list[FieldEffectOp]] = None,
+        summon_list: Optional[list[SummonData]] = None,
     ):
         self.move_list: list[MoveData] = move_list
         self.damage_data_list: list[DamageCalculateData] = [
@@ -75,6 +79,9 @@ class CalculatorMutableData:
         self.apply_timing: Optional[RoundPhaseType] = apply_timing
         self.debuff_clear_list: list[CharacterId] = debuff_clear_list or []
         self.field_effect_ops: list[FieldEffectOp] = field_effect_ops or []
+        self.summon_list: list[SummonData] = summon_list or []
+        # 실제로 전장에 들어온 소환 요청. 답글 표시용.
+        self.summoned_list: list[SummonData] = []
         # 실제로 반영된 필드 효과의 (표시 이름, 걷었는지). 답글 표시용이며,
         # 이미 걸려 있어 무시됐거나 걸려 있지 않아 걷을 게 없었던 요청은
         # 남기지 않는다.
@@ -88,6 +95,7 @@ class CalculatorMutableData:
 
 
 _KEYWORD_BOOST_LABEL = "키워드 보정"
+_SKILL_KIND_BONUS_LABEL = "필드 효과"
 
 
 def _apply_keyword_boost_modifier(
@@ -148,6 +156,37 @@ def _apply_keyword_boost_modifier(
         _add_flat_bonus([data_by_effect[index]], skill_data.keyword_boost_value)
 
 
+def _apply_plain_skill_damage_bonus(
+    original_part: Optional["CommandPart"],
+    data_by_effect: list[CalculatorMutableData],
+    context: "BattlefieldContext",
+) -> None:
+    """적층형 버프/디버프를 부여하지 않는 스킬의 대미지에 필드 효과 등이 얹은
+    증가율을 반영한다(SkillEffectPlainSkillDamageBonus).
+
+    스킬이 적층형 버프를 부여하는지는 전개된 부여 데이터로 판정한다 — 그런
+    스킬은 SkillEffectStackSkillBonus 쪽 보정을 받으므로 둘은 겹치지 않는다.
+    계산기 생성 시점에 한 번만 얹으므로 반격 등 파생 대미지는 대상이 아니다.
+    """
+    if original_part is None or original_part.type_ != ActionType.SKILL:
+        return
+    for effect_data in data_by_effect:
+        for buff_add in effect_data.buff_add_data_list:
+            buff_data = context.get_buff_data_by_id_or_none(buff_add.buff_id)
+            if buff_data is not None and buff_data.max_stack is not None:
+                return
+    for effect_data in data_by_effect:
+        for calc in effect_data.damage_data_list:
+            attacker = context.characters.get(calc.base.attacker_id)
+            if attacker is None:
+                continue
+            bonus = attacker.status.plain_skill_damage_bonus
+            if bonus:
+                calc.given_modifiers.append(
+                    FloatValueModifier(source_name=_SKILL_KIND_BONUS_LABEL, value=bonus)
+                )
+
+
 def _add_flat_bonus(
     data_by_effect: list[CalculatorMutableData], bonus: int, roll_only: bool = False
 ) -> None:
@@ -195,6 +234,26 @@ def _boost_coefficient(effect_data: CalculatorMutableData, bonus: int) -> None:
         calc.base = replace(calc.base, value=replace(base, coefficient=boosted))
 
 
+def _scale_by_hp_ratio(
+    value: BaseValueIndicator, target: "CombatCharacter"
+) -> BaseValueIndicator:
+    """대상의 남은 체력 비율을 계수에 곱한다. 계수가 없는 고정값은 값 자체에
+    곱해 내린다. 비율을 계수에 합쳐 두므로 계산식에는 곱해진 계수 하나가
+    라벨과 함께 보인다."""
+    max_hp = target.status[CombatStatType.MAX_HP]
+    ratio = max(0, target.status.curr_hp) / max_hp if max_hp > 0 else 0
+    if value.coefficient is not None:
+        scaled = replace(
+            value.coefficient,
+            source_name=f"계수×남은 체력 {round(ratio * 100)}%",
+            value=value.coefficient.value * ratio,
+        )
+        return replace(value, coefficient=scaled)
+    if isinstance(value.value, int):
+        return replace(value, value=int(value.value * ratio))
+    return value
+
+
 class CommandPartCalculator:
     def __init__(self, data: CommandPartData, context: "BattlefieldContext"):
         self.context = context
@@ -220,6 +279,7 @@ class CommandPartCalculator:
                 data_per_effect.apply_timing,
                 data_per_effect.debuff_clear_list,
                 data_per_effect.field_effect_ops,
+                data_per_effect.summon_list,
             )
             for data_per_effect in data.data_per_effect
             if data_per_effect is not None
@@ -262,6 +322,9 @@ class CommandPartCalculator:
         self._reactive_hooks_fired: set[tuple[CharacterId, CharacterId]] = set()
 
         _apply_keyword_boost_modifier(data.original_part, self.data_by_effect, context)
+        _apply_plain_skill_damage_bonus(
+            data.original_part, self.data_by_effect, context
+        )
 
     @classmethod
     def create_empty_for_buff(
@@ -302,9 +365,11 @@ class CommandPartCalculator:
             for i in range(len(self.data_by_effect)):
                 timing = self.data_by_effect[i].apply_timing
                 if timing is None:  # 아군 스킬
+                    self._process_summon(i)
                     self._process_move(i)
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_PRE_ACTION:
+                    self._process_summon(i)
                     self._process_move(i)
                     self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
@@ -312,6 +377,7 @@ class CommandPartCalculator:
 
         elif phase == RoundPhaseType.ALLY_ACTION:
             for i in range(len(self.data_by_effect)):
+                self._process_summon(i)
                 self._process_move(i)
                 self._consume_stacks_and_process_damage(i)
                 self._process_heal(i)
@@ -325,6 +391,7 @@ class CommandPartCalculator:
                     self._process_heal(i)
                     self._process_buff_add(i, phase)
                 elif timing == RoundPhaseType.ENEMY_POST_ACTION:
+                    self._process_summon(i)
                     self._process_move(i)
                     self._consume_stacks_and_process_damage(i)
                     self._process_heal(i)
@@ -358,6 +425,26 @@ class CommandPartCalculator:
                 mutable.field_effect_results.append(
                     (added.id, False, added.remaining_turns)
                 )
+
+    def _process_summon(self: "CommandPartCalculator", effect_seq_number: int) -> None:
+        """소환한 캐릭터는 코스트를 가득 채운 채 들어와, 같은 라운드에 바로
+        행동할 수 있다.
+
+        사전 검증은 선언 시점의 전장을 본다. 적 공격 정산에 소환하도록 둔
+        효과는 그 사이 열이 찼을 수 있어, 배치 실패를 커맨드 전체의 실패로
+        만들지 않고 그 소환만 빼고 답글에 남긴다.
+        """
+        mutable = self.data_by_effect[effect_seq_number]
+        for summon in mutable.summon_list:
+            try:
+                character = self.context.summon_character(summon)
+            except CommandValidationError as e:
+                mutable.nullified_effect_list.append(
+                    (summon.character_id, f"소환 실패: {e}")
+                )
+                continue
+            character.status.refill_cost_for_round()
+            mutable.summoned_list.append(summon)
 
     def _process_move(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         for move_data in self.data_by_effect[effect_seq_number].move_list:
@@ -674,6 +761,12 @@ class CommandPartCalculator:
             revival_penalty = target.status.revival_penalty
             if revival_penalty is not None:
                 damage_calc.received_modifiers.append(revival_penalty)
+
+            if damage_calc.base.scales_with_target_hp_ratio:
+                damage_calc.base = replace(
+                    damage_calc.base,
+                    value=_scale_by_hp_ratio(damage_calc.base.value, target),
+                )
 
             damage_value = ValueWithModifiers(
                 damage_calc.base.value,
@@ -1083,6 +1176,19 @@ def build_log_entries(calculator: "CommandPartCalculator") -> list[BattleLogEntr
                     target_name=target_id.name,
                     kind=BattleLogEntryKind.DEBUFF_CLEAR,
                     result="모든 디버프 제거",
+                )
+            )
+        for summon in effect_data.summoned_list:
+            summoned = context.characters.get(summon.character_id)
+            entries.append(
+                BattleLogEntry(
+                    target_name=summon.character_id.name,
+                    kind=BattleLogEntryKind.SUMMON,
+                    result=f"{summon.column}열에 소환",
+                    hp_after=summoned.status.curr_hp if summoned else None,
+                    max_hp=(
+                        summoned.status[CombatStatType.MAX_HP] if summoned else None
+                    ),
                 )
             )
         for effect_id, removed, turns in effect_data.field_effect_results:
