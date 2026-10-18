@@ -239,18 +239,22 @@ def _scale_by_hp_ratio(
 ) -> BaseValueIndicator:
     """대상의 남은 체력 비율을 계수에 곱한다. 계수가 없는 고정값은 값 자체에
     곱해 내린다. 비율을 계수에 합쳐 두므로 계산식에는 곱해진 계수 하나가
-    라벨과 함께 보인다."""
+    라벨과 함께 보인다.
+
+    비율은 소수점 아래 둘째 자리까지 남기고 버린다. 계산식에 보이는 비율과
+    실제로 곱한 비율이 같아야 플레이어가 검산할 수 있다."""
     max_hp = target.status[CombatStatType.MAX_HP]
-    ratio = max(0, target.status.curr_hp) / max_hp if max_hp > 0 else 0
+    ratio_percent = max(0, target.status.curr_hp) * 100 // max_hp if max_hp > 0 else 0
+    label = f"계수×남은 체력 비율 {ratio_percent / 100:.2f}"
     if value.coefficient is not None:
         scaled = replace(
             value.coefficient,
-            source_name=f"계수×남은 체력 {round(ratio * 100)}%",
-            value=value.coefficient.value * ratio,
+            source_name=label,
+            value=value.coefficient.value * ratio_percent / 100,
         )
         return replace(value, coefficient=scaled)
     if isinstance(value.value, int):
-        return replace(value, value=int(value.value * ratio))
+        return replace(value, value=value.value * ratio_percent // 100)
     return value
 
 

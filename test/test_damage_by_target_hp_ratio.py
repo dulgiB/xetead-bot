@@ -21,7 +21,7 @@ USER = CharacterId("시전자")
 FOE = CharacterId("적군")
 
 
-def _setup(foe_hp: int) -> tuple[BattlefieldContext, RoundManager]:
+def _setup(foe_hp: int, max_hp: int = 100) -> tuple[BattlefieldContext, RoundManager]:
     skill = SkillData(
         id="스킬_1",
         target_rule="SkillTargetRuleNamed",
@@ -41,7 +41,7 @@ def _setup(foe_hp: int) -> tuple[BattlefieldContext, RoundManager]:
         BattlefieldColumnIndex(0),
     )
     ctx.add_character(
-        get_test_preset(FOE.name, max_hp=100, initial_hp=foe_hp),
+        get_test_preset(FOE.name, max_hp=max_hp, initial_hp=foe_hp),
         FactionType.ENEMY,
         BattlefieldColumnIndex(0),
     )
@@ -90,4 +90,15 @@ def test_formula_shows_the_scaled_coefficient():
     _use(ctx, manager, f"[스킬_1/{FOE.name}]")
 
     displays = [e.roll_display for r in ctx.results for e in r.log_entries]
-    assert any("남은 체력 50%" in (d or "") for d in displays)
+    assert any("남은 체력 비율 0.50" in (d or "") for d in displays)
+
+
+def test_ratio_is_floored_to_two_decimals():
+    """체력 200/300(0.666…)은 0.66으로 버려 그 값으로 곱한다(40 × 0.66 → 26)."""
+    ctx, manager = _setup(foe_hp=200, max_hp=300)
+
+    _use(ctx, manager, f"[스킬_1/{FOE.name}]")
+
+    displays = [e.roll_display for r in ctx.results for e in r.log_entries]
+    assert any("남은 체력 비율 0.66" in (d or "") for d in displays)
+    assert ctx.characters[FOE].status.curr_hp == 174
