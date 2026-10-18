@@ -40,10 +40,10 @@ class CombatStats:
         # 직접 읽으므로, 여기 얹지 않으면 아무 데도 반영되지 않는다.
         self._stat_offsets: dict[CombatStatType, int] = {}
 
-        # 필드 효과·부적이 얹는 스킬 종류별 보정. 출처마다 하나씩 되돌려야
-        # 해서 합계가 아니라 목록으로 둔다.
-        self._stack_skill_bonuses: list[int] = []
-        self._plain_skill_damage_bonuses: list[int] = []
+        # 필드 효과·부적이 얹는 적층형 사용 여부별 보정. 출처마다 하나씩
+        # 되돌려야 해서 합계가 아니라 목록으로 둔다.
+        self._extra_stack_bonuses: list[int] = []
+        self._non_stacker_damage_bonuses: list[int] = []
 
         self._curr_cost = self[CombatStatType.COST_PER_TURN]
         self._round_max_cost: Optional[int] = None
@@ -106,26 +106,26 @@ class CombatStats:
         self.add_stat_offset(stat_type, -delta)
 
     @property
-    def stack_skill_bonus(self) -> int:
-        """적층형 버프/디버프를 부여하는 스킬이 더 얹는 스택 수."""
-        return sum(self._stack_skill_bonuses)
+    def extra_stack_bonus(self) -> int:
+        """적층형 버프/디버프를 부여할 때 더 쌓는 스택 수."""
+        return sum(self._extra_stack_bonuses)
 
     @property
-    def plain_skill_damage_bonus(self) -> int:
-        """적층형 버프/디버프를 부여하지 않는 스킬의 주는 대미지 증가(%)."""
-        return sum(self._plain_skill_damage_bonuses)
+    def non_stacker_damage_bonus(self) -> int:
+        """적층형을 쓰지 않는 캐릭터의 주는 대미지 증가(%)."""
+        return sum(self._non_stacker_damage_bonuses)
 
-    def set_stack_skill_bonus(self, value: int, *, revert: bool) -> None:
+    def set_extra_stack_bonus(self, value: int, *, revert: bool) -> None:
         if revert:
-            self._stack_skill_bonuses.remove(value)
+            self._extra_stack_bonuses.remove(value)
         else:
-            self._stack_skill_bonuses.append(value)
+            self._extra_stack_bonuses.append(value)
 
-    def set_plain_skill_damage_bonus(self, value: int, *, revert: bool) -> None:
+    def set_non_stacker_damage_bonus(self, value: int, *, revert: bool) -> None:
         if revert:
-            self._plain_skill_damage_bonuses.remove(value)
+            self._non_stacker_damage_bonuses.remove(value)
         else:
-            self._plain_skill_damage_bonuses.append(value)
+            self._non_stacker_damage_bonuses.append(value)
 
     @property
     def curr_hp(self):

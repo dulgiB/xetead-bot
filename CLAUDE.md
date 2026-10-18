@@ -557,7 +557,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillEffectFieldStatOffset` | 공격력·사거리·턴당 코스트 증감 |
 | `SkillEffectRevivalCountFloor` | 부활 `value_N`회 상태처럼 취급(받는 대미지·턴당 코스트만) |
 | `SkillEffectAddFieldEffect` / `SkillEffectRemoveFieldEffect` | 다른 필드 효과 부여·해제 |
-| `SkillEffectStackSkillBonus` / `SkillEffectPlainSkillDamageBonus` | 적층형 버프/디버프를 부여하는 스킬은 그 버프마다 `value_N`스택 추가, 그렇지 않은 스킬은 대미지 `value_N`% 증가 |
+| `SkillEffectExtraStackBonus` / `SkillEffectNonStackerDamageBonus` | 적층형 버프/디버프를 부여할 때마다 `value_N`스택 추가 / 적층형을 쓰지 않는 캐릭터는 대미지 `value_N`% 증가 |
 
 **스탯 증감은 `CombatStats.__getitem__`에 직접 얹는다.** 버프(`BuffedStats`)로는
 안 되는데, `BuffedStats`는 `CommandPartCalculator` 안에서만 살기 때문에 사거리
@@ -654,22 +654,27 @@ admin을 "시스템"이라 적는 것은 게임 안에서 admin의 행동을 부
   같다). `apply_timing`을 적 공격 정산으로 둔 소환은 그 사이 열이 찰 수
   있어, 처리 시점의 실패는 그 소환만 빼고 답글에 "소환 실패"로 남긴다.
 
-## 스킬 종류별 보정 (`SkillEffectStackSkillBonus` / `SkillEffectPlainSkillDamageBonus`)
+## 적층형 사용 여부별 보정 (`SkillEffectExtraStackBonus` / `SkillEffectNonStackerDamageBonus`)
 
-"적층형 버프/디버프를 부여하는 스킬이면 스택을 더, 아니면 대미지를 더"처럼
-스킬이 무엇을 하는지에 따라 갈리는 보정이다. 걸려 있는 동안 유지되는
-상태(`is_standing_state`)라 필드 효과·부적에 쓰고, 값은 `CombatStats`에
-얹는다 — 트리거형 버프로 두면 도중에 건 필드 효과가 다음 트리거까지 비고,
-버프 이벤트(`ON_ACTION`)는 대미지가 없는 스킬에서는 돌지 않는다.
+적층형 버프/디버프를 쓰는 캐릭터는 스택을 더 얻고, 전혀 쓰지 않는 캐릭터는
+대미지를 더 얻게 하는 보정이다. 걸려 있는 동안 유지되는 상태
+(`is_standing_state`)라 필드 효과·부적에 쓰고, 값은 `CombatStats`에 얹는다 —
+트리거형 버프로 두면 도중에 건 필드 효과가 다음 트리거까지 빈다.
 
-- 스택은 부여 데이터를 만드는 전개 시점(`command_expanders._apply_stack_skill_bonus()`),
-  대미지는 계산기 생성 시점(`command_calculator._apply_plain_skill_damage_bonus()`)에
-  얹는다. 키워드 보정의 버프 스택 강화·굴림 보정과 같은 자리다.
-- "적층형 버프를 부여하는 스킬"은 전개된 부여 데이터에 `max_stack`이 있는
-  버프가 하나라도 있는지로 판정한다. 그런 스킬은 대미지 보정을 받지 않아
-  둘이 겹치지 않는다.
-- 스킬 커맨드만 대상이다. 기본 공격·아이템과 반격 같은 파생 대미지는 받지
-  않는다. 대미지 보정은 배율이라 "고정" 대미지에는 붙지 않는다.
+- **스택은 부여 경로를 가리지 않는다.** `BuffContainer.add()`가 부여자의
+  보정을 읽어 `stack_value`에 더한다. 스킬·패시브·아이템이 모두 여기를 지나므로
+  한 곳에서 처리한다. 전개 시점에 얹으면 패시브가 쌓는 스택이 빠진다.
+- **대미지는 캐릭터 단위로 판정한다**(`BattlefieldContext.uses_stacking_buffs()`).
+  스킬·패시브의 효과가 부여하거나 참조하는 버프 중 `max_stack`이 있는 것이
+  하나라도 있으면 적층형을 쓰는 캐릭터다. 버프의 `reference_buff_id`와 패시브
+  버프 이벤트의 참조 버프까지 따라간다 — 스택을 직접 부여하지 않고 읽기만 하는
+  지속 대미지도 적층형 운용이기 때문이다. 판정은 대미지를 계산할 때마다 하므로
+  `[갱신]`으로 스킬이 바뀌어도 따라간다.
+- 대미지 보정은 기본 공격과 스킬에 계산기 생성 시점
+  (`command_calculator._apply_non_stacker_damage_bonus()`)에 얹는다. 아이템과
+  반격 같은 파생 대미지는 받지 않고, 배율이라 "고정" 대미지에도 붙지 않는다.
+- 예전 이름(`SkillEffectStackSkillBonus`/`SkillEffectPlainSkillDamageBonus`)은
+  시트 전환용 별칭으로 남아 있다. 시트의 `effect_N`을 새 이름으로 바꾼 뒤 지운다.
 
 ## 부적 (`CharmAuraContainer`)
 
