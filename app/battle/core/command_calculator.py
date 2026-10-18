@@ -95,7 +95,7 @@ class CalculatorMutableData:
 
 
 _KEYWORD_BOOST_LABEL = "키워드 보정"
-_SKILL_KIND_BONUS_LABEL = "필드 효과"
+_STACK_STYLE_BONUS_LABEL = "필드 효과"
 
 
 def _apply_keyword_boost_modifier(
@@ -156,34 +156,34 @@ def _apply_keyword_boost_modifier(
         _add_flat_bonus([data_by_effect[index]], skill_data.keyword_boost_value)
 
 
-def _apply_plain_skill_damage_bonus(
+def _apply_non_stacker_damage_bonus(
     original_part: Optional["CommandPart"],
     data_by_effect: list[CalculatorMutableData],
     context: "BattlefieldContext",
 ) -> None:
-    """적층형 버프/디버프를 부여하지 않는 스킬의 대미지에 필드 효과 등이 얹은
-    증가율을 반영한다(SkillEffectPlainSkillDamageBonus).
+    """적층형 버프/디버프를 쓰지 않는 캐릭터의 기본 공격·스킬 대미지에 필드
+    효과 등이 얹은 증가율을 반영한다(SkillEffectNonStackerDamageBonus).
 
-    스킬이 적층형 버프를 부여하는지는 전개된 부여 데이터로 판정한다 — 그런
-    스킬은 SkillEffectStackSkillBonus 쪽 보정을 받으므로 둘은 겹치지 않는다.
-    계산기 생성 시점에 한 번만 얹으므로 반격 등 파생 대미지는 대상이 아니다.
+    적층형을 쓰는 캐릭터는 대신 SkillEffectExtraStackBonus로 스택을 더 얻으므로,
+    판정은 행동 하나가 아니라 캐릭터 단위다. 계산기 생성 시점에 한 번만 얹어
+    반격 등 파생 대미지는 대상이 아니다.
     """
-    if original_part is None or original_part.type_ != ActionType.SKILL:
+    if original_part is None or original_part.type_ not in (
+        ActionType.ATTACK,
+        ActionType.SKILL,
+    ):
         return
-    for effect_data in data_by_effect:
-        for buff_add in effect_data.buff_add_data_list:
-            buff_data = context.get_buff_data_by_id_or_none(buff_add.buff_id)
-            if buff_data is not None and buff_data.max_stack is not None:
-                return
     for effect_data in data_by_effect:
         for calc in effect_data.damage_data_list:
             attacker = context.characters.get(calc.base.attacker_id)
             if attacker is None:
                 continue
-            bonus = attacker.status.plain_skill_damage_bonus
-            if bonus:
+            bonus = attacker.status.non_stacker_damage_bonus
+            if bonus and not context.uses_stacking_buffs(attacker.id):
                 calc.given_modifiers.append(
-                    FloatValueModifier(source_name=_SKILL_KIND_BONUS_LABEL, value=bonus)
+                    FloatValueModifier(
+                        source_name=_STACK_STYLE_BONUS_LABEL, value=bonus
+                    )
                 )
 
 
@@ -322,7 +322,7 @@ class CommandPartCalculator:
         self._reactive_hooks_fired: set[tuple[CharacterId, CharacterId]] = set()
 
         _apply_keyword_boost_modifier(data.original_part, self.data_by_effect, context)
-        _apply_plain_skill_damage_bonus(
+        _apply_non_stacker_damage_bonus(
             data.original_part, self.data_by_effect, context
         )
 

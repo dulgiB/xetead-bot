@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import TYPE_CHECKING, Callable, Optional
 
 
@@ -11,6 +12,7 @@ if TYPE_CHECKING:
         BuffBase,
     )
     from battle.objects.buff.buff_events import BuffEvent
+    from battle.objects.buff.models import BuffData
 
 from battle.objects.buff.buff_base import BuffDurationCounter
 from battle.objects.define import BuffApplyTiming, CombatStatType, FactionType
@@ -44,6 +46,7 @@ class BuffContainer:
 
     def add(self, add_event: "BuffAddData"):
         buff_data = self._context.get_buff_data_by_id(add_event.buff_id)
+        add_event = self._with_extra_stack(add_event, buff_data)
         buff_class = buff_data.get_buff_class()
         # PARTITION_UID_BY_VALUE인 버프는 값이 달라야 별개 인스턴스로 유지된다.
         uid_value = (
@@ -86,6 +89,22 @@ class BuffContainer:
         new_buff.applied_at = self._next_apply_seq()
         self._buffs.add(new_buff)
         new_buff.on_added(self._context)
+
+    def _with_extra_stack(
+        self, add_event: "BuffAddData", buff_data: "BuffData"
+    ) -> "BuffAddData":
+        """부여자에게 걸린 추가 스택 보정(SkillEffectExtraStackBonus)을 얹는다.
+        스킬·패시브·아이템 어느 경로로 부여하든 여기를 지나므로 한 곳에서
+        처리한다."""
+        if buff_data.max_stack is None or add_event.stack_value <= 0:
+            return add_event
+        giver = self._context.characters.get(add_event.given_by)
+        if giver is None or not giver.status.extra_stack_bonus:
+            return add_event
+        return replace(
+            add_event,
+            stack_value=add_event.stack_value + giver.status.extra_stack_bonus,
+        )
 
     def restore(
         self,

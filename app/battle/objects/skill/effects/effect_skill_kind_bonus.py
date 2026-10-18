@@ -9,15 +9,13 @@ if TYPE_CHECKING:
     from battle.objects.character.combat_stats import CombatStats
 
 
-class _SkillKindBonusBase(SkillEffectBase):
-    """스킬이 적층형 버프/디버프를 부여하는지에 따라 갈리는 보정의 공통 부모.
+class _StackStyleBonusBase(SkillEffectBase):
+    """적층형 버프/디버프를 쓰는 캐릭터와 쓰지 않는 캐릭터에게 서로 다른
+    보정을 주는 효과의 공통 부모.
 
-    걸려 있는 동안 유지되는 상태라 필드 효과·부적에서 쓴다. 보정 자체는
-    스킬을 처리하는 쪽이 대상의 CombatStats를 읽어 반영한다 — 스택은 부여
-    데이터를 만드는 전개 시점(command_expanders), 대미지는 계산기 생성
-    시점(command_calculator)에 얹는다.
-
-    "스킬"은 스킬 커맨드만 뜻한다. 기본 공격과 아이템은 해당하지 않는다.
+    걸려 있는 동안 유지되는 상태라 필드 효과·부적에서 쓴다. 값은 대상의
+    CombatStats에 얹고, 실제 반영은 스택을 더하는 버프 부여 지점
+    (BuffContainer.add)과 대미지 계산기 생성 시점(command_calculator)이 한다.
     """
 
     requires_holder_character: ClassVar[bool] = False
@@ -39,17 +37,25 @@ class _SkillKindBonusBase(SkillEffectBase):
         return ([], [], [], [], [])
 
 
-class SkillEffectStackSkillBonus(_SkillKindBonusBase):
-    """적층형 버프/디버프를 부여하는 스킬이 그 버프마다 `value_N`스택을 더
-    부여한다."""
+class SkillEffectExtraStackBonus(_StackStyleBonusBase):
+    """대상이 적층형 버프/디버프를 부여할 때마다 `value_N`스택을 더 쌓는다.
+    스킬·패시브·아이템 등 부여 경로를 가리지 않는다."""
 
     def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
-        stats.set_stack_skill_bonus(self.value or 0, revert=revert)
+        stats.set_extra_stack_bonus(self.value or 0, revert=revert)
 
 
-class SkillEffectPlainSkillDamageBonus(_SkillKindBonusBase):
-    """적층형 버프/디버프를 부여하지 않는 스킬의 대미지가 `value_N`% 증가한다.
-    주는 대미지 버프와 같이 배율로 얹히므로 "고정" 대미지에는 붙지 않는다."""
+class SkillEffectNonStackerDamageBonus(_StackStyleBonusBase):
+    """적층형 버프/디버프를 쓰는 스킬·패시브가 하나도 없는 캐릭터는 주는
+    대미지가 `value_N`% 증가한다(BattlefieldContext.uses_stacking_buffs()).
+    기본 공격과 스킬에 붙고, 아이템과 반격 같은 파생 대미지, "고정" 대미지에는
+    붙지 않는다."""
 
     def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
-        stats.set_plain_skill_damage_bonus(self.value or 0, revert=revert)
+        stats.set_non_stacker_damage_bonus(self.value or 0, revert=revert)
+
+
+# 시트의 effect_N 값을 새 이름으로 바꾸기 전까지 옛 이름도 읽히게 둔다.
+# 배포 직후 시트를 고치기 전에 봇이 재기동하면 클래스를 못 찾아 기동이 실패한다.
+SkillEffectStackSkillBonus = SkillEffectExtraStackBonus
+SkillEffectPlainSkillDamageBonus = SkillEffectNonStackerDamageBonus

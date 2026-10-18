@@ -427,6 +427,51 @@ class BattlefieldContext:
             for wrapper in wrappers:
                 self.buff_container.add_passive_wrapper(wrapper)
 
+    def uses_stacking_buffs(self, char_id: CharacterId) -> bool:
+        """이 캐릭터의 스킬·패시브 중 적층형 버프/디버프(`max_stack`이 있는
+        버프)를 부여하거나 참조하는 것이 하나라도 있는지.
+
+        부여뿐 아니라 참조도 센다 — 다른 버프가 그 스택을 읽는 경우(스택 비례
+        지속 대미지 등)까지 적층형 운용으로 보려면, 버프가 가리키는
+        `reference_buff_id`를 따라가야 한다."""
+        character = self.characters.get(char_id)
+        if character is None:
+            return False
+        effects = [e for skill in character.skills for e in skill.data.effects]
+        pending: list[str] = []
+        for wrapper in self.passive_wrappers_of(char_id):
+            passive = self._passive_skill_dictionary.get(wrapper.id)
+            if passive is None:
+                continue
+            effects.extend(passive.effects)
+            event_ref = getattr(passive.buff_mod_event, "reference_buff_id", None)
+            if event_ref:
+                pending.append(event_ref)
+        for effect in effects:
+            pending.extend(
+                buff_id
+                for buff_id in (
+                    effect.buff_id,
+                    effect.reference_buff_id,
+                    effect.required_target_buff_id,
+                )
+                if buff_id
+            )
+        seen: set[str] = set()
+        while pending:
+            buff_id = pending.pop()
+            if buff_id in seen:
+                continue
+            seen.add(buff_id)
+            buff_data = self._buff_dictionary.get(buff_id)
+            if buff_data is None:
+                continue
+            if buff_data.max_stack is not None:
+                return True
+            if buff_data.reference_buff_id:
+                pending.append(buff_data.reference_buff_id)
+        return False
+
     def passive_wrappers_of(
         self, char_id: CharacterId
     ) -> list[PassiveSkillWrapperBuff]:
