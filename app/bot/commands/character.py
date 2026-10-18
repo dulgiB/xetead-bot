@@ -160,6 +160,7 @@ def handle_character_command(
                     round_n=round_n,
                     phase=phase.value,
                     enemy_declared=session.manager.get_enemy_declared_commands(),
+                    ally_declared=session.manager.get_ally_declared_commands(),
                     battle_name=session.name,
                     cache=state.field_sheet_cache,
                 )

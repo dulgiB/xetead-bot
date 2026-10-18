@@ -44,9 +44,11 @@ from typing import TYPE_CHECKING, Optional
 import gspread
 from gspread.utils import a1_to_rowcol, rowcol_to_a1
 
-from battle.core.commands.models import CharacterCommand
+from battle.core.commands.define import RoundPhaseType
+from battle.core.commands.models import CharacterCommand, CommandPart
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
+    ActionType,
     BattlefieldColumnIndex,
     BuffType,
     CombatStatType,
@@ -82,6 +84,10 @@ _BATTLEFIELD_COLUMNS = [
     BattlefieldColumnIndex.COL7,
 ]
 
+_AOE_PENDING_PHASES = frozenset(
+    {RoundPhaseType.ENEMY_PRE_ACTION.value, RoundPhaseType.ALLY_ACTION.value}
+)
+
 _BATTLE_NAME_CELL = "B3"
 _ROUND_CELL = "B4"
 _PHASE_CELL = "D6"
@@ -113,6 +119,12 @@ _ALLY_BLOCK_BOTTOM = _ALLY_MAIN_ROW_START + _FACTION_BLOCK_HEIGHT - 1  # 29
 
 _DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J10:K18 / J20:K29)
 
+# 적 범위 공격이 예고된 열에 "."을 남기는 행("아군" 띠 바로 아래). 시트의
+# 조건부 서식이 이 표시를 보고 그 열을 강조한다 — 강조 모양은 시트에서
+# 정하고 봇은 어느 열인지만 알린다.
+AOE_MARK_ROW = _ALLY_BLOCK_BOTTOM + 2  # 31
+_AOE_MARK = "."
+
 # 이미지로 캡처할 마지막 행(field_sheet_image). 아군 블록 아래로 "아군"
 # 띠와 여백이 붙으므로 그만큼 더 잡는다.
 EXPORT_BOTTOM_ROW = _ALLY_BLOCK_BOTTOM + 4  # 33
@@ -124,6 +136,7 @@ def render_public_field_sheet(
     round_n: int,
     phase: str,
     enemy_declared: dict[CharacterId, list[CharacterCommand]],
+    ally_declared: dict[CharacterId, list[CharacterCommand]],
     battle_name: Optional[str] = None,
     cache: Optional[SheetCache] = None,
     ensure_merged: bool = False,
@@ -135,6 +148,7 @@ def render_public_field_sheet(
         round_n,
         phase,
         enemy_declared,
+        ally_declared,
         battle_name,
         ensure_merged,
     )
@@ -147,6 +161,7 @@ def submit_public_field_sheet_render(
     round_n: int,
     phase: str,
     enemy_declared: dict[CharacterId, list[CharacterCommand]],
+    ally_declared: dict[CharacterId, list[CharacterCommand]],
     battle_name: Optional[str] = None,
     cache: Optional[SheetCache] = None,
 ) -> None:
@@ -158,6 +173,7 @@ def submit_public_field_sheet_render(
         round_n,
         phase,
         enemy_declared,
+        ally_declared,
         battle_name,
         ensure_merged=False,
     )
@@ -180,6 +196,7 @@ def _build_render_requests(
     round_n: int,
     phase: str,
     enemy_declared: dict[CharacterId, list[CharacterCommand]],
+    ally_declared: dict[CharacterId, list[CharacterCommand]],
     battle_name: Optional[str],
     ensure_merged: bool,
 ) -> list[dict]:
@@ -195,7 +212,7 @@ def _build_render_requests(
         FactionType.ALLY,
         main_row_start=_ALLY_MAIN_ROW_START,
         direction=1,
-        declared={},
+        declared=ally_declared,
     )
     notes.update(ally_notes)
 
@@ -246,6 +263,9 @@ def _build_render_requests(
         _value_request(
             ws.id, rowcol_to_a1(_CHARM_ROW_START, _DECLARE_NAME_COL), ally_declare_text
         )
+    )
+    requests.append(
+        _row_request(ws.id, AOE_MARK_ROW, _aoe_mark_row(context, phase, enemy_declared))
     )
     for first_row, grid in (
         (_ENEMY_BLOCK_TOP, enemy_grid),
@@ -325,6 +345,67 @@ def _value_request(
             "fields": "userEnteredValue" if note is None else "userEnteredValue,note",
         }
     }
+
+
+def _row_request(sheet_id: int, row: int, values: list[str]) -> dict:
+    """격자 열(B~H) 한 행의 값만 쓰는 updateCells 요청. 메모는 건드리지 않는다."""
+    return {
+        "updateCells": {
+            "range": _grid_range(
+                sheet_id, row, _GRID_FIRST_COL, row, _GRID_FIRST_COL + _COLUMN_COUNT - 1
+            ),
+            "rows": [{"values": [_value_only_cell(value) for value in values]}],
+            "fields": "userEnteredValue",
+        }
+    }
+
+
+def _value_only_cell(value: str) -> dict:
+    return {"userEnteredValue": {"stringValue": value}} if value else {}
+
+
+def _aoe_mark_row(
+    context: "BattlefieldContext",
+    phase: str,
+    enemy_declared: dict[CharacterId, list[CharacterCommand]],
+) -> list[str]:
+    """적의 열 광역 스킬이 아군 진영에서 덮을 열에 표시를 둔다.
+
+    표시는 공격이 아직 정산되지 않은 동안(적 행동 선언·아군 행동)만 둔다 —
+    적 커맨드 목록은 라운드 종료까지 남지만, 정산이 끝난 공격을 계속
+    예고하면 다음 행동을 잘못 이끈다.
+    """
+    marks = [""] * _COLUMN_COUNT
+    if phase not in _AOE_PENDING_PHASES:
+        return marks
+    for commands in enemy_declared.values():
+        for command in commands:
+            for part in command.parts:
+                for column in _aoe_columns(context, part):
+                    marks[column] = _AOE_MARK
+    return marks
+
+
+def _aoe_columns(context: "BattlefieldContext", part: CommandPart) -> list[int]:
+    """적 진영 기준 열 광역 스킬 파트가 덮는 열(0-based). 그 외 파트는 빈 목록."""
+    if part.type_ != ActionType.SKILL or part.skill_id is None:
+        return []
+    skill = context.get_skill_data_by_id(part.skill_id)
+    if skill.target_rule == "SkillTargetRuleColumn":
+        radius = 0
+    elif skill.target_rule == "SkillTargetRuleColumnRange":
+        radius = skill.target_count
+    else:
+        return []
+    covered: set[int] = set()
+    for target in part.targets:
+        if isinstance(target, BattlefieldColumnIndex):
+            covered.update(
+                column
+                for column in range(target.value - radius, target.value + radius + 1)
+                if 0 <= column < _COLUMN_COUNT
+            )
+    return sorted(covered)
 
 
 def _grid_request(

@@ -488,7 +488,7 @@ class BattlefieldContext:
         self, char_id: CharacterId, data: CombatCharacterDataFromSpreadsheet
     ) -> None:
         """전장에 있는 캐릭터의 스탯·스킬·패시브를 시트에서 다시 읽은 값으로
-        바꾼다(admin `[갱신]` 전용). 배치 때 한 번 복사해 두는 값들이라, 이
+        바꾼다(admin `[스테이터스 갱신]` 전용). 배치 때 한 번 복사해 두는 값들이라, 이
         경로 말고는 전투 도중 시트 수정이 전장에 들어오지 않는다.
 
         위치·진영·버프·남은 코스트는 그대로 두고, 현재 체력은 새 최대 체력을

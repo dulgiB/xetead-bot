@@ -23,6 +23,9 @@ class RoundManager:
         self._context = context
         self._phase = RoundPhaseType.ENEMY_PRE_ACTION
         self._enemy_command_list: dict[CharacterId, list[CharacterCommand]] = {}
+        # 이번 라운드에 처리된 아군 커맨드. 공개 필드 시트의 "아군 선언 내용"
+        # 표시용이라 정산에는 쓰지 않는다.
+        self._ally_command_list: dict[CharacterId, list[CharacterCommand]] = {}
         self._last_post_action_results: dict[
             CharacterId, list[CommandPartProcessResult]
         ] = {}
@@ -31,6 +34,9 @@ class RoundManager:
 
     def get_enemy_declared_commands(self) -> dict[CharacterId, list[CharacterCommand]]:
         return self._enemy_command_list
+
+    def get_ally_declared_commands(self) -> dict[CharacterId, list[CharacterCommand]]:
+        return self._ally_command_list
 
     # 아래 세 getter는 모두 직전 정산 결과를 답글용 game_post 텍스트 조립에
     # 넘기기 위한 것이다.
@@ -86,6 +92,7 @@ class RoundManager:
                 self._last_eliminated_characters,
             ) = self._context.on_finish_round()
             self._enemy_command_list.clear()
+            self._ally_command_list.clear()
 
         else:
             raise ValueError(f"Unknown phase: {phase}")
@@ -109,6 +116,10 @@ class RoundManager:
 
                 ally_command_result = process_ally_command(self._context, command)
                 self._context.results.extend(ally_command_result.part_results)
+                if ally_command_result.part_results:
+                    self._ally_command_list.setdefault(command.user_id, []).append(
+                        command
+                    )
 
             elif self._context.characters[command.user_id].faction == FactionType.ENEMY:
                 if self._phase != RoundPhaseType.ENEMY_PRE_ACTION:

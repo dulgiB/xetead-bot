@@ -1,4 +1,4 @@
-"""[갱신/이름] — 전투 중 시트에서 고친 스탯을 전장에 다시 들이는 admin 커맨드.
+"""[스테이터스 갱신/이름] — 전투 중 시트에서 고친 스탯을 전장에 다시 들이는 admin 커맨드.
 
 스탯·스킬·패시브는 배치 때 한 번 복사되므로, 이 커맨드가 아니면 전투 도중의
 시트 수정이 전장에 들어오지 않는다.
@@ -109,11 +109,13 @@ def test_refresh_applies_sheet_stats(skill_strong_attack):
         is_magic_attacker=True,
         skill_1_id=skill_strong_attack.id,
         passive_skill_id="PassiveSkill",
+        revival_count=1,
     )
 
-    reply = handle_admin_command(f"[갱신/{NAME}]", state).reply_text
+    reply = handle_admin_command(f"[스테이터스 갱신/{NAME}]", state).reply_text
 
     status = _character(state).status
+    assert status.revival_count == 1
     assert status[CombatStatType.ATK] == 8
     assert status[CombatStatType.RANGE] == 2
     assert status[CombatStatType.MAX_HP] == 120
@@ -123,8 +125,11 @@ def test_refresh_applies_sheet_stats(skill_strong_attack):
     assert {w.id for w in state.session.context.passive_wrappers_of(CHAR_ID)} == {
         "PassiveSkill"
     }
-    assert "공격력 5 → 8" in reply
-    assert "사거리 3 → 2" in reply
+    lines = reply.split("\n")
+    assert lines[0] == f"◊ {NAME}의 스테이터스를 다음과 같이 갱신합니다."
+    assert "▹ 공격력 5 → 8" in lines
+    assert "▹ 사거리 3 → 2" in lines
+    assert "▹ 부활 0 → 1" in lines
 
 
 def test_refresh_keeps_buff_offsets_and_remaining_cost(skill_strong_attack):
@@ -135,7 +140,7 @@ def test_refresh_keeps_buff_offsets_and_remaining_cost(skill_strong_attack):
     status.remaining_cost = 1
     state.name_dict[NAME] = get_test_preset(NAME, atk=8, max_cost=4)
 
-    handle_admin_command(f"[갱신/{NAME}]", state)
+    handle_admin_command(f"[스테이터스 갱신/{NAME}]", state)
 
     assert status[CombatStatType.ATK] == 10
     assert status.remaining_cost == 1
@@ -148,11 +153,11 @@ def test_refresh_adopts_sheet_hp_only_when_sheet_changed(skill_strong_attack):
     state = _make_state(skill_strong_attack)
     _character(state).status.curr_hp = 70  # 정산됐지만 시트 쓰기는 실패한 상태
 
-    handle_admin_command(f"[갱신/{NAME}]", state)
+    handle_admin_command(f"[스테이터스 갱신/{NAME}]", state)
     assert _character(state).status.curr_hp == 70
 
     state.name_dict[NAME] = get_test_preset(NAME, initial_hp=40)
-    handle_admin_command(f"[갱신/{NAME}]", state)
+    handle_admin_command(f"[스테이터스 갱신/{NAME}]", state)
     assert _character(state).status.curr_hp == 40
 
 
@@ -160,7 +165,7 @@ def test_refresh_clamps_hp_to_new_max(skill_strong_attack):
     state = _make_state(skill_strong_attack)
     state.name_dict[NAME] = get_test_preset(NAME, max_hp=50, initial_hp=100)
 
-    handle_admin_command(f"[갱신/{NAME}]", state)
+    handle_admin_command(f"[스테이터스 갱신/{NAME}]", state)
 
     assert _character(state).status.curr_hp == 50
 
@@ -170,11 +175,11 @@ def test_refresh_swaps_passive_only_when_id_changes(skill_strong_attack):
     context = state.session.context
     original = context.passive_wrappers_of(CHAR_ID)
 
-    handle_admin_command(f"[갱신/{NAME}]", state)
+    handle_admin_command(f"[스테이터스 갱신/{NAME}]", state)
     assert context.passive_wrappers_of(CHAR_ID) == original
 
     state.name_dict[NAME] = get_test_preset(NAME, passive_skill_id="PassiveSkill2")
-    handle_admin_command(f"[갱신/{NAME}]", state)
+    handle_admin_command(f"[스테이터스 갱신/{NAME}]", state)
     assert {w.id for w in context.passive_wrappers_of(CHAR_ID)} == {"PassiveSkill2"}
 
 
@@ -182,24 +187,24 @@ def test_unknown_skill_rejects_whole_refresh(skill_strong_attack):
     state = _make_state(skill_strong_attack)
     state.name_dict[NAME] = get_test_preset(NAME, atk=9, skill_1_id="없는스킬")
 
-    reply = handle_admin_command(f"[갱신/{NAME}]", state).reply_text
+    reply = handle_admin_command(f"[스테이터스 갱신/{NAME}]", state).reply_text
 
-    assert "갱신 실패" in reply
+    assert "스테이터스를 갱신하지 못했습니다" in reply
     assert _character(state).status[CombatStatType.ATK] == 5
 
 
 def test_no_change_is_reported(skill_strong_attack):
     state = _make_state(skill_strong_attack)
 
-    reply = handle_admin_command(f"[갱신/{NAME}]", state).reply_text
+    reply = handle_admin_command(f"[스테이터스 갱신/{NAME}]", state).reply_text
 
-    assert reply == f"◊ {NAME} 갱신: 바뀐 값 없음"
+    assert reply == f"◊ {NAME}의 스테이터스에 바뀐 값이 없습니다."
 
 
 def test_character_not_on_field(skill_strong_attack):
     state = _make_state(skill_strong_attack)
 
-    reply = handle_admin_command("[갱신/없는캐릭터]", state).reply_text
+    reply = handle_admin_command("[스테이터스 갱신/없는캐릭터]", state).reply_text
 
     assert "전투에 참여하고 있지 않습니다" in reply
 
@@ -214,6 +219,6 @@ def test_requires_running_main_battle():
         log_spreadsheet=None,
     )
 
-    reply = handle_admin_command(f"[갱신/{NAME}]", state).reply_text
+    reply = handle_admin_command(f"[스테이터스 갱신/{NAME}]", state).reply_text
 
     assert reply == "◊ 진행 중인 전투가 없습니다."

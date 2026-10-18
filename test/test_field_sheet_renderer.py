@@ -451,6 +451,7 @@ def _render_once(**kwargs) -> _RecordingFieldSpreadsheet:
         round_n=3,
         phase="아군 행동",
         enemy_declared={},
+        ally_declared={},
         **kwargs,
     )
     return spreadsheet
@@ -519,6 +520,7 @@ def test_render_public_field_sheet_merges_multi_column_enemy_in_one_call():
         round_n=1,
         phase="적 선언",
         enemy_declared={},
+        ally_declared={},
     )
 
     assert len(spreadsheet.bodies) == 1
@@ -549,3 +551,95 @@ def test_render_public_field_sheet_merges_multi_column_enemy_in_one_call():
     name_cells = {a1 for a1, (value, _) in cells.items() if "거대적" in value}
     assert len(name_cells) == 1
     assert next(iter(name_cells)).startswith("C")
+
+
+def _render_with_column_attack(phase: str, rule: str, target_count: int):
+    from battle.objects.skill.models import SkillData
+    from bot.field_sheet_renderer import AOE_MARK_ROW
+
+    skill = SkillData(
+        id="스킬_1",
+        target_rule=rule,
+        target_count=target_count,
+        cost=0,
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None)
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    ctx.add_character(
+        get_test_preset("적 1", skill_1_id="스킬_1"),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
+    )
+    command = CharacterCommand(
+        user_id=CharacterId("적 1"),
+        parts=[
+            CommandPart(
+                ActionType.SKILL,
+                skill_id="스킬_1",
+                targets=[BattlefieldColumnIndex(0)],
+            )
+        ],
+    )
+    spreadsheet = _RecordingFieldSpreadsheet()
+    render_public_field_sheet(
+        spreadsheet,
+        ctx,
+        round_n=1,
+        phase=phase,
+        enemy_declared={CharacterId("적 1"): [command]},
+        ally_declared={},
+    )
+    cells = _written_cells(spreadsheet.bodies[0])
+    return [cells.get(rowcol_to_a1(AOE_MARK_ROW, col), ("",))[0] for col in range(2, 9)]
+
+
+def test_column_attack_marks_the_covered_columns_while_pending():
+    marks = _render_with_column_attack("적 행동 선언", "SkillTargetRuleColumnRange", 1)
+
+    assert marks == [".", ".", "", "", "", "", ""]
+
+
+def test_single_column_attack_marks_one_column():
+    marks = _render_with_column_attack("아군 행동", "SkillTargetRuleColumn", 1)
+
+    assert marks == [".", "", "", "", "", "", ""]
+
+
+def test_marks_are_cleared_once_the_attack_resolves():
+    marks = _render_with_column_attack("적 공격 정산", "SkillTargetRuleColumnRange", 1)
+
+    assert marks == [""] * 7
+
+
+def test_named_attack_leaves_no_mark():
+    marks = _render_with_column_attack("적 행동 선언", "SkillTargetRuleNamed", 1)
+
+    assert marks == [""] * 7
+
+
+def test_ally_declarations_are_written_next_to_the_ally_block():
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    command = CharacterCommand(
+        user_id=CharacterId("아군 1"),
+        parts=[CommandPart(ActionType.MOVE, targets=[BattlefieldColumnIndex(1)])],
+    )
+    spreadsheet = _RecordingFieldSpreadsheet()
+    render_public_field_sheet(
+        spreadsheet,
+        ctx,
+        round_n=1,
+        phase="아군 행동",
+        enemy_declared={},
+        ally_declared={CharacterId("아군 1"): [command]},
+    )
+
+    cells = _written_cells(spreadsheet.bodies[0])
+    assert cells[rowcol_to_a1(_CHARM_ROW_START, _DECLARE_NAME_COL)][0].startswith(
+        "아군 1 ["
+    )

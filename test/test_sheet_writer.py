@@ -102,7 +102,7 @@ def test_direct_render_waits_for_background_render(writer, monkeypatch):
 
     sheet_writer.submit(lambda: spreadsheet.batch_update({"requests": "background"}))
     threading.Timer(0.05, spreadsheet.gate.set).start()
-    render_public_field_sheet(spreadsheet, None, 1, "아군 행동", {})  # type: ignore[arg-type]
+    render_public_field_sheet(spreadsheet, None, 1, "아군 행동", {}, {})  # type: ignore[arg-type]
 
     assert spreadsheet.batches == ["background", "direct"]
 

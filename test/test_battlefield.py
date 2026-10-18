@@ -378,3 +378,35 @@ def test_str_excludes_passive_skill_wrapper_buffs(empty_context):
     )
 
     assert "특성" not in str(empty_context)
+
+
+def test_round_manager_records_processed_ally_commands_until_round_end():
+    from battle.core.battlefield_context import BattlefieldContext
+    from battle.core.commands.admin import ChangePhaseCommand
+    from battle.core.commands.define import RoundPhaseType
+    from battle.core.commands.parser import parse_character_command
+    from battle.core.round_manager import RoundManager
+    from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
+    from battle.objects.models import CharacterId
+    from helpers import get_test_preset
+
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={})
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    manager = RoundManager(ctx)
+    manager.process_command(
+        ChangePhaseCommand(
+            type_=ActionType.ADMIN, target_phase=RoundPhaseType.ENEMY_PRE_ACTION
+        )
+    )
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    manager.process_command(
+        parse_character_command(CharacterId("아군 1"), "[이동/2]", ctx)
+    )
+
+    assert list(manager.get_ally_declared_commands()) == [CharacterId("아군 1")]
+
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+    manager.to_phase(RoundPhaseType.BUFF_UPDATE_AND_NEXT_ROUND_STANDBY)
+    assert manager.get_ally_declared_commands() == {}

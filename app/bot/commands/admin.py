@@ -110,7 +110,7 @@ _RE_FORCE_ELIMINATE = re.compile(
     rf"\[{whitespace_tolerant_literal('탈락')}\s*/\s*([^/\]]+?)]"
 )
 _RE_REFRESH_CHARACTER = re.compile(
-    rf"\[{whitespace_tolerant_literal('갱신')}\s*/\s*([^/\]]+?)\s*]"
+    rf"\[{whitespace_tolerant_literal('스테이터스갱신')}\s*/\s*([^/\]]+?)\s*]"
 )
 _RE_FIELD_EFFECT_ADD = re.compile(
     rf"\[{whitespace_tolerant_literal('필드효과')}\s*/\s*([^/\]]+?)"
@@ -453,6 +453,7 @@ def _cmd_manual_place(
                 round_n=state.session.round_n,
                 phase=state.session.current_phase.value,
                 enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                ally_declared=state.session.manager.get_ally_declared_commands(),
                 battle_name=state.session.name,
                 cache=state.field_sheet_cache,
             )
@@ -509,6 +510,7 @@ def _save_main_field(state: "BotState") -> None:
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -517,7 +519,7 @@ def _save_main_field(state: "BotState") -> None:
 
 
 def _cmd_refresh_character(name: str, state: "BotState") -> tuple[bool, str]:
-    """`[갱신/이름]` — 배치 때 한 번 복사해 두는 스탯·스킬·패시브를 지금
+    """`[스테이터스 갱신/이름]` — 배치 때 한 번 복사해 두는 스탯·스킬·패시브를 지금
     "캐릭터"/"에너미" 시트 값으로 다시 맞춘다. 시트는 멘션마다 새로 읽으므로
     (`reload_char_data()`) `state.name_dict`가 곧 최신 값이다.
 
@@ -549,7 +551,10 @@ def _cmd_refresh_character(name: str, state: "BotState") -> tuple[bool, str]:
     try:
         context.refresh_character_data(char_id, data)
     except CommandValidationError as e:
-        return False, f"◊ {escape_markdown(char_id.name)} 갱신 실패: {e}"
+        return (
+            False,
+            f"◊ {escape_markdown(char_id.name)}의 스테이터스를 갱신하지 못했습니다: {e}",
+        )
 
     if data.curr_hp is not None:
         known_hp = state.session.sheet_hp.get(char_id.name)
@@ -566,15 +571,16 @@ def _cmd_refresh_character(name: str, state: "BotState") -> tuple[bool, str]:
         for label in after
         if before[label] != after[label]
     ]
+    name = escape_markdown(char_id.name)
     if not changes:
-        return True, f"◊ {escape_markdown(char_id.name)} 갱신: 바뀐 값 없음"
-    return True, f"◊ {escape_markdown(char_id.name)} 갱신: " + ", ".join(
-        escape_markdown(change) for change in changes
+        return True, f"◊ {name}의 스테이터스에 바뀐 값이 없습니다."
+    return True, f"◊ {name}의 스테이터스를 다음과 같이 갱신합니다.\n" + "\n".join(
+        f"▹ {escape_markdown(change)}" for change in changes
     )
 
 
 def _refresh_summary(character: "CombatCharacter") -> dict[str, str]:
-    """[갱신] 답글에 바뀐 항목만 보여주기 위한 전후 비교용 스냅샷."""
+    """[스테이터스 갱신] 답글에 바뀐 항목만 보여주기 위한 전후 비교용 스냅샷."""
     status = character.status
     passive_ids = sorted(
         {wrapper.id for wrapper in character.field.passive_wrappers_of(character.id)}
@@ -804,6 +810,7 @@ def _sync_field_sheets(state: "BotState") -> None:
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1073,6 +1080,7 @@ def _cmd_battle_start(
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
             ensure_merged=True,
@@ -1161,6 +1169,7 @@ def _cmd_advance_phase(state: "BotState") -> AdminCommandResult:
             round_n=state.session.round_n,
             phase=new_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1267,6 +1276,7 @@ def _cmd_continue_battle(state: "BotState") -> AdminCommandResult:
             round_n=state.session.round_n,
             phase=new_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1353,6 +1363,7 @@ def _cmd_end(state: "BotState") -> tuple[str, str]:
             round_n=state.session.round_n,
             phase=state.session.current_phase.value,
             enemy_declared=state.session.manager.get_enemy_declared_commands(),
+            ally_declared=state.session.manager.get_ally_declared_commands(),
             battle_name=state.session.name,
             cache=state.field_sheet_cache,
         )
@@ -1485,6 +1496,7 @@ def _cmd_proxy(
                 round_n=round_n,
                 phase=phase.value,
                 enemy_declared=state.session.manager.get_enemy_declared_commands(),
+                ally_declared=state.session.manager.get_ally_declared_commands(),
                 battle_name=state.session.name,
                 cache=state.field_sheet_cache,
             )
