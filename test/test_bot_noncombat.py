@@ -181,23 +181,27 @@ def test_parse_roll_command_detects_keyword_suffix():
     assert parse_roll_command("사담") is None
 
 
-def test_handle_roll_keyword_adds_bonus_and_costs_hp(
+def test_handle_roll_keyword_auto_succeeds_and_costs_hp(
     monkeypatch, _stub_keyword_sheet_writes
 ):
-    """키워드 보정 판정은 굴림에 +3을 더하고 체력 20을 소모해야 한다."""
+    """키워드 보정 판정은 주사위를 굴리지 않고 자동 성공하며 체력 20을 소모한다."""
     acct = "user1"
     state = _keyword_state(acct)
-    monkeypatch.setattr(random, "randint", lambda a, b: 6)
+
+    def _fail_roll(a, b):
+        raise AssertionError("키워드 보정 판정은 주사위를 굴리지 않아야 한다")
+
+    monkeypatch.setattr(random, "randint", _fail_roll)
 
     result, log_info = handle_roll(acct, "육체", state, keyword_boost=True)
 
-    # 2[육체] + 6[1d6] + 3[키워드 보정] = 11
-    assert "→ 「11」" in result
-    assert "3[키워드 보정]" in result
+    assert result.splitlines()[0] == "◊ 판정: 육체 — 키워드 보정 사용"
     assert _stub_keyword_sheet_writes["hp"] == ("동료", 80)
     assert _stub_keyword_sheet_writes["keyword"] == ("동료", date.today().isoformat())
     assert log_info is not None
     assert log_info.command_text == "[판정+/육체]"
+    assert log_info.dice_roll == ""
+    assert log_info.result == "「자동 성공」"
 
 
 def test_handle_roll_keyword_updates_in_memory_character(_stub_keyword_sheet_writes):
@@ -390,23 +394,23 @@ def test_handle_roll_uses_character_specific_threshold(name, threshold):
     assert f"↳ 목표치: 육체 {threshold}" in result
 
 
-def test_handle_roll_keyword_verdict_uses_boosted_total(
-    monkeypatch, _stub_keyword_sheet_writes
+def test_handle_roll_keyword_succeeds_regardless_of_threshold(
+    _stub_keyword_sheet_writes,
 ):
-    """키워드 보정이 더해진 합계로 판정하고, 목표치 줄은 체력 소모 줄 앞에 온다."""
+    """키워드 보정은 목표치와 무관하게 성공하고, 목표치 줄은 체력 소모 줄 앞에 온다."""
     state = _keyword_state("user1")
-    monkeypatch.setattr(random, "randint", lambda a, b: 3)
-    target = parse_roll_target("[판정: 최소 1인] [육체 8]")
+    target = parse_roll_target("[판정: 최소 1인] [육체 99, 실패 시 패널티]")
 
-    result, _log_info = handle_roll(
+    result, log_info = handle_roll(
         "user1", "육체", state, keyword_boost=True, target=target
     )
 
-    # 2[육체] + 3[1d6] + 3[키워드 보정] = 8
     lines = result.splitlines()
-    assert lines[0].endswith("→ 「8」")
-    assert lines[1] == "↳ 목표치: 육체 8 — **성공**"
+    assert lines[0] == "◊ 판정: 육체 — 키워드 보정 사용"
+    assert lines[1] == "↳ 목표치: 육체 99 — **성공**"
     assert lines[2].startswith("↳ 키워드 보정 사용")
+    assert log_info is not None
+    assert log_info.result == "「자동 성공」 목표치 99 성공"
 
 
 def _quest_location(

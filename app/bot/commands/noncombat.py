@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Callable, Optional
 from battle.objects.define import (
     KEYWORD_BOOST_HP_COST,
     KEYWORD_BOOST_REQUIRED_REVIVAL_COUNT,
-    KEYWORD_BOOST_ROLL_BONUS,
     ItemType,
     ValueSourceType,
 )
@@ -295,9 +294,10 @@ def handle_roll(
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[판정/스탯] → 1d6 + 스탯값 계산 후 결과 텍스트 반환.
 
-    `keyword_boost`(=[판정+/스탯])면 굴림에 고정 보정을 더하고 체력을 소모한다.
+    `keyword_boost`(=[판정+/스탯])면 굴리지 않고 자동 성공으로 처리하며 체력을
+    소모한다.
     조건(부활 횟수·이번 진행 미사용·체력)을 만족하지 못하면 판정 자체를 하지
-    않고 오류를 반환한다 — 체력만 깎이고 보정이 빠지는 상태를 만들지 않기
+    않고 오류를 반환한다 — 체력만 깎이고 성공 처리가 빠지는 상태를 만들지 않기
     위함이다.
     """
     command_text = f"[판정{'+' if keyword_boost else ''}/{stat_name}]"
@@ -315,31 +315,35 @@ def handle_roll(
         if error is not None:
             return error, NoncombatLogInfo(command_text=command_text, result=error)
 
-    stat_type = NoncombatStatType(stat_name)
-    stat_val = char_data.get_noncombat_stat(stat_type)
-    dice = random.randint(1, 6)
-    total = dice + stat_val
-    reply = f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6]"
-    dice_roll = f"{dice}+{stat_val}"
-
-    if keyword_boost:
-        total += KEYWORD_BOOST_ROLL_BONUS
-        reply += f" + {KEYWORD_BOOST_ROLL_BONUS}[키워드 보정]"
-        dice_roll += f"+{KEYWORD_BOOST_ROLL_BONUS}"
-
-    reply += f" → 「{total}」"
-    result = f"「{total}」"
-
     threshold = (
         _roll_threshold(target, stat_name, char_data.name, state)
         if target is not None
         else None
     )
-    if target is not None and threshold is not None:
-        verdict = "성공" if total >= threshold else "실패"
-        penalty_note = " (패널티 적용)" if verdict == "실패" and target.penalty else ""
-        reply += f"\n↳ 목표치: {stat_name} {threshold} — **{verdict}**{penalty_note}"
-        result += f" 목표치 {threshold} {verdict}{penalty_note}"
+
+    if keyword_boost:
+        reply = f"◊ 판정: {stat_name} — 키워드 보정 사용"
+        dice_roll = ""
+        result = "「자동 성공」"
+        if threshold is not None:
+            reply += f"\n↳ 목표치: {stat_name} {threshold} — **성공**"
+            result += f" 목표치 {threshold} 성공"
+    else:
+        stat_val = char_data.get_noncombat_stat(NoncombatStatType(stat_name))
+        dice = random.randint(1, 6)
+        total = dice + stat_val
+        reply = f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」"
+        dice_roll = f"{dice}+{stat_val}"
+        result = f"「{total}」"
+        if target is not None and threshold is not None:
+            verdict = "성공" if total >= threshold else "실패"
+            penalty_note = (
+                " (패널티 적용)" if verdict == "실패" and target.penalty else ""
+            )
+            reply += (
+                f"\n↳ 목표치: {stat_name} {threshold} — **{verdict}**{penalty_note}"
+            )
+            result += f" 목표치 {threshold} {verdict}{penalty_note}"
 
     if keyword_boost:
         reply += "\n" + _consume_noncombat_keyword(acct, char_data, today, state)
