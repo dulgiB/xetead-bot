@@ -166,8 +166,21 @@ def _restore_buffs(context: "BattlefieldContext", characters: list[dict]) -> int
             continue
         for raw in entry.get("buffs") or []:
             try:
-                buff_id = raw["id"]
                 given_by = CharacterId(raw.get("given_by") or applied_to.name)
+                if "charm" in raw:
+                    if not context.charm_auras.restore_buff(
+                        given_by, raw["charm"], applied_to, raw.get("turns")
+                    ):
+                        logger.warning(
+                            "등록되지 않은 부적(%s[%s])이라 복원에서 건너뜁니다: %s",
+                            raw["charm"],
+                            given_by.name,
+                            applied_to.name,
+                        )
+                        continue
+                    restored += 1
+                    continue
+                buff_id = raw["id"]
                 if context.get_buff_data_by_id_or_none(buff_id) is None:
                     logger.warning(
                         "'버프' 시트에 없는 id(%s)라 복원에서 건너뜁니다: %s",

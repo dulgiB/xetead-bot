@@ -253,6 +253,15 @@ class BuffBase(abc.ABC):
     def get_sacrifice_override(self) -> Optional[CharacterId]:
         return None
 
+    def on_added(self, context: "BattlefieldContext") -> None:
+        """BuffContainer에 새 인스턴스로 등록된 직후 호출된다(재부여로 기존
+        인스턴스가 갱신될 때는 부르지 않는다). 걸려 있는 동안 CombatStats에
+        상태를 얹어 두는 버프(부적 버프 등)가 오버라이드한다."""
+
+    def on_removed(self, context: "BattlefieldContext") -> None:
+        """BuffContainer에서 빠진 직후 호출된다 — 지속시간 만료, 명시적 제거,
+        대상 퇴장 등 경로와 무관하게. on_added()로 얹은 상태를 되돌린다."""
+
     def on_battle_end(
         self, context: "BattlefieldContext"
     ) -> Optional["BattleLogEntry"]:

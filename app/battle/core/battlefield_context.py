@@ -13,7 +13,7 @@ from utils.logging import print_apply_damage, print_apply_heal
 from utils.name_matching import resolve_matching_key
 
 from battle.core.buff_container import BuffContainer
-from battle.core.charm_aura_container import CharmAuraContainer
+from battle.core.charm_aura_container import CharmAuraContainer, CharmBuff
 from battle.core.field_effect_container import FieldEffectContainer
 from battle.core.command_calculator import CommandPartCalculator
 from battle.core.commands.models import (
@@ -259,8 +259,11 @@ class BattlefieldContext:
                 key=lambda buff: buff.id,
             )
             for buff in buffs:
-                buff_data = self._buff_dictionary.get(buff.id)
-                description = buff_data.description if buff_data is not None else ""
+                if isinstance(buff, CharmBuff):
+                    description = buff.get_description(self)
+                else:
+                    buff_data = self._buff_dictionary.get(buff.id)
+                    description = buff_data.description if buff_data is not None else ""
                 stack_count = buff.stack_count if buff.max_stack is not None else None
                 blocks.append(
                     f"{char_id.name} | [{buff.display_id_label()}]"
@@ -355,9 +358,9 @@ class BattlefieldContext:
         # 배치 단계에서는 아직 필드 효과가 없어 비용이 들지 않는다.
         self.field_effects.apply_to_newcomer(char_id)
 
+        # 부적 효과는 다음 라운드 시작부터 건다(grant_round_buffs()).
         if self.allow_charms:
             self.charm_auras.register_holder(char_id)
-            self.charm_auras.refresh()
 
     def resolve_summon_id(self, raw: CharacterId) -> CharacterId:
         """공백 차이를 무시하고 소환 명단의 에너미 이름으로 맞춘다. 없으면 raw."""
@@ -491,10 +494,6 @@ class BattlefieldContext:
                 self.buff_container.remove(wrapper.uid)
             self._register_passive(char_id, data.passive_skill_id)
 
-        # 사거리가 바뀌면 부적 범위 판정도 달라질 수 있다.
-        if self.allow_charms:
-            self.charm_auras.refresh()
-
     def _remove_from_position_map(self, char_id: CharacterId) -> None:
         char = self.characters[char_id]
         removed = False
@@ -515,9 +514,7 @@ class BattlefieldContext:
 
         self.charm_auras.unregister_holder(char_id)
         self._remove_from_position_map(char_id)
-        removed = self.characters.pop(char_id)
-        self.charm_auras.refresh()
-        return removed
+        return self.characters.pop(char_id)
 
     def try_find_empty_slot(
         self,
@@ -633,7 +630,6 @@ class BattlefieldContext:
         for column in occupied:
             self.position_map[char.faction][column][empty_slot] = char_id
         self.moved_this_round.add(char_id)
-        self.charm_auras.refresh()
 
     def apply_damage(
         self,
@@ -677,6 +673,10 @@ class BattlefieldContext:
         # 피격 기록을 읽을 수 있다.
         self.prev_damaged_this_round = self.damaged_this_round
         self.damaged_this_round = set()
+        # 부적 범위는 이 시점의 위치로 정한다. 코스트 회복보다 먼저여야 턴당
+        # 코스트 보너스가 이번 라운드에 반영된다.
+        if self.allow_charms:
+            self.charm_auras.grant_round_buffs()
         # 코스트 회복이 ON_ROUND_START 버프보다 먼저여야 "다음 라운드 코스트
         # 감소" 버프가 덮어써지지 않는다.
         for character in self.characters.values():
