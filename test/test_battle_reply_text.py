@@ -1191,3 +1191,45 @@ def test_format_eliminated_characters_lists_names_without_trailing_label():
 
 def test_format_eliminated_characters_empty_when_no_one_eliminated():
     assert format_eliminated_characters([]) == ""
+
+
+def test_skill_preview_shown_once_per_skill_per_round():
+    """같은 라운드에 같은 스킬을 여러 번 선언하면 설명은 처음 한 번만 붙고,
+    다음 라운드에는 다시 붙는다."""
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleNamed",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectDamage(ValueSourceType.FIXED, 5, ValueType.INTEGER, None, None)
+        ],
+        description="대상에게 고정 피해를 준다.",
+        revealed=True,
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    ctx.add_character(
+        get_test_preset("적군 1", skill_1_id="스킬_1"),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
+    )
+    ctx.add_character(
+        get_test_preset("아군 1"), FactionType.ALLY, BattlefieldColumnIndex(0)
+    )
+    header = "**【스킬\\_1 ▸ 아군 1】**"
+    preview = " ↳ 대상에게 고정 피해를 준다."
+
+    caster_id, results = _declare_enemy_skill(
+        ctx, "스킬_1", "[스킬_1/아군 1 - 스킬_1/아군 1]"
+    )
+    reply, _calc = format_battle_reply(ctx, caster_id, results, show_skill_preview=True)
+    assert reply == f"{header}\n{preview}\n{header}"
+
+    caster_id, results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
+    reply, _calc = format_battle_reply(ctx, caster_id, results, show_skill_preview=True)
+    assert reply == header
+
+    ctx.on_start_round()
+    caster_id, results = _declare_enemy_skill(ctx, "스킬_1", "[스킬_1/아군 1]")
+    reply, _calc = format_battle_reply(ctx, caster_id, results, show_skill_preview=True)
+    assert reply == f"{header}\n{preview}"
