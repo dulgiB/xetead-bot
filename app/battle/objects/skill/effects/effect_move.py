@@ -5,7 +5,7 @@ from utils.battle_helpers import COLUMN_COUNT
 
 from battle.objects.define import BattlefieldColumnIndex, ValueSourceType
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
-from battle.objects.skill.models import SkillEffectBase
+from battle.objects.skill.models import SkillEffectBase, landing_column
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -49,6 +49,10 @@ def _span_of(context: "BattlefieldContext", char_id: CharacterId) -> int:
 
 
 class SkillEffectMove(SkillEffectBase):
+    @property
+    def lands_on_target_column(self) -> bool:
+        return self.value_source == ValueSourceType.TARGET_CURR_POSITION
+
     def _expand(
         self,
         context: "BattlefieldContext",
@@ -102,7 +106,7 @@ class SkillEffectMove(SkillEffectBase):
                 [
                     MoveData(
                         character_id=holder,
-                        to_position=context.find_character_position(target),
+                        to_position=landing_column(context, target, raw_targets),
                         is_forced=True,
                     )
                     for target in targets

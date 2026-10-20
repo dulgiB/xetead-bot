@@ -27,6 +27,21 @@ if TYPE_CHECKING:
     from battle.objects.models import SummonData
 
 
+def landing_column(
+    context: "BattlefieldContext",
+    target: CharacterId,
+    raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]",
+) -> BattlefieldColumnIndex:
+    """lands_on_target_column 효과가 착지할 열. 커맨드에 열을 덧붙였으면 그
+    열이고, 없으면 대상의 기준 위치(가장 왼쪽 열)다. 열이 대상의 점유 열인지는
+    사전 검증이 본다 — POST 재전개는 그 사이 대상이 움직였어도 선언한 열을
+    그대로 쓴다."""
+    for raw_target in raw_targets:
+        if isinstance(raw_target, BattlefieldColumnIndex):
+            return raw_target
+    return context.find_character_position(target)
+
+
 @dataclass(frozen=True)
 class SkillEffectBase(abc.ABC):
     value_source: Optional[ValueSourceType]
@@ -97,6 +112,17 @@ class SkillEffectBase(abc.ABC):
     # 단계에서는 계수가 남아 있지 않으므로, 키워드 보정의 '수치 강화'는 계산
     # 단계가 아니라 value를 올린 사본으로 전개해 반영한다.
     precomputes_value: ClassVar[bool] = False
+
+    @property
+    def lands_on_target_column(self) -> bool:
+        """시전자가 주대상의 열로 들어가는 효과인지(돌진, 경로 광역).
+
+        이런 효과가 하나라도 있는 스킬은 주대상 뒤에 그 대상이 차지한 열 하나를
+        덧붙일 수 있고, 사거리는 주대상 대신 그 착지 열로 본다
+        (command_processors._validate_landing_column()). 다열 에너미의 기준
+        위치(가장 왼쪽 열)로만 들어가면 사거리 안의 다른 점유 열을 두고도
+        먼 쪽으로 뛰게 되기 때문이다."""
+        return False
 
     @property
     def condition(self) -> Optional["Condition"]:
@@ -367,6 +393,11 @@ class SkillData:
     keyword_value: Optional[int] = None
     # VALUE_BOOST/BUFF_* 모드가 어느 효과(effect_N)를 강화하는지. 비우면 0.
     keyword_effect_index: int = 0
+
+    @property
+    def lands_on_target_column(self) -> bool:
+        """주대상의 열로 들어가는 효과가 있어 착지 열을 덧붙일 수 있는 스킬."""
+        return any(effect.lands_on_target_column for effect in self.effects)
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "SkillData":

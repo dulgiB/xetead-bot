@@ -36,6 +36,15 @@ def error_invalid_move_destination(pos: BattlefieldColumnIndex) -> str:
     return f"지정한 위치({pos})는 이동 가능한 위치가 아닙니다."
 
 
+def error_column_not_occupied_by_target(
+    target_id: CharacterId, pos: BattlefieldColumnIndex
+) -> str:
+    return (
+        f"지정한 위치({pos})는 대상({target_id.name})이 차지한 열이 아닙니다."
+        " 대상이 걸친 열 중 하나를 지정해 주세요."
+    )
+
+
 def error_skill_not_registered(skill_name: str) -> str:
     return f"지정한 스킬({skill_name})이 등록되어 있지 않아 사용할 수 없습니다."
 

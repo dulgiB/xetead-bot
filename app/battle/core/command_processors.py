@@ -23,6 +23,8 @@ from battle.exceptions import (
     error_attack_position_too_far,
     error_character_already_on_field,
     error_character_is_defeated,
+    error_column_not_occupied_by_target,
+    error_invalid_command_format,
     error_keyword_already_used,
     error_keyword_not_available_here,
     error_keyword_not_enough_hp,
@@ -53,6 +55,7 @@ from battle.objects.define import (
 )
 from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, ValueWithModifiers
+from battle.objects.skill.models import landing_column
 
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager
@@ -367,6 +370,10 @@ def try_expansion_if_valid(
                     and skill.data.keyword_mode is KeywordBoostMode.EXTRA_TARGET
                     else 0
                 )
+            if skill.data.lands_on_target_column and _validate_landing_column(
+                context, part
+            ):
+                allowed_target_count += 1
             if len(part.targets) > allowed_target_count:
                 raise CommandValidationError(
                     error_too_many_targets(
@@ -400,6 +407,27 @@ def try_expansion_if_valid(
         effective_range = _effective_attack_range(
             context, user, command_data.original_part
         )
+
+        # 돌진 거리는 이동 전 위치에서 착지 열까지로 본다. 아래 대미지 검증은
+        # 이동을 반영한 뒤라 주대상과 같은 열에서 재므로 언제나 통과한다.
+        original_part = command_data.original_part
+        if (
+            isinstance(original_part, CommandPart)
+            and original_part.type_ == ActionType.SKILL
+            and _skill_data_of(user, original_part).lands_on_target_column
+        ):
+            for target_id in original_part.targets:
+                if not isinstance(target_id, CharacterId):
+                    continue
+                if target_id not in context.characters:
+                    raise CommandValidationError(error_target_does_not_exist(target_id))
+                to_pos = landing_column(
+                    context, target_id, tuple(original_part.targets)
+                )
+                if not is_reachable_between(
+                    columns_for_span(user_pos, user.span), (to_pos,), effective_range
+                ):
+                    raise CommandValidationError(error_attack_position_too_far(to_pos))
 
         for sub_data in command_data.data_per_effect:
             if sub_data is None:
@@ -466,7 +494,7 @@ def try_expansion_if_valid(
     if (
         keyword_part is not None
         and keyword_part.type_ == ActionType.SKILL
-        and _keyword_skill_data(user, keyword_part).keyword_mode is None
+        and _skill_data_of(user, keyword_part).keyword_mode is None
     ):
         assert keyword_part.skill_id is not None
         has_damage = any(
@@ -483,6 +511,27 @@ def try_expansion_if_valid(
             )
 
     return expanded_command_data_list, needed_cost
+
+
+def _validate_landing_column(context: BattlefieldContext, part: CommandPart) -> bool:
+    """주대상에 덧붙인 착지 열이 있으면 검증하고 True를 돌려준다.
+
+    열은 하나, 주대상도 하나여야 하며, 그 열은 주대상이 실제로 차지한 열이어야
+    한다. 대상이 전장에 없으면 이후 검증이 "찾을 수 없음"으로 돌려준다."""
+    columns = [t for t in part.targets if isinstance(t, BattlefieldColumnIndex)]
+    if not columns:
+        return False
+    characters = [t for t in part.targets if isinstance(t, CharacterId)]
+    if len(columns) > 1 or len(characters) != 1:
+        raise CommandValidationError(error_invalid_command_format())
+    target_id = characters[0]
+    if target_id in context.characters and columns[0] not in (
+        context.find_character_columns(target_id)
+    ):
+        raise CommandValidationError(
+            error_column_not_occupied_by_target(target_id, columns[0])
+        )
+    return True
 
 
 def _apply_keyword_boost_cost(
@@ -523,9 +572,9 @@ def _apply_keyword_boost_cost(
     )
 
 
-def _keyword_skill_data(user: "CombatCharacter", part: CommandPart) -> "SkillData":
-    """키워드 보정이 붙은 스킬 파트의 SkillData. 스킬 등록 여부는 이 함수를 부르기
-    전에 이미 검증돼 있다(error_skill_not_registered)."""
+def _skill_data_of(user: "CombatCharacter", part: CommandPart) -> "SkillData":
+    """스킬 파트의 SkillData. 스킬 등록 여부는 이 함수를 부르기 전에 이미
+    검증돼 있다(error_skill_not_registered)."""
     skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
     assert skill is not None
     return skill.data
