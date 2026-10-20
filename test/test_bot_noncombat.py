@@ -17,7 +17,7 @@ from bot.commands.noncombat import (  # noqa: E402
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
     get_cached_item_names,
-    handle_1d100,
+    handle_1dn,
     handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
@@ -29,6 +29,7 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_transfer_item,
     handle_use_item,
     parse_bare_item_command,
+    parse_dice_command,
     parse_roll_command,
     parse_roll_target,
     parse_transfer_item_args,
@@ -2009,12 +2010,12 @@ def test_bag_rejects_unregistered_character(monkeypatch):
     assert log_info is None
 
 
-def test_handle_1d100_reply_format(monkeypatch):
+def test_handle_1dn_reply_format(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(random, "randint", lambda a, b: 42)
 
-    reply, log_info = handle_1d100(acct, state)
+    reply, log_info = handle_1dn(acct, "100", state)
 
     assert reply == "◊ 1d100 → 「42」"
     assert log_info is not None
@@ -2023,13 +2024,65 @@ def test_handle_1d100_reply_format(monkeypatch):
     assert log_info.error_trace is None
 
 
-def test_handle_1d100_rejects_unregistered_character():
+def test_handle_1dn_rolls_up_to_given_sides(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    calls = []
+
+    def fake_randint(a, b):
+        calls.append((a, b))
+        return b
+
+    monkeypatch.setattr(random, "randint", fake_randint)
+
+    reply, log_info = handle_1dn(acct, "020", state)
+
+    assert calls == [(1, 20)]
+    assert reply == "◊ 1d20 → 「20」"
+    assert log_info.command_text == "[1D20]"
+
+
+@pytest.mark.parametrize("sides_text", ["0", "", "n", "-5", "1000001", "２０"])
+def test_handle_1dn_rejects_invalid_sides(monkeypatch, sides_text):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        random, "randint", lambda a, b: pytest.fail("잘못된 입력은 굴리지 않는다")
+    )
+
+    reply, log_info = handle_1dn(acct, sides_text, state)
+
+    assert "주사위 면 수는 1 이상" in reply
+    assert log_info is not None
+    assert log_info.dice_roll == ""
+
+
+def test_handle_1dn_rejects_unregistered_character():
     state = _make_state("user1")
 
-    reply, log_info = handle_1d100("unregistered_user", state)
+    reply, log_info = handle_1dn("unregistered_user", "100", state)
 
     assert "등록된 캐릭터를 찾을 수 없습니다" in reply
     assert log_info is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("@bot [1d100]", "100"),
+        ("@bot [1D100]", "100"),
+        ("@bot 굴려 볼게 [ 1 d 20 ] 제발", "20"),
+        ("@bot [1d6]", "6"),
+        ("@bot [1d]", ""),
+        ("@bot [1dn]", "n"),
+        ("@bot [가방]", None),
+        ("@bot [2d6]", None),
+        ("@bot [1d6/2]", None),
+        ("@bot [판정/육체]", None),
+    ],
+)
+def test_parse_dice_command(text, expected):
+    assert parse_dice_command(text) == expected
 
 
 def test_investigation_menu_post_shares_session_across_accts():
@@ -2119,6 +2172,51 @@ def test_investigation_start_tracks_all_mentioned_characters(monkeypatch):
     overview_post = mastodon.status_post_calls[-1]
     # 답글을 단 user2가 맨 앞이다.
     assert overview_post["status"].startswith("@user2 @user1 ")
+    assert session.quest_id == "항구 마을_운반"
+
+
+def _investigation_menu_listener(monkeypatch):
+    from bot import main as main_module
+    from test_bot_admin import _FakeMastodon
+
+    state = _make_state("user1")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
+    )
+    monkeypatch.setattr(main_module, "_persist_noncombat_log", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    monkeypatch.setattr(
+        mastodon, "status_context", lambda status_id: pytest.fail("스레드 조회")
+    )
+    listener = main_module.MastodonBotListener(mastodon, state, bot_acct="bot")
+    dispatch = listener._MastodonBotListener__dispatch  # type: ignore[attr-defined]
+    dispatch("user1", 1, 50, "[상시조사]", "public", [])
+    [session] = state.noncombat.active_investigations("user1")
+    return state, mastodon, dispatch, session
+
+
+def test_lone_dice_roll_takes_priority_over_thread_context(monkeypatch):
+    """[1dN]만 적은 답글은 상시조사 장소 선택 단계에서도 장소 이름으로
+    읽히지 않고 굴림으로 처리되며, 세션은 그대로 남는다."""
+    state, mastodon, dispatch, session = _investigation_menu_listener(monkeypatch)
+    monkeypatch.setattr(random, "randint", lambda a, b: 7)
+
+    dispatch("user1", 2, session.menu_post_id, "[1d20]", "public", [])
+
+    assert mastodon.status_post_calls[-1]["status"].endswith("◊ 1d20 → 「7」")
+    assert session.quest_id is None
+    assert state.noncombat.active_investigations("user1") == [session]
+
+
+def test_dice_with_other_command_does_not_hijack_it(monkeypatch):
+    """다른 커맨드와 함께 적은 [1dN]은 그 맥락의 커맨드를 가로채지 않는다."""
+    state, mastodon, dispatch, session = _investigation_menu_listener(monkeypatch)
+
+    dispatch("user1", 2, session.menu_post_id, "[광장] [1d20]", "public", [])
+
+    assert "1d20" not in mastodon.status_post_calls[-1]["status"]
     assert session.quest_id == "항구 마을_운반"
 
 
