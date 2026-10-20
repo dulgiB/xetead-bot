@@ -58,6 +58,10 @@ _RE_ROLL = re.compile(
     rf"\[{whitespace_tolerant_literal('판정')}(?P<keyword>\+)?\s*/\s*(?P<stat>[^]]+)]"
 )
 _RE_BARE_BRACKET = re.compile(r"\[([^\]]+)]")
+# [1dN] 독립 굴림. 대소문자·공백 무관이며 N 자리는 parse_dice_command() 참고.
+_RE_DICE = re.compile(r"\[\s*1\s*d\s*(?P<sides>[^\[\]/]*?)\s*]", re.IGNORECASE)
+# 답글 길이를 지키기 위한 상한일 뿐 게임 규칙상의 제한은 아니다.
+MAX_DICE_SIDES = 1_000_000
 # world/admin이 판정을 요구할 때 쓰는 표기: [판정: 최소 1인] [지식 7/기술 6, 실패 시 패널티]
 # 대상 칸(": 최소 1인")은 생략될 수 있고, 특정 캐릭터만 목표치가 다르면
 # [지식 7/「캐릭터」 지식 5]처럼 이름을 앞에 붙인다.
@@ -413,19 +417,40 @@ def _consume_noncombat_keyword(
     )
 
 
-def handle_1d100(
-    acct: str, state: "BotState"
+def parse_dice_command(text: str) -> Optional[str]:
+    """텍스트에서 [1dN] 패턴을 찾아 N 자리의 원문을 반환한다.
+
+    N 자리는 느슨하게 캡처한다 — [1d0]·[1dx]처럼 잘못된 입력도 일단 매칭해야
+    오류 답글을 보낼 수 있다. 엄격하게 숫자만 받으면 무응답이 되어 사용자가
+    무엇이 잘못됐는지 알 수 없다.
+    """
+    m = _RE_DICE.search(text)
+    if not m:
+        return None
+    return m.group("sides")
+
+
+def handle_1dn(
+    acct: str, sides_text: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[1D100] → 1~100 사이의 굴림 결과를 반환한다."""
-    command_text = "[1D100]"
+    """[1dN] → 1~N 사이의 굴림 결과를 반환한다."""
+    command_text = f"[1D{sides_text}]"
+    sides = int(sides_text) if sides_text.isascii() and sides_text.isdigit() else 0
+    if not 1 <= sides <= MAX_DICE_SIDES:
+        msg = (
+            "◊ 주사위 면 수는 1 이상"
+            f" {MAX_DICE_SIDES:,} 이하의 정수로 적어 주세요. (예: [1d100])"
+        )
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
         return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
-    roll = random.randint(1, 100)
-    reply = f"◊ 1d100 → 「{roll}」"
+    roll = random.randint(1, sides)
+    reply = f"◊ 1d{sides} → 「{roll}」"
     return reply, NoncombatLogInfo(
-        command_text=command_text, dice_roll=str(roll), result=f"「{roll}」"
+        command_text=f"[1D{sides}]", dice_roll=str(roll), result=f"「{roll}」"
     )
 
 

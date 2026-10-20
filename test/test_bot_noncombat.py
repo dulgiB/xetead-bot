@@ -17,7 +17,7 @@ from bot.commands.noncombat import (  # noqa: E402
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
     get_cached_item_names,
-    handle_1d100,
+    handle_1dn,
     handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
@@ -29,6 +29,7 @@ from bot.commands.noncombat import (  # noqa: E402
     handle_transfer_item,
     handle_use_item,
     parse_bare_item_command,
+    parse_dice_command,
     parse_roll_command,
     parse_roll_target,
     parse_transfer_item_args,
@@ -2009,12 +2010,12 @@ def test_bag_rejects_unregistered_character(monkeypatch):
     assert log_info is None
 
 
-def test_handle_1d100_reply_format(monkeypatch):
+def test_handle_1dn_reply_format(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(random, "randint", lambda a, b: 42)
 
-    reply, log_info = handle_1d100(acct, state)
+    reply, log_info = handle_1dn(acct, "100", state)
 
     assert reply == "◊ 1d100 → 「42」"
     assert log_info is not None
@@ -2023,13 +2024,65 @@ def test_handle_1d100_reply_format(monkeypatch):
     assert log_info.error_trace is None
 
 
-def test_handle_1d100_rejects_unregistered_character():
+def test_handle_1dn_rolls_up_to_given_sides(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    calls = []
+
+    def fake_randint(a, b):
+        calls.append((a, b))
+        return b
+
+    monkeypatch.setattr(random, "randint", fake_randint)
+
+    reply, log_info = handle_1dn(acct, "020", state)
+
+    assert calls == [(1, 20)]
+    assert reply == "◊ 1d20 → 「20」"
+    assert log_info.command_text == "[1D20]"
+
+
+@pytest.mark.parametrize("sides_text", ["0", "", "n", "-5", "1000001", "２０"])
+def test_handle_1dn_rejects_invalid_sides(monkeypatch, sides_text):
+    acct = "user1"
+    state = _make_state(acct)
+    monkeypatch.setattr(
+        random, "randint", lambda a, b: pytest.fail("잘못된 입력은 굴리지 않는다")
+    )
+
+    reply, log_info = handle_1dn(acct, sides_text, state)
+
+    assert "주사위 면 수는 1 이상" in reply
+    assert log_info is not None
+    assert log_info.dice_roll == ""
+
+
+def test_handle_1dn_rejects_unregistered_character():
     state = _make_state("user1")
 
-    reply, log_info = handle_1d100("unregistered_user", state)
+    reply, log_info = handle_1dn("unregistered_user", "100", state)
 
     assert "등록된 캐릭터를 찾을 수 없습니다" in reply
     assert log_info is None
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("@bot [1d100]", "100"),
+        ("@bot [1D100]", "100"),
+        ("@bot 굴려 볼게 [ 1 d 20 ] 제발", "20"),
+        ("@bot [1d6]", "6"),
+        ("@bot [1d]", ""),
+        ("@bot [1dn]", "n"),
+        ("@bot [가방]", None),
+        ("@bot [2d6]", None),
+        ("@bot [1d6/2]", None),
+        ("@bot [판정/육체]", None),
+    ],
+)
+def test_parse_dice_command(text, expected):
+    assert parse_dice_command(text) == expected
 
 
 def test_investigation_menu_post_shares_session_across_accts():

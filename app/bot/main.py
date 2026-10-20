@@ -53,7 +53,7 @@ from bot.commands.noncombat import (
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
     finalize_investigation_overview_post,
-    handle_1d100,
+    handle_1dn,
     handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
@@ -65,6 +65,7 @@ from bot.commands.noncombat import (
     handle_transfer_item,
     handle_use_item,
     parse_bare_item_command,
+    parse_dice_command,
     parse_roll_command,
     parse_roll_target,
     parse_transfer_item_args,
@@ -109,7 +110,6 @@ _RE_ACCEPT = re.compile(rf"\[{whitespace_tolerant_literal('수락')}]")
 _RE_DAILY_QUEST_START = re.compile(rf"\[{whitespace_tolerant_literal('의뢰')}]")
 _RE_INVESTIGATION_START = re.compile(rf"\[{whitespace_tolerant_literal('상시조사')}]")
 _RE_BAG = re.compile(rf"\[{whitespace_tolerant_literal('가방')}]")
-_RE_1D100 = re.compile(r"\[\s*1\s*d\s*100\s*]", re.IGNORECASE)
 _MAX_POST_LENGTH = 500
 # 계산식을 CW 합본 본문에 실을 때 남겨야 하는 최소 자리. 계산식 한 줄이
 # 대개 이보다 짧아, 이만큼도 안 남으면 따로 후속 게시물로 보낸다.
@@ -1334,9 +1334,10 @@ class MastodonBotListener(StreamListener):
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
-        # 14.5. [1D100] — 독립 굴림 (대소문자 무관, 어떤 맥락에서도 사용 가능)
-        if _RE_1D100.search(text):
-            response, log_info = handle_1d100(acct, state)
+        # 14.5. [1dN] — 독립 굴림 (대소문자 무관, 어떤 맥락에서도 사용 가능)
+        dice_sides = parse_dice_command(text)
+        if dice_sides is not None:
+            response, log_info = handle_1dn(acct, dice_sides, state)
             reply_status = self._reply(status_id, acct, visibility, response)
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
