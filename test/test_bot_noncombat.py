@@ -2175,6 +2175,51 @@ def test_investigation_start_tracks_all_mentioned_characters(monkeypatch):
     assert session.quest_id == "항구 마을_운반"
 
 
+def _investigation_menu_listener(monkeypatch):
+    from bot import main as main_module
+    from test_bot_admin import _FakeMastodon
+
+    state = _make_state("user1")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
+    )
+    monkeypatch.setattr(main_module, "_persist_noncombat_log", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    monkeypatch.setattr(
+        mastodon, "status_context", lambda status_id: pytest.fail("스레드 조회")
+    )
+    listener = main_module.MastodonBotListener(mastodon, state, bot_acct="bot")
+    dispatch = listener._MastodonBotListener__dispatch  # type: ignore[attr-defined]
+    dispatch("user1", 1, 50, "[상시조사]", "public", [])
+    [session] = state.noncombat.active_investigations("user1")
+    return state, mastodon, dispatch, session
+
+
+def test_lone_dice_roll_takes_priority_over_thread_context(monkeypatch):
+    """[1dN]만 적은 답글은 상시조사 장소 선택 단계에서도 장소 이름으로
+    읽히지 않고 굴림으로 처리되며, 세션은 그대로 남는다."""
+    state, mastodon, dispatch, session = _investigation_menu_listener(monkeypatch)
+    monkeypatch.setattr(random, "randint", lambda a, b: 7)
+
+    dispatch("user1", 2, session.menu_post_id, "[1d20]", "public", [])
+
+    assert mastodon.status_post_calls[-1]["status"].endswith("◊ 1d20 → 「7」")
+    assert session.quest_id is None
+    assert state.noncombat.active_investigations("user1") == [session]
+
+
+def test_dice_with_other_command_does_not_hijack_it(monkeypatch):
+    """다른 커맨드와 함께 적은 [1dN]은 그 맥락의 커맨드를 가로채지 않는다."""
+    state, mastodon, dispatch, session = _investigation_menu_listener(monkeypatch)
+
+    dispatch("user1", 2, session.menu_post_id, "[광장] [1d20]", "public", [])
+
+    assert "1d20" not in mastodon.status_post_calls[-1]["status"]
+    assert session.quest_id == "항구 마을_운반"
+
+
 def _put_in_main_battle(state: BotState, char_name: str) -> None:
     from battle.objects.define import BattlefieldColumnIndex, FactionType
     from bot.session import BattleSession

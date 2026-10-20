@@ -1035,6 +1035,17 @@ class MastodonBotListener(StreamListener):
                 self._post_admin_result(result, status_id, acct, visibility, state)
                 return
 
+        # 1.9. [1dN]만 단독으로 적은 멘션 — 시트를 읽지 않는 독립 굴림이라
+        # 어떤 맥락(전투·준비·의뢰·상시조사 스레드)에서도 아래 분기보다 먼저
+        # 처리한다. 다른 커맨드와 함께 적은 멘션은 그 커맨드를 가로채지 않도록
+        # 기존 순서(14.5)로 넘긴다.
+        dice_sides = parse_dice_command(text)
+        if dice_sides is not None and count_bracket_groups(text) == 1:
+            response, log_info = handle_1dn(acct, dice_sides, state)
+            reply_status = self._reply(status_id, acct, visibility, response)
+            _persist_noncombat_log(state, log_info, str(reply_status["id"]))
+            return
+
         # 2. 대련/상시전투 준비 게시물 답글 (포지션 선언)
         practice = self._resolve_practice(acct, status_id, in_reply_to_id, state)
         if practice is not None and practice.prep_post_id != 0:
@@ -1334,8 +1345,8 @@ class MastodonBotListener(StreamListener):
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
 
-        # 14.5. [1dN] — 독립 굴림 (대소문자 무관, 어떤 맥락에서도 사용 가능)
-        dice_sides = parse_dice_command(text)
+        # 14.5. [1dN] — 다른 대괄호와 함께 적었지만 위 커맨드 어디에도 걸리지
+        # 않은 독립 굴림 (단독이면 1.9에서 이미 처리됨)
         if dice_sides is not None:
             response, log_info = handle_1dn(acct, dice_sides, state)
             reply_status = self._reply(status_id, acct, visibility, response)
