@@ -10,11 +10,12 @@ from utils.battle_helpers import (
     is_reachable_between,
 )
 from utils.logging import print_apply_damage, print_apply_heal
-from utils.name_matching import resolve_matching_key
+from utils.name_matching import resolve_matching_key, same_character_name
 
 from battle.core.buff_container import BuffContainer
 from battle.core.charm_aura_container import CharmAuraContainer, CharmBuff
 from battle.core.field_effect_container import FieldEffectContainer
+from battle.core.joint_skill import PendingJointSkill, joint_expired_entry
 from battle.core.command_calculator import CommandPartCalculator
 from battle.core.commands.models import (
     FIELD_EFFECT_REMOVED_RESULT,
@@ -129,6 +130,10 @@ class BattlefieldContext:
         # 지속시간이 1턴 짧아지므로, 그런 패시브는 "라운드 시작 시 지난 라운드
         # 결과로 판정"하는 쪽으로 표현한다.
         self.prev_damaged_this_round: set[CharacterId] = set()
+
+        # 합동 스킬: 짝을 기다리는 선언과, 이번 전투에서 이미 쓴 스킬 id.
+        self.joint_pending: dict[str, PendingJointSkill] = {}
+        self.joint_used: set[str] = set()
 
     def __str__(self):
         return self.format_field_text()
@@ -312,6 +317,8 @@ class BattlefieldContext:
             raise CommandValidationError(error_character_already_defeated(char_id))
 
         skills = self._build_skills(data, char_id)
+        if faction == FactionType.ALLY and self.allow_joint_skills:
+            skills.extend(self._build_joint_skills(char_id))
 
         character = CombatCharacter(
             self,
@@ -422,6 +429,41 @@ class BattlefieldContext:
                 )
         return skills
 
+    def _build_joint_skills(self, char_id: CharacterId) -> list[Skill]:
+        """이 캐릭터가 짝으로 적힌 합동 스킬. 해금되지 않은 것도 넣어 두고
+        선언 시점에 거부한다 — 빼 두면 "등록되지 않은 스킬"로 답해 이유를
+        알 수 없다."""
+        return [
+            data.to_skill_instance(self, char_id)
+            for data in self._skill_dictionary.values()
+            if any(
+                same_character_name(char_id.name, name)
+                for name in data.paired_characters
+            )
+        ]
+
+    def joint_skill_members(
+        self, skill: SkillData
+    ) -> tuple[list[CharacterId], list[str]]:
+        """합동 스킬의 짝 중 필드에 있는 아군과, 없는 짝 이름."""
+        members: list[CharacterId] = []
+        missing: list[str] = []
+        for name in skill.paired_characters:
+            found = next(
+                (
+                    char_id
+                    for char_id, character in self.characters.items()
+                    if character.faction == FactionType.ALLY
+                    and same_character_name(char_id.name, name)
+                ),
+                None,
+            )
+            if found is None:
+                missing.append(name)
+            else:
+                members.append(found)
+        return members, missing
+
     def _register_passive(self, char_id: CharacterId, passive_skill_id: str) -> None:
         if passive_skill_id and passive_skill_id in self._passive_skill_dictionary:
             wrappers = PassiveSkillWrapperBuff.create(
@@ -525,6 +567,8 @@ class BattlefieldContext:
             character.status.curr_hp, character.status[CombatStatType.MAX_HP]
         )
         character.skills = self._build_skills(data, char_id)
+        if character.faction == FactionType.ALLY and self.allow_joint_skills:
+            character.skills.extend(self._build_joint_skills(char_id))
         character.hide_hp = data.hide_hp
         if data.hide_hp:
             self.hp_hidden_ids.add(char_id)
@@ -744,6 +788,10 @@ class BattlefieldContext:
             )
             for effect in self.field_effects.tick_turns()
         )
+        log_entries.extend(
+            joint_expired_entry(pending) for pending in self.joint_pending.values()
+        )
+        self.joint_pending = {}
         eliminated = self._remove_eliminated_characters()
         self.prev_round_results = copy.deepcopy(self.results)
         self.results = []
@@ -831,6 +879,9 @@ class BattlefieldContext:
     ) -> Optional[PassiveSkillData]:
         return self._passive_skill_dictionary.get(passive_id)
 
+    def all_skill_data(self) -> list[SkillData]:
+        return list(self._skill_dictionary.values())
+
     def get_skill_data_by_id(self, skill_id: str) -> SkillData:
         return self._skill_dictionary[skill_id]
 
@@ -853,6 +904,10 @@ class BattlefieldContext:
 
     @property
     def allow_charms(self) -> bool:
+        return True
+
+    @property
+    def allow_joint_skills(self) -> bool:
         return True
 
     def charm_items(self) -> list[ItemData]:

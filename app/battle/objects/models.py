@@ -75,6 +75,9 @@ class BaseValueIndicator:
     # 살아 있다는 것 — "런타임에 정해지는 수치 × 계수"를 고정 대미지로
     # 내야 할 때 쓴다(예: 소모한 스택 수 × 스택당 고정 대미지).
     ignores_value_modifiers: bool = False
+    # JOINT_ATK_ROLL_SUM 전용. 시전자 외에 굴림을 보태는 짝. 전개 시점에
+    # 합동 스킬이 채운다.
+    joint_partner_ids: tuple[CharacterId, ...] = ()
 
     @property
     def takes_keyword_roll_bonus(self) -> bool:
@@ -111,6 +114,27 @@ class BaseValueIndicator:
                 calculator.context.milestone_n,
                 calculator.buffed_stats_by_character[user_id][CombatStatType.ATK],
             )
+            return result
+
+        elif self.value_source == ValueSourceType.JOINT_ATK_ROLL_SUM:
+            result = nd6(
+                calculator.context.milestone_n,
+                calculator.buffed_stats_by_character[user_id][CombatStatType.ATK],
+            )
+            # 짝의 공격력은 하나로 묶어 이름을 붙여야 계산식에서 누구 몫인지
+            # 보인다. 공격력 버프는 행동하는 시전자에게만 얹히므로 짝 몫에는
+            # 기본 공격력과 필드 효과·부적의 증감까지만 들어간다.
+            for partner_id in self.joint_partner_ids:
+                partner_roll = nd6(calculator.context.milestone_n, [])
+                result.bonus_list.append(
+                    IntValueModifier(
+                        partner_id.name,
+                        calculator.buffed_stats_by_character[partner_id].total(
+                            CombatStatType.ATK
+                        ),
+                    )
+                )
+                result.rolls.extend(partner_roll.rolls)
             return result
 
         elif self.value_source == ValueSourceType.STAT_ATK:

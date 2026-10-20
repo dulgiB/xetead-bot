@@ -8,6 +8,7 @@ from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from battle.objects.define import (
     KEYWORD_BOOST_SKILL_BONUS,
     MAX_EFFECT_COUNT,
+    MAX_JOINT_MEMBER_COUNT,
     BattlefieldColumnIndex,
     KeywordBoostMode,
     SkillTargetOverrideType,
@@ -393,11 +394,21 @@ class SkillData:
     keyword_value: Optional[int] = None
     # VALUE_BOOST/BUFF_* 모드가 어느 효과(effect_N)를 강화하는지. 비우면 0.
     keyword_effect_index: int = 0
+    # 합동 스킬의 짝("캐릭터" 시트 이름). 비어 있으면 일반 스킬이다. 합동
+    # 스킬은 캐릭터의 스킬 슬롯이 아니라 이 칸으로 사용 자격이 정해진다.
+    paired_characters: tuple[str, ...] = ()
+    # 합동 스킬은 조건부로 해금된다. GM이 해금하기 전에는 짝이 적혀 있어도
+    # 쓸 수 없다.
+    joint_unlocked: bool = False
 
     @property
     def lands_on_target_column(self) -> bool:
         """주대상의 열로 들어가는 효과가 있어 착지 열을 덧붙일 수 있는 스킬."""
         return any(effect.lands_on_target_column for effect in self.effects)
+
+    @property
+    def is_joint(self) -> bool:
+        return bool(self.paired_characters)
 
     @classmethod
     def from_dict(cls, data: SpreadsheetRow) -> "SkillData":
@@ -436,6 +447,12 @@ class SkillData:
                 if str(data.get("keyword_effect_index", "") or "").strip()
                 else 0
             ),
+            paired_characters=tuple(
+                name
+                for i in range(MAX_JOINT_MEMBER_COUNT)
+                if (name := str(data.get(f"paired_character_{i}", "") or "").strip())
+            ),
+            joint_unlocked=parse_spreadsheet_bool(data.get("is_joint_unlocked", False)),
         )
 
     def to_skill_instance(

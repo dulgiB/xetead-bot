@@ -159,6 +159,8 @@ class BattleLogEntryKind(str, Enum):
     BUFF_REMOVE = "buff_remove"
     DEBUFF_CLEAR = "debuff_clear"
     FIELD_EFFECT = "field_effect"
+    # 합동 스킬의 선언 대기와 불발. 대상이 아니라 선언한 캐릭터 이름이 들어간다.
+    JOINT_SKILL = "joint_skill"
     SUMMON = "summon"
     # 방어막/반사 등이 항목 자체를 없앴을 때 "왜 대미지가 안 보이는지"를
     # 답글에 남기기 위한 종류.

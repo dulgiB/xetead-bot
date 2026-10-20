@@ -3,6 +3,7 @@ from enum import Enum
 CHARACTER_PER_COLUMN = 3
 MAX_SKILL_SLOT_COUNT = 3
 MAX_EFFECT_COUNT = 3
+MAX_JOINT_MEMBER_COUNT = 2
 MAX_PASSIVE_EFFECT_COUNT = 3
 
 # --- 키워드 보정 ---------------------------------------------------------------
@@ -83,6 +84,8 @@ class ValueSourceType(str, Enum):
 
     STAT_ATK = "공격력"
     STAT_ATK_ROLL = "공격 굴림값"
+    # 합동 스킬 전용. 시전자와 짝의 공격 굴림값을 더한다.
+    JOINT_ATK_ROLL_SUM = "합동 공격 굴림 합"
     STAT_RANGE = "사거리"
     STAT_MAX_HP = "최대 체력"
     STAT_COST_PER_TURN = "턴당 코스트"

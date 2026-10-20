@@ -17,6 +17,13 @@ from battle.core.commands.models import (
     CommandPartProcessResult,
     CommandProcessResult,
 )
+from battle.core.joint_skill import (
+    PendingJointSkill,
+    joint_fired_entry,
+    joint_partner_of,
+    joint_waiting_entry,
+    validate_joint_part,
+)
 from battle.core.taunt_redirect import assign_taunt_redirects
 from battle.exceptions import (
     CommandValidationError,
@@ -55,7 +62,7 @@ from battle.objects.define import (
 )
 from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, ValueWithModifiers
-from battle.objects.skill.models import landing_column
+from battle.objects.skill.models import Skill, landing_column
 
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager
@@ -136,12 +143,47 @@ def process_ally_command(
     # 코스트·체력·아이템은 검증과 실제 처리를 모두 통과한 뒤에만 소모한다.
     user = context.characters[command.user_id]
     user.status.remaining_cost -= needed_cost
+    _commit_joint_declarations(context, command, results_per_part)
     _apply_keyword_boost_cost(context, user, command, results_per_part)
     for part in command.parts:
         if part.type_ == ActionType.USE_ITEM and part.item_id is not None:
             context.inventory.consume(command.user_id.name, part.item_id)
 
     return CommandProcessResult(original_command=command, part_results=results_per_part)
+
+
+def _commit_joint_declarations(
+    context: BattlefieldContext,
+    command: CharacterCommand,
+    results_per_part: list[CommandPartProcessResult],
+) -> None:
+    """합동 스킬 선언을 대기로 등록하거나, 짝의 대기에 합류했으면 사용 처리한다.
+    전개는 검증 중에도 돌므로 상태는 처리가 끝난 여기서만 바꾼다."""
+    user = context.characters[command.user_id]
+    for part in command.parts:
+        if part.type_ != ActionType.SKILL:
+            continue
+        skill = _find_skill(user, part)
+        if skill is None or not skill.data.is_joint:
+            continue
+        skill_id = skill.data.id
+        pending = joint_partner_of(context, skill_id, command.user_id)
+        if pending is not None:
+            del context.joint_pending[skill_id]
+            context.joint_used.add(skill_id)
+            entry = joint_fired_entry(skill_id, command.user_id, pending)
+        else:
+            context.joint_pending[skill_id] = PendingJointSkill(
+                skill_id, command.user_id, tuple(part.targets)
+            )
+            entry = joint_waiting_entry(skill_id, command.user_id)
+        for result in results_per_part:
+            if result.expanded_part.original_part is part:
+                result.log_entries.insert(0, entry)
+
+
+def _find_skill(user: "CombatCharacter", part: CommandPart) -> Optional[Skill]:
+    return next((s for s in user.skills if s.data.id == part.skill_id), None)
 
 
 def process_enemy_command_on_pre_action(
@@ -350,6 +392,15 @@ def try_expansion_if_valid(
             ),
             targets=[_resolve_target(context, t) for t in part.targets],
         )
+        for part in command.parts
+    ]
+
+    command.parts[:] = [
+        validate_joint_part(context, command.user_id, part, skill.data)
+        if part.type_ == ActionType.SKILL
+        and (skill := _find_skill(user, part)) is not None
+        and skill.data.is_joint
+        else part
         for part in command.parts
     ]
 

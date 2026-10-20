@@ -45,6 +45,20 @@ def find_matching_key(raw: str, candidates: Iterable[str]) -> Optional[str]:
     return None
 
 
+# bot_test가 쓰는 "캐릭터" 시트 행의 이름 꼬리표.
+TEST_CHARACTER_SUFFIX = "(테스트)"
+
+
+def same_character_name(a: str, b: str) -> bool:
+    """공백과 테스트 행 꼬리표를 무시하고 같은 캐릭터 이름인지 본다.
+
+    시트에 이름을 적어 캐릭터를 가리키는 칸(합동 스킬의 짝 등)이 운영 행과
+    테스트 행 양쪽에서 같은 값으로 동작하게 하기 위해서다."""
+    return normalize_name(a.removesuffix(TEST_CHARACTER_SUFFIX)) == normalize_name(
+        b.removesuffix(TEST_CHARACTER_SUFFIX)
+    )
+
+
 def whitespace_tolerant_literal(literal: str) -> str:
     """리터럴 문자열의 각 글자 사이에 \\s*를 끼워 넣어, 글자 사이에 공백이
     섞여 들어와도 매칭되는 정규식 패턴 조각을 만든다.

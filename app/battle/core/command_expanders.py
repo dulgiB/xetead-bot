@@ -2,6 +2,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from battle.core.battlefield_context import BattlefieldContext
+from battle.core.joint_skill import joint_partner_of
 from battle.core.commands.admin import (
     ADMIN_ID,
     AdminCommand,
@@ -277,6 +278,25 @@ def expand_character_command(
             if skill_used is None:
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
 
+            holder_id = command.user_id
+            joint_partner_ids: tuple[CharacterId, ...] = ()
+            if skill_used.data.is_joint:
+                pending = joint_partner_of(context, skill_used.data.id, holder_id)
+                if pending is None:
+                    # 먼저 하는 선언은 코스트만 내고 효과는 짝이 선언할 때 낸다.
+                    parts_list.append(
+                        CommandPartData(original_part=part, data_per_effect=())
+                    )
+                    continue
+                holder_id = pending.declarer
+                skill_used = next(
+                    s
+                    for s in context.characters[holder_id].skills
+                    if s.data.id == skill_used.data.id
+                )
+                members, _ = context.joint_skill_members(skill_used.data)
+                joint_partner_ids = tuple(m for m in members if m != holder_id)
+
             # 착지 열은 효과가 raw_targets에서 읽는다 — 개체 지정 규칙은 열
             # 입력을 거부하므로 넘기지 않는다(검증은 _validate_landing_column()).
             rule_targets: list[CharacterId | BattlefieldColumnIndex] = (
@@ -298,20 +318,31 @@ def expand_character_command(
                 debuff_clear_list = skill_effect.get_debuff_clear_targets(
                     context, target_characters
                 )
-                field_effect_ops = skill_effect.get_field_effect_ops(
-                    context, command.user_id
-                )
+                field_effect_ops = skill_effect.get_field_effect_ops(context, holder_id)
                 summon_list = skill_effect.get_summon_list(
-                    context, command.user_id, raw_targets
+                    context, holder_id, raw_targets
                 )
                 move_list, damage_list, heal_list, buff_add_list, buff_remove_list = (
                     skill_effect.expand(
-                        context, command.user_id, target_characters, raw_targets
+                        context, holder_id, target_characters, raw_targets
                     )
                 )
                 damage_list = _mark_ignores_taunt_if_column_target(
                     skill_used.target_rule, damage_list
                 )
+                if joint_partner_ids:
+                    damage_list = [
+                        replace(
+                            damage,
+                            value=replace(
+                                damage.value, joint_partner_ids=joint_partner_ids
+                            ),
+                        )
+                        if damage.value.value_source
+                        is ValueSourceType.JOINT_ATK_ROLL_SUM
+                        else damage
+                        for damage in damage_list
+                    ]
                 data_per_effect_list.append(
                     CommandPartDataPerEffect(
                         move_list=move_list,

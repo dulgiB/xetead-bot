@@ -95,6 +95,11 @@ class PracticeBattlefieldContext(BattlefieldContext):
         return False
 
     @property
+    def allow_joint_skills(self) -> bool:
+        """합동 스킬은 본 전투 전용이다."""
+        return False
+
+    @property
     def allow_keyword_boost(self) -> bool:
         """결투와 상시전투에서 허용한다 — 대련을 막는 이유인 "되돌릴 수 없는
         자원을 임시 캐릭터에게 걸 수 없다"가 둘에는 해당하지 않는다. 결투는

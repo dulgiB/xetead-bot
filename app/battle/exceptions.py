@@ -179,3 +179,37 @@ def error_not_a_field_effect(effect_id: str, target_type: str) -> str:
 
 def error_field_effects_not_available_here() -> str:
     return "이 전투에서는 필드 효과를 사용할 수 없습니다."
+
+
+def error_joint_skill_locked(skill_id: str) -> str:
+    return f"합동 스킬({skill_id})은 아직 해금되지 않았습니다."
+
+
+def error_joint_skill_already_used(skill_id: str) -> str:
+    return f"합동 스킬({skill_id})은 이번 전투에서 이미 사용했습니다."
+
+
+def error_joint_partner_not_on_field(skill_id: str, names: list[str]) -> str:
+    return f"합동 스킬({skill_id})의 짝({', '.join(names)})이 필드에 없습니다."
+
+
+def error_joint_already_declared(skill_id: str) -> str:
+    return f"합동 스킬({skill_id})은 이미 선언했습니다. 짝의 선언을 기다리는 중입니다."
+
+
+def error_joint_target_mismatch(skill_id: str) -> str:
+    return (
+        f"합동 스킬({skill_id})의 대상은 먼저 선언한 짝과 같아야 합니다."
+        " 대상을 생략하면 짝이 지정한 대상을 그대로 씁니다."
+    )
+
+
+def error_joint_target_out_of_range(skill_id: str, member: CharacterId) -> str:
+    return (
+        f"합동 스킬({skill_id})의 대상이 {member.name}의 사거리 밖에 있습니다."
+        " 대상은 두 사람 모두의 사거리 안이어야 합니다."
+    )
+
+
+def error_joint_keyword_not_allowed() -> str:
+    return "합동 스킬에는 키워드 보정을 쓸 수 없습니다."
