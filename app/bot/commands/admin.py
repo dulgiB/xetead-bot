@@ -18,10 +18,12 @@ from battle.core.commands.models import (
     CommandPartProcessResult,
 )
 from battle.core.commands.parser import parse_character_command
+from battle.core.joint_skill import dump_joint_state
 from battle.exceptions import CommandValidationError
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.define import (
     CHARACTER_PER_COLUMN,
+    MAX_JOINT_MEMBER_COUNT,
     ActionType,
     BattlefieldColumnIndex,
     CombatStatType,
@@ -44,6 +46,7 @@ from battle.practice.round_manager import PracticeRoundManager
 from utils.name_matching import (
     normalize_name,
     resolve_matching_key,
+    same_character_name,
     whitespace_tolerant_literal,
 )
 
@@ -835,6 +838,7 @@ def build_field_meta(state: "BotState") -> dict:
             }
             for effect in state.session.context.field_effects.as_list()
         ],
+        "joint_skills": dump_joint_state(state.session.context),
     }
 
 
@@ -943,6 +947,33 @@ def _check_field_effect_config(state: "BotState") -> Optional[str]:
     return f"◊ '스킬_패시브' 시트의 필드 효과 설정에 문제가 있습니다.\n{lines}"
 
 
+def _check_joint_skill_config(state: "BotState") -> Optional[str]:
+    """합동 스킬 행의 짝 이름이 "캐릭터" 시트에 없거나 짝이 하나뿐인 경우를
+    admin에게만 알린다. 그런 스킬은 아무도 쓸 수 없게 될 뿐이라 전투는 세우지
+    않는다."""
+    if state.session is None:
+        return None
+    problems: list[str] = []
+    for data in state.session.context.all_skill_data():
+        if not data.is_joint:
+            continue
+        if len(data.paired_characters) < MAX_JOINT_MEMBER_COUNT:
+            problems.append(f"{data.id}: 짝이 {len(data.paired_characters)}명뿐입니다.")
+        unknown = [
+            name
+            for name in data.paired_characters
+            if not any(same_character_name(name, known) for known in state.name_dict)
+        ]
+        if unknown:
+            problems.append(
+                f"{data.id}: '캐릭터' 시트에 없는 이름({', '.join(unknown)})"
+            )
+    if not problems:
+        return None
+    lines = "\n".join(f"- {problem}" for problem in problems)
+    return f"◊ '스킬_캐릭터' 시트의 합동 스킬 짝 설정에 문제가 있습니다.\n{lines}"
+
+
 def _check_charm_config(state: "BotState") -> Optional[str]:
     """ "아이템" 시트의 부적 중 효과가 조용히 빠질 설정을 찾아 admin에게만
     보낼 경고를 만든다. _check_field_effect_config()와 같은 이유로 전투를
@@ -1014,6 +1045,7 @@ def _cmd_battle_start(
     keyword_config_warning = _check_keyword_boost_config(state)
     field_effect_warning = _check_field_effect_config(state)
     charm_warning = _check_charm_config(state)
+    joint_warning = _check_joint_skill_config(state)
 
     # 1. 수동 배치 처리 (pending_placements)
     errors: list[str] = []
@@ -1114,6 +1146,7 @@ def _cmd_battle_start(
                 field_effect_warning,
                 charm_warning,
                 charm_row_warning,
+                joint_warning,
             )
             if warning
         )

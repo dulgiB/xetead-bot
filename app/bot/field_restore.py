@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Optional
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.define import RoundPhaseType
+from battle.core.joint_skill import load_joint_state
 from battle.exceptions import CommandValidationError
 from battle.objects.define import BattlefieldColumnIndex, FactionType
 from battle.objects.field_effect.models import FieldEffectSource
@@ -241,6 +242,7 @@ def _restore_main_battle(
     # 캐릭터 배치 뒤, on_battle_start() 전에 되살린다 — 뒤로 미루면 "전투
     # 시작" 트리거 필드 효과가 이번 복원에서 발동하지 못한다.
     _restore_field_effects(session, row)
+    load_joint_state(session.context, row.meta.get("joint_skills", {}) or {})
 
     session.context.on_battle_start()
     _restore_buffs(session.context, row.characters)
