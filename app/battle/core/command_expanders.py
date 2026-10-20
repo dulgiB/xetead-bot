@@ -277,7 +277,14 @@ def expand_character_command(
             if skill_used is None:
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
 
-            target_characters = skill_used.target_rule.get_targets(part.targets)
+            # 착지 열은 효과가 raw_targets에서 읽는다 — 개체 지정 규칙은 열
+            # 입력을 거부하므로 넘기지 않는다(검증은 _validate_landing_column()).
+            rule_targets: list[CharacterId | BattlefieldColumnIndex] = (
+                [t for t in part.targets if not isinstance(t, BattlefieldColumnIndex)]
+                if skill_used.data.lands_on_target_column
+                else part.targets
+            )
+            target_characters = skill_used.target_rule.get_targets(rule_targets)
             raw_targets = tuple(part.targets)
 
             data_per_effect_list: list[CommandPartDataPerEffect] = []
