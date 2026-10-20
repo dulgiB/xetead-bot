@@ -58,9 +58,12 @@ _RE_ROLL = re.compile(
     rf"\[{whitespace_tolerant_literal('판정')}(?P<keyword>\+)?\s*/\s*(?P<stat>[^]]+)]"
 )
 _RE_BARE_BRACKET = re.compile(r"\[([^\]]+)]")
-# [1dN] 독립 굴림. 대소문자·공백 무관이며 N 자리는 parse_dice_command() 참고.
-_RE_DICE = re.compile(r"\[\s*1\s*d\s*(?P<sides>[^\[\]/]*?)\s*]", re.IGNORECASE)
+# [NdM] 독립 굴림. 대소문자·공백 무관이며 M 자리는 parse_dice_command() 참고.
+_RE_DICE = re.compile(
+    r"\[\s*(?P<count>\d+)\s*d\s*(?P<sides>[^\[\]/]*?)\s*]", re.IGNORECASE
+)
 # 답글 길이를 지키기 위한 상한일 뿐 게임 규칙상의 제한은 아니다.
+MAX_DICE_COUNT = 20
 MAX_DICE_SIDES = 1_000_000
 # world/admin이 판정을 요구할 때 쓰는 표기: [판정: 최소 1인] [지식 7/기술 6, 실패 시 패널티]
 # 대상 칸(": 최소 1인")은 생략될 수 있고, 특정 캐릭터만 목표치가 다르면
@@ -417,25 +420,33 @@ def _consume_noncombat_keyword(
     )
 
 
-def parse_dice_command(text: str) -> Optional[str]:
-    """텍스트에서 [1dN] 패턴을 찾아 N 자리의 원문을 반환한다.
+def parse_dice_command(text: str) -> Optional[tuple[int, str]]:
+    """텍스트에서 [NdM] 패턴을 찾아 (주사위 개수, M 자리의 원문)을 반환한다.
 
-    N 자리는 느슨하게 캡처한다 — [1d0]·[1dx]처럼 잘못된 입력도 일단 매칭해야
-    오류 답글을 보낼 수 있다. 엄격하게 숫자만 받으면 무응답이 되어 사용자가
-    무엇이 잘못됐는지 알 수 없다.
+    개수는 숫자로 시작해야 매칭한다 — 그래야 "d"가 들어간 다른 대괄호를 주사위로
+    오인하지 않는다. M 자리는 느슨하게 캡처한다 — [1d0]·[1dx]처럼 잘못된 입력도
+    일단 매칭해야 오류 답글을 보낼 수 있다. 엄격하게 숫자만 받으면 무응답이
+    되어 사용자가 무엇이 잘못됐는지 알 수 없다.
     """
     m = _RE_DICE.search(text)
     if not m:
         return None
-    return m.group("sides")
+    return int(m.group("count")), m.group("sides")
 
 
-def handle_1dn(
-    acct: str, sides_text: str, state: "BotState"
+def handle_dice(
+    acct: str, count: int, sides_text: str, state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[1dN] → 1~N 사이의 굴림 결과를 반환한다."""
-    command_text = f"[1D{sides_text}]"
+    """[NdM] → 1~M 주사위 N개의 굴림 결과를 반환한다.
+
+    1개면 기존 [1d100]과 같은 `◊ 1d20 → 「13」`, 여러 개면 각 눈을 보이도록
+    `◊ 2d6: 1 + 1 → 「2」`로 답한다.
+    """
+    command_text = f"[{count}D{sides_text}]"
     sides = int(sides_text) if sides_text.isascii() and sides_text.isdigit() else 0
+    if not 1 <= count <= MAX_DICE_COUNT:
+        msg = f"◊ 주사위 개수는 1개 이상 {MAX_DICE_COUNT}개 이하로 적어 주세요. (예: [2d6])"
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
     if not 1 <= sides <= MAX_DICE_SIDES:
         msg = (
             "◊ 주사위 면 수는 1 이상"
@@ -447,10 +458,15 @@ def handle_1dn(
     if char_data is None:
         return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
 
-    roll = random.randint(1, sides)
-    reply = f"◊ 1d{sides} → 「{roll}」"
+    rolls = [random.randint(1, sides) for _ in range(count)]
+    total = sum(rolls)
+    dice_roll = " + ".join(str(roll) for roll in rolls)
+    if count == 1:
+        reply = f"◊ 1d{sides} → 「{total}」"
+    else:
+        reply = f"◊ {count}d{sides}: {dice_roll} → 「{total}」"
     return reply, NoncombatLogInfo(
-        command_text=f"[1D{sides}]", dice_roll=str(roll), result=f"「{roll}」"
+        command_text=f"[{count}D{sides}]", dice_roll=dice_roll, result=f"「{total}」"
     )
 
 

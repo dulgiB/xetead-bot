@@ -17,7 +17,7 @@ from bot.commands.noncombat import (  # noqa: E402
     finalize_daily_quest_mid,
     finalize_investigation_menu_post,
     get_cached_item_names,
-    handle_1dn,
+    handle_dice,
     handle_bag,
     handle_daily_quest_roll,
     handle_daily_quest_start,
@@ -2010,12 +2010,12 @@ def test_bag_rejects_unregistered_character(monkeypatch):
     assert log_info is None
 
 
-def test_handle_1dn_reply_format(monkeypatch):
+def test_handle_dice_single_reply_format(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(random, "randint", lambda a, b: 42)
 
-    reply, log_info = handle_1dn(acct, "100", state)
+    reply, log_info = handle_dice(acct, 1, "100", state)
 
     assert reply == "◊ 1d100 → 「42」"
     assert log_info is not None
@@ -2024,7 +2024,7 @@ def test_handle_1dn_reply_format(monkeypatch):
     assert log_info.error_trace is None
 
 
-def test_handle_1dn_rolls_up_to_given_sides(monkeypatch):
+def test_handle_dice_rolls_up_to_given_sides(monkeypatch):
     acct = "user1"
     state = _make_state(acct)
     calls = []
@@ -2035,32 +2035,65 @@ def test_handle_1dn_rolls_up_to_given_sides(monkeypatch):
 
     monkeypatch.setattr(random, "randint", fake_randint)
 
-    reply, log_info = handle_1dn(acct, "020", state)
+    reply, log_info = handle_dice(acct, 1, "020", state)
 
     assert calls == [(1, 20)]
     assert reply == "◊ 1d20 → 「20」"
     assert log_info.command_text == "[1D20]"
 
 
-@pytest.mark.parametrize("sides_text", ["0", "", "n", "-5", "1000001", "２０"])
-def test_handle_1dn_rejects_invalid_sides(monkeypatch, sides_text):
+def test_handle_dice_multiple_shows_each_roll(monkeypatch):
+    acct = "user1"
+    state = _make_state(acct)
+    rolls = iter([1, 5, 3])
+    calls = []
+
+    def fake_randint(a, b):
+        calls.append((a, b))
+        return next(rolls)
+
+    monkeypatch.setattr(random, "randint", fake_randint)
+
+    reply, log_info = handle_dice(acct, 3, "6", state)
+
+    assert calls == [(1, 6)] * 3
+    assert reply == "◊ 3d6: 1 + 5 + 3 → 「9」"
+    assert log_info.command_text == "[3D6]"
+    assert log_info.dice_roll == "1 + 5 + 3"
+    assert log_info.result == "「9」"
+
+
+@pytest.mark.parametrize(
+    ("count", "sides_text", "message"),
+    [
+        (1, "0", "주사위 면 수는 1 이상"),
+        (1, "", "주사위 면 수는 1 이상"),
+        (1, "n", "주사위 면 수는 1 이상"),
+        (1, "-5", "주사위 면 수는 1 이상"),
+        (1, "1000001", "주사위 면 수는 1 이상"),
+        (1, "２０", "주사위 면 수는 1 이상"),
+        (0, "6", "주사위 개수는 1개 이상"),
+        (21, "6", "주사위 개수는 1개 이상"),
+    ],
+)
+def test_handle_dice_rejects_invalid_input(monkeypatch, count, sides_text, message):
     acct = "user1"
     state = _make_state(acct)
     monkeypatch.setattr(
         random, "randint", lambda a, b: pytest.fail("잘못된 입력은 굴리지 않는다")
     )
 
-    reply, log_info = handle_1dn(acct, sides_text, state)
+    reply, log_info = handle_dice(acct, count, sides_text, state)
 
-    assert "주사위 면 수는 1 이상" in reply
+    assert message in reply
     assert log_info is not None
     assert log_info.dice_roll == ""
 
 
-def test_handle_1dn_rejects_unregistered_character():
+def test_handle_dice_rejects_unregistered_character():
     state = _make_state("user1")
 
-    reply, log_info = handle_1dn("unregistered_user", "100", state)
+    reply, log_info = handle_dice("unregistered_user", 1, "100", state)
 
     assert "등록된 캐릭터를 찾을 수 없습니다" in reply
     assert log_info is None
@@ -2069,14 +2102,16 @@ def test_handle_1dn_rejects_unregistered_character():
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
-        ("@bot [1d100]", "100"),
-        ("@bot [1D100]", "100"),
-        ("@bot 굴려 볼게 [ 1 d 20 ] 제발", "20"),
-        ("@bot [1d6]", "6"),
-        ("@bot [1d]", ""),
-        ("@bot [1dn]", "n"),
+        ("@bot [1d100]", (1, "100")),
+        ("@bot [1D100]", (1, "100")),
+        ("@bot 굴려 볼게 [ 1 d 20 ] 제발", (1, "20")),
+        ("@bot [2d6]", (2, "6")),
+        ("@bot [02D6]", (2, "6")),
+        ("@bot [1d]", (1, "")),
+        ("@bot [1dn]", (1, "n")),
         ("@bot [가방]", None),
-        ("@bot [2d6]", None),
+        ("@bot [d6]", None),
+        ("@bot [xd6]", None),
         ("@bot [1d6/2]", None),
         ("@bot [판정/육체]", None),
     ],
