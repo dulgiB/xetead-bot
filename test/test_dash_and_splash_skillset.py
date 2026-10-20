@@ -434,7 +434,7 @@ def test_multi_column_enemy_on_path_is_hit_once_per_overlapping_column(fixed_bat
 
 def test_path_is_cut_at_the_chosen_column(fixed_battle):
     """경로는 착지 열까지다 — 그 너머의 점유 열은 겹친 것으로 세지 않는다.
-    주대상은 자기 점유 열을 지나가도 경로 대미지를 받지 않는다."""
+    다열 주대상은 착지 열을 뺀 경로상 자기 열마다 경로 대미지를 받는다."""
     ctx, manager = fixed_battle
     ally_id = _add_caster(ctx, 0, attack_range=6)
     target_id = CharacterId("거대 주대상")
@@ -453,5 +453,28 @@ def test_path_is_cut_at_the_chosen_column(fixed_battle):
     )
 
     assert ctx.find_character_position(ally_id) == BattlefieldColumnIndex(3)
-    assert ctx.characters[target_id].status.curr_hp == 70
+    # 주대상 30 + 경로상 index 2에서 10
+    assert ctx.characters[target_id].status.curr_hp == 60
     assert ctx.characters[CharacterId("거대 적")].status.curr_hp == 90
+
+
+def test_multi_column_main_target_takes_splash_on_its_columns_along_path(
+    fixed_battle,
+):
+    """5열에서 1~7열에 걸친 주대상의 2열로 돌진하면, 주대상은 주대상 대미지에
+    더해 지나간 4열·3열의 경로 대미지를 받는다(출발 열과 착지 열은 빼고)."""
+    ctx, manager = fixed_battle
+    ally_id = _add_caster(ctx, 4, attack_range=3)
+    target_id = CharacterId("거대 주대상")
+    ctx.add_character(
+        get_test_preset("거대 주대상", span=7),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(0),
+    )
+
+    manager.process_command(
+        parse_character_command(ally_id, "[Cost3Skill/거대 주대상/2열]", ctx)
+    )
+
+    assert ctx.find_character_position(ally_id) == BattlefieldColumnIndex(1)
+    assert ctx.characters[target_id].status.curr_hp == 100 - 30 - 10 * 2
