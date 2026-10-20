@@ -182,6 +182,19 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 (`passive_skill.py`). 단일 열끼리는 기존 `is_reachable()`과 결과가 같아
 기존 데이터는 그대로 동작한다.
 
+### 돌진 착지 열
+
+주대상의 열로 들어가는 효과(`SkillEffectMove`의 `상대의 현재 위치`,
+`SkillEffectSplashAlongPath` — `SkillEffectBase.lands_on_target_column`)가 있는
+스킬은 주대상 뒤에 그 대상이 걸친 열 하나를 덧붙일 수 있다(`[스킬명/대상/4열]`).
+착지 열은 `skill/models.landing_column()`이 정하고, 생략하면 기준 위치다.
+기준 위치로만 들어가면 사거리 안의 다른 점유 열을 두고 먼 쪽 끝으로 뛰게 된다.
+
+사거리는 대상의 점유 열 전체가 아니라 **이동 전 위치 → 착지 열** 하나로 본다
+(`try_expansion_if_valid()`). 대미지 검증은 이동을 반영한 뒤라 주대상과 같은
+열에서 재므로 따로 보지 않으면 돌진 거리가 무제한이 된다. 경로 대미지는 착지
+열까지이며, 그 사이에 걸친 다열 에너미는 겹친 열 수만큼 맞는다(주대상 제외).
+
 ### 전장 경계
 
 기준이 가장 왼쪽 열이므로 설 수 있는 오른쪽 한계는 `7 - span`열이다.
