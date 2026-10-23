@@ -2122,6 +2122,10 @@ def _finish_practice_battle(
     damage_taken, unknown_damage = (
         ps.temp_damage_taken() if ps.is_duel_match else ({}, [])
     )
+    # 결투의 전투 종료 처리는 실제 체력에서 따로 치르고 결과 줄로 보여주므로,
+    # 보드에는 그 처리로 깎이기 전의 임시 체력을 싣는다. 뒤에 그리면 실제
+    # 체력에서는 절반만 빠지는 대가가 임시 체력에는 전부 빠진 채로 보인다.
+    board = _field_board(ps) if ps.is_duel_match else None
     both_sides_alive = (
         ps.total_hp_by_side(SideType.SIDE_1) > 0
         and ps.total_hp_by_side(SideType.SIDE_2) > 0
@@ -2159,7 +2163,7 @@ def _finish_practice_battle(
         block
         for block in (
             round_end_text,
-            _field_board(ps),
+            board if board is not None else _field_board(ps),
             battle_end_body,
             settlement_body,
         )
