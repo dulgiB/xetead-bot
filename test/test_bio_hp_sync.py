@@ -26,16 +26,19 @@ class _FakeResponse:
 
 class _FakeSession:
     def __init__(self, result: str = "updated"):
-        self.headers: dict[str, str] = {}
+        self.lookup_headers: list[dict | None] = []
+        self.put_headers: list[dict | None] = []
         self.result = result
         self.lookups: list[str] = []
         self.puts: list[tuple[str, dict]] = []
 
-    def get(self, url, params=None, timeout=None):
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.lookup_headers.append(headers)
         self.lookups.append(params["acct"])
         return _FakeResponse({"id": f"id-{params['acct']}"})
 
-    def put(self, url, data=None, timeout=None):
+    def put(self, url, data=None, headers=None, timeout=None):
+        self.put_headers.append(headers)
         self.puts.append((url, data))
         return _FakeResponse({"result": self.result})
 
@@ -58,7 +61,9 @@ def test_sync_looks_up_account_once_and_sends_both_values():
     assert syncer.sync("player", 70, 100) == "updated"
     syncer.sync("player", 60, 100)
 
-    assert session.headers["Authorization"] == "Bearer token"
+    # 토큰 범위가 관리자 쓰기뿐이라 공개 API인 계정 조회에는 붙이지 않는다.
+    assert session.lookup_headers == [None]
+    assert session.put_headers == [{"Authorization": "Bearer token"}] * 2
     assert session.lookups == ["player"]
     assert session.puts == [
         (
