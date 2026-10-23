@@ -277,6 +277,26 @@ def test_battle_end_effects_come_out_of_real_hp(monkeypatch):
     assert state.spreadsheet.hp_of(_B.name) == 30
 
 
+def test_board_shows_battle_hp_before_battle_end_effects(monkeypatch):
+    """전투 종료 처리는 실제 체력에서 따로 치르므로, 종료 게시물의 보드는 그
+    처리로 깎이기 전의 임시 체력을 보여준다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(
+        hp_by_name={_A.name: 100, _B.name: 80},
+        buff_dict={"잔여 대가": _battle_end_penalty_buff()},
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=_A, applied_to=_A, buff_id="잔여 대가", stack_value=4)
+    )
+    ctx.characters[_A].status.curr_hp = 76
+    ctx.characters[_B].status.curr_hp = 0
+
+    post = main_module._finish_practice_battle(state, ps, "후공 행동")
+
+    assert f"{_A.name} (76/100)" in post
+    assert f"▹ {_A.name} | -10 → 90/100※" in post
+
+
 def test_battle_end_effect_halved_to_zero_is_dropped(monkeypatch):
     _silence_field_sheet(monkeypatch)
     ctx, ps, state = _duel_state(
