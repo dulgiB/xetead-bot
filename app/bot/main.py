@@ -70,7 +70,7 @@ from bot.commands.noncombat import (
     parse_roll_target,
     parse_transfer_item_args,
 )
-from bot import field_restore, log_sheets, sheet_writer
+from bot import bio_hp_sync, field_restore, log_sheets, sheet_writer
 from bot.field_sheet_image import capture_field_sheet_image
 from bot.load_data import load_all_data, load_char_data, update_character_curr_hp
 from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCombatState
@@ -2686,6 +2686,11 @@ def main() -> None:
     # 없어, 네트워크 순단 한 번에 프로세스가 죽고 시트 전체 재로드와
     # 미종료 전투 복원을 거치는 콜드 재시작을 한다.
     sheet_writer.install(sheet_writer.SheetWriter())
+    admin_token = os.environ.get("MASTODON_ADMIN_ACCESS_TOKEN")
+    if admin_token:
+        bio_hp_sync.install(
+            bio_hp_sync.BioHpSyncer(os.environ["MASTODON_API_BASE_URL"], admin_token)
+        )
     listener = MastodonBotListener(mastodon, state, me["acct"])
     handle = mastodon.stream_user(
         listener,
