@@ -34,7 +34,9 @@ class BioHpSyncer:
     ) -> None:
         self._base_url = api_base_url.rstrip("/")
         self._session = session or requests.Session()
-        self._session.headers["Authorization"] = f"Bearer {access_token}"
+        # 관리자 API 호출에만 붙인다. 토큰 범위가 admin:write:accounts뿐이라
+        # 계정 조회(lookup)에 붙이면 403이 난다 — lookup은 공개 API다.
+        self._admin_headers = {"Authorization": f"Bearer {access_token}"}
         self._account_ids: dict[str, str] = {}
         # acct → (현재 체력, 최대 체력). 같은 acct는 마지막 값만 남는다.
         self._pending: dict[str, tuple[int, int]] = {}
@@ -80,6 +82,7 @@ class BioHpSyncer:
         response = self._session.put(
             f"{self._base_url}/api/v1/admin/accounts/{account_id}/bio_hp",
             data={"current_hp": curr_hp, "max_hp": max_hp},
+            headers=self._admin_headers,
             timeout=_REQUEST_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
