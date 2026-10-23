@@ -16,6 +16,7 @@ TRPG 캠페인의 전투를 자동 정산하는 Mastodon 봇.
 | `WORLD_MASTODON_ID`              | 세계관 서술 담당 계정 (`user` 또는 `user@domain`). 상시조사에서 수동 진행으로 인계할 때 태그되며, [상시전투] 개시와 상시전투 참가자 대상 프록시 커맨드에 한해 admin과 동등한 권한을 갖는다 |
 | `MASTODON_ACCESS_TOKEN`          | 봇 계정 액세스 토큰                             |
 | `MASTODON_API_BASE_URL`          | 마스토돈 인스턴스 URL                           |
+| `MASTODON_ADMIN_ACCESS_TOKEN`    | (선택) 체력이 바뀔 때 캐릭터 계정 자기소개의 "현재/최대" 체력 표기를 함께 고치는 데 쓰는 토큰. 사용자 관리 권한이 있는 관리자 계정에서 `admin:write:accounts` 권한으로 발급한다. 마스토돈 포크의 `PUT /api/v1/admin/accounts/:id/bio_hp`가 필요하다. 오른쪽 숫자가 최대 체력과 같은 표기가 자기소개에 정확히 하나 있을 때만 바뀌고, 없으면 그 계정은 건너뛴다. 비워 두면 동기화하지 않는다 |
 | `GOOGLE_SPREADSHEET_CREDENTIALS` | Google 서비스 계정 JSON (문자열)                |
 | `DB_SPREADSHEET_KEY`             | 스프레드시트 ID (내부용 자동화 DB)                  |
 | `FIELD_SPREADSHEET_KEY`          | 스프레드시트 ID (관중 공개용 실시간 전투 UI "필드" 시트)     |

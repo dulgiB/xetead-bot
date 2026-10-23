@@ -77,6 +77,7 @@ app/
     battle_reply_text.py         # 전투 커맨드 처리 결과 → 답글 텍스트 조립
     sheet_cache.py               # 시트 값(멘션 단위)·메타데이터(5분) 읽기 캐시
     sheet_writer.py              # 답글과 무관한 시트 기록을 넘기는 백그라운드 기록기
+    bio_hp_sync.py               # 체력 기록 시 계정 자기소개의 "현재/최대" 표기 갱신(마스토돈 포크 관리자 API)
     thread_index.py              # 봇이 본 게시물의 부모 관계로 스레드 조상 판정(API 조회 절감)
   spreadsheets/
     models/                       # 스프레드시트 행 ↔ dataclass 매핑 (combat/noncombat/quest)
@@ -987,6 +988,22 @@ admin의 페이즈 전환(`[진행]`/`[전투속행]`) **직전**에
 (`BattlefieldContext.refresh_character_data()`)으로만 들어온다. 이때도
 기본 스탯만 바꾸고(`CombatStats.refresh_base()`) 필드 효과·부적 증감과 남은
 코스트는 전장 상태로 남긴다. 체력은 위와 같은 `sheet_hp` 기준을 쓴다.
+
+### 자기소개 체력 표기 (`bot/bio_hp_sync.py`)
+
+플레이어는 자기소개 본문에 체력을 "현재/최대"로 적는다. 시트에 체력을 쓰는
+경로가 성공하면 그 행의 `mastodon_id` 계정 자기소개도 같은 값으로 맞춘다.
+본문을 고치는 것은 마스토돈 포크의 `PUT /api/v1/admin/accounts/:id/bio_hp`이고,
+오른쪽 숫자가 최대 체력과 같은 표기가 정확히 하나일 때만 바꾸는 규칙도 서버
+쪽에 있다 — 봇은 계정과 두 값만 넘긴다.
+
+알림은 체력 셀 쓰기의 공용 지점(`log_sheets._write_hp_cells()`,
+`load_data.update_character_curr_hp()`)과 GM이 시트에서 고친 값을 들이는
+`sync_hp_from_sheet()`에서 나간다. **체력을 쓰는 새 경로는 이 함수들을 거치거나
+`bio_hp_sync.notify()`를 직접 불러야 한다** — 빠뜨리면 그 경로의 변동만
+자기소개에 안 남는다. 호출은 전용 스레드가 하고 같은 계정의 밀린 요청은 마지막
+값 하나로 합치므로 답글을 늦추지 않는다. `MASTODON_ADMIN_ACCESS_TOKEN`이 없으면
+아무것도 하지 않는다. 시트 쓰기 할당량과는 무관하다(마스토돈 API 호출이다).
 
 ## 스프레드시트 API 쓰기 할당량
 

@@ -31,7 +31,7 @@ from battle.objects.define import CombatStatType
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 
-from bot import sheet_writer
+from bot import bio_hp_sync, sheet_writer
 from bot.noncombat_state import InvestigationSession
 from bot.sheet_cache import SheetCache
 
@@ -264,6 +264,8 @@ class _HpRow:
     hp_col: int
     curr_hp: Optional[int]
     max_hp: Optional[int]
+    # 계정이 있는 캐릭터만. 자기소개 체력 표기 동기화(bio_hp_sync)에 쓴다.
+    mastodon_id: str = ""
 
 
 def _load_hp_rows(
@@ -295,6 +297,7 @@ def _load_hp_rows(
         hp_col = header.index("curr_hp") + 1
         name_col = header.index("name")
         max_hp_col = header.index("max_hp") if "max_hp" in header else None
+        acct_col = header.index("mastodon_id") if "mastodon_id" in header else None
         for idx, row in enumerate(values[1:], start=2):
             name = row[name_col] if name_col < len(row) else ""
             if not name or name in rows:
@@ -308,6 +311,11 @@ def _load_hp_rows(
                     row[max_hp_col]
                     if max_hp_col is not None and max_hp_col < len(row)
                     else None
+                ),
+                mastodon_id=(
+                    str(row[acct_col]).strip()
+                    if acct_col is not None and acct_col < len(row)
+                    else ""
                 ),
             )
     return rows
@@ -426,7 +434,11 @@ def _write_hp_cells(
         for hp_row, new_hp in updates
     ]
     writes.extend(extra_writes)
-    return write_cells(spreadsheet, writes, cache, description)
+    if not write_cells(spreadsheet, writes, cache, description):
+        return False
+    for hp_row, new_hp in updates:
+        bio_hp_sync.notify(hp_row.mastodon_id, new_hp, hp_row.max_hp)
+    return True
 
 
 def _apply_persistent_hp(
@@ -618,6 +630,8 @@ def sync_hp_from_sheet(
         written_hp[char_id.name] = sheet_hp
         if known_hp is None or known_hp == sheet_hp:
             continue
+        # 시트가 바뀐 것이므로 자기소개도 시트 값으로 맞춘다.
+        bio_hp_sync.notify(hp_row.mastodon_id, sheet_hp, hp_row.max_hp)
         before = char.status.curr_hp
         char.status.curr_hp = max(0, min(sheet_hp, char.status[CombatStatType.MAX_HP]))
         if char.status.curr_hp != before:

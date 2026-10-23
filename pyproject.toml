@@ -11,6 +11,7 @@ dependencies = [
     "pytest>=9.1.1",
     "python-dotenv>=1.2.3",
     "regex>=2026.9.3",
+    "requests>=2.33.1",
 ]
 
 [tool.setuptools.packages.find]
@@ -55,4 +56,5 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.6",
     "types-regex>=2026.9.3.20260903",
+    "types-requests>=2.33.0.20261006",
 ]

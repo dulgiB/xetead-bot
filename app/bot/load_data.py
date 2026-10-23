@@ -22,6 +22,7 @@ from spreadsheets.models.quest import (
 )
 from utils.spreadsheet_bool import parse_spreadsheet_bool
 
+from bot import bio_hp_sync
 from bot.log_sheets import PendingCellWrite, write_cells
 from bot.sheet_cache import SheetCache
 
@@ -680,6 +681,20 @@ def build_keyword_date_write(
     )
 
 
+def _row_value(header: list[str], row: list[str], column: str) -> str:
+    if column not in header:
+        return ""
+    idx = header.index(column)
+    return str(row[idx]).strip() if idx < len(row) else ""
+
+
+def _row_int(header: list[str], row: list[str], column: str) -> Optional[int]:
+    try:
+        return int(_row_value(header, row, column))
+    except ValueError:
+        return None
+
+
 def update_character_curr_hp(
     spreadsheet: gspread.Spreadsheet,
     char_name: str,
@@ -715,6 +730,11 @@ def update_character_curr_hp(
                 ws.update_cell(idx, hp_col, new_curr_hp)
                 if cache is not None:
                     cache.invalidate(sheet_name)
+                bio_hp_sync.notify(
+                    _row_value(header, row, "mastodon_id"),
+                    new_curr_hp,
+                    _row_int(header, row, "max_hp"),
+                )
                 return
 
     raise RuntimeError(
