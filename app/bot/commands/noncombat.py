@@ -120,6 +120,9 @@ _ITEM_TARGET_RULE_LABELS: dict[str, str] = {
 
 FREE_EXPLORE_LABEL = "자율 탐사"
 
+# 특정 캐릭터에게만 보이는 상시조사 선택지(QuestData.special_for) 뒤에 붙는 표식.
+SPECIAL_VENUE_MARK = "※"
+
 # 한 의뢰에 함께 참여할 수 있는 최대 인원(수락한 캐릭터 포함).
 MAX_QUEST_PARTICIPANTS = 4
 
@@ -988,7 +991,8 @@ def handle_investigation_start(
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[상시조사] → '일반 의뢰' 시트의 활성 장소를 읽어 선택지 메뉴 반환.
 
-    활성 의뢰가 하나도 없어도 [자율 탐사]는 남는다."""
+    활성 의뢰가 하나도 없어도 [자율 탐사]는 남는다. special_for가 채워진
+    의뢰는 발신자(acct)가 그 목록에 있을 때만 "[장소]※"로 나온다."""
     command_text = "[상시조사]"
 
     try:
@@ -1005,12 +1009,21 @@ def handle_investigation_start(
         msg = "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
+    # 특수 선택지는 일반 선택지와 [자율 탐사] 사이에 둔다.
+    normal = [q for q in quests if not q.is_special]
+    special = [q for q in quests if q.is_special and q.is_visible_to(acct)]
     lines = [location.description_quest, ""]
-    for quest in quests:
+    for quest in normal:
         lines.append(f"▸ [{quest.location}]")
+    for quest in special:
+        lines.append(f"▸ [{quest.location}]{SPECIAL_VENUE_MARK}")
     lines.append(f"▸ [{FREE_EXPLORE_LABEL}]")
     reply = "\n".join(lines)
-    venues = [q.location for q in quests] + [FREE_EXPLORE_LABEL]
+    venues = (
+        [q.location for q in normal]
+        + [f"{q.location}{SPECIAL_VENUE_MARK}" for q in special]
+        + [FREE_EXPLORE_LABEL]
+    )
     return reply, NoncombatLogInfo(
         command_text=command_text,
         result=f"메뉴 제공: {', '.join(venues)}",
@@ -1060,8 +1073,14 @@ def handle_investigation_venue_choice(
         )
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    venue_lookup = {q.location: q for q in quests}
-    matched_venue = resolve_matching_key(venue_name, venue_lookup.keys())
+    # 메뉴에 보인 선택지만 고를 수 있다 — 특수 선택지는 메뉴를 연 사람
+    # (accts[0]) 기준으로 보였으므로 같은 기준으로 거른다. 표식을 장소
+    # 이름 안에 넣어 "[장소※]"로 답해도 받아 준다.
+    menu_owner = session.accts[0] if session.accts else ""
+    venue_lookup = {q.location: q for q in quests if q.is_visible_to(menu_owner)}
+    matched_venue = resolve_matching_key(
+        venue_name.removesuffix(SPECIAL_VENUE_MARK).strip(), venue_lookup.keys()
+    )
     quest = venue_lookup.get(matched_venue)
     if quest is None:
         # 남아 있는 quest_id를 지우지 않으면, 이 답글이 옛 의뢰의 개요로

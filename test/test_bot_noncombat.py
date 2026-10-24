@@ -434,6 +434,7 @@ def _quest(
     reward: str = "6G",
     available_until: str = "다음 스토리 진행 전까지",
     taken_by: str = "",
+    special_for: str = "",
 ) -> QuestData:
     return QuestData(
         id=f"{location_id}_{quest_type}",
@@ -446,6 +447,7 @@ def _quest(
         reward=reward,
         available_until=available_until,
         taken_by=taken_by,
+        special_for=special_for,
     )
 
 
@@ -681,6 +683,87 @@ def test_investigation_start_unavailable_without_active_location(monkeypatch):
     result, _log_info = handle_investigation_start("user1", state)
 
     assert result == "◊ 현재 상시조사를 진행할 수 없는 구간입니다."
+
+
+def _special_quest_sheet(monkeypatch):
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(description_quest="항구 마을이다."),
+            [
+                _quest(quest_type="운반", venue="광장"),
+                _quest(
+                    quest_type="특수",
+                    venue="등대",
+                    name="등대 의뢰",
+                    special_for="user1, user2@other.example",
+                ),
+                _quest(quest_type="탐사", venue="상점가"),
+            ],
+        ),
+    )
+
+
+def test_investigation_start_shows_special_choice_to_listed_character(monkeypatch):
+    """특수 선택지는 일반 선택지와 [자율 탐사] 사이에 "[장소]※"로 나온다."""
+    state = _make_state("user1")
+    _special_quest_sheet(monkeypatch)
+
+    result, log_info = handle_investigation_start("user1", state)
+
+    assert result == (
+        "항구 마을이다.\n\n▸ [광장]\n▸ [상점가]\n▸ [등대]※\n▸ [자율 탐사]"
+    )
+    assert log_info is not None
+    assert log_info.result == "메뉴 제공: 광장, 상점가, 등대※, 자율 탐사"
+
+
+def test_investigation_start_matches_remote_acct_in_special_list(monkeypatch):
+    state = _make_state("user2@other.example")
+    _special_quest_sheet(monkeypatch)
+
+    result, _log_info = handle_investigation_start("user2@other.example", state)
+
+    assert "▸ [등대]※" in result
+
+
+def test_investigation_start_hides_special_choice_from_others(monkeypatch):
+    state = _make_state("user3")
+    _special_quest_sheet(monkeypatch)
+
+    result, _log_info = handle_investigation_start("user3", state)
+
+    assert result == "항구 마을이다.\n\n▸ [광장]\n▸ [상점가]\n▸ [자율 탐사]"
+
+
+def test_investigation_venue_choice_accepts_special_choice(monkeypatch):
+    """특수 선택지를 고른 뒤의 개요는 일반 선택지와 같다. 표식을 괄호 안에
+    넣어 답해도 받는다."""
+    state = _make_state("user1")
+    session = _investigation_session(acct="user1")
+    _special_quest_sheet(monkeypatch)
+
+    result, _log_info = handle_investigation_venue_choice(session, "등대※", state)
+
+    assert result.startswith("[등대](으)로 이동했다.")
+    assert "**[일반 의뢰] 등대 의뢰**" in result
+    assert session.quest_id == "항구 마을_특수"
+
+
+def test_investigation_venue_choice_uses_menu_owner_for_special_choice(monkeypatch):
+    """메뉴를 연 캐릭터(accts[0])에게 보이지 않은 특수 선택지는 함께 참여한
+    캐릭터가 목록에 있어도 고를 수 없다."""
+    state = _make_state("user3")
+    session = InvestigationSession(
+        field_id="100", accts=["user3", "user1"], menu_post_id=100
+    )
+    _special_quest_sheet(monkeypatch)
+
+    result, _log_info = handle_investigation_venue_choice(session, "등대", state)
+
+    assert result == "◊ 등록되지 않은 장소입니다."
+    assert session.quest_id is None
 
 
 def test_investigation_venue_choice_formats_quest_card(monkeypatch):
