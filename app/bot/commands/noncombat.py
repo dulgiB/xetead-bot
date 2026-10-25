@@ -1207,8 +1207,8 @@ def handle_investigation_accept(
         update_quest_taken_by(
             state.spreadsheet,
             quest_id,
-            # 다중 선택 드롭다운(칩)이 쓰는 "a, b" 형식에 맞춘다.
-            ", ".join(participants),
+            # 다중 선택 드롭다운(칩)도 공백 없이 "a,b"로 읽히므로 그 형식에 맞춘다.
+            ",".join(participants),
             cache=state.sheet_cache,
         )
     except Exception as e:

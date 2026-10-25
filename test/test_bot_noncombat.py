@@ -500,7 +500,7 @@ def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch
         "「광장 의뢰」 의뢰를 받았다!\n\n"
         "◊ 의뢰를 수락했습니다. 이후는 수동으로 진행됩니다. @test-world"
     )
-    assert calls == [("항구 마을_운반", "user1, user2, user3")]
+    assert calls == [("항구 마을_운반", "user1,user2,user3")]
     assert log_info is not None
     assert log_info.result == "의뢰 수주: 광장 의뢰 (user1, user2, user3)"
 
@@ -792,7 +792,7 @@ def test_investigation_venue_choice_rejects_special_choice_for_others(monkeypatc
 
 
 def test_quest_lists_tolerate_space_after_comma():
-    """다중 선택 드롭다운(칩)은 "a, b"로 읽힌다. 공백 유무와 무관하게 같다."""
+    """직접 입력한 값에 쉼표 뒤 공백이 있어도 같은 목록으로 읽는다."""
     quest = _quest(taken_by="user1, user2", special_for="user3,  user4 ")
 
     assert quest.taken_by_list() == ["user1", "user2"]
@@ -2285,7 +2285,7 @@ def test_investigation_accept_puts_sender_first_even_if_not_starter(monkeypatch)
 
     handle_investigation_accept(session, "user2", ["user1"], state)
 
-    assert calls == ["user2, user1"]
+    assert calls == ["user2,user1"]
 
 
 def test_investigation_start_tracks_all_mentioned_characters(monkeypatch):
@@ -2524,4 +2524,4 @@ def test_investigation_accept_allows_exactly_four_participants(monkeypatch):
 
     handle_investigation_accept(session, "user1", ["user2", "user3", "user4"], state)
 
-    assert calls == ["user1, user2, user3, user4"]
+    assert calls == ["user1,user2,user3,user4"]
