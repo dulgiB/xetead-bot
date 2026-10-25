@@ -78,6 +78,8 @@ class QuestData:
     # 이 의뢰를 특수 선택지로 볼 수 있는 캐릭터 acct들(쉼표 구분). 비어 있으면
     # 누구에게나 보이는 일반 선택지다.
     special_for: str = ""
+    # 특수 선택지가 메뉴에 보일 때 장소 소개 뒤에 공백 하나로 이어 붙일 문장.
+    special_description: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict) -> "QuestData":
@@ -93,6 +95,7 @@ class QuestData:
             available_until=str(raw.get("available_until", "") or ""),
             taken_by=str(raw.get("taken_by", "") or ""),
             special_for=str(raw.get("special_for", "") or ""),
+            special_description=str(raw.get("special_description", "") or ""),
         )
 
     def taken_by_list(self) -> list[str]:
