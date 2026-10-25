@@ -1302,7 +1302,7 @@ class MastodonBotListener(StreamListener):
         # 세션을 공유한다.
         if _RE_INVESTIGATION_START.search(text):
             investigation_accts = [acct] + _mentioned_characters(state, acct, mentions)
-            response, log_info = handle_investigation_start(acct, state)
+            response, log_info = handle_investigation_start(investigation_accts, state)
             post = self._reply(
                 status_id,
                 acct,

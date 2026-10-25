@@ -75,6 +75,9 @@ class QuestData:
     reward: str
     available_until: str
     taken_by: str  # 이 의뢰를 수주한 캐릭터 acct들을 쉼표로 이어붙인 문자열 (없으면 "")
+    # 이 의뢰를 특수 선택지로 볼 수 있는 캐릭터 acct들(쉼표 구분). 비어 있으면
+    # 누구에게나 보이는 일반 선택지다.
+    special_for: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict) -> "QuestData":
@@ -89,10 +92,23 @@ class QuestData:
             reward=str(raw.get("reward", "") or ""),
             available_until=str(raw.get("available_until", "") or ""),
             taken_by=str(raw.get("taken_by", "") or ""),
+            special_for=str(raw.get("special_for", "") or ""),
         )
 
     def taken_by_list(self) -> list[str]:
         return [a.strip() for a in self.taken_by.split(",") if a.strip()]
+
+    def special_for_list(self) -> list[str]:
+        return [a.strip() for a in self.special_for.split(",") if a.strip()]
+
+    @property
+    def is_special(self) -> bool:
+        return bool(self.special_for_list())
+
+    def is_visible_to(self, accts: list[str]) -> bool:
+        """특수 선택지면 accts 중 한 명이라도 목록에 있을 때 보인다."""
+        allowed = self.special_for_list()
+        return not allowed or any(a in allowed for a in accts)
 
     def current_description(self) -> str:
         return (
