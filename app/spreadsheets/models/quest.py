@@ -78,6 +78,8 @@ class QuestData:
     # 이 의뢰를 특수 선택지로 볼 수 있는 캐릭터 acct들(쉼표 구분). 비어 있으면
     # 누구에게나 보이는 일반 선택지다.
     special_for: str = ""
+    # 특수 선택지가 메뉴에 보일 때 장소 소개 뒤에 공백 하나로 이어 붙일 문장.
+    special_description: str = ""
 
     @classmethod
     def from_dict(cls, raw: dict) -> "QuestData":
@@ -93,6 +95,7 @@ class QuestData:
             available_until=str(raw.get("available_until", "") or ""),
             taken_by=str(raw.get("taken_by", "") or ""),
             special_for=str(raw.get("special_for", "") or ""),
+            special_description=str(raw.get("special_description", "") or ""),
         )
 
     def taken_by_list(self) -> list[str]:
@@ -109,6 +112,15 @@ class QuestData:
         """특수 선택지면 accts 중 한 명이라도 목록에 있을 때 보인다."""
         allowed = self.special_for_list()
         return not allowed or any(a in allowed for a in accts)
+
+    @property
+    def is_explore_only(self) -> bool:
+        """의뢰 없이 그 장소의 자율 탐사로 바로 넘어가는 선택지인지.
+
+        미수주 설명(description_quest) 없이 description_normal만 채운 행이다."""
+        return not self.description_quest.strip() and bool(
+            self.description_normal.strip()
+        )
 
     def current_description(self) -> str:
         return (

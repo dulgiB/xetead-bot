@@ -435,6 +435,7 @@ def _quest(
     available_until: str = "다음 스토리 진행 전까지",
     taken_by: str = "",
     special_for: str = "",
+    special_description: str = "",
 ) -> QuestData:
     return QuestData(
         id=f"{location_id}_{quest_type}",
@@ -448,6 +449,7 @@ def _quest(
         available_until=available_until,
         taken_by=taken_by,
         special_for=special_for,
+        special_description=special_description,
     )
 
 
@@ -719,6 +721,69 @@ def test_investigation_start_shows_special_choice_to_listed_character(monkeypatc
     assert log_info.result == "메뉴 제공: 광장, 상점가, 등대※, 자율 탐사"
 
 
+def _special_description_sheet(monkeypatch):
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(description_quest="항구 마을이다."),
+            [
+                _quest(quest_type="운반", venue="광장"),
+                _quest(
+                    quest_type="특수1",
+                    venue="등대",
+                    special_for="user1",
+                    special_description="등대에 불이 켜져 있다.",
+                ),
+                _quest(
+                    quest_type="특수2",
+                    venue="동굴",
+                    special_for="user2",
+                    special_description="동굴에서 소리가 난다. ",
+                ),
+                _quest(
+                    quest_type="일반",
+                    venue="상점가",
+                    special_description="일반 선택지에는 붙지 않는다.",
+                ),
+            ],
+        ),
+    )
+
+
+def test_investigation_start_appends_special_description_to_intro(monkeypatch):
+    """보이는 특수 선택지의 문장만 소개 뒤에 공백 하나로 이어 붙는다."""
+    state = _make_state("user1")
+    _special_description_sheet(monkeypatch)
+
+    result, _log_info = handle_investigation_start(["user1"], state)
+
+    assert result == (
+        "항구 마을이다. 등대에 불이 켜져 있다.\n\n"
+        "▸ [광장]\n▸ [상점가]\n▸ [등대]※\n▸ [자율 탐사]"
+    )
+
+
+def test_investigation_start_joins_multiple_special_descriptions(monkeypatch):
+    state = _make_state("user1")
+    _special_description_sheet(monkeypatch)
+
+    result, _log_info = handle_investigation_start(["user1", "user2"], state)
+
+    assert result.startswith(
+        "항구 마을이다. 등대에 불이 켜져 있다. 동굴에서 소리가 난다.\n\n"
+    )
+
+
+def test_investigation_start_omits_special_description_when_hidden(monkeypatch):
+    state = _make_state("user3")
+    _special_description_sheet(monkeypatch)
+
+    result, _log_info = handle_investigation_start(["user3"], state)
+
+    assert result.startswith("항구 마을이다.\n\n")
+
+
 def test_investigation_start_matches_remote_acct_in_special_list(monkeypatch):
     state = _make_state("user2@other.example")
     _special_quest_sheet(monkeypatch)
@@ -797,6 +862,44 @@ def test_quest_lists_tolerate_space_after_comma():
 
     assert quest.taken_by_list() == ["user1", "user2"]
     assert quest.special_for_list() == ["user3", "user4"]
+
+
+def test_investigation_venue_choice_explore_only_tags_world(monkeypatch):
+    """description_quest 없이 description_normal만 있는 선택지는 의뢰 개요 없이
+    description_normal과 함께 바로 world를 태그하고 세션을 끝낸다."""
+    state = _make_state("user1")
+    session = _investigation_session(acct="user1")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [
+                _quest(
+                    quest_type="특수",
+                    venue="골목",
+                    name="",
+                    description_quest="",
+                    description_normal="누군가 골목을 살피고 있다.",
+                    special_for="user1",
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        noncombat_module, "upsert_investigation_session", lambda *a, **k: None
+    )
+
+    result, log_info = handle_investigation_venue_choice(session, "골목", state)
+
+    assert result == (
+        "[골목](으)로 이동했다.\n\n"
+        f"누군가 골목을 살피고 있다. @{noncombat_module.WORLD_MASTODON_ID}"
+    )
+    assert session.ended is True
+    assert session.quest_id is None
+    assert log_info is not None
+    assert log_info.result == "자율 탐사 전용 장소: 골목"
 
 
 def test_investigation_venue_choice_formats_quest_card(monkeypatch):

@@ -993,7 +993,8 @@ def handle_investigation_start(
 
     accts는 발신자와 함께 멘션된 참여자 전원이다. 활성 의뢰가 하나도 없어도
     [자율 탐사]는 남는다. special_for가 채워진 의뢰는 참여자 중 한 명이라도
-    그 목록에 있을 때만 "[장소]※"로 나온다."""
+    그 목록에 있을 때만 "[장소]※"로 나오고, 그 의뢰의 special_description이
+    장소 소개 뒤에 공백 하나로 붙는다."""
     command_text = "[상시조사]"
 
     try:
@@ -1013,7 +1014,16 @@ def handle_investigation_start(
     # 특수 선택지는 일반 선택지와 [자율 탐사] 사이에 둔다.
     normal = [q for q in quests if not q.is_special]
     special = [q for q in quests if q.is_special and q.is_visible_to(accts)]
-    lines = [location.description_quest, ""]
+    # 보이는 특수 선택지의 고유 문장은 줄을 나누지 않고 소개 뒤에 잇는다.
+    intro = " ".join(
+        [location.description_quest]
+        + [
+            q.special_description.strip()
+            for q in special
+            if q.special_description.strip()
+        ]
+    )
+    lines = [intro, ""]
     for quest in normal:
         lines.append(f"▸ [{quest.location}]")
     for quest in special:
@@ -1088,6 +1098,21 @@ def handle_investigation_venue_choice(
         session.quest_id = None
         msg = "◊ 등록되지 않은 장소입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+
+    if quest.is_explore_only:
+        # 수락할 의뢰가 없으므로 [자율 탐사]처럼 바로 world에 넘기고 끝낸다.
+        session.quest_id = None
+        session.ended = True
+        upsert_investigation_session(
+            state.spreadsheet, session, cache=state.sheet_cache
+        )
+        msg = (
+            f"[{quest.location}](으)로 이동했다.\n\n"
+            f"{quest.description_normal.strip()} @{WORLD_MASTODON_ID}"
+        )
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=f"자율 탐사 전용 장소: {quest.location}"
+        )
 
     session.quest_id = quest.id
     upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)

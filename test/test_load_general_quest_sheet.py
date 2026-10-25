@@ -60,3 +60,17 @@ def test_no_active_location_returns_nothing():
     rows = [_location_row("장소_1", False), _quest_row("q1", "광장", True)]
 
     assert load_general_quest_sheet(_FakeSpreadsheet(rows)) == (None, [])
+
+
+def test_row_with_location_but_no_name_is_quest_row():
+    """자율 탐사 전용 선택지는 name 없이 location만 채운다. 장소 행으로
+    읽히면 활성 장소를 가로채거나 메뉴에서 빠진다."""
+    rows = [
+        {"id": "장소_1_특수", "name": "", "location": "골목", "active": True},
+        _location_row("장소_1", True),
+    ]
+
+    location, quests = load_general_quest_sheet(_FakeSpreadsheet(rows))
+
+    assert location is not None and location.id == "장소_1"
+    assert [q.id for q in quests] == ["장소_1_특수"]
