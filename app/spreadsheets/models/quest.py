@@ -113,6 +113,15 @@ class QuestData:
         allowed = self.special_for_list()
         return not allowed or any(a in allowed for a in accts)
 
+    @property
+    def is_explore_only(self) -> bool:
+        """의뢰 없이 그 장소의 자율 탐사로 바로 넘어가는 선택지인지.
+
+        미수주 설명(description_quest) 없이 description_normal만 채운 행이다."""
+        return not self.description_quest.strip() and bool(
+            self.description_normal.strip()
+        )
+
     def current_description(self) -> str:
         return (
             self.description_normal if self.taken_by_list() else self.description_quest

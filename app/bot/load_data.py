@@ -444,16 +444,21 @@ def load_general_quest_sheet(
 ) -> tuple[Optional[QuestLocationData], list[QuestData]]:
     """'일반 의뢰' 시트를 읽어 (활성 장소, 활성 의뢰 목록)을 반환한다.
 
-    시트의 각 행은 `name`이 비어 있으면 장소 행, 채워져 있으면 의뢰 행이다.
+    시트의 각 행은 `name`과 `location`이 모두 비어 있으면 장소 행, 둘 중
+    하나라도 채워져 있으면 의뢰 행이다 — 자율 탐사 전용 선택지
+    (QuestData.is_explore_only)는 `name` 없이 `location`만 채운다.
     `active=TRUE`인 장소 행이 현재 위치이고, 의뢰 행도 `active=TRUE`인 것만
     반환한다. 활성 장소가 없으면 (None, [])을 반환한다.
     """
     ws = _worksheet(spreadsheet, "일반 의뢰", cache)
     records = ws.get_all_records(value_render_option=_UNFORMATTED)
 
+    def is_quest_row(r: dict) -> bool:
+        return bool(r.get("name") or r.get("location"))
+
     active_location: Optional[QuestLocationData] = None
     for r in records:
-        if not r.get("id") or r.get("name"):
+        if not r.get("id") or is_quest_row(r):
             continue
         if parse_spreadsheet_bool(r.get("active", False)):
             active_location = QuestLocationData.from_dict(r)
@@ -465,7 +470,9 @@ def load_general_quest_sheet(
     quests = [
         QuestData.from_dict(r)
         for r in records
-        if r.get("name") and parse_spreadsheet_bool(r.get("active", False))
+        if r.get("id")
+        and is_quest_row(r)
+        and parse_spreadsheet_bool(r.get("active", False))
     ]
     return active_location, quests
 

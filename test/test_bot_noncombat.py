@@ -864,6 +864,44 @@ def test_quest_lists_tolerate_space_after_comma():
     assert quest.special_for_list() == ["user3", "user4"]
 
 
+def test_investigation_venue_choice_explore_only_tags_world(monkeypatch):
+    """description_quest 없이 description_normal만 있는 선택지는 의뢰 개요 없이
+    description_normal과 함께 바로 world를 태그하고 세션을 끝낸다."""
+    state = _make_state("user1")
+    session = _investigation_session(acct="user1")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (
+            _quest_location(),
+            [
+                _quest(
+                    quest_type="특수",
+                    venue="골목",
+                    name="",
+                    description_quest="",
+                    description_normal="누군가 골목을 살피고 있다.",
+                    special_for="user1",
+                )
+            ],
+        ),
+    )
+    monkeypatch.setattr(
+        noncombat_module, "upsert_investigation_session", lambda *a, **k: None
+    )
+
+    result, log_info = handle_investigation_venue_choice(session, "골목", state)
+
+    assert result == (
+        "[골목](으)로 이동했다.\n\n"
+        f"누군가 골목을 살피고 있다. @{noncombat_module.WORLD_MASTODON_ID}"
+    )
+    assert session.ended is True
+    assert session.quest_id is None
+    assert log_info is not None
+    assert log_info.result == "자율 탐사 전용 장소: 골목"
+
+
 def test_investigation_venue_choice_formats_quest_card(monkeypatch):
     acct = "user1"
     state = _make_state(acct)

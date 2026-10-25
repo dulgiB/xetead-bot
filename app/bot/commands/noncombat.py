@@ -1099,6 +1099,21 @@ def handle_investigation_venue_choice(
         msg = "◊ 등록되지 않은 장소입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
+    if quest.is_explore_only:
+        # 수락할 의뢰가 없으므로 [자율 탐사]처럼 바로 world에 넘기고 끝낸다.
+        session.quest_id = None
+        session.ended = True
+        upsert_investigation_session(
+            state.spreadsheet, session, cache=state.sheet_cache
+        )
+        msg = (
+            f"[{quest.location}](으)로 이동했다.\n\n"
+            f"{quest.description_normal.strip()} @{WORLD_MASTODON_ID}"
+        )
+        return msg, NoncombatLogInfo(
+            command_text=command_text, result=f"자율 탐사 전용 장소: {quest.location}"
+        )
+
     session.quest_id = quest.id
     upsert_investigation_session(state.spreadsheet, session, cache=state.sheet_cache)
 
