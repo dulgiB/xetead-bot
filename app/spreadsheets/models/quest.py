@@ -105,8 +105,10 @@ class QuestData:
     def is_special(self) -> bool:
         return bool(self.special_for_list())
 
-    def is_visible_to(self, acct: str) -> bool:
-        return not self.is_special or acct in self.special_for_list()
+    def is_visible_to(self, accts: list[str]) -> bool:
+        """특수 선택지면 accts 중 한 명이라도 목록에 있을 때 보인다."""
+        allowed = self.special_for_list()
+        return not allowed or any(a in allowed for a in accts)
 
     def current_description(self) -> str:
         return (

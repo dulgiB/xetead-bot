@@ -987,12 +987,13 @@ def handle_daily_quest_roll(
 
 
 def handle_investigation_start(
-    acct: str, state: "BotState"
+    accts: list[str], state: "BotState"
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[상시조사] → '일반 의뢰' 시트의 활성 장소를 읽어 선택지 메뉴 반환.
 
-    활성 의뢰가 하나도 없어도 [자율 탐사]는 남는다. special_for가 채워진
-    의뢰는 발신자(acct)가 그 목록에 있을 때만 "[장소]※"로 나온다."""
+    accts는 발신자와 함께 멘션된 참여자 전원이다. 활성 의뢰가 하나도 없어도
+    [자율 탐사]는 남는다. special_for가 채워진 의뢰는 참여자 중 한 명이라도
+    그 목록에 있을 때만 "[장소]※"로 나온다."""
     command_text = "[상시조사]"
 
     try:
@@ -1011,7 +1012,7 @@ def handle_investigation_start(
 
     # 특수 선택지는 일반 선택지와 [자율 탐사] 사이에 둔다.
     normal = [q for q in quests if not q.is_special]
-    special = [q for q in quests if q.is_special and q.is_visible_to(acct)]
+    special = [q for q in quests if q.is_special and q.is_visible_to(accts)]
     lines = [location.description_quest, ""]
     for quest in normal:
         lines.append(f"▸ [{quest.location}]")
@@ -1073,11 +1074,10 @@ def handle_investigation_venue_choice(
         )
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    # 메뉴에 보인 선택지만 고를 수 있다 — 특수 선택지는 메뉴를 연 사람
-    # (accts[0]) 기준으로 보였으므로 같은 기준으로 거른다. 표식을 장소
-    # 이름 안에 넣어 "[장소※]"로 답해도 받아 준다.
-    menu_owner = session.accts[0] if session.accts else ""
-    venue_lookup = {q.location: q for q in quests if q.is_visible_to(menu_owner)}
+    # 메뉴에 보인 선택지만 고를 수 있다 — 특수 선택지는 세션 참여자 기준으로
+    # 보였으므로 같은 기준으로 거른다. 표식을 장소 이름 안에 넣어
+    # "[장소※]"로 답해도 받아 준다.
+    venue_lookup = {q.location: q for q in quests if q.is_visible_to(session.accts)}
     matched_venue = resolve_matching_key(
         venue_name.removesuffix(SPECIAL_VENUE_MARK).strip(), venue_lookup.keys()
     )
@@ -1205,7 +1205,11 @@ def handle_investigation_accept(
 
     try:
         update_quest_taken_by(
-            state.spreadsheet, quest_id, ",".join(participants), cache=state.sheet_cache
+            state.spreadsheet,
+            quest_id,
+            # 다중 선택 드롭다운(칩)이 쓰는 "a, b" 형식에 맞춘다.
+            ", ".join(participants),
+            cache=state.sheet_cache,
         )
     except Exception as e:
         msg = f"◊ 의뢰 수주 처리 중 오류가 발생했습니다: {e}"
