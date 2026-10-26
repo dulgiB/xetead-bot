@@ -22,6 +22,7 @@ class CombatCharacter:
         hide_hp: bool = False,
         keyword_date: str = "",
         span: int = 1,
+        name_aliases: tuple[str, ...] = (),
     ):
         self.field = context
         self.id = char_id
@@ -37,6 +38,8 @@ class CombatCharacter:
         # 전장에서 차지하는 열 수. find_character_position()은 그중 가장 왼쪽
         # 열을 가리키고, 점유 열 전체는 find_character_columns()가 돌려준다.
         self.span = max(1, span)
+        # 대상 지정에서 이름 대신 받아 주는 별명("name_alias" 컬럼).
+        self.name_aliases = name_aliases
 
     def __str__(self):
         # 대련/상시전투의 필드 보드와 본 전투 텍스트 폴백이 이 표기를 그대로

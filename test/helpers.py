@@ -41,6 +41,7 @@ def get_test_preset(
     hide_hp: bool = False,
     span: int = 1,
     is_enemy: bool = False,
+    name_aliases: tuple[str, ...] = (),
 ) -> CombatCharacterDataFromSpreadsheet:
     return CombatCharacterDataFromSpreadsheet(
         name=character_name,
@@ -63,4 +64,5 @@ def get_test_preset(
         revival_count=revival_count,
         keyword_date=keyword_date,
         is_enemy=is_enemy,
+        name_aliases=name_aliases,
     )

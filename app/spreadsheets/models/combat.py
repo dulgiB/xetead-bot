@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from battle.objects.define import MAX_SKILL_SLOT_COUNT, MagicResistanceType
+from utils.name_matching import resolve_name_or_alias
 from utils.spreadsheet_bool import parse_spreadsheet_bool
 from utils.spreadsheet_row import SpreadsheetRow
 
@@ -34,6 +35,9 @@ class CombatCharacterDataFromSpreadsheet:
     # "에너미" 시트에서 읽은 행인지. 이름만으로는 두 시트를 가를 수 없어,
     # 에너미만 대상으로 하는 효과(소환)가 이 값으로 고른다. load_char_data()가 채운다.
     is_enemy: bool = False
+    # "name_alias" 컬럼(선택). 대상 지정에서 이름 대신 쓸 수 있는 별명들로,
+    # 셀에는 쉼표로 구분해 적는다.
+    name_aliases: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, raw: SpreadsheetRow) -> "CombatCharacterDataFromSpreadsheet":
@@ -56,4 +60,29 @@ class CombatCharacterDataFromSpreadsheet:
             span=max(1, int(raw.get("span", 1) or 1)),
             revival_count=int(raw.get("revival_count", 0) or 0),
             keyword_date=str(raw.get("keyword_date", "") or ""),
+            name_aliases=parse_name_aliases(raw.get("name_alias", "")),
         )
+
+
+NAME_ALIAS_SEPARATOR = ","
+
+
+def parse_name_aliases(raw: object) -> tuple[str, ...]:
+    """ "name_alias" 셀 값을 별명 목록으로 나눈다. 빈 항목과 중복은 뺀다."""
+    if raw in (None, ""):
+        return ()
+    aliases: list[str] = []
+    for alias in str(raw).split(NAME_ALIAS_SEPARATOR):
+        alias = alias.strip()
+        if alias and alias not in aliases:
+            aliases.append(alias)
+    return tuple(aliases)
+
+
+def resolve_sheet_character_name(
+    raw: str, name_dict: "dict[str, CombatCharacterDataFromSpreadsheet]"
+) -> str:
+    """시트 캐릭터 이름을 공백 차이와 별명을 감안해 찾는다. 없으면 raw."""
+    return resolve_name_or_alias(
+        raw, {name: data.name_aliases for name, data in name_dict.items()}
+    )

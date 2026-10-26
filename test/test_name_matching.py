@@ -181,7 +181,7 @@ def test_manual_place_resolves_name_with_whitespace_mismatch(monkeypatch):
 
     class _FakeState:
         session = _FakeSession()
-        name_dict = {"변칙 늑대": object()}
+        name_dict = {"변칙 늑대": get_test_preset("변칙 늑대")}
         pending_placements: list = []
 
     result = admin_module._cmd_manual_place("변칙늑대", "아군 3열", _FakeState())

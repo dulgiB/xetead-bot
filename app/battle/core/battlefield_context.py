@@ -1,4 +1,5 @@
 import copy
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Optional
@@ -10,7 +11,11 @@ from utils.battle_helpers import (
     is_reachable_between,
 )
 from utils.logging import print_apply_damage, print_apply_heal
-from utils.name_matching import resolve_matching_key
+from utils.name_matching import (
+    normalize_name,
+    resolve_matching_key,
+    resolve_name_or_alias,
+)
 
 from battle.core.buff_container import BuffContainer
 from battle.core.charm_aura_container import CharmAuraContainer, CharmBuff
@@ -54,6 +59,10 @@ from battle.objects.passive_skill.models import PassiveSkillData
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
 from battle.objects.skill.models import Skill, SkillData
 from spreadsheets.inventory import Inventory
+
+# 커맨드 문법에서 의미가 있는 기호(parser._NAME이 이름에서 빼는 것). 별명에
+# 들어 있으면 파서가 이름을 거기서 끊어 그 별명으로는 지정할 수 없다.
+_NAME_ALIAS_FORBIDDEN = re.compile(r"[/\[\]+\-\n]")
 
 
 class BattlefieldContext:
@@ -331,6 +340,7 @@ class BattlefieldContext:
             hide_hp=data.hide_hp,
             span=data.span,
             keyword_date=data.keyword_date,
+            name_aliases=data.name_aliases,
         )
 
         if data.hide_hp:
@@ -366,11 +376,13 @@ class BattlefieldContext:
             self.charm_auras.register_holder(char_id)
 
     def resolve_summon_id(self, raw: CharacterId) -> CharacterId:
-        """공백 차이를 무시하고 소환 명단의 에너미 이름으로 맞춘다. 없으면 raw."""
-        names = [
-            name for name, data in self.summon_roster_source().items() if data.is_enemy
-        ]
-        return CharacterId(resolve_matching_key(raw.name, names))
+        """공백 차이와 별명을 감안해 소환 명단의 에너미 이름으로 맞춘다. 없으면 raw."""
+        aliases_by_name = {
+            name: data.name_aliases
+            for name, data in self.summon_roster_source().items()
+            if data.is_enemy
+        }
+        return CharacterId(resolve_name_or_alias(raw.name, aliases_by_name))
 
     def check_summon(self, summon: SummonData) -> CombatCharacterDataFromSpreadsheet:
         """소환할 수 있는지 확인하고 그 캐릭터의 시트 데이터를 돌려준다.
@@ -525,6 +537,7 @@ class BattlefieldContext:
             character.status.curr_hp, character.status[CombatStatType.MAX_HP]
         )
         character.skills = self._build_skills(data, char_id)
+        character.name_aliases = data.name_aliases
         character.hide_hp = data.hide_hp
         if data.hide_hp:
             self.hp_hidden_ids.add(char_id)
@@ -594,17 +607,65 @@ class BattlefieldContext:
         return None
 
     def resolve_character_id(self, raw: CharacterId) -> CharacterId:
-        """공백 차이를 무시하고 전장에 등록된 캐릭터를 찾는다.
+        """공백 차이와 별명("name_alias")을 감안해 전장에 등록된 캐릭터를 찾는다.
 
-        일치하는 항목이 없으면 raw를 그대로 반환해, 호출측의 '존재하지
-        않음' 처리 경로를 타게 한다.
+        별명은 전장에 있는 캐릭터끼리만 견준다 — 필드 밖 캐릭터와 겹치는
+        별명은 이 전투에서 문제가 되지 않는다. 일치하는 항목이 없거나 별명이
+        둘 이상에게 걸리면 raw를 그대로 반환해, 호출측의 '존재하지 않음' 처리
+        경로를 타게 한다.
         """
         if raw in self.characters:
             return raw
-        matched_name = resolve_matching_key(
-            raw.name, (cid.name for cid in self.characters)
+        matched_name = resolve_name_or_alias(
+            raw.name,
+            {cid.name: char.name_aliases for cid, char in self.characters.items()},
         )
         return CharacterId(matched_name)
+
+    def name_alias_problems(self) -> list[str]:
+        """전장에 있는 캐릭터의 별명 중 대상 지정에 쓸 수 없는 것을 설명한다.
+
+        어느 것도 커맨드를 막지는 않는다 — 그 별명이 "찾을 수 없음"이 되거나
+        다른 해석에 밀릴 뿐이라, [전투개시] 때 admin에게 알리는 데 쓴다.
+        """
+        problems: list[str] = []
+        names = {normalize_name(cid.name): cid.name for cid in self.characters}
+        # 정규화한 별명 → (처음 본 표기, 그 별명을 쓰는 캐릭터들)
+        owners: dict[str, tuple[str, list[str]]] = {}
+        for cid, character in self.characters.items():
+            for alias in character.name_aliases:
+                if _NAME_ALIAS_FORBIDDEN.search(alias):
+                    problems.append(
+                        f"{cid.name}의 별명 '{alias}'에 커맨드 기호(/ - + [ ])가 있어"
+                        " 대상 지정에 쓸 수 없습니다."
+                    )
+                    continue
+                key = normalize_name(alias)
+                if (other := names.get(key)) is not None and other != cid.name:
+                    problems.append(
+                        f"{cid.name}의 별명 '{alias}'이(가) {other}의 이름과 같아"
+                        f" {other}을(를) 가리킵니다."
+                    )
+                    continue
+                try:
+                    BattlefieldColumnIndex.from_str(alias)
+                except ValueError:
+                    pass
+                else:
+                    problems.append(
+                        f"{cid.name}의 별명 '{alias}'은(는) 스킬 대상에서 열 번호로"
+                        " 읽힙니다."
+                    )
+                _, alias_owners = owners.setdefault(key, (alias, []))
+                if cid.name not in alias_owners:
+                    alias_owners.append(cid.name)
+        for shown, names_with_alias in owners.values():
+            if len(names_with_alias) > 1:
+                problems.append(
+                    f"별명 '{shown}'을(를) {', '.join(names_with_alias)}이(가) 함께"
+                    " 써서 이 별명으로는 아무도 지정되지 않습니다."
+                )
+        return problems
 
     def resolve_skill_id(self, user_id: CharacterId, raw_skill_id: str) -> str:
         """공백 차이를 무시하고 해당 캐릭터가 보유한 스킬 id를 찾는다."""
