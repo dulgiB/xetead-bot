@@ -1087,6 +1087,25 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
 
 ---
 
+## 캐릭터 별명 (`name_alias`)
+
+"캐릭터"/"에너미" 시트의 선택 컬럼 `name_alias`(쉼표 구분)를
+`CombatCharacterDataFromSpreadsheet.name_aliases` → `CombatCharacter.name_aliases`로
+옮겨, 이름을 받는 자리에서 별명도 받아 준다. 해석은
+`utils/name_matching.find_name_or_alias()` 하나로 통일한다 — 이름(공백 무관)이
+먼저이고, 별명은 정확히 한 명에게만 걸릴 때만 그 사람으로 간다. 둘 이상에게
+걸리면 엉뚱한 대상을 고르지 않도록 "찾을 수 없음"으로 둔다.
+
+- 전투: `BattlefieldContext.resolve_character_id()`가 **전장에 있는 캐릭터끼리만**
+  견준다. 커맨드 대상은 `try_expansion_if_valid()` 첫머리에서 실제 이름으로
+  치환되므로 이후 단계(답글·POST 재전개·로그)는 별명을 보지 않는다. 소환
+  명단(`resolve_summon_id()`)도 같다.
+- 시트 명단(admin 배치, 비전투 아이템 사용·양도 대상):
+  `spreadsheets.models.combat.resolve_sheet_character_name()`. 이름을 받는
+  새 경로도 `resolve_matching_key()` 대신 이 둘 중 하나를 쓴다.
+- 쓸 수 없는 별명(커맨드 기호, 다른 캐릭터 이름과 같음, 열 번호로 읽힘, 공유)은
+  `name_alias_problems()`가 찾아 `[전투개시]` 때 admin DM으로 알린다.
+
 ## 주요 불변식
 
 - `CommandPart`, `CommandPartData`, `SkillData`, `BuffData` 등 핵심 데이터 클래스는 `frozen=True`.
