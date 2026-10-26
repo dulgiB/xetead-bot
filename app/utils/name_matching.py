@@ -7,7 +7,7 @@
 """
 
 import re
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 
 def normalize_name(name: str) -> str:
@@ -43,6 +43,34 @@ def find_matching_key(raw: str, candidates: Iterable[str]) -> Optional[str]:
         if normalize_name(candidate) == target:
             return candidate
     return None
+
+
+def find_name_or_alias(
+    raw: str, aliases_by_name: Mapping[str, Iterable[str]]
+) -> Optional[str]:
+    """이름(공백 무관)으로 먼저 찾고, 없으면 별명으로 찾아 원래 이름을 돌려준다.
+
+    이름이 별명보다 우선한다 — 누군가의 별명이 다른 캐릭터의 이름과 같으면
+    그 이름의 캐릭터로 간다. 같은 별명을 둘 이상이 쓰면 누구를 가리키는지
+    정할 수 없으므로 찾지 못한 것으로 본다(엉뚱한 대상을 고르는 것보다
+    "찾을 수 없음"이 낫다).
+    """
+    if (name := find_matching_key(raw, aliases_by_name.keys())) is not None:
+        return name
+    target = normalize_name(raw)
+    owners = [
+        name
+        for name, aliases in aliases_by_name.items()
+        if any(normalize_name(alias) == target for alias in aliases)
+    ]
+    return owners[0] if len(owners) == 1 else None
+
+
+def resolve_name_or_alias(
+    raw: str, aliases_by_name: Mapping[str, Iterable[str]]
+) -> str:
+    """find_name_or_alias와 같되, 못 찾으면 raw를 그대로 돌려준다."""
+    return find_name_or_alias(raw, aliases_by_name) or raw
 
 
 def whitespace_tolerant_literal(literal: str) -> str:

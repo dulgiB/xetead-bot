@@ -41,9 +41,9 @@ from battle.objects.skill.models import keyword_config_error
 from battle.practice.context import PracticeBattlefieldContext
 from battle.practice.define import PracticeBattleMode, SideType
 from battle.practice.round_manager import PracticeRoundManager
+from spreadsheets.models.combat import resolve_sheet_character_name
 from utils.name_matching import (
     normalize_name,
-    resolve_matching_key,
     whitespace_tolerant_literal,
 )
 
@@ -387,7 +387,7 @@ def _cmd_manual_place(
             "◊ 전투 중에는 적군 행동 선언 단계나 라운드 종료(다음 라운드 대기)"
             " 단계에서만 캐릭터를 배치할 수 있습니다.",
         )
-    name = resolve_matching_key(name, state.name_dict.keys())
+    name = resolve_sheet_character_name(name, state.name_dict)
     if name not in state.name_dict:
         return _ManualPlaceOutcome(
             False, f"◊ 지정된 캐릭터({name})를 찾을 수 없습니다."
@@ -994,6 +994,18 @@ def _check_charm_row_capacity(state: "BotState") -> Optional[str]:
     )
 
 
+def _check_name_alias_config(state: "BotState") -> Optional[str]:
+    """이 전투에 배치된 캐릭터의 "name_alias" 중 대상 지정에 쓸 수 없는 것을
+    admin에게 알린다. 해당 별명이 "찾을 수 없음"이 될 뿐이라 전투는 세우지
+    않는다."""
+    assert state.session is not None
+    problems = state.session.context.name_alias_problems()
+    if not problems:
+        return None
+    lines = "\n".join(f"- {problem}" for problem in problems)
+    return f"◊ 캐릭터 별명(name_alias) 설정에 문제가 있습니다.\n{lines}"
+
+
 def _cmd_battle_start(
     state: "BotState", battle_name: Optional[str] = None
 ) -> AdminCommandResult:
@@ -1060,6 +1072,7 @@ def _cmd_battle_start(
     # 3. 전투 시작
     state.session.start()
     charm_row_warning = _check_charm_row_capacity(state)
+    name_alias_warning = _check_name_alias_config(state)
     state.session.name = battle_name
 
     # 4. 필드 시트 저장
@@ -1120,6 +1133,7 @@ def _cmd_battle_start(
                 field_effect_warning,
                 charm_warning,
                 charm_row_warning,
+                name_alias_warning,
             )
             if warning
         )
@@ -1895,7 +1909,7 @@ def _cmd_investigation_battle(
             )
             continue
         faction_str, col_str = parts[0], parts[1]
-        name = resolve_matching_key(name, state.name_dict.keys())
+        name = resolve_sheet_character_name(name, state.name_dict)
         data = state.name_dict.get(name)
         if data is None:
             errors.append(f"캐릭터({name})를 찾을 수 없습니다.")

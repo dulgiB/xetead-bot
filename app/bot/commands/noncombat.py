@@ -15,6 +15,7 @@ from battle.objects.define import (
     ValueSourceType,
 )
 from battle.objects.skill.effects import SkillEffectHeal
+from spreadsheets.models.combat import resolve_sheet_character_name
 from spreadsheets.models.noncombat import (
     NON_COMBAT_STATS,
     NoncombatCharacterDataFromSpreadsheet,
@@ -557,7 +558,9 @@ def handle_use_item(
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
     if item.item_type == ItemType.NONCOMBAT_CONSUMABLE:
-        resolved_target = resolve_matching_key(target_char_name, state.name_dict.keys())
+        resolved_target = resolve_sheet_character_name(
+            target_char_name, state.name_dict
+        )
         if resolved_target != user_name:
             msg = "◊ 자신에게만 사용할 수 있는 아이템입니다."
             return msg, NoncombatLogInfo(command_text=command_text, result=msg)
@@ -590,7 +593,7 @@ def handle_use_item(
         msg = f"◊ '{item_name}'은(는) 비전투 상황에서 지원하지 않는 효과입니다. (회복 아이템만 사용 가능)"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    target_char_name = resolve_matching_key(target_char_name, state.name_dict.keys())
+    target_char_name = resolve_sheet_character_name(target_char_name, state.name_dict)
     target_data = state.name_dict.get(target_char_name)
     if target_data is None:
         msg = f"◊ 대상 캐릭터('{target_char_name}')를 찾을 수 없습니다."
@@ -720,7 +723,7 @@ def handle_transfer_item(
         msg = "◊ 양도할 대상을 지정해 주세요. 예: [양도/포션/동료]"
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    target_name = resolve_matching_key(target_name, state.name_dict.keys())
+    target_name = resolve_sheet_character_name(target_name, state.name_dict)
     if target_name not in state.name_dict:
         msg = f"◊ 대상 캐릭터('{target_name}')를 찾을 수 없습니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
