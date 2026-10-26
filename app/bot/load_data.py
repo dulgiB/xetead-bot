@@ -741,6 +741,7 @@ def update_character_curr_hp(
                     _row_value(header, row, "mastodon_id"),
                     new_curr_hp,
                     _row_int(header, row, "max_hp"),
+                    hide_hp=parse_spreadsheet_bool(_row_value(header, row, "hide_hp")),
                 )
                 return
 

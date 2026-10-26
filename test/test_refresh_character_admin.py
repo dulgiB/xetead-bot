@@ -222,3 +222,16 @@ def test_requires_running_main_battle():
     reply = handle_admin_command(f"[스테이터스 갱신/{NAME}]", state).reply_text
 
     assert reply == "◊ 진행 중인 전투가 없습니다."
+
+
+def test_refresh_masks_hp_of_hidden_hp_character(skill_strong_attack):
+    """admin 답글도 공개될 수 있다. 숨김을 막 켠 경우에도 갱신 전 체력을
+    보여주지 않는다."""
+    state = _make_state(skill_strong_attack)
+    state.name_dict[NAME] = get_test_preset(NAME, initial_hp=40, hide_hp=True)
+
+    reply = handle_admin_command(f"[스테이터스 갱신/{NAME}]", state).reply_text
+
+    assert _character(state).status.curr_hp == 40
+    assert "▹ 체력 ?/? → ?/?" in reply.split("\n")
+    assert "100" not in reply and "40" not in reply

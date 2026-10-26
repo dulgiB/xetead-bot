@@ -39,7 +39,16 @@ class CombatCharacter:
         self.span = max(1, span)
 
     def __str__(self):
-        return f"{self.id} ({self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]})"
+        # 대련/상시전투의 필드 보드와 본 전투 텍스트 폴백이 이 표기를 그대로
+        # 공개하므로 hide_hp를 따른다.
+        return f"{self.id} ({self.hp_text})"
+
+    @property
+    def hp_text(self) -> str:
+        """공개 출력용 "현재/최대" 체력. hide_hp면 "?/?"로 가린다."""
+        if self.hide_hp:
+            return "?/?"
+        return f"{self.status.curr_hp}/{self.status[CombatStatType.MAX_HP]}"
 
     @property
     def keyword_used(self) -> bool:

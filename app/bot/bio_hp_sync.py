@@ -113,8 +113,13 @@ def install(syncer: BioHpSyncer) -> None:
     syncer.start()
 
 
-def notify(acct: str, curr_hp: int, max_hp: Optional[int]) -> None:
-    """체력이 시트에 기록된 뒤 부른다. 계정이나 최대 체력을 모르면 넘어간다."""
-    if _syncer is None or not acct or max_hp is None:
+def notify(
+    acct: str, curr_hp: int, max_hp: Optional[int], *, hide_hp: bool = False
+) -> None:
+    """체력이 시트에 기록된 뒤 부른다. 계정이나 최대 체력을 모르면 넘어간다.
+
+    시트의 hide_hp가 켜진 캐릭터도 넘어간다 — 자기소개는 공개 프로필이라
+    갱신하면 전투 답글에서 "?/?"로 가린 체력이 그대로 드러난다."""
+    if _syncer is None or not acct or max_hp is None or hide_hp:
         return
     _syncer.notify(acct, curr_hp, max_hp)
