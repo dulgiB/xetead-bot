@@ -22,6 +22,11 @@ from bot.battle_reply_text import format_final_hp_roster, format_log_entry_block
 from battle.core.commands.models import BattleLogEntry, BattleLogEntryKind
 from helpers import get_test_preset
 from spreadsheets.models.combat import CombatCharacterDataFromSpreadsheet
+from spreadsheets.models.noncombat import NoncombatCharacterDataFromSpreadsheet
+from bot.commands.noncombat import (
+    _check_noncombat_keyword_available,
+    _format_noncombat_result_line,
+)
 
 HIDDEN = CharacterId("아군 1")
 SHOWN = CharacterId("아군 2")
@@ -135,3 +140,43 @@ def test_keyword_hp_shortage_error_respects_hide_hp(hide_hp, shows_hp):
         process_ally_command(context, command)
 
     assert ("현재 체력" in str(exc_info.value)) is shows_hp
+
+
+def test_position_board_hides_flagged_character():
+    """대련/상시전투의 필드 보드와 본 전투 텍스트 폴백이 쓰는 표기."""
+    board = _context().format_position_board()
+
+    assert f"{HIDDEN.name} (?/?)" in board
+    assert f"{SHOWN.name} (60/100)" in board
+    assert "70/100" not in board
+
+
+def test_noncombat_sheet_row_reads_hide_hp():
+    row = {"name": HIDDEN.name, "curr_hp": 50, "max_hp": 100, "hide_hp": "TRUE"}
+
+    assert NoncombatCharacterDataFromSpreadsheet.from_dict(row).hide_hp is True
+
+
+@pytest.mark.parametrize(("hide_hp", "shows_hp"), [(True, False), (False, True)])
+def test_noncombat_keyword_hp_shortage_respects_hide_hp(hide_hp, shows_hp):
+    data = NoncombatCharacterDataFromSpreadsheet(
+        name=HIDDEN.name,
+        curr_hp=KEYWORD_BOOST_HP_COST,
+        max_hp=100,
+        revival_count=1,
+        hide_hp=hide_hp,
+    )
+
+    message = _check_noncombat_keyword_available(data, "2026-10-26")
+
+    assert message is not None
+    assert (f"(현재 체력: {KEYWORD_BOOST_HP_COST})" in message) is shows_hp
+
+
+def test_noncombat_result_line_hides_flagged_character():
+    assert _format_noncombat_result_line("대상_1", 10, 60, 100, True) == (
+        "▹ 대상_1 | +10 → ?/?"
+    )
+    assert _format_noncombat_result_line("대상_1", 10, 60, 100, False) == (
+        "▹ 대상_1 | +10 → 60/100"
+    )

@@ -380,7 +380,8 @@ def _check_noncombat_keyword_available(
     if char_data.curr_hp <= KEYWORD_BOOST_HP_COST:
         return (
             f"◊ 키워드 보정은 체력 {KEYWORD_BOOST_HP_COST}을 소모하므로"
-            f" 체력이 그보다 많아야 합니다. (현재 체력: {char_data.curr_hp})"
+            " 체력이 그보다 많아야 합니다."
+            + ("" if char_data.hide_hp else f" (현재 체력: {char_data.curr_hp})")
         )
     return None
 
@@ -419,7 +420,7 @@ def _consume_noncombat_keyword(
     )
     return (
         f"↳ 키워드 보정 사용: 체력 {KEYWORD_BOOST_HP_COST} 소모"
-        f" (→ {new_hp}/{char_data.max_hp})"
+        f" (→ {_hp_fraction(new_hp, char_data.max_hp, char_data.hide_hp)})"
     )
 
 
@@ -489,15 +490,23 @@ def _compute_heal_amount(
     return None
 
 
+def _hp_fraction(curr_hp: int, max_hp: int, hidden: bool) -> str:
+    """답글의 "현재/최대" 체력. 시트의 hide_hp가 켜진 캐릭터는 "?/?"로 가린다."""
+    return "?/?" if hidden else f"{curr_hp}/{max_hp}"
+
+
 def _format_noncombat_result_line(
-    target_name: str, delta: int, current_value: int, max_value: int
+    target_name: str, delta: int, current_value: int, max_value: int, hidden: bool
 ) -> str:
     """전투 중 결과 표시(battle_reply_text.py의 merge_damage_heal_lines가 만드는
     "▹ 대상 | ±값 → 현재/최대")와 동일한 형식으로 한 줄을 만든다. 회복/피해 등
     효과 종류별로 문구를 새로 짓지 않고 이 한 형식만 재사용한다.
     """
     sign = "+" if delta >= 0 else ""
-    return f"▹ {target_name} | {sign}{delta} → {current_value}/{max_value}"
+    return (
+        f"▹ {target_name} | {sign}{delta}"
+        f" → {_hp_fraction(current_value, max_value, hidden)}"
+    )
 
 
 def handle_use_item(
@@ -614,7 +623,7 @@ def handle_use_item(
         )
 
     result_line = _format_noncombat_result_line(
-        target_char_name, heal_amount, new_hp, target_data.max_hp
+        target_char_name, heal_amount, new_hp, target_data.max_hp, target_data.hide_hp
     )
     reply = f"◊ {item_name} {count}개를 사용했습니다.\n\n{result_line}"
     return reply, NoncombatLogInfo(
@@ -668,7 +677,9 @@ def _handle_mysterious_potion(
             update_character_curr_hp(
                 state.spreadsheet, user_name, new_hp, cache=state.sheet_cache
             )
-            lines[0] += f" ({new_hp}/{target_data.max_hp})"
+            lines[0] += (
+                f" ({_hp_fraction(new_hp, target_data.max_hp, target_data.hide_hp)})"
+            )
         except Exception as e:
             lines.append(f"◊ 체력 반영 중 오류가 발생했습니다: {e}")
 

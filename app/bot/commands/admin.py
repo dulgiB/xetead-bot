@@ -565,8 +565,14 @@ def _cmd_refresh_character(name: str, state: "BotState") -> tuple[bool, str]:
             )
 
     after = _refresh_summary(character)
+    # 비교는 실제 값으로 하되, 갱신 후 체력 숨김이 켜져 있으면 표시만 가린다 —
+    # admin 답글도 원 게시물의 공개 범위를 따르므로 공개될 수 있다. 숨김을
+    # 막 켠 경우 갱신 전 값을 보여주면 그 자리에서 체력이 드러난다.
+    shown_before, shown_after = dict(before), dict(after)
+    if character.hide_hp:
+        shown_before["체력"] = shown_after["체력"] = character.hp_text
     changes = [
-        f"{label} {before[label]} → {after[label]}"
+        f"{label} {shown_before[label]} → {shown_after[label]}"
         + (" (다음 라운드부터)" if label == "턴당 코스트" else "")
         for label in after
         if before[label] != after[label]
@@ -1132,8 +1138,14 @@ def _sync_hp_from_sheet(state: "BotState") -> str:
         state.session.sheet_hp,
         cache=state.sheet_cache,
     )
+    hidden = state.session.context.hp_hidden_ids
     return "".join(
-        f"\n◊ 시트 체력 반영: {change.name} {change.before} → {change.after}"
+        f"\n◊ 시트 체력 반영: {change.name}"
+        + (
+            " ?/? → ?/?"
+            if CharacterId(change.name) in hidden
+            else f" {change.before} → {change.after}"
+        )
         for change in changes
     )
 

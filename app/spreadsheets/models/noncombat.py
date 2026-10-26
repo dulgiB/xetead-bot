@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from utils.spreadsheet_bool import parse_spreadsheet_bool
+
 
 class NoncombatStatType(str, Enum):
     PHYSICAL = "육체"
@@ -31,6 +33,8 @@ class NoncombatCharacterDataFromSpreadsheet:
     # 전투용 캐릭터 시트의 curr_hp/max_hp 컬럼을 그대로 공유한다.
     curr_hp: int = 0
     max_hp: int = 0
+    # 전투용 캐릭터 시트와 공유. 비전투 답글에서도 체력을 "?/?"로 가린다.
+    hide_hp: bool = False
     # 전투용 캐릭터 시트와 공유. [판정+/스탯]이 "부활 1회 이상 & 오늘 미사용"을
     # 확인하는 데 쓴다.
     revival_count: int = 0
@@ -50,6 +54,7 @@ class NoncombatCharacterDataFromSpreadsheet:
             daily_quest_status_id=str(raw.get("daily_quest_status_id", "") or ""),
             curr_hp=int(raw.get("curr_hp", 0) or 0),
             max_hp=int(raw.get("max_hp", 0) or 0),
+            hide_hp=parse_spreadsheet_bool(raw.get("hide_hp", False)),
             revival_count=int(raw.get("revival_count", 0) or 0),
             keyword_date=str(raw.get("keyword_date", "") or ""),
         )
