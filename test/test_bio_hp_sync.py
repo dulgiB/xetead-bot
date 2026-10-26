@@ -49,7 +49,10 @@ def notified(monkeypatch):
     monkeypatch.setattr(
         bio_hp_sync,
         "notify",
-        lambda acct, curr, max_hp: calls.append((acct, curr, max_hp)),
+        # 실제 notify()처럼 체력 숨김 캐릭터는 넘어간다.
+        lambda acct, curr, max_hp, hide_hp=False: (
+            None if hide_hp else calls.append((acct, curr, max_hp))
+        ),
     )
     return calls
 
@@ -180,3 +183,59 @@ def test_noncombat_hp_update_notifies_bio_sync(notified):
     load_data.update_character_curr_hp(_FakeSpreadsheet(_rows()), "아군1", 45)
 
     assert notified == [("player1", 45, 100)]
+
+
+def _hidden_rows() -> list[list]:
+    """아군1만 hide_hp 체크박스가 켜진 시트. 체크박스는 UNFORMATTED면 bool,
+    FORMATTED면 "TRUE" 문자열로 읽히므로 둘을 섞어 둔다."""
+    return [
+        ["name", "mastodon_id", "curr_hp", "max_hp", "hide_hp"],
+        ["아군1", "player1", "100", "100", True],
+        ["아군2", "player2", "100", "100", "FALSE"],
+    ]
+
+
+def test_hp_write_back_skips_bio_of_hidden_hp_character(notified):
+    ctx = _context()
+    ctx.characters[CharacterId("아군1")].status.curr_hp = 70
+    ctx.characters[CharacterId("아군2")].status.curr_hp = 60
+
+    log_sheets.write_back_character_hp(
+        _FakeSpreadsheet(_hidden_rows()), ctx, ["아군1", "아군2"]
+    )
+
+    assert notified == [("player2", 60, 100)]
+
+
+def test_sheet_hp_sync_skips_bio_of_hidden_hp_character(notified):
+    rows = _hidden_rows()
+    rows[1][2] = "90"
+
+    log_sheets.sync_hp_from_sheet(
+        _FakeSpreadsheet(rows), _context(), {"아군1": 100, "아군2": 100}
+    )
+
+    assert notified == []
+
+
+def test_noncombat_hp_update_skips_bio_of_hidden_hp_character(notified):
+    rows = _hidden_rows()
+    rows[1][4] = "TRUE"
+
+    load_data.update_character_curr_hp(_FakeSpreadsheet(rows), "아군1", 45)
+
+    assert notified == []
+
+
+def test_notify_ignores_hidden_hp_character(monkeypatch):
+    calls: list[tuple] = []
+
+    class _Recorder:
+        def notify(self, *args):
+            calls.append(args)
+
+    monkeypatch.setattr(bio_hp_sync, "_syncer", _Recorder())
+    bio_hp_sync.notify("player", 10, 100, hide_hp=True)
+    bio_hp_sync.notify("player", 20, 100)
+
+    assert calls == [("player", 20, 100)]
