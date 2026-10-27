@@ -12,7 +12,6 @@ from battle.objects.models import (
     MoveData,
 )
 from battle.objects.skill.models import SkillEffectBase, departure_column
-from utils.battle_helpers import columns_for_span
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -21,24 +20,20 @@ if TYPE_CHECKING:
 def dash_path_columns(
     departure: BattlefieldColumnIndex, destination: BattlefieldColumnIndex, span: int
 ) -> list[BattlefieldColumnIndex]:
-    """출발 위치에서 도착 위치로 옮겨 가며 시전자가 새로 밟는 열. 출발할 때
-    이미 차지하던 열은 빼고, 도착해 차지하는 열은 넣는다. 한 열짜리면
-    SkillEffectSplashAlongPath와 같은 "출발 열 제외, 도착 열 포함"이다."""
-    if departure == destination:
-        return []
-    start_columns = set(columns_for_span(departure, span))
+    """출발 위치에서 도착 위치로 옮겨 가며 시전자가 거치는 열. 출발할 때
+    차지하던 열과 도착해 차지하는 열을 모두 넣는다. 한 열짜리면
+    SkillEffectSplashAlongPath와 같은 "출발 열·도착 열 포함"이다."""
     first = min(departure.value, destination.value)
     last = max(departure.value, destination.value) + max(1, span) - 1
     return [
         BattlefieldColumnIndex(value)
         for value in range(first, last + 1)
-        if BattlefieldColumnIndex(value) not in start_columns
-        and value < BattlefieldColumnIndex.NONE.value
+        if value < BattlefieldColumnIndex.NONE.value
     ]
 
 
 class SkillEffectDashToColumn(SkillEffectBase):
-    """지정한 열로 돌진하며 지나간 열의 모든 적에게 같은 계수의 대미지를 입힌다.
+    """지정한 열로 돌진하며 출발 열부터 도착 열까지의 모든 적에게 같은 계수의 대미지를 입힌다.
 
     SkillEffectSplashAlongPath와 달리 주대상이 없다 — 캐릭터가 없는 열도
     지정할 수 있고, 경로 위의 적은 모두 같은 대미지를 받는다. 열 입력이

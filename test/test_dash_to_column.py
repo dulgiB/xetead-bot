@@ -117,17 +117,17 @@ def _ally_battle(
     return ctx, manager
 
 
-def test_path_columns_exclude_departure_and_include_destination():
+def test_path_columns_include_departure_and_destination():
     path = dash_path_columns(BattlefieldColumnIndex(1), BattlefieldColumnIndex(4), 1)
-    assert [c.value for c in path] == [2, 3, 4]
+    assert [c.value for c in path] == [1, 2, 3, 4]
     path = dash_path_columns(BattlefieldColumnIndex(4), BattlefieldColumnIndex(1), 1)
-    assert [c.value for c in path] == [1, 2, 3]
+    assert [c.value for c in path] == [1, 2, 3, 4]
 
 
-def test_multi_column_dasher_sweeps_only_newly_covered_columns():
-    # 1~2열에서 3~4열로: 새로 밟는 열은 3, 4(index 2, 3)뿐이다.
+def test_multi_column_dasher_sweeps_every_column_it_occupies_on_the_way():
+    # 1~2열에서 3~4열로: 출발 때 차지한 열부터 도착해 차지한 열까지 전부.
     path = dash_path_columns(BattlefieldColumnIndex(0), BattlefieldColumnIndex(2), 2)
-    assert [c.value for c in path] == [2, 3]
+    assert [c.value for c in path] == [0, 1, 2, 3]
 
 
 def test_dash_into_empty_column_hits_every_foe_on_the_path_equally():
@@ -145,7 +145,7 @@ def test_dash_into_empty_column_hits_every_foe_on_the_path_equally():
     assert _hp(ctx, "적 1") == 90
     assert _hp(ctx, "적 2") == 90
     assert _hp(ctx, "적 3") == 90
-    assert _hp(ctx, "출발열 적") == 100
+    assert _hp(ctx, "출발열 적") == 90
     assert _hp(ctx, "경로 밖 적") == 100
 
 
@@ -188,16 +188,18 @@ def test_character_target_is_rejected():
 
 def test_path_starts_after_an_earlier_move_in_the_same_command():
     ctx, manager = _ally_battle(dasher_column=0, attack_range=2)
+    _add(ctx, "이동 전 열 적", FactionType.ENEMY, 0)
     _add(ctx, "적 1", FactionType.ENEMY, 1)
     _add(ctx, "적 2", FactionType.ENEMY, 3)
 
-    # 2열로 옮긴 뒤 4열로 돌진: 지나는 열은 3, 4열이다.
+    # 2열로 옮긴 뒤 4열로 돌진: 경로는 2~4열이고 이동 전의 1열은 빠진다.
     manager.process_command(
         parse_character_command(DASHER, "[이동/2열 - DashSkill/4열]", ctx)
     )
 
     assert ctx.find_character_position(DASHER) == BattlefieldColumnIndex(3)
-    assert _hp(ctx, "적 1") == 100
+    assert _hp(ctx, "이동 전 열 적") == 100
+    assert _hp(ctx, "적 1") == 90
     assert _hp(ctx, "적 2") == 90
 
 
@@ -245,6 +247,7 @@ def _enemy_battle(
 
 def test_enemy_moves_on_declaration_and_hits_the_path_from_where_it_started():
     ctx, manager = _enemy_battle()
+    _add(ctx, "출발 열 아군", FactionType.ALLY, 0)
     manager.process_command(parse_character_command(DASHER, "[DashSkill/4열]", ctx))
 
     # 선언 때 이미 도착 열에 있다.
@@ -254,6 +257,8 @@ def test_enemy_moves_on_declaration_and_hits_the_path_from_where_it_started():
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 
+    # 정산 때는 이미 떠났지만 선언 직전에 서 있던 열도 경로다.
+    assert _hp(ctx, "출발 열 아군") == 90
     assert _hp(ctx, "아군 1") == 90
     assert _hp(ctx, "아군 2") == 90
     assert _hp(ctx, "아군 3") == 100
@@ -264,7 +269,7 @@ def test_ally_that_leaves_the_path_before_resolution_is_not_hit():
     manager.process_command(parse_character_command(DASHER, "[DashSkill/4열]", ctx))
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     manager.process_command(
-        parse_character_command(CharacterId("아군 1"), "[이동/1열]", ctx)
+        parse_character_command(CharacterId("아군 1"), "[이동/5열]", ctx)
     )
     manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
 

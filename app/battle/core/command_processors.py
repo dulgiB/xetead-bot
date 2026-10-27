@@ -446,7 +446,7 @@ def try_expansion_if_valid(
                     raise CommandValidationError(error_attack_position_too_far(to_pos))
 
         # 열로 돌진하는 효과도 같은 이유로 이동 전 위치에서 도착 열까지를 본다.
-        # 제자리 돌진은 지나가는 열이 없어 아무 일도 일어나지 않으므로 거부한다.
+        # 제자리 돌진은 이동 없는 열 광역기가 되므로 거부한다.
         if (
             isinstance(original_part, CommandPart)
             and original_part.type_ == ActionType.SKILL

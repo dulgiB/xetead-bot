@@ -146,8 +146,8 @@ def _given_damage_buff(buff_id: str, percent: int) -> BuffData:
     )
 
 
-def test_departure_column_is_not_part_of_the_path(battle):
-    """설명대로 출발 열의 적은 경로 대미지를 받지 않는다."""
+def test_departure_column_is_part_of_the_path(battle):
+    """출발 열의 적도 경로 대미지를 받고, 출발 열 뒤쪽은 받지 않는다."""
     ctx, manager = battle
     ally_id = CharacterId("아군 1")
     ctx.add_character(
@@ -169,11 +169,11 @@ def test_departure_column_is_not_part_of_the_path(battle):
         parse_character_command(ally_id, "[Cost3Skill/적군 주대상]", ctx)
     )
 
-    assert ctx.characters[CharacterId("적군 출발열")].status.curr_hp == 100
+    assert ctx.characters[CharacterId("적군 출발열")].status.curr_hp < 100
     assert ctx.characters[CharacterId("적군 반대편")].status.curr_hp == 100
 
 
-def test_same_column_target_has_no_path(battle):
+def test_same_column_target_splashes_the_rest_of_that_column(battle):
     ctx, manager = battle
     ally_id = CharacterId("아군 1")
     ctx.add_character(
@@ -193,7 +193,7 @@ def test_same_column_target_has_no_path(battle):
     )
 
     assert ctx.characters[CharacterId("적군 주대상")].status.curr_hp < 100
-    assert ctx.characters[CharacterId("적군 같은열")].status.curr_hp == 100
+    assert ctx.characters[CharacterId("적군 같은열")].status.curr_hp < 100
 
 
 def test_path_splash_also_receives_the_casters_given_damage_buff(cost3_skill):
@@ -462,7 +462,7 @@ def test_multi_column_main_target_takes_splash_on_its_columns_along_path(
     fixed_battle,
 ):
     """5열에서 1~7열에 걸친 주대상의 2열로 돌진하면, 주대상은 주대상 대미지에
-    더해 지나간 4열·3열의 경로 대미지를 받는다(출발 열과 착지 열은 빼고)."""
+    더해 출발 열인 5열과 지나간 4열·3열의 경로 대미지를 받는다(착지 열만 빼고)."""
     ctx, manager = fixed_battle
     ally_id = _add_caster(ctx, 4, attack_range=3)
     target_id = CharacterId("거대 주대상")
@@ -477,4 +477,4 @@ def test_multi_column_main_target_takes_splash_on_its_columns_along_path(
     )
 
     assert ctx.find_character_position(ally_id) == BattlefieldColumnIndex(1)
-    assert ctx.characters[target_id].status.curr_hp == 100 - 30 - 10 * 2
+    assert ctx.characters[target_id].status.curr_hp == 100 - 30 - 10 * 3

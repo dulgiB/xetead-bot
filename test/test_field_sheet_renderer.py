@@ -694,4 +694,4 @@ def test_column_dash_marks_every_column_on_its_path():
         cells.get(rowcol_to_a1(AOE_MARK_ROW, col), ("",))[0] for col in range(2, 9)
     ]
 
-    assert marks == ["", ".", ".", ".", "", "", ""]
+    assert marks == [".", ".", ".", ".", "", "", ""]
