@@ -69,6 +69,17 @@ class TestThreadIndex:
         assert index.ancestor_ids(3, wanted={0}) == ({3, 2, 1}, 1)
         assert index.ancestor_ids(3, wanted={2}) == ({3, 2}, None)
 
+    def test_author_is_recorded_and_evicted_with_the_post(self):
+        """작성자도 부모와 함께 기록되고 함께 밀려난다(테스트)."""
+        index = ThreadIndex(max_entries=2)
+        index.record(1, None, "acct_a")
+        index.record(2, 1)
+        index.record(3, 2, "acct_b")
+
+        assert index.author_of(1) is None
+        assert index.author_of(2) is None
+        assert index.author_of(3) == "acct_b"
+
 
 class TestListenerThreadLookup:
     def _listener(self, mastodon):
@@ -110,6 +121,27 @@ class TestListenerThreadLookup:
         assert listener._resolve_practice("acct_a", 902, 701, state) is ps
         assert listener._resolve_practice("acct_a", 903, 701, state) is ps
         assert mastodon.status_calls == [701, 700]
+
+    def test_fetched_and_bot_posts_record_their_authors(self):
+        """조회로 이어 간 게시물과 봇 게시물도 작성자가 남는다 — 일반 의뢰
+        [수락]이 스레드 작성자를 API 없이 다시 읽는다(테스트)."""
+        mastodon = _CountingMastodon(
+            ancestors=[
+                {"id": ACTIVE_POST_ID, "in_reply_to_id": None},
+                {
+                    "id": 700,
+                    "in_reply_to_id": ACTIVE_POST_ID,
+                    "account": {"acct": "acct_b"},
+                },
+            ]
+        )
+        listener, state, _ps = self._listener(mastodon)
+        bot_post = listener._status_post("공지")
+
+        listener._thread_ancestor_ids(700, (ACTIVE_POST_ID,))
+
+        assert listener._threads.author_of(700) == "acct_b"
+        assert listener._threads.author_of(bot_post["id"]) == "bot"
 
     def test_unrelated_thread_stops_below_the_session_start(self):
         """세션 게시물보다 오래된 게시물에 닿으면 그 위는 조회하지 않는다."""

@@ -10,6 +10,9 @@
 수 있다. 부모 관계는 게시 후 바뀌지 않으므로 무효화가 필요 없다. 모르는
 게시물에서 끊기면(사담에 단 답글, 재기동 직후) 호출측이 그 게시물 하나를
 조회해 기록하고 다시 따라간다.
+
+작성자도 함께 기록한다 — 일반 의뢰 [수락]이 그 스레드에 글을 쓴 인원을
+참여자로 잡을 때 같은 경로로 API 없이 읽는다. 작성자도 게시 후 바뀌지 않는다.
 """
 
 from collections import OrderedDict
@@ -29,13 +32,26 @@ def _snowflake(status_id: int | str) -> Optional[int]:
 class ThreadIndex:
     def __init__(self, max_entries: int = _MAX_ENTRIES) -> None:
         self._parent_of: "OrderedDict[int, Optional[int]]" = OrderedDict()
+        self._author_of: dict[int, str] = {}
         self._max_entries = max_entries
 
-    def record(self, status_id: int, in_reply_to_id: Optional[int]) -> None:
+    def record(
+        self,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        author: Optional[str] = None,
+    ) -> None:
         self._parent_of[status_id] = in_reply_to_id
         self._parent_of.move_to_end(status_id)
+        if author is not None:
+            self._author_of[status_id] = author
         while len(self._parent_of) > self._max_entries:
-            self._parent_of.popitem(last=False)
+            evicted, _ = self._parent_of.popitem(last=False)
+            self._author_of.pop(evicted, None)
+
+    def author_of(self, status_id: int) -> Optional[str]:
+        """기록된 작성자 acct. 작성자 없이 기록됐거나 모르는 게시물이면 None."""
+        return self._author_of.get(status_id)
 
     def ancestor_ids(
         self, in_reply_to_id: int, wanted: Iterable[int]
