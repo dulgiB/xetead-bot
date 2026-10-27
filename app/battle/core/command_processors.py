@@ -223,8 +223,13 @@ def try_process_enemy_command_on_post_action(
     calculators = [
         CommandPartCalculator(post_part, context) for post_part in post_parts
     ]
+    # 정산 때 이동하는 effect가 있으면 뒤 파트는 그 목적지에서 사거리를 잰다 —
+    # PRE 검증도 파트를 차례로 따라가며 위치를 갱신했다.
+    user_pos = context.find_character_position(user_id)
     for calculator, post_part in zip(calculators, post_parts):
-        _drop_targets_out_of_range(context, user_id, post_part, calculator)
+        user_pos = _drop_targets_out_of_range(
+            context, user_id, post_part, calculator, user_pos
+        )
     assign_taunt_redirects(
         context, user_id, calculators, RoundPhaseType.ENEMY_POST_ACTION
     )
@@ -247,7 +252,8 @@ def _drop_targets_out_of_range(
     user_id: CharacterId,
     part_data: CommandPartData,
     calculator: CommandPartCalculator,
-) -> None:
+    user_pos: BattlefieldColumnIndex,
+) -> BattlefieldColumnIndex:
     """PRE 선언 뒤 아군 행동으로 사거리 밖에 놓인 대상을 POST 대미지에서 뺀다.
 
     사거리는 선언 시점에만 검증되므로, 여기서 다시 보지 않으면 밀려나거나
@@ -256,10 +262,10 @@ def _drop_targets_out_of_range(
     걸러, 빗나간 공격을 도발자가 끌어오지 않게 한다.
 
     POST 타이밍 effect의 이동은 계산 중에 일어나므로, PRE 검증과 같이
-    시전자의 이동 목적지를 이어받아 판정한다.
+    시전자의 이동 목적지를 이어받아 판정하고, 다음 파트가 이어받도록
+    이 파트를 마친 위치를 돌려준다.
     """
     user = context.characters[user_id]
-    user_pos = context.find_character_position(user_id)
     attack_range = _effective_attack_range(context, user, part_data.original_part)
 
     for mutable in calculator.data_by_effect:
@@ -300,6 +306,7 @@ def _drop_targets_out_of_range(
         mutable.nullified_effect_list.extend(
             (target_id, "사거리 밖, 대미지 없음") for target_id in out_of_range
         )
+    return user_pos
 
 
 def _effective_attack_range(

@@ -319,3 +319,29 @@ def test_enemy_target_dash_keeps_its_path_splash_until_resolution():
 
     assert _hp(ctx, "주대상") == 70
     assert _hp(ctx, "경로") == 90
+
+
+def test_attack_after_a_dash_resolved_on_post_action_is_ranged_from_the_landing():
+    """정산 때 돌진하는 스킬 뒤에 붙인 공격은 선언 때 도착 열에서 사거리를
+    검증받았으므로, 정산 때도 도착 열에서 재야 한다."""
+    ctx = _context(_dash_skill(apply_timing=RoundPhaseType.ENEMY_POST_ACTION))
+    manager = RoundManager(ctx)
+    _add(
+        ctx,
+        DASHER.name,
+        FactionType.ENEMY,
+        0,
+        skill_1_id="DashSkill",
+        attack_range=1,
+        max_cost=3,
+    )
+    _add(ctx, "먼 아군", FactionType.ALLY, 2)
+
+    manager.process_command(
+        parse_character_command(DASHER, "[DashSkill/2열 - 공격/먼 아군]", ctx)
+    )
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+    assert ctx.find_character_position(DASHER) == BattlefieldColumnIndex(1)
+    assert _hp(ctx, "먼 아군") < 100
