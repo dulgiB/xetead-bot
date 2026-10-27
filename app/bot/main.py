@@ -539,7 +539,7 @@ class MastodonBotListener(StreamListener):
 
     def _status_post(self, *args, **kwargs) -> dict:
         status = self._mastodon.status_post(*args, **kwargs)
-        self._threads.record(status["id"], kwargs.get("in_reply_to_id"))
+        self._threads.record(status["id"], kwargs.get("in_reply_to_id"), self._bot_acct)
         return status
 
     def _thread_ancestor_ids(
@@ -553,10 +553,15 @@ class MastodonBotListener(StreamListener):
             if missing is None:
                 return ancestors
             try:
-                parent = self._mastodon.status(missing).get("in_reply_to_id")
+                status = self._mastodon.status(missing)
             except MastodonNotFoundError:
-                parent = None
-            self._threads.record(missing, parent)
+                self._threads.record(missing, None)
+                continue
+            self._threads.record(
+                missing,
+                status.get("in_reply_to_id"),
+                status.get("account", {}).get("acct"),
+            )
 
     def on_abort(self, err: Exception) -> None:
         """스트리밍 연결이 끊어졌을 때 호출된다(재연결 직전마다 반복 호출됨).
@@ -664,7 +669,7 @@ class MastodonBotListener(StreamListener):
             status_id = status["id"]
             in_reply_to_id: Optional[int] = status.get("in_reply_to_id")
 
-            self._threads.record(status_id, in_reply_to_id)
+            self._threads.record(status_id, in_reply_to_id, acct)
             command_text = _extract_command(status["content"])
             if not command_text:
                 return
@@ -835,6 +840,7 @@ class MastodonBotListener(StreamListener):
         status_id: int,
         in_reply_to_id: Optional[int],
         state: "BotState",
+        sessions: Optional[list[InvestigationSession]] = None,
     ) -> tuple[Optional[InvestigationSession], str, bool]:
         """이 답글이 acct가 참여 중인 상시조사 세션 중 어느 것에 속하는지 찾는다.
 
@@ -854,8 +860,12 @@ class MastodonBotListener(StreamListener):
         정확히 가리키는지(스레드 조상으로만 찾은 게 아닌지) 여부다 —
         사담(인식 가능한 커맨드가 없는 답글)에 대한 종결성 응답(장소
         미지정/미수락 안내)은 직속 답글에서만 트리거해야 하므로, 조상
-        경유로만 찾은 경우와 구분해야 한다."""
-        sessions = state.noncombat.active_investigations(acct)
+        경유로만 찾은 경우와 구분해야 한다.
+
+        `sessions`를 넘기면 acct의 세션 대신 그 안에서 찾는다([수락]처럼
+        참여자가 아니어도 받는 커맨드용)."""
+        if sessions is None:
+            sessions = state.noncombat.active_investigations(acct)
         if not sessions or in_reply_to_id is None:
             return None, "", False
 
@@ -892,6 +902,46 @@ class MastodonBotListener(StreamListener):
             return None, "", False
         return best[1], best[2], False
 
+    def _quest_accept_participants(
+        self,
+        session: InvestigationSession,
+        acct: str,
+        in_reply_to_id: int,
+        mentions: Optional[list[str]],
+        state: "BotState",
+    ) -> list[str]:
+        """일반 의뢰 [수락] 시점에 그 스레드에 참여한 캐릭터 전원.
+
+        [상시조사]에 함께 잡힌 인원(session.accts), 메뉴 게시물부터 [수락]
+        답글까지 이어진 게시물의 작성자, [수락] 답글에 멘션된 인원을 모은다.
+        누가 [수락]을 입력했든 같은 인원이 잡히도록 발신자 멘션에만 기대지
+        않는다 — 멘션을 지우거나 빠뜨려도 대화에 낀 캐릭터는 빠지지 않는다.
+
+        메뉴 위쪽의 RP 게시물은 보지 않는다. 그 시점의 참여자는 [상시조사]
+        멘션으로 이미 session.accts에 있고, 거기까지 올라가면 깊은 스레드에서
+        조회가 길어진다. [수락]의 조상 줄기만 보므로 옆 가지에만 글을 쓴
+        인원은 멘션으로 들어온다(마스토돈 답글은 부모의 멘션을 이어받는다).
+
+        캐릭터 계정만 남긴다 — 봇·world·admin은 참여자가 아니다. 발신자가
+        맨 앞이다."""
+        try:
+            ancestors = self._thread_ancestor_ids(
+                in_reply_to_id, (session.menu_post_id,)
+            )
+        except Exception:
+            logger.exception(
+                "[수락] 스레드 작성자 조회 실패 (in_reply_to=%s)", in_reply_to_id
+            )
+            ancestors = set()
+        authors = [self._threads.author_of(post_id) for post_id in sorted(ancestors)]
+        candidates = [
+            acct,
+            *session.accts,
+            *(a for a in authors if a is not None),
+            *(mentions or []),
+        ]
+        return [a for a in dict.fromkeys(candidates) if a in state.char_dict]
+
     def _find_roll_target(self, in_reply_to_id: Optional[int]) -> Optional[RollTarget]:
         """스레드에서 가장 가까운 world/admin 게시물이 요구한 판정 목표치를 찾는다.
 
@@ -911,7 +961,7 @@ class MastodonBotListener(StreamListener):
                     return None
                 status = self._mastodon.status(current)
                 parent = status.get("in_reply_to_id")
-                self._threads.record(current, parent)
+                self._threads.record(current, parent, status["account"]["acct"])
                 if status["account"]["acct"] in (WORLD_MASTODON_ID, ADMIN_MASTODON_ID):
                     return parse_roll_target(_strip_html(status["content"]))
                 current = parent
@@ -1235,6 +1285,23 @@ class MastodonBotListener(StreamListener):
         investigation_session, investigation_stage, investigation_is_direct = (
             self._resolve_investigation_session(acct, status_id, in_reply_to_id, state)
         )
+        if investigation_session is None and _RE_ACCEPT.search(text):
+            # [수락]은 세션 참여자가 아니어도 받는다 — 나중에 대화에 낀
+            # 캐릭터가 입력해도 의뢰가 수주돼야 한다. 다른 단계(장소 선택 등)는
+            # 그대로 참여자만 진행한다.
+            outsiders = [
+                session
+                for session in nc.investigations.values()
+                if not session.ended and acct not in session.accts
+            ]
+            if outsiders:
+                found, stage, is_direct = self._resolve_investigation_session(
+                    acct, status_id, in_reply_to_id, state, sessions=outsiders
+                )
+                if stage == "overview":
+                    investigation_session = found
+                    investigation_stage = stage
+                    investigation_is_direct = is_direct
         if investigation_session is not None and investigation_stage == "menu":
             bracket_match = noncombat_commands._RE_BARE_BRACKET.search(text)
             if bracket_match:
@@ -1263,13 +1330,15 @@ class MastodonBotListener(StreamListener):
             and investigation_stage == "overview"
             and _RE_ACCEPT.search(text)
         ):
-            mentioned = _mentioned_characters(state, acct, mentions)
-            response, log_info = handle_investigation_accept(
-                investigation_session, acct, mentioned, state
+            assert in_reply_to_id is not None  # 세션이 잡혔다면 답글이다.
+            participants = self._quest_accept_participants(
+                investigation_session, acct, in_reply_to_id, mentions, state
             )
-            expected_accts = [acct] + mentioned
+            response, log_info = handle_investigation_accept(
+                investigation_session, participants, state
+            )
             reply_status = self._reply(
-                status_id, acct, visibility, response, mention_accts=expected_accts
+                status_id, acct, visibility, response, mention_accts=participants
             )
             _persist_noncombat_log(state, log_info, str(reply_status["id"]))
             return
@@ -1707,7 +1776,7 @@ class MastodonBotListener(StreamListener):
 def _mentioned_characters(
     state: "BotState", acct: str, mentions: Optional[list[str]]
 ) -> list[str]:
-    """참여자를 등록하는 커맨드([대련]/[결투]/[상시전투]/[수락]/[상시조사])의
+    """참여자를 등록하는 커맨드([대련]/[결투]/[상시전투]/[상시조사])의
     참여 대상 — 발신자를 뺀, 그 게시물에 멘션된 캐릭터 계정. 스레드의 다른
     게시물은 보지 않는다."""
     return [

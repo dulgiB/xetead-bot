@@ -1159,9 +1159,9 @@ def handle_investigation_venue_choice(
         "",
         "이 의뢰를 수락할까?",
         "",
-        "◊ 의뢰를 받으려면 답글로 의뢰에 참여할 인원 전원을 멘션하면서 [수락]을 "
-        "입력해 주세요. 의뢰를 받는 대신 이 장소에서 자율 탐사를 진행하려면 "
-        "키워드가 없는 답글을 보내 주세요.",
+        "◊ 의뢰를 받으려면 답글로 [수락]을 입력해 주세요. 그 시점까지 이 "
+        "스레드에 참여한 인원 전원이 함께 의뢰를 받습니다. 의뢰를 받는 대신 이 "
+        "장소에서 자율 탐사를 진행하려면 키워드가 없는 답글을 보내 주세요.",
     ]
     reply = "\n".join(lines)
     return reply, NoncombatLogInfo(
@@ -1185,12 +1185,12 @@ def finalize_investigation_overview_post(
 
 def handle_investigation_accept(
     session: InvestigationSession,
-    acct: str,
-    mentions: list[str],
+    participants: list[str],
     state: "BotState",
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
-    """[수락] → 발신자(acct)와 답글에 멘션된 인원 전원을 참여자로 등록하고 '일반
-    의뢰' 시트의 taken_by에 기록한다.
+    """[수락] → participants 전원을 참여자로 등록하고 '일반 의뢰' 시트의
+    taken_by에 기록한다. participants는 [수락] 시점에 그 스레드에 참여한
+    캐릭터 전원이다(main.py의 _quest_accept_participants, 발신자가 맨 앞).
 
     같은 장소의 의뢰 3개(운반/탐사/전투)는 서로 다른 인원이 각각 독립적으로
     수주할 수 있다 — 다만 한 캐릭터가 그중 이미 하나를 수주한 채 다른 의뢰를
@@ -1219,7 +1219,9 @@ def handle_investigation_accept(
         msg = "◊ 이미 다른 인원이 수주한 의뢰입니다."
         return msg, NoncombatLogInfo(command_text=command_text, result=msg)
 
-    participants = [acct] + [m for m in mentions if m != acct]
+    if not participants:
+        msg = "◊ 의뢰에 참여할 캐릭터를 찾을 수 없습니다."
+        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
     if len(participants) > MAX_QUEST_PARTICIPANTS:
         msg = (
             f"◊ 의뢰 하나에는 최대 {MAX_QUEST_PARTICIPANTS}명까지 참여할 수"
