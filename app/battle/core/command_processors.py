@@ -149,6 +149,11 @@ def process_enemy_command_on_pre_action(
     command: CharacterCommand,
     remaining_commands_dict: dict[CharacterId, list[CharacterCommand]],
 ) -> CommandProcessResult:
+    departure = (
+        context.find_character_position(command.user_id)
+        if command.user_id in context.characters
+        else None
+    )
     maybe_expanded_parts, needed_cost = try_expansion_if_valid(context, command)
     if not maybe_expanded_parts:
         return CommandProcessResult(original_command=command, part_results=[])
@@ -177,8 +182,11 @@ def process_enemy_command_on_pre_action(
             )
         )
 
-    # 원본 커맨드를 저장 — POST 페이즈에서 도발 등 버프를 반영해 재전개
-    remaining_commands_dict.setdefault(command.user_id, []).append(command)
+    # 원본 커맨드를 저장 — POST 페이즈에서 도발 등 버프를 반영해 재전개.
+    # 이동은 이미 끝났으므로 경로 광역이 볼 출발 열을 선언 직전 위치로 남긴다.
+    remaining_commands_dict.setdefault(command.user_id, []).append(
+        replace(command, departure_position=departure)
+    )
 
     # 적군은 아직 처리하지 않은 parts가 남아 있어도 선언 시점에 코스트 전부 차감
     user = context.characters[command.user_id]

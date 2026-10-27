@@ -21,6 +21,10 @@ from battle.objects.models import (
 class CharacterCommand:
     user_id: CharacterId
     parts: list["CommandPart"]
+    # 적 선언(PRE) 직전의 시전자 위치. 이동은 PRE에 끝나고 대미지는 POST에
+    # 재전개되므로, 경로 광역처럼 출발 열을 읽는 효과가 이미 옮겨 간 위치를
+    # 출발 열로 오인하지 않게 PRE가 채워 둔다. None이면 현재 위치다.
+    departure_position: Optional[BattlefieldColumnIndex] = None
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,5 @@
 from dataclasses import replace
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Optional, cast
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import (
@@ -223,9 +223,34 @@ def expand_character_command(
 ) -> list[CommandPartData]:
     # 도발/희생 방어 치환은 CommandPartCalculator가 일괄 처리한다 —
     # 여기서는 원래 지정 대상 그대로 전개한다.
+    user_id = command.user_id
+    previous_departure = context.expansion_departures.get(user_id)
+    departure = command.departure_position
+    if departure is None and user_id in context.characters:
+        departure = context.find_character_position(user_id)
+    try:
+        return _expand_character_parts(command, context, departure)
+    finally:
+        if previous_departure is None:
+            context.expansion_departures.pop(user_id, None)
+        else:
+            context.expansion_departures[user_id] = previous_departure
+
+
+def _expand_character_parts(
+    command: CharacterCommand,
+    context: BattlefieldContext,
+    departure: Optional[BattlefieldColumnIndex],
+) -> list[CommandPartData]:
+    """파트를 차례로 전개하며, 각 파트가 볼 출발 열을 앞 파트의 이동까지
+    반영해 넘긴다(departure_column()). 파트는 처리 전에 한꺼번에 전개되므로
+    전장 위치로는 앞 파트의 이동을 알 수 없다."""
     parts_list: list[CommandPartData] = []
 
     for part in command.parts:
+        if departure is not None:
+            context.expansion_departures[command.user_id] = departure
+        parts_before = len(parts_list)
         if part.type_ == ActionType.MOVE and part.targets is not None:
             # parser.py가 이동 커맨드에는 항상 열 하나만 채워 넣는다.
             move_pos = cast(BattlefieldColumnIndex, part.targets[0])
@@ -381,5 +406,13 @@ def expand_character_command(
 
         else:
             raise CommandValidationError(error_invalid_command_format())
+
+        for part_data in parts_list[parts_before:]:
+            for sub_data in part_data.data_per_effect:
+                if sub_data is None:
+                    continue
+                for move_data in sub_data.move_list:
+                    if move_data.character_id == command.user_id:
+                        departure = move_data.to_position
 
     return parts_list

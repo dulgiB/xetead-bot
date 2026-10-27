@@ -42,6 +42,18 @@ def landing_column(
     return context.find_character_position(target)
 
 
+def departure_column(
+    context: "BattlefieldContext", holder: CharacterId
+) -> BattlefieldColumnIndex:
+    """경로 광역 효과가 출발 열로 볼 시전자의 위치. 커맨드 전개 중이면 그
+    커맨드의 앞 파트 이동까지 반영한 위치(expansion_departures)이고, 아니면
+    현재 위치다. 전개 시점엔 이번 파트의 이동이 아직 적용되지 않았다."""
+    departure = context.expansion_departures.get(holder)
+    if departure is not None:
+        return departure
+    return context.find_character_position(holder)
+
+
 @dataclass(frozen=True)
 class SkillEffectBase(abc.ABC):
     value_source: Optional[ValueSourceType]

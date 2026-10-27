@@ -127,6 +127,11 @@ class BattlefieldContext:
         # 이번 라운드에 답글에서 효과 예고 줄을 이미 보여 준 스킬 id. 같은
         # 스킬을 여러 번 선언해도 설명이 반복되지 않게 한다.
         self.previewed_skill_ids: set[str] = set()
+        # 커맨드를 전개하는 동안의 시전자 출발 열. 한 커맨드의 파트는 처리
+        # 전에 한꺼번에 전개되므로, 앞 파트의 이동이 아직 전장에 반영되지
+        # 않았다 — 경로 광역 효과는 위치 대신 이 값을 읽는다
+        # (skill/models.departure_column()). 전개가 끝나면 비운다.
+        self.expansion_departures: dict[CharacterId, BattlefieldColumnIndex] = {}
         self.damaged_this_round: set[CharacterId] = set()
         # 이번 라운드에 대미지가 실제로 적용된 (공격자, 대상) 조합.
         # results는 커맨드 하나가 끝나야 채워지므로, 같은 커맨드 안에서
