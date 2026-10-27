@@ -464,7 +464,7 @@ def test_handle_investigation_accept_returns_log_info(monkeypatch):
     )
     monkeypatch.setattr(noncombat_module, "update_quest_taken_by", lambda *a, **k: None)
 
-    result, log_info = handle_investigation_accept(session, "user1", [], state)
+    result, log_info = handle_investigation_accept(session, ["user1"], state)
 
     assert "의뢰를 받았다" in result
     assert log_info is not None
@@ -492,7 +492,7 @@ def test_investigation_accept_writes_taken_by_and_registers_mentions(monkeypatch
     )
 
     result, log_info = handle_investigation_accept(
-        session, "user1", ["user2", "user3"], state
+        session, ["user1", "user2", "user3"], state
     )
 
     # 참여자 전원 멘션은 handle_investigation_accept 자체가 아니라 main.py의
@@ -537,8 +537,8 @@ def test_investigation_accept_allows_different_quests_in_same_location(monkeypat
     monkeypatch.setattr(noncombat_module, "load_general_quest_sheet", fake_load)
     monkeypatch.setattr(noncombat_module, "update_quest_taken_by", fake_update)
 
-    result1, _log1 = handle_investigation_accept(session1, "user1", [], state)
-    result2, _log2 = handle_investigation_accept(session2, "user2", [], state)
+    result1, _log1 = handle_investigation_accept(session1, ["user1"], state)
+    result2, _log2 = handle_investigation_accept(session2, ["user2"], state)
 
     assert "의뢰를 받았다" in result1
     assert "의뢰를 받았다" in result2
@@ -558,7 +558,7 @@ def test_investigation_accept_rejects_already_taken_quest(monkeypatch):
         ),
     )
 
-    result, log_info = handle_investigation_accept(session, "user1", [], state)
+    result, log_info = handle_investigation_accept(session, ["user1"], state)
 
     assert "이미 다른 인원이 수주한 의뢰" in result
 
@@ -584,7 +584,7 @@ def test_investigation_accept_rejects_character_already_busy_in_same_location(
         ),
     )
 
-    result, log_info = handle_investigation_accept(session, "user1", [], state)
+    result, log_info = handle_investigation_accept(session, ["user1"], state)
 
     assert "이미 다른 의뢰를 수주한 캐릭터가 있어" in result
     assert "@user1" in result
@@ -929,9 +929,9 @@ def test_investigation_venue_choice_formats_quest_card(monkeypatch):
         "\n"
         "이 의뢰를 수락할까?\n"
         "\n"
-        "◊ 의뢰를 받으려면 답글로 의뢰에 참여할 인원 전원을 멘션하면서 [수락]을 "
-        "입력해 주세요. 의뢰를 받는 대신 이 장소에서 자율 탐사를 진행하려면 "
-        "키워드가 없는 답글을 보내 주세요."
+        "◊ 의뢰를 받으려면 답글로 [수락]을 입력해 주세요. 그 시점까지 이 "
+        "스레드에 참여한 인원 전원이 함께 의뢰를 받습니다. 의뢰를 받는 대신 이 "
+        "장소에서 자율 탐사를 진행하려면 키워드가 없는 답글을 보내 주세요."
     )
     assert session.quest_id == "항구 마을_운반"
 
@@ -2364,31 +2364,116 @@ def test_investigation_sessions_run_in_parallel():
     assert state.noncombat.active_investigations("user1") == [shared, solo]
 
 
-def test_investigation_accept_puts_sender_first_even_if_not_starter(monkeypatch):
-    """[상시조사]를 보낸 사람이 아니라 다른 참여자가 [수락]해도 그 발신자가
-    수주자로 기록돼야 한다."""
-    state = _make_state("user1")
-    session = InvestigationSession(
-        field_id="100",
-        accts=["user1", "user2"],
-        menu_post_id=100,
-        quest_id="항구 마을_운반",
-    )
+def _quest_accept_listener(monkeypatch, accts: list[str]):
+    """user1이 accts[1:]을 멘션해 [상시조사]를 열고 [광장]으로 의뢰 개요까지
+    받은 상태. accts는 전부 캐릭터 계정으로 등록된다."""
+    from bot import main as main_module
+    from test_bot_admin import _FakeMastodon
+
+    state = _make_state(accts[0])
+    for acct in accts[1:]:
+        state.char_dict[acct] = get_test_preset("동료")
     monkeypatch.setattr(
         noncombat_module,
         "load_general_quest_sheet",
-        lambda spreadsheet, cache=None: (_quest_location(), [_quest()]),
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
     )
-    calls = []
+    taken_by: list[str] = []
     monkeypatch.setattr(
         noncombat_module,
         "update_quest_taken_by",
-        lambda spreadsheet, quest_id, taken_by, cache=None: calls.append(taken_by),
+        lambda spreadsheet, quest_id, value, cache=None: taken_by.append(value),
+    )
+    monkeypatch.setattr(main_module, "_persist_noncombat_log", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    monkeypatch.setattr(
+        mastodon, "status_context", lambda status_id: pytest.fail("스레드 조회")
+    )
+    listener = main_module.MastodonBotListener(mastodon, state, bot_acct="bot")
+    dispatch = listener._MastodonBotListener__dispatch  # type: ignore[attr-defined]
+    dispatch("user1", 1, 50, "[상시조사]", "public", ["user2"])
+    [session] = state.noncombat.active_investigations("user1")
+    listener._threads.record(2, session.menu_post_id, "user1")
+    dispatch("user1", 2, session.menu_post_id, "[광장]", "public", [])
+    assert session.overview_post_id is not None
+    return listener, mastodon, dispatch, session, taken_by
+
+
+def test_investigation_accept_puts_sender_first_even_if_not_starter(monkeypatch):
+    """[상시조사]를 보낸 사람이 아니라 다른 참여자가 [수락]해도 그 발신자가
+    맨 앞이고, 멘션을 지워도 세션 참여자는 빠지지 않는다(테스트)."""
+    _listener, _mastodon, dispatch, session, taken_by = _quest_accept_listener(
+        monkeypatch, ["user1", "user2"]
     )
 
-    handle_investigation_accept(session, "user2", ["user1"], state)
+    dispatch("user2", 3, session.overview_post_id, "[수락]", "public", [])
 
-    assert calls == ["user2,user1"]
+    assert taken_by == ["user2,user1"]
+    assert session.ended is True
+
+
+def test_investigation_accept_registers_everyone_in_thread(monkeypatch):
+    """[수락]에 멘션하지 않았어도 메뉴 이후 스레드에 글을 쓴 캐릭터는 전원
+    참여자가 된다. world처럼 캐릭터가 아닌 작성자는 빠진다(테스트)."""
+    listener, mastodon, dispatch, session, taken_by = _quest_accept_listener(
+        monkeypatch, ["user1", "user2", "user3"]
+    )
+    # 사담 게시물 id는 스레드 조상 판정이 시각 순서로 보므로 봇 게시물보다 크다.
+    listener._threads.record(9103, session.overview_post_id, "user3")
+    listener._threads.record(9104, 9103, "test-world")
+    listener._threads.record(9105, 9104, "user1")
+
+    dispatch("user1", 9106, 9105, "[수락]", "public", [])
+
+    assert taken_by == ["user1,user2,user3"]
+    assert mastodon.status_post_calls[-1]["status"].startswith("@user1 @user2 @user3 ")
+
+
+def test_investigation_accept_from_outsider_is_accepted(monkeypatch):
+    """[상시조사] 세션 참여자가 아닌 캐릭터가 [수락]해도 받고, 그 시점의
+    스레드 참여자 전원이 기록된다(테스트)."""
+    listener, _mastodon, dispatch, session, taken_by = _quest_accept_listener(
+        monkeypatch, ["user1", "user2", "user3", "user4"]
+    )
+    listener._threads.record(9103, session.overview_post_id, "user3")
+
+    dispatch("user4", 9104, 9103, "[수락]", "public", [])
+
+    assert taken_by == ["user4,user1,user2,user3"]
+    assert session.ended is True
+
+
+def test_outsider_accept_outside_overview_is_ignored(monkeypatch):
+    """세션 참여자가 아닌 캐릭터의 [수락]은 의뢰 개요 단계에서만 받는다 —
+    장소 선택 메뉴에 단 [수락]은 그 세션을 건드리지 않는다(테스트)."""
+    from bot import main as main_module
+    from test_bot_admin import _FakeMastodon
+
+    state = _make_state("user1")
+    state.char_dict["user4"] = get_test_preset("동료")
+    monkeypatch.setattr(
+        noncombat_module,
+        "load_general_quest_sheet",
+        lambda spreadsheet, cache=None: (_quest_location(), [_quest(venue="광장")]),
+    )
+    monkeypatch.setattr(
+        noncombat_module,
+        "update_quest_taken_by",
+        lambda *a, **k: pytest.fail("수주 기록"),
+    )
+    monkeypatch.setattr(main_module, "_persist_noncombat_log", lambda *a, **k: None)
+    # 세션에 걸리지 않은 [수락]은 아이템 이름으로 읽히는 경로까지 내려간다.
+    monkeypatch.setattr(main_module, "parse_bare_item_command", lambda *a: None)
+    mastodon = _FakeMastodon()
+    listener = main_module.MastodonBotListener(mastodon, state, bot_acct="bot")
+    dispatch = listener._MastodonBotListener__dispatch  # type: ignore[attr-defined]
+    dispatch("user1", 1, 50, "[상시조사]", "public", [])
+    [session] = state.noncombat.active_investigations("user1")
+
+    dispatch("user4", 2, session.menu_post_id, "[수락]", "public", [])
+
+    assert session.ended is False
+    assert session.quest_id is None
 
 
 def test_investigation_start_tracks_all_mentioned_characters(monkeypatch):
@@ -2602,7 +2687,7 @@ def test_investigation_accept_rejects_more_than_four_participants(monkeypatch):
     )
 
     result, _log = handle_investigation_accept(
-        session, "user1", ["user2", "user3", "user4", "user5"], state
+        session, ["user1", "user2", "user3", "user4", "user5"], state
     )
 
     assert result.startswith("◊ 의뢰 하나에는 최대 4명까지 참여할 수 있습니다.")
@@ -2625,6 +2710,6 @@ def test_investigation_accept_allows_exactly_four_participants(monkeypatch):
         lambda spreadsheet, quest_id, taken_by, cache=None: calls.append(taken_by),
     )
 
-    handle_investigation_accept(session, "user1", ["user2", "user3", "user4"], state)
+    handle_investigation_accept(session, ["user1", "user2", "user3", "user4"], state)
 
     assert calls == ["user1,user2,user3,user4"]
