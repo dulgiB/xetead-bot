@@ -25,6 +25,7 @@ from battle.exceptions import (
     error_character_is_defeated,
     error_column_not_occupied_by_target,
     error_invalid_command_format,
+    error_invalid_move_destination,
     error_keyword_already_used,
     error_keyword_not_available_here,
     error_keyword_not_enough_hp,
@@ -436,6 +437,29 @@ def try_expansion_if_valid(
                     columns_for_span(user_pos, user.span), (to_pos,), effective_range
                 ):
                     raise CommandValidationError(error_attack_position_too_far(to_pos))
+
+        # 열로 돌진하는 효과도 같은 이유로 이동 전 위치에서 도착 열까지를 본다.
+        # 제자리 돌진은 지나가는 열이 없어 아무 일도 일어나지 않으므로 거부한다.
+        if (
+            isinstance(original_part, CommandPart)
+            and original_part.type_ == ActionType.SKILL
+        ):
+            for effect in _skill_data_of(user, original_part).effects:
+                destination = effect.dash_destination(tuple(original_part.targets))
+                if destination is None:
+                    continue
+                if destination == user_pos:
+                    raise CommandValidationError(
+                        error_invalid_move_destination(destination)
+                    )
+                if not is_reachable_between(
+                    columns_for_span(user_pos, user.span),
+                    (destination,),
+                    effective_range,
+                ):
+                    raise CommandValidationError(
+                        error_attack_position_too_far(destination)
+                    )
 
         for sub_data in command_data.data_per_effect:
             if sub_data is None:

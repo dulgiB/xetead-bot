@@ -136,6 +136,14 @@ class SkillEffectBase(abc.ABC):
         먼 쪽으로 뛰게 되기 때문이다."""
         return False
 
+    def dash_destination(
+        self, raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]"
+    ) -> Optional[BattlefieldColumnIndex]:
+        """시전자가 입력한 열로 돌진하는 효과만 오버라이드한다. 사전 검증이
+        출발 위치에서 이 열까지를 사거리로 본다
+        (command_processors.try_expansion_if_valid())."""
+        return None
+
     @property
     def condition(self) -> Optional["Condition"]:
         if not self.condition_class_name:
