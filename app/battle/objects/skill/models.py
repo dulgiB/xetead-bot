@@ -42,6 +42,18 @@ def landing_column(
     return context.find_character_position(target)
 
 
+def departure_column(
+    context: "BattlefieldContext", holder: CharacterId
+) -> BattlefieldColumnIndex:
+    """경로 광역 효과가 출발 열로 볼 시전자의 위치. 커맨드 전개 중이면 그
+    커맨드의 앞 파트 이동까지 반영한 위치(expansion_departures)이고, 아니면
+    현재 위치다. 전개 시점엔 이번 파트의 이동이 아직 적용되지 않았다."""
+    departure = context.expansion_departures.get(holder)
+    if departure is not None:
+        return departure
+    return context.find_character_position(holder)
+
+
 @dataclass(frozen=True)
 class SkillEffectBase(abc.ABC):
     value_source: Optional[ValueSourceType]
@@ -123,6 +135,14 @@ class SkillEffectBase(abc.ABC):
         위치(가장 왼쪽 열)로만 들어가면 사거리 안의 다른 점유 열을 두고도
         먼 쪽으로 뛰게 되기 때문이다."""
         return False
+
+    def dash_destination(
+        self, raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]"
+    ) -> Optional[BattlefieldColumnIndex]:
+        """시전자가 입력한 열로 돌진하는 효과만 오버라이드한다. 사전 검증이
+        출발 위치에서 이 열까지를 사거리로 본다
+        (command_processors.try_expansion_if_valid())."""
+        return None
 
     @property
     def condition(self) -> Optional["Condition"]:

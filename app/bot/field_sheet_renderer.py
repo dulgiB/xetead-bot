@@ -56,6 +56,7 @@ from battle.objects.define import (
 )
 from battle.objects.models import CharacterId
 from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
+from battle.objects.skill.effects.effect_dash_to_column import dash_path_columns
 from bot import sheet_writer
 from bot.sheet_cache import SheetCache
 
@@ -380,10 +381,58 @@ def _aoe_mark_row(
         return marks
     for commands in enemy_declared.values():
         for command in commands:
-            for part in command.parts:
-                for column in _aoe_columns(context, part):
-                    marks[column] = _AOE_MARK
+            for column in _command_aoe_columns(context, command):
+                marks[column] = _AOE_MARK
     return marks
+
+
+def _command_aoe_columns(
+    context: "BattlefieldContext", command: CharacterCommand
+) -> list[int]:
+    """커맨드 하나가 덮는 열. 열 돌진은 지정한 열 하나가 아니라 지나가는 열
+    전부를 덮으므로, 선언 직전 위치에서 파트의 이동을 따라가며 경로를 잰다."""
+    covered: list[int] = []
+    position = command.departure_position
+    if position is None and command.user_id in context.characters:
+        position = context.find_character_position(command.user_id)
+    span = (
+        context.characters[command.user_id].span
+        if command.user_id in context.characters
+        else 1
+    )
+    for part in command.parts:
+        if part.type_ == ActionType.MOVE and part.targets:
+            target = part.targets[0]
+            if isinstance(target, BattlefieldColumnIndex):
+                position = target
+            continue
+        destination = _dash_destination(context, part)
+        if destination is not None and position is not None:
+            covered.extend(
+                column.value
+                for column in dash_path_columns(position, destination, span)
+            )
+            position = destination
+            continue
+        covered.extend(_aoe_columns(context, part))
+    return covered
+
+
+def _dash_destination(
+    context: "BattlefieldContext", part: CommandPart
+) -> Optional[BattlefieldColumnIndex]:
+    if part.type_ != ActionType.SKILL or part.skill_id is None:
+        return None
+    skill = context.get_skill_data_by_id(part.skill_id)
+    raw_targets = tuple(part.targets)
+    return next(
+        (
+            destination
+            for effect in skill.effects
+            if (destination := effect.dash_destination(raw_targets)) is not None
+        ),
+        None,
+    )
 
 
 def _aoe_columns(context: "BattlefieldContext", part: CommandPart) -> list[int]:

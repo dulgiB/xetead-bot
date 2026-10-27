@@ -25,6 +25,7 @@ from battle.exceptions import (
     error_character_is_defeated,
     error_column_not_occupied_by_target,
     error_invalid_command_format,
+    error_invalid_move_destination,
     error_keyword_already_used,
     error_keyword_not_available_here,
     error_keyword_not_enough_hp,
@@ -149,6 +150,11 @@ def process_enemy_command_on_pre_action(
     command: CharacterCommand,
     remaining_commands_dict: dict[CharacterId, list[CharacterCommand]],
 ) -> CommandProcessResult:
+    departure = (
+        context.find_character_position(command.user_id)
+        if command.user_id in context.characters
+        else None
+    )
     maybe_expanded_parts, needed_cost = try_expansion_if_valid(context, command)
     if not maybe_expanded_parts:
         return CommandProcessResult(original_command=command, part_results=[])
@@ -177,8 +183,11 @@ def process_enemy_command_on_pre_action(
             )
         )
 
-    # 원본 커맨드를 저장 — POST 페이즈에서 도발 등 버프를 반영해 재전개
-    remaining_commands_dict.setdefault(command.user_id, []).append(command)
+    # 원본 커맨드를 저장 — POST 페이즈에서 도발 등 버프를 반영해 재전개.
+    # 이동은 이미 끝났으므로 경로 광역이 볼 출발 열을 선언 직전 위치로 남긴다.
+    remaining_commands_dict.setdefault(command.user_id, []).append(
+        replace(command, departure_position=departure)
+    )
 
     # 적군은 아직 처리하지 않은 parts가 남아 있어도 선언 시점에 코스트 전부 차감
     user = context.characters[command.user_id]
@@ -214,8 +223,13 @@ def try_process_enemy_command_on_post_action(
     calculators = [
         CommandPartCalculator(post_part, context) for post_part in post_parts
     ]
+    # 정산 때 이동하는 effect가 있으면 뒤 파트는 그 목적지에서 사거리를 잰다 —
+    # PRE 검증도 파트를 차례로 따라가며 위치를 갱신했다.
+    user_pos = context.find_character_position(user_id)
     for calculator, post_part in zip(calculators, post_parts):
-        _drop_targets_out_of_range(context, user_id, post_part, calculator)
+        user_pos = _drop_targets_out_of_range(
+            context, user_id, post_part, calculator, user_pos
+        )
     assign_taunt_redirects(
         context, user_id, calculators, RoundPhaseType.ENEMY_POST_ACTION
     )
@@ -238,7 +252,8 @@ def _drop_targets_out_of_range(
     user_id: CharacterId,
     part_data: CommandPartData,
     calculator: CommandPartCalculator,
-) -> None:
+    user_pos: BattlefieldColumnIndex,
+) -> BattlefieldColumnIndex:
     """PRE 선언 뒤 아군 행동으로 사거리 밖에 놓인 대상을 POST 대미지에서 뺀다.
 
     사거리는 선언 시점에만 검증되므로, 여기서 다시 보지 않으면 밀려나거나
@@ -247,10 +262,10 @@ def _drop_targets_out_of_range(
     걸러, 빗나간 공격을 도발자가 끌어오지 않게 한다.
 
     POST 타이밍 effect의 이동은 계산 중에 일어나므로, PRE 검증과 같이
-    시전자의 이동 목적지를 이어받아 판정한다.
+    시전자의 이동 목적지를 이어받아 판정하고, 다음 파트가 이어받도록
+    이 파트를 마친 위치를 돌려준다.
     """
     user = context.characters[user_id]
-    user_pos = context.find_character_position(user_id)
     attack_range = _effective_attack_range(context, user, part_data.original_part)
 
     for mutable in calculator.data_by_effect:
@@ -291,6 +306,7 @@ def _drop_targets_out_of_range(
         mutable.nullified_effect_list.extend(
             (target_id, "사거리 밖, 대미지 없음") for target_id in out_of_range
         )
+    return user_pos
 
 
 def _effective_attack_range(
@@ -428,6 +444,29 @@ def try_expansion_if_valid(
                     columns_for_span(user_pos, user.span), (to_pos,), effective_range
                 ):
                     raise CommandValidationError(error_attack_position_too_far(to_pos))
+
+        # 열로 돌진하는 효과도 같은 이유로 이동 전 위치에서 도착 열까지를 본다.
+        # 제자리 돌진은 지나가는 열이 없어 아무 일도 일어나지 않으므로 거부한다.
+        if (
+            isinstance(original_part, CommandPart)
+            and original_part.type_ == ActionType.SKILL
+        ):
+            for effect in _skill_data_of(user, original_part).effects:
+                destination = effect.dash_destination(tuple(original_part.targets))
+                if destination is None:
+                    continue
+                if destination == user_pos:
+                    raise CommandValidationError(
+                        error_invalid_move_destination(destination)
+                    )
+                if not is_reachable_between(
+                    columns_for_span(user_pos, user.span),
+                    (destination,),
+                    effective_range,
+                ):
+                    raise CommandValidationError(
+                        error_attack_position_too_far(destination)
+                    )
 
         for sub_data in command_data.data_per_effect:
             if sub_data is None:

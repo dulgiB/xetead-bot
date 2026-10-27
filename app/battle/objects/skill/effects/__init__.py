@@ -26,6 +26,7 @@ from .effect_damage import (  # noqa: F401
 from .effect_damage_by_debuff_stack_tier import (  # noqa: F401
     SkillEffectDamageByDebuffStackTier,
 )
+from .effect_dash_to_column import SkillEffectDashToColumn  # noqa: F401
 from .effect_field_damage import SkillEffectFieldDamage  # noqa: F401
 from .effect_field_effect_control import (  # noqa: F401
     SkillEffectAddFieldEffect,

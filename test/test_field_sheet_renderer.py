@@ -643,3 +643,55 @@ def test_ally_declarations_are_written_next_to_the_ally_block():
     assert cells[rowcol_to_a1(_CHARM_ROW_START, _DECLARE_NAME_COL)][0].startswith(
         "아군 1 ["
     )
+
+
+def test_column_dash_marks_every_column_on_its_path():
+    from battle.objects.skill.effects import SkillEffectDashToColumn
+    from battle.objects.skill.models import SkillData
+    from bot.field_sheet_renderer import AOE_MARK_ROW
+
+    skill = SkillData(
+        id="스킬_1",
+        target_rule="SkillTargetRuleColumn",
+        target_count=1,
+        cost=0,
+        effects=[
+            SkillEffectDashToColumn(
+                ValueSourceType.FIXED, 1, ValueType.INTEGER, None, None
+            )
+        ],
+        description="",
+    )
+    ctx = BattlefieldContext(buff_dict={}, skill_dict={"스킬_1": skill})
+    ctx.add_character(
+        get_test_preset("적 1", skill_1_id="스킬_1"),
+        FactionType.ENEMY,
+        BattlefieldColumnIndex(3),
+    )
+    # 선언 때 이미 4열로 옮겨 갔고, 출발 열(1열)은 커맨드에 남아 있다.
+    command = CharacterCommand(
+        user_id=CharacterId("적 1"),
+        parts=[
+            CommandPart(
+                ActionType.SKILL,
+                skill_id="스킬_1",
+                targets=[BattlefieldColumnIndex(3)],
+            )
+        ],
+        departure_position=BattlefieldColumnIndex(0),
+    )
+    spreadsheet = _RecordingFieldSpreadsheet()
+    render_public_field_sheet(
+        spreadsheet,
+        ctx,
+        round_n=1,
+        phase="아군 행동",
+        enemy_declared={CharacterId("적 1"): [command]},
+        ally_declared={},
+    )
+    cells = _written_cells(spreadsheet.bodies[0])
+    marks = [
+        cells.get(rowcol_to_a1(AOE_MARK_ROW, col), ("",))[0] for col in range(2, 9)
+    ]
+
+    assert marks == ["", ".", ".", ".", "", "", ""]

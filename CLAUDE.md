@@ -197,6 +197,29 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 열까지이며, 그 사이에 걸친 다열 에너미는 겹친 열 수만큼 맞는다. 주대상은 착지 열에서
 주대상 대미지를 받으므로 그 열만 빠지고, 경로상 나머지 자기 열에서는 맞는다.
 
+### 열 돌진 (`SkillEffectDashToColumn`)
+
+주대상 없이 **열을 지정해** 돌진하는 효과다. 캐릭터가 없는 열도 지정할 수
+있고, 지나간 열(출발 열 제외, 도착 열 포함)의 적 전원이 같은 계수로 맞는다.
+열 입력은 `SkillTargetRuleColumn`(`target_count` 1)이 받고, 규칙이 잡아 주는
+도착 열의 대상은 쓰지 않는다. 사거리는 이동 전 위치 → 도착 열로 본다
+(`SkillEffectBase.dash_destination()`, `try_expansion_if_valid()`).
+
+**출발 열은 전장 위치가 아니라 `skill/models.departure_column()`으로 읽는다**
+(경로 광역 `SkillEffectSplashAlongPath`도 같다). 두 군데에서 전장 위치가
+출발 열이 아니기 때문이다:
+
+- 한 커맨드의 파트는 처리 전에 한꺼번에 전개되므로, `[이동/2열 - 돌진/…]`의
+  돌진 파트를 전개할 때 앞 파트의 이동이 아직 전장에 없다.
+  `expand_character_command()`가 파트마다 앞 파트의 이동을 반영한 출발 열을
+  `BattlefieldContext.expansion_departures`에 넣어 둔다.
+- 에너미는 이동을 선언(PRE)에 끝내고 대미지를 정산(POST)에 재전개하므로,
+  재전개 때는 이미 도착 열에 서 있다. PRE가 선언 직전 위치를
+  `CharacterCommand.departure_position`에 남기고 재전개가 그 값에서 시작한다.
+
+공개 "필드" 시트의 광역 예고 행(`_aoe_mark_row()`)도 같은 출발 열에서 경로
+전체를 표시한다.
+
 ### 전장 경계
 
 기준이 가장 왼쪽 열이므로 설 수 있는 오른쪽 한계는 `7 - span`열이다.
