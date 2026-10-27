@@ -104,11 +104,13 @@ def test_target_dash_path_starts_after_an_earlier_move_in_the_same_command():
     manager.to_phase(RoundPhaseType.ALLY_ACTION)
     _add(ctx, DASHER.name, FactionType.ALLY, 0, skill_1_id="DashSkill", attack_range=1)
     _add(ctx, "주대상", FactionType.ENEMY, 2)
-    _add(ctx, "지나친 적", FactionType.ENEMY, 1)
+    _add(ctx, "이동 전 열 적", FactionType.ENEMY, 0)
+    _add(ctx, "출발 열 적", FactionType.ENEMY, 1)
 
     manager.process_command(
         parse_character_command(DASHER, "[이동/2열 - DashSkill/주대상]", ctx)
     )
 
     assert ctx.find_character_position(DASHER) == BattlefieldColumnIndex(2)
-    assert _hp(ctx, "지나친 적") == 100
+    assert _hp(ctx, "이동 전 열 적") == 100
+    assert _hp(ctx, "출발 열 적") == 90

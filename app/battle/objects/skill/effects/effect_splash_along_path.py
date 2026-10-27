@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 class SkillEffectSplashAlongPath(SkillEffectBase):
     """시전자의 원래 위치 ~ 주대상의 위치 사이 열에 있는 모든 적에게 대미지를
-    입힌다. 출발 열은 빼고 도착 열은 넣는다 — 시전자가 지나가는 열만 친다.
-    주대상은 착지 열에서만 빠지며, 같은 열의 대상을 치면 지나가는 열이 없다.
+    입힌다. 출발 열과 도착 열을 모두 넣는다. 주대상은 착지 열에서만 빠지며,
+    같은 열의 대상을 치면 그 열의 나머지 적만 맞는다.
 
     돌진(SkillEffectMove의 TARGET_CURR_POSITION)과 함께 쓰이는 스킬을 위한
     효과로, 출발 열은 departure_column()으로 읽는다 — 같은 커맨드의 앞 파트
@@ -60,7 +60,7 @@ class SkillEffectSplashAlongPath(SkillEffectBase):
         from_pos = departure_column(context, holder)
         to_pos = landing_column(context, main_target, raw_targets)
         step = 1 if to_pos.value >= from_pos.value else -1
-        path_columns = range(from_pos.value + step, to_pos.value + step, step)
+        path_columns = range(from_pos.value, to_pos.value + step, step)
 
         foe_faction = context.characters[holder].foe_faction
         splash_targets = [
