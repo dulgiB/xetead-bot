@@ -32,6 +32,7 @@ from battle.practice.round_manager import PracticeRoundManager
 from bot.log_sheets import FieldBattleType, FieldRow, load_open_battle_rows
 from bot.noncombat_state import InvestigationSession
 from bot.practice_state import PracticeBattleState
+from bot.thread_index import normalize_post_id
 from bot.session import ATTACK_DICE_COUNT, BattleSession
 
 if TYPE_CHECKING:
@@ -249,7 +250,7 @@ def _restore_main_battle(
 
     state.session = session
     state.preparation_status_id = int(row.field_id)
-    state.active_phase_post_id = row.meta.get("active_phase_post_id")
+    state.active_phase_post_id = normalize_post_id(row.meta.get("active_phase_post_id"))
 
     name_label = session.name or "(이름 없음)"
     return (
@@ -306,7 +307,7 @@ def _restore_practice_prep(
     들어온 선언만 되살리면, 남은 참가자가 같은 준비 게시물에 이어서 선언해
     그대로 전투를 시작할 수 있다."""
     meta = row.meta
-    prep_post_id = meta.get("prep_post_id")
+    prep_post_id = normalize_post_id(meta.get("prep_post_id"))
     expected_accts = list(meta.get("expected_accts") or [])
     if not prep_post_id or not expected_accts:
         logger.warning(
@@ -327,10 +328,9 @@ def _restore_practice_prep(
         mode=mode,
         milestone_n=ATTACK_DICE_COUNT,
     )
-    # 게시물 id는 메타에 실린 값을 그대로 쓴다 — mastodon.py가 돌려주는 id가
-    # 문자열이라 state.practices의 키도 문자열이다. 여기서만 int로 바꾸면
-    # 복원된 세션이 어떤 답글과도 매칭되지 않는다(진행 중인 전투를 복원하는
-    # _restore_practice_battle도 active_post_id를 그대로 쓴다).
+    # 게시물 id는 normalize_post_id()로 맞춘다 — 알림에서 받는 id도 같은
+    # 모양으로 맞춰 다루므로, 메타의 문자열을 그대로 두면 복원된 세션이 어떤
+    # 답글과도 매칭되지 않는다.
     ps = PracticeBattleState(
         context=context,
         manager=PracticeRoundManager(context),
@@ -363,7 +363,7 @@ def _restore_practice_battle(
             state, row, buff_dict, skill_dict, passive_skill_dict, item_dict
         )
 
-    active_post_id = row.meta.get("active_post_id")
+    active_post_id = normalize_post_id(row.meta.get("active_post_id"))
     if active_post_id is None:
         logger.warning(
             "대련/상시전투 복원 실패: active_post_id 메타가 없습니다 (field_id=%s)",
@@ -521,7 +521,7 @@ def _restore_investigation_session(state: "BotState", row: FieldRow) -> Optional
     accts = meta.get("accts")
     if not accts and meta.get("acct"):
         accts = [meta["acct"]]
-    menu_post_id = meta.get("menu_post_id")
+    menu_post_id = normalize_post_id(meta.get("menu_post_id"))
     if not accts or menu_post_id is None:
         logger.warning(
             "상시조사 세션 복원 실패: accts/menu_post_id 메타가 없습니다 (field_id=%s)",
@@ -533,7 +533,7 @@ def _restore_investigation_session(state: "BotState", row: FieldRow) -> Optional
         field_id=row.field_id,
         accts=list(accts),
         menu_post_id=menu_post_id,
-        overview_post_id=meta.get("overview_post_id"),
+        overview_post_id=normalize_post_id(meta.get("overview_post_id")),
         quest_id=meta.get("quest_id"),
     )
     state.noncombat.investigations[session.field_id] = session

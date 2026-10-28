@@ -1147,6 +1147,12 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
   것은 그대로 허용된다 — 필드에 남아 계속 피격되는 기존 설계가 유지되어야 한다.
 - `try_expansion_if_valid()`에서 검증 실패 시 `CommandValidationError`를 raise하며, 코스트 차감은 검증 통과 후에만 수행한다.
 - 스킬 효과 하나당 `CommandPartData` 하나가 생성된다. 즉 `parts_list`의 길이 ≥ 커맨드 파트 수.
+- 봇 계층이 다루는 게시물 id는 `bot/thread_index.normalize_post_id()`로 맞춘 값이다.
+  mastodon.py 2.x는 id를 `str` 하위 타입(`MaybeSnowflakeIdType`)으로 주고, 시트·메타에서
+  되읽는 id는 문자열이나 정수로 들어와 `"1" != 1` 비교가 조용히 거짓이 된다 — 알림
+  수신(`_process_notification()`)·봇 게시(`_status_post()`)·재기동 복원에서 맞추고, id를
+  비교하거나 dict 키로 쓰는 새 경로도 같은 함수를 거친다. 테스트도 정수만 쓰면 이 차이가
+  가려지므로 회귀 테스트에는 `MaybeSnowflakeIdType`을 쓴다.
 
 ---
 
