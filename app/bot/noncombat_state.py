@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from bot.thread_index import normalize_post_id
+
 
 @dataclass
 class DailyQuestMidState:
@@ -41,7 +43,10 @@ class NonCombatState:
     daily_quest_mid: dict[str, DailyQuestMidState] = field(default_factory=dict)
 
     def get_daily_quest_post_ids(self) -> set[int]:
-        return {s.bot_reply_post_id for s in self.daily_quest_mid.values()}
+        return {
+            normalize_post_id(s.bot_reply_post_id)
+            for s in self.daily_quest_mid.values()
+        }
 
     def active_investigations(self, acct: str) -> list[InvestigationSession]:
         return [

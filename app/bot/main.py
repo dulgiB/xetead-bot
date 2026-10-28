@@ -77,7 +77,7 @@ from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCom
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 from bot.sheet_cache import SheetCache
-from bot.thread_index import ThreadIndex
+from bot.thread_index import ThreadIndex, normalize_post_id
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -298,13 +298,13 @@ def _register_practice(
         else (ps.prep_post_id or None)
     )
     if old_key is not None:
-        state.practices.pop(old_key, None)
+        state.practices.pop(normalize_post_id(old_key), None)
     if prep:
         ps.prep_post_id = new_post_id
     else:
         ps.prep_post_id = 0
         ps.active_post_id = new_post_id
-    state.practices[new_post_id] = ps
+    state.practices[normalize_post_id(new_post_id)] = ps
 
 
 def _update_practice_field_active_post(
@@ -539,6 +539,10 @@ class MastodonBotListener(StreamListener):
 
     def _status_post(self, *args, **kwargs) -> dict:
         status = self._mastodon.status_post(*args, **kwargs)
+        # 돌려받은 게시물 id도 알림에서 받는 id와 같은 모양으로 맞춘다
+        # (normalize_post_id 참고). mastodon.py의 응답 dict는 대입하면 다시
+        # 원래 타입으로 바꾸므로 일반 dict로 옮겨 담는다.
+        status = {**status, "id": normalize_post_id(status["id"])}
         self._threads.record(status["id"], kwargs.get("in_reply_to_id"), self._bot_acct)
         return status
 
@@ -666,8 +670,13 @@ class MastodonBotListener(StreamListener):
             account = notification["account"]
             status = notification["status"]
             acct = account["acct"]
-            status_id = status["id"]
-            in_reply_to_id: Optional[int] = status.get("in_reply_to_id")
+            # 봇이 다루는 게시물 id는 전부 normalize_post_id()로 맞춘다 —
+            # mastodon.py는 id를 문자열 계열로 주는데 시트·메타에서 되읽는 id와
+            # 섞이면 같은 게시물끼리도 비교가 거짓이 된다.
+            status_id = normalize_post_id(status["id"])
+            in_reply_to_id: Optional[int] = normalize_post_id(
+                status.get("in_reply_to_id")
+            )
 
             self._threads.record(status_id, in_reply_to_id, acct)
             command_text = _extract_command(status["content"])
@@ -723,7 +732,7 @@ class MastodonBotListener(StreamListener):
         조회하지 않도록."""
         if in_reply_to_id is None:
             return None
-        direct = state.practices.get(in_reply_to_id)
+        direct = state.practices.get(normalize_post_id(in_reply_to_id))
         if direct is not None:
             return direct
         sessions = [ps for ps in state.practices.values() if acct in ps.expected_accts]
@@ -762,7 +771,7 @@ class MastodonBotListener(StreamListener):
         phase_post_id = state.active_phase_post_id
         if phase_post_id is None or in_reply_to_id is None:
             return False
-        if in_reply_to_id == phase_post_id:
+        if normalize_post_id(in_reply_to_id) == normalize_post_id(phase_post_id):
             return True
         char_data = state.char_dict.get(acct)
         if (
@@ -777,7 +786,7 @@ class MastodonBotListener(StreamListener):
         except Exception:
             logger.exception("스레드 본 전투 조회 실패 (status_id=%s)", status_id)
             return False
-        return phase_post_id in ancestor_ids
+        return normalize_post_id(phase_post_id) in ancestor_ids
 
     def _resolve_practice_for_proxy(
         self,
@@ -808,7 +817,7 @@ class MastodonBotListener(StreamListener):
                 return False
             return ps.is_investigation if require_investigation else True
 
-        direct = state.practices.get(in_reply_to_id)
+        direct = state.practices.get(normalize_post_id(in_reply_to_id))
         if direct is not None and _eligible(direct):
             return direct
 
@@ -870,9 +879,13 @@ class MastodonBotListener(StreamListener):
             return None, "", False
 
         for session in sessions:
-            if in_reply_to_id == session.overview_post_id:
+            if normalize_post_id(in_reply_to_id) == normalize_post_id(
+                session.overview_post_id
+            ):
                 return session, "overview", True
-            if in_reply_to_id == session.menu_post_id:
+            if normalize_post_id(in_reply_to_id) == normalize_post_id(
+                session.menu_post_id
+            ):
                 return session, "menu", True
 
         try:
@@ -894,10 +907,11 @@ class MastodonBotListener(StreamListener):
                 (session.overview_post_id, "overview"),
                 (session.menu_post_id, "menu"),
             ):
-                if post_id is None or post_id not in ancestor_ids:
+                post_key = normalize_post_id(post_id)
+                if post_key is None or post_key not in ancestor_ids:
                     continue
-                if best is None or post_id > best[0]:
-                    best = (post_id, session, stage)
+                if best is None or post_key > best[0]:
+                    best = (post_key, session, stage)
         if best is None:
             return None, "", False
         return best[1], best[2], False
@@ -1226,10 +1240,9 @@ class MastodonBotListener(StreamListener):
             return
 
         # 4. 전투 준비 참전 신청 (bot 준비 게시물에 대한 답글)
-        if (
-            state.preparation_status_id is not None
-            and in_reply_to_id == state.preparation_status_id
-        ):
+        if state.preparation_status_id is not None and normalize_post_id(
+            in_reply_to_id
+        ) == normalize_post_id(state.preparation_status_id):
             if acct in state.char_dict and acct not in state.pending_participants:
                 state.pending_participants.append(acct)
                 logger.info("참전 신청: %s (%s)", acct, state.char_dict[acct].name)
@@ -1261,7 +1274,7 @@ class MastodonBotListener(StreamListener):
         # 6. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글)
         if (
             in_reply_to_id is not None
-            and in_reply_to_id in nc.get_daily_quest_post_ids()
+            and normalize_post_id(in_reply_to_id) in nc.get_daily_quest_post_ids()
         ):
             roll_command = parse_roll_command(text)
             if roll_command is not None:
@@ -1790,11 +1803,19 @@ def _practice_thread_posts(ps: PracticeBattleState) -> set[int]:
     field_id(전투 개시 게시물)는 세션 내내 고정이라 스레드 어느 위치에서든
     조상으로 잡힌다. 아직 시작 전(field_id 미확정)이거나 페이즈가 막 넘어간
     직후를 위해 prep/active 게시물도 함께 본다.
+
+    id는 `normalize_post_id()`로 맞춘다 — 게시물 id는 Mastodon.py가 문자열
+    계열로, field_id는 시트에서 읽은 문자열로 들어와 그대로는 서로, 또 스레드
+    조상과 비교되지 않는다. 시작 후의 prep_post_id(0)는 게시물이 아니므로
+    뺀다 — 넣으면 "가장 오래된 세션 게시물"이 0이 되어 조상 탐색이 스레드
+    루트까지 내려간다.
     """
-    posts = {post for post in (ps.active_post_id, ps.prep_post_id) if post is not None}
-    if ps.field_id.isdigit():
-        posts.add(int(ps.field_id))
-    return posts
+    posts = {
+        normalize_post_id(post)
+        for post in (ps.active_post_id, ps.prep_post_id, ps.field_id)
+        if post
+    }
+    return {post for post in posts if isinstance(post, int) and post > 0}
 
 
 def _practice_mention_accts(ps: PracticeBattleState, sender: str) -> list[str]:
@@ -2243,7 +2264,7 @@ def _finish_practice_battle(
         f"{result_line}\n\n" + "\n\n".join(body_blocks)
     )
     _upsert_practice_field_row(state, ps, phase_value=phase_value, ended=True)
-    state.practices.pop(ps.active_post_id, None)
+    state.practices.pop(normalize_post_id(ps.active_post_id), None)
     return game_post
 
 
@@ -2663,21 +2684,15 @@ def _restore_daily_quest_mid_state(state: "BotState") -> int:
     참고 — 의뢰 판정 대기 중일 때만 이 컬럼이 채워져 있다). 반환값은
     복원된 건수.
 
-    bot_reply_post_id는 타입 힌트만 int일 뿐 실제로는(mastodon.py가 게시물
-    ID를 MaybeSnowflakeIdType(str 서브클래스)로 다루므로) 코드베이스 어디서도
-    진짜 int로 변환되지 않는다 — 다른 모든 경로는 항상 타입 힌트가 없는
-    dict 접근(post["id"] 등, mypy가 Any로 취급)으로만 이 값을 다루기 때문에
-    이 불일치가 지금까지 드러나지 않았을 뿐이다. 여기서 int()로 캐스팅하면
-    라운드트립한 값이 실제 알림에서 오는 in_reply_to_id(str 서브클래스)와
-    더 이상 같지 않아 매칭에 항상 실패한다 — 시트에서 읽은 문자열
-    (daily_quest_status_id: str, 명시적으로 타입이 있어 Any로 가려지지
-    않음)을 그대로 써야 한다."""
+    시트에서 읽은 문자열 id는 normalize_post_id()로 맞춘다 — 알림의
+    in_reply_to_id도 같은 함수로 맞춰 비교하므로, 그대로 두면 라운드트립한
+    값이 같은 게시물인데도 매칭에 실패한다."""
     restored = 0
     for acct, char_data in state.noncombat_char_dict.items():
         if not char_data.daily_quest_status_id:
             continue
         state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
-            bot_reply_post_id=char_data.daily_quest_status_id  # type: ignore[arg-type]
+            bot_reply_post_id=normalize_post_id(char_data.daily_quest_status_id)
         )
         restored += 1
     return restored

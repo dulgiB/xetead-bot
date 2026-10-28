@@ -1563,18 +1563,23 @@ def test_practice_command_works_from_anywhere_in_the_thread(monkeypatch):
     )
 
     # 1) 커맨드 없는 사담(직속 답글) — 조용히 무시되고 진행 게시물도 그대로다.
+    #    게시물 id는 실제처럼 부모보다 크게 준다 — 조상 탐색은 세션 게시물보다
+    #    오래된(id가 작은) 게시물에 닿으면 멈춘다.
+    sadam_id = active_post_id + 100
     listener._process_notification(
-        _make_notification(first_acct, 10, active_post_id, "묘사만 길게 적는 답글")
+        _make_notification(
+            first_acct, sadam_id, active_post_id, "묘사만 길게 적는 답글"
+        )
     )
     assert _only_practice(state).active_post_id == active_post_id
 
     # 2) 그 사담에 이어서 커맨드를 입력한다 — 직속 부모는 봇 공지가 아니라
-    #    자기 사담 게시물(10번)이고, 봇 공지는 스레드 조상으로만 남는다.
+    #    자기 사담 게시물이고, 봇 공지는 스레드 조상으로만 남는다.
     mastodon.status_context_ancestors = [
         {"id": active_post_id, "account": {"acct": "bot"}, "mentions": []}
     ]
     listener._process_notification(
-        _make_notification(first_acct, 11, 10, f"[공격/{second_name}]")
+        _make_notification(first_acct, sadam_id + 1, sadam_id, f"[공격/{second_name}]")
     )
 
     # 커맨드가 실제로 반영되어 다음 페이즈 공지까지 나가야 한다.

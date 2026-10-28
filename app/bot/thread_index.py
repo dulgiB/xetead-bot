@@ -22,11 +22,21 @@ from typing import Iterable, Optional
 _MAX_ENTRIES = 20000
 
 
-def _snowflake(status_id: int | str) -> Optional[int]:
+def normalize_post_id(status_id):
+    """게시물 id를 비교할 수 있는 한 가지 모양으로 맞춘다.
+
+    Mastodon.py 2.x는 id를 숫자가 아니라 `str` 하위 타입
+    (`MaybeSnowflakeIdType`)으로 돌려주고, 봇 상태 일부(필드 시트의 field_id
+    등)는 정수로 다시 읽힌다. `"1" != 1`이라 섞인 채로 비교하면 같은 게시물을
+    다른 게시물로 본다 — 스레드 조상에 세션 게시물이 있어도 못 찾고, 조기 종료
+    판정도 꺼져 스레드 루트까지 부모를 하나씩 조회한다. 숫자로 읽히는 id는
+    정수로, 아니면(숫자가 아닌 id를 쓰는 서버) 그대로 둔다."""
+    if status_id is None:
+        return None
     try:
         return int(status_id)
     except (TypeError, ValueError):
-        return None
+        return status_id
 
 
 class ThreadIndex:
@@ -41,7 +51,8 @@ class ThreadIndex:
         in_reply_to_id: Optional[int],
         author: Optional[str] = None,
     ) -> None:
-        self._parent_of[status_id] = in_reply_to_id
+        status_id = normalize_post_id(status_id)
+        self._parent_of[status_id] = normalize_post_id(in_reply_to_id)
         self._parent_of.move_to_end(status_id)
         if author is not None:
             self._author_of[status_id] = author
@@ -51,7 +62,7 @@ class ThreadIndex:
 
     def author_of(self, status_id: int) -> Optional[str]:
         """기록된 작성자 acct. 작성자 없이 기록됐거나 모르는 게시물이면 None."""
-        return self._author_of.get(status_id)
+        return self._author_of.get(normalize_post_id(status_id))
 
     def ancestor_ids(
         self, in_reply_to_id: int, wanted: Iterable[int]
@@ -63,22 +74,23 @@ class ThreadIndex:
         처음 만난 것이 가장 가까운 조상이다. `wanted`의 어느 게시물보다
         오래된 게시물에 닿아도 멈춘다: 부모는 언제나 자식보다 먼저 게시되어
         id가 작으므로, 그 위에서는 `wanted`가 나올 수 없다. 이 판정 덕에
-        세션과 무관한 깊은 스레드에서도 세션이 열린 뒤의 게시물만 따라간다."""
-        targets = set(wanted)
-        target_ids = [_snowflake(t) for t in targets]
+        세션과 무관한 깊은 스레드에서도 세션이 열린 뒤의 게시물만 따라간다.
+
+        id는 모두 `normalize_post_id()`로 맞춰 다루고 돌려준다 — 호출측도 같은
+        함수로 맞춘 값과 비교해야 한다."""
+        targets = {normalize_post_id(t) for t in wanted}
         oldest = (
-            min(t for t in target_ids if t is not None)
-            if target_ids and None not in target_ids
+            min(targets)
+            if targets and all(isinstance(t, int) for t in targets)
             else None
         )
         ancestors: set[int] = set()
-        current: Optional[int] = in_reply_to_id
+        current: Optional[int] = normalize_post_id(in_reply_to_id)
         while current is not None:
             ancestors.add(current)
             if current in targets:
                 break
-            current_id = _snowflake(current)
-            if oldest is not None and current_id is not None and current_id < oldest:
+            if oldest is not None and isinstance(current, int) and current < oldest:
                 break
             if current not in self._parent_of:
                 return ancestors, current

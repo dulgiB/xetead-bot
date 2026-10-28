@@ -487,8 +487,8 @@ def test_restore_practice_prep_stage_keeps_declared_positions():
         phase="",
         characters=[],
         meta={
-            # mastodon.py가 돌려주는 게시물 id는 문자열이다 — 복원도 같은
-            # 형태로 키를 만들어야 답글이 매칭된다.
+            # 메타에는 문자열로 남아 있어도(예전 행) 알림 id와 같은 모양
+            # (normalize_post_id)으로 맞춰 키를 만들어야 답글이 매칭된다.
             "prep_post_id": "9001",
             "active_post_id": None,
             "visibility": "unlisted",
@@ -500,10 +500,10 @@ def test_restore_practice_prep_stage_keeps_declared_positions():
     summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert summary is not None
-    assert "9001" in state.practices
-    ps = state.practices["9001"]
+    assert 9001 in state.practices
+    ps = state.practices[9001]
     assert ps.mode == PracticeBattleMode.DUEL
-    assert ps.prep_post_id == "9001"
+    assert ps.prep_post_id == 9001
     assert ps.active_post_id is None
     assert ps.field_id == "prep-9"
     assert ps.visibility == "unlisted"
@@ -537,7 +537,7 @@ def test_restore_practice_prep_stage_skips_broken_position_entries(caplog):
         summary = field_restore._restore_practice_battle(state, row, {}, {}, {}, {})
 
     assert summary is not None
-    assert set(state.practices["9002"].declared) == {"acct_a"}
+    assert set(state.practices[9002].declared) == {"acct_a"}
 
 
 def test_restore_practice_prep_stage_fails_without_participants():
