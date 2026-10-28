@@ -77,7 +77,7 @@ from bot.noncombat_state import DailyQuestMidState, InvestigationSession, NonCom
 from bot.practice_state import PracticeBattleState
 from bot.session import BattleSession
 from bot.sheet_cache import SheetCache
-from bot.thread_index import ThreadIndex
+from bot.thread_index import ThreadIndex, normalize_post_id
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -762,7 +762,7 @@ class MastodonBotListener(StreamListener):
         phase_post_id = state.active_phase_post_id
         if phase_post_id is None or in_reply_to_id is None:
             return False
-        if in_reply_to_id == phase_post_id:
+        if normalize_post_id(in_reply_to_id) == normalize_post_id(phase_post_id):
             return True
         char_data = state.char_dict.get(acct)
         if (
@@ -777,7 +777,7 @@ class MastodonBotListener(StreamListener):
         except Exception:
             logger.exception("스레드 본 전투 조회 실패 (status_id=%s)", status_id)
             return False
-        return phase_post_id in ancestor_ids
+        return normalize_post_id(phase_post_id) in ancestor_ids
 
     def _resolve_practice_for_proxy(
         self,
@@ -894,10 +894,11 @@ class MastodonBotListener(StreamListener):
                 (session.overview_post_id, "overview"),
                 (session.menu_post_id, "menu"),
             ):
-                if post_id is None or post_id not in ancestor_ids:
+                post_key = normalize_post_id(post_id)
+                if post_key is None or post_key not in ancestor_ids:
                     continue
-                if best is None or post_id > best[0]:
-                    best = (post_id, session, stage)
+                if best is None or post_key > best[0]:
+                    best = (post_key, session, stage)
         if best is None:
             return None, "", False
         return best[1], best[2], False
@@ -1790,11 +1791,19 @@ def _practice_thread_posts(ps: PracticeBattleState) -> set[int]:
     field_id(전투 개시 게시물)는 세션 내내 고정이라 스레드 어느 위치에서든
     조상으로 잡힌다. 아직 시작 전(field_id 미확정)이거나 페이즈가 막 넘어간
     직후를 위해 prep/active 게시물도 함께 본다.
+
+    id는 `normalize_post_id()`로 맞춘다 — 게시물 id는 Mastodon.py가 문자열
+    계열로, field_id는 시트에서 읽은 문자열로 들어와 그대로는 서로, 또 스레드
+    조상과 비교되지 않는다. 시작 후의 prep_post_id(0)는 게시물이 아니므로
+    뺀다 — 넣으면 "가장 오래된 세션 게시물"이 0이 되어 조상 탐색이 스레드
+    루트까지 내려간다.
     """
-    posts = {post for post in (ps.active_post_id, ps.prep_post_id) if post is not None}
-    if ps.field_id.isdigit():
-        posts.add(int(ps.field_id))
-    return posts
+    posts = {
+        normalize_post_id(post)
+        for post in (ps.active_post_id, ps.prep_post_id, ps.field_id)
+        if post
+    }
+    return {post for post in posts if isinstance(post, int) and post > 0}
 
 
 def _practice_mention_accts(ps: PracticeBattleState, sender: str) -> list[str]:

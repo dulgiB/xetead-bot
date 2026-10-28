@@ -1,5 +1,6 @@
 """상시전투 스레드의 봇 게시물은 맨 앞에 world와 참여자 전원을 함께 멘션한다."""
 
+import itertools
 import os
 
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
@@ -212,3 +213,65 @@ def test_declarations_chained_in_a_thread_start_under_the_last_one(monkeypatch):
     start = mastodon.status_post_calls[-1]
     assert start["in_reply_to_id"] == second_id
     assert "상시전투 시작" in start["status"]
+
+
+def test_world_proxy_under_an_older_phase_reply_with_mastodon_py_ids(monkeypatch):
+    """world 프록시를 지난 페이즈 공지 아래 참여자 게시물에 달아도 받는다.
+
+    알림의 게시물 id는 mastodon.py가 문자열 계열(`MaybeSnowflakeIdType`)로
+    준다. 이 줄기는 현재 진행 게시물을 거치지 않고 준비 게시물(field_id)로만
+    세션에 닿는데, 그 비교가 타입 차이로 늘 거짓이라 프록시가 스레드 루트까지
+    조회된 뒤 조용히 무시되던 회귀 케이스다(테스트)."""
+    from mastodon.types_base import MaybeSnowflakeIdType
+
+    def _notification(acct, status_id, in_reply_to_id, text, extra_mentions=None):
+        notification = _make_notification(
+            acct, 0, 0, text, extra_mentions=extra_mentions
+        )
+        notification["status"]["id"] = MaybeSnowflakeIdType(str(status_id))
+        notification["status"]["in_reply_to_id"] = MaybeSnowflakeIdType(
+            str(in_reply_to_id)
+        )
+        return notification
+
+    state, mastodon, listener = _setup(monkeypatch)
+    # 실제처럼 게시물 id가 시간순으로 커지게 한다 — 조상 탐색은 세션
+    # 게시물보다 오래된 게시물에 닿으면 멈춘다.
+    ids = itertools.count(100, 10)
+    mastodon._next_id = ids
+    root_id = next(ids)
+    listener._process_notification(
+        _notification(
+            WORLD_MASTODON_ID,
+            next(ids),
+            root_id,
+            "[상시전투] [배치/몬스터/적군 4열]",
+            extra_mentions=[_ALLY_ACCT],
+        )
+    )
+    ps = _only_practice(state)
+    listener._process_notification(
+        _notification(_ALLY_ACCT, next(ids), ps.prep_post_id, "[4열]")
+    )
+    first_phase_post = ps.active_post_id
+    command_id = next(ids)
+    listener._process_notification(
+        _notification(_ALLY_ACCT, command_id, first_phase_post, "[공격/몬스터]")
+    )
+    assert ps.active_post_id != first_phase_post
+    # 아군 커맨드 아래에 단 사담 — 현재 진행 게시물은 조상에 없다.
+    sadam_id = next(ids)
+    listener._process_notification(
+        _notification(_ALLY_ACCT, sadam_id, command_id, "사담")
+    )
+    before = len(mastodon.status_post_calls)
+
+    listener._process_notification(
+        _notification(
+            WORLD_MASTODON_ID, next(ids), sadam_id, "묘사 지문\n\n몬스터 [공격/아군]"
+        )
+    )
+
+    posts = mastodon.status_post_calls[before:]
+    assert posts
+    assert "【공격 ▸ 아군】" in posts[0]["status"]

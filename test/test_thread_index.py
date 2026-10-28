@@ -179,3 +179,69 @@ class TestListenerThreadLookup:
 
         assert listener._resolve_practice("acct_a", 901, 800, state) is None
         assert mastodon.status_calls == []
+
+
+class TestMastodonPyStringIds:
+    """Mastodon.py 2.x는 게시물 id를 `str` 하위 타입(`MaybeSnowflakeIdType`)으로
+    돌려준다. 봇 상태 일부(field_id → 정수 변환 등)와 섞여도 같은 게시물로
+    봐야 한다 — 다르게 보면 상시전투 world 프록시처럼 현재 진행 게시물을
+    거치지 않는 답글이 스레드 루트까지 조회된 뒤 조용히 무시된다."""
+
+    @staticmethod
+    def _id(value: int):
+        from mastodon.types_base import MaybeSnowflakeIdType
+
+        return MaybeSnowflakeIdType(str(value))
+
+    def test_string_ids_match_integer_wanted_ids(self):
+        """문자열 id로 기록한 조상도 정수 id로 찾는다(테스트)."""
+        index = ThreadIndex()
+        index.record(self._id(30), self._id(20), "acct_a")
+        index.record(self._id(20), self._id(10))
+
+        assert index.ancestor_ids(self._id(30), wanted={10}) == ({30, 20, 10}, None)
+        assert index.author_of(self._id(30)) == "acct_a"
+
+    def _started_session(self, mastodon):
+        """시작 후 상태 그대로의 세션: 게시물 id는 문자열 계열, prep_post_id는
+        0, field_id는 준비 게시물 id 문자열."""
+        state = _make_state()
+        ps = _make_practice(state)
+        state.practices.pop(ACTIVE_POST_ID)
+        ps.active_post_id = self._id(500)
+        ps.prep_post_id = 0
+        ps.field_id = "300"
+        ps.expected_accts = ["acct_a"]
+        state.practices[ps.active_post_id] = ps
+        return MastodonBotListener(mastodon, state, bot_acct="bot"), state, ps
+
+    def test_reply_under_an_older_phase_post_resolves_through_field_id(self):
+        """지난 페이즈 공지 아래 사담에 단 world 프록시는 현재 진행 게시물을
+        거치지 않아도 준비 게시물(field_id)로 같은 스레드로 본다(테스트)."""
+        mastodon = _CountingMastodon()
+        listener, state, ps = self._started_session(mastodon)
+        listener._threads.record(self._id(300), self._id(200))
+        listener._threads.record(self._id(350), self._id(300))
+        listener._threads.record(self._id(700), self._id(350), "acct_a")
+
+        resolved = listener._resolve_practice_for_proxy(
+            901, self._id(700), state, require_investigation=False
+        )
+
+        assert resolved is ps
+        assert mastodon.status_calls == []
+
+    def test_started_session_still_stops_below_the_session_start(self):
+        """시작 후 prep_post_id(0)가 조기 종료 기준을 0으로 끌어내리지 않는다 —
+        세션보다 오래된 게시물에 닿으면 그 위는 조회하지 않는다(테스트)."""
+        mastodon = _CountingMastodon(
+            ancestors=[
+                {"id": 100, "in_reply_to_id": None},
+                {"id": 299, "in_reply_to_id": 100},
+                {"id": 650, "in_reply_to_id": 299},
+            ]
+        )
+        listener, state, _ps = self._started_session(mastodon)
+
+        assert listener._resolve_practice("acct_a", 901, self._id(650), state) is None
+        assert mastodon.status_calls == [650]
