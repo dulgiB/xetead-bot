@@ -2718,3 +2718,58 @@ def test_investigation_accept_allows_exactly_four_participants(monkeypatch):
     handle_investigation_accept(session, ["user1", "user2", "user3", "user4"], state)
 
     assert calls == ["user1,user2,user3,user4"]
+
+
+def _daily_quest_listener(monkeypatch, acct="user1", quest_post_id=500):
+    from bot import main as main_module
+    from test_bot_admin import _FakeMastodon
+
+    state = _make_state(acct)
+    state.noncombat.daily_quest_mid[acct] = DailyQuestMidState(
+        bot_reply_post_id=quest_post_id
+    )
+    monkeypatch.setattr(
+        noncombat_module, "update_character_quest_date", lambda *a, **k: None
+    )
+    monkeypatch.setattr(noncombat_module, "append_ledger_row", lambda *a, **k: None)
+    monkeypatch.setattr(main_module, "_persist_noncombat_log", lambda *a, **k: None)
+    mastodon = _FakeMastodon()
+    listener = main_module.MastodonBotListener(mastodon, state, bot_acct="bot")
+    dispatch = listener._MastodonBotListener__dispatch  # type: ignore[attr-defined]
+    return state, mastodon, listener, dispatch
+
+
+def test_daily_quest_roll_accepted_after_intermediate_reply_in_thread(monkeypatch):
+    """의뢰 ← 주사위 굴림 ← 판정처럼 사이에 답글이 끼어도 같은 스레드면 일일
+    의뢰 판정으로 처리돼야 한다 — 독립 판정으로 빠지면 의뢰가 끝나지 않는다(테스트)."""
+    state, mastodon, listener, dispatch = _daily_quest_listener(monkeypatch)
+    listener._threads.record(501, 500, "user1")  # 의뢰 ← 1d2
+    listener._threads.record(502, 501, "dice")  # 1d2 ← 굴림 결과
+
+    dispatch("user1", 503, 502, "[판정/육체]", "public", [])
+
+    assert "user1" not in state.noncombat.daily_quest_mid
+    assert "사례로 1G를 획득했다" in mastodon.status_post_calls[-1]["status"]
+
+
+def test_daily_quest_roll_ignores_other_characters_quest_thread(monkeypatch):
+    """조상 경로로는 자기 의뢰 안내 게시물만 찾는다 — 남의 의뢰 스레드 깊은 곳에서
+    한 판정이 내 의뢰를 끝내면 안 된다(테스트)."""
+    state, mastodon, listener, dispatch = _daily_quest_listener(monkeypatch)
+    state.noncombat.daily_quest_mid["user2"] = DailyQuestMidState(bot_reply_post_id=600)
+    listener._threads.record(601, 600, "user2")
+
+    dispatch("user1", 602, 601, "[판정/육체]", "public", [])
+
+    assert "user1" in state.noncombat.daily_quest_mid
+    assert "사례로 1G를 획득했다" not in mastodon.status_post_calls[-1]["status"]
+
+
+def test_daily_quest_thread_lookup_skipped_without_roll_command(monkeypatch):
+    """[판정]이 아닌 답글은 스레드 조상을 조회하지 않는다(테스트)."""
+    state, mastodon, listener, dispatch = _daily_quest_listener(monkeypatch)
+    monkeypatch.setattr(mastodon, "status", lambda status_id: pytest.fail("조회"))
+
+    dispatch("user1", 502, 501, "1d2 굴려 볼까", "public", [])
+
+    assert "user1" in state.noncombat.daily_quest_mid

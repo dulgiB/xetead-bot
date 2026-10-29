@@ -916,6 +916,41 @@ class MastodonBotListener(StreamListener):
             return None, "", False
         return best[1], best[2], False
 
+    def _in_daily_quest_thread(
+        self,
+        acct: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        text: str,
+        state: "BotState",
+    ) -> bool:
+        """이 답글이 일일 의뢰 판정 답글로 처리될 자리인지.
+
+        의뢰 안내 게시물에 대한 직속 답글이면 그대로 받는다. 아니면 acct가
+        의뢰를 진행 중이고 답글이 [판정]일 때만 스레드 조상을 거슬러 올라가
+        acct 자신의 의뢰 안내 게시물을 찾는다 — 의뢰 ← 주사위 굴림 ← 판정처럼
+        스레드를 이어 쓰면 판정이 독립 판정으로 빠져 의뢰가 끝나지 않는다.
+        조상 경로는 남의 의뢰 스레드를 보지 않는다(거기서 한 판정이 내 의뢰를
+        끝내면 안 된다)."""
+        if in_reply_to_id is None:
+            return False
+        nc = state.noncombat
+        if normalize_post_id(in_reply_to_id) in nc.get_daily_quest_post_ids():
+            return True
+        mid = nc.daily_quest_mid.get(acct)
+        if mid is None or parse_roll_command(text) is None:
+            return False
+        quest_post_id = normalize_post_id(mid.bot_reply_post_id)
+        if not quest_post_id:
+            # 안내 게시물 id가 아직 기록되지 않았다(finalize_daily_quest_mid 전).
+            return False
+        try:
+            ancestor_ids = self._thread_ancestor_ids(in_reply_to_id, (quest_post_id,))
+        except Exception:
+            logger.exception("스레드 일일 의뢰 조회 실패 (status_id=%s)", status_id)
+            return False
+        return quest_post_id in ancestor_ids
+
     def _quest_accept_participants(
         self,
         session: InvestigationSession,
@@ -1271,11 +1306,9 @@ class MastodonBotListener(StreamListener):
 
         nc = state.noncombat
 
-        # 6. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글)
-        if (
-            in_reply_to_id is not None
-            and normalize_post_id(in_reply_to_id) in nc.get_daily_quest_post_ids()
-        ):
+        # 6. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글) — 사이에
+        # 주사위 굴림이나 사담이 끼어도 같은 스레드면 받는다.
+        if self._in_daily_quest_thread(acct, status_id, in_reply_to_id, text, state):
             roll_command = parse_roll_command(text)
             if roll_command is not None:
                 stat_name, keyword_boost = roll_command
