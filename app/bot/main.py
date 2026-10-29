@@ -788,6 +788,33 @@ class MastodonBotListener(StreamListener):
             return False
         return normalize_post_id(phase_post_id) in ancestor_ids
 
+    def _in_battle_prep_thread(
+        self,
+        acct: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        state: "BotState",
+    ) -> bool:
+        """이 답글이 본 전투 준비 게시물 스레드에 속하는지(참전 신청).
+
+        _in_main_battle_thread()와 같은 규칙이다 — 다른 사람의 신청 답글이나
+        사담에 이어 달아도 스레드 조상에 준비 게시물이 있으면 인정한다. 조상
+        조회는 아직 신청하지 않은 캐릭터의 답글일 때만 한다."""
+        prep_post_id = state.preparation_status_id
+        if prep_post_id is None or in_reply_to_id is None:
+            return False
+        if normalize_post_id(in_reply_to_id) == normalize_post_id(prep_post_id):
+            return True
+        if acct not in state.char_dict or acct in state.pending_participants:
+            return False
+
+        try:
+            ancestor_ids = self._thread_ancestor_ids(in_reply_to_id, (prep_post_id,))
+        except Exception:
+            logger.exception("스레드 전투 준비 조회 실패 (status_id=%s)", status_id)
+            return False
+        return normalize_post_id(prep_post_id) in ancestor_ids
+
     def _resolve_practice_for_proxy(
         self,
         status_id: int,
@@ -1274,10 +1301,8 @@ class MastodonBotListener(StreamListener):
                     _update_practice_field_active_post(state, ps)
             return
 
-        # 4. 전투 준비 참전 신청 (bot 준비 게시물에 대한 답글)
-        if state.preparation_status_id is not None and normalize_post_id(
-            in_reply_to_id
-        ) == normalize_post_id(state.preparation_status_id):
+        # 4. 전투 준비 참전 신청 (bot 준비 게시물 스레드의 답글)
+        if self._in_battle_prep_thread(acct, status_id, in_reply_to_id, state):
             if acct in state.char_dict and acct not in state.pending_participants:
                 state.pending_participants.append(acct)
                 logger.info("참전 신청: %s (%s)", acct, state.char_dict[acct].name)
