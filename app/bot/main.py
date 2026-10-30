@@ -788,6 +788,33 @@ class MastodonBotListener(StreamListener):
             return False
         return normalize_post_id(phase_post_id) in ancestor_ids
 
+    def _in_battle_prep_thread(
+        self,
+        acct: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        state: "BotState",
+    ) -> bool:
+        """이 답글이 본 전투 준비 게시물 스레드에 속하는지(참전 신청).
+
+        _in_main_battle_thread()와 같은 규칙이다 — 다른 사람의 신청 답글이나
+        사담에 이어 달아도 스레드 조상에 준비 게시물이 있으면 인정한다. 조상
+        조회는 아직 신청하지 않은 캐릭터의 답글일 때만 한다."""
+        prep_post_id = state.preparation_status_id
+        if prep_post_id is None or in_reply_to_id is None:
+            return False
+        if normalize_post_id(in_reply_to_id) == normalize_post_id(prep_post_id):
+            return True
+        if acct not in state.char_dict or acct in state.pending_participants:
+            return False
+
+        try:
+            ancestor_ids = self._thread_ancestor_ids(in_reply_to_id, (prep_post_id,))
+        except Exception:
+            logger.exception("스레드 전투 준비 조회 실패 (status_id=%s)", status_id)
+            return False
+        return normalize_post_id(prep_post_id) in ancestor_ids
+
     def _resolve_practice_for_proxy(
         self,
         status_id: int,
@@ -915,6 +942,41 @@ class MastodonBotListener(StreamListener):
         if best is None:
             return None, "", False
         return best[1], best[2], False
+
+    def _in_daily_quest_thread(
+        self,
+        acct: str,
+        status_id: int,
+        in_reply_to_id: Optional[int],
+        text: str,
+        state: "BotState",
+    ) -> bool:
+        """이 답글이 일일 의뢰 판정 답글로 처리될 자리인지.
+
+        의뢰 안내 게시물에 대한 직속 답글이면 그대로 받는다. 아니면 acct가
+        의뢰를 진행 중이고 답글이 [판정]일 때만 스레드 조상을 거슬러 올라가
+        acct 자신의 의뢰 안내 게시물을 찾는다 — 의뢰 ← 주사위 굴림 ← 판정처럼
+        스레드를 이어 쓰면 판정이 독립 판정으로 빠져 의뢰가 끝나지 않는다.
+        조상 경로는 남의 의뢰 스레드를 보지 않는다(거기서 한 판정이 내 의뢰를
+        끝내면 안 된다)."""
+        if in_reply_to_id is None:
+            return False
+        nc = state.noncombat
+        if normalize_post_id(in_reply_to_id) in nc.get_daily_quest_post_ids():
+            return True
+        mid = nc.daily_quest_mid.get(acct)
+        if mid is None or parse_roll_command(text) is None:
+            return False
+        quest_post_id = normalize_post_id(mid.bot_reply_post_id)
+        if not quest_post_id:
+            # 안내 게시물 id가 아직 기록되지 않았다(finalize_daily_quest_mid 전).
+            return False
+        try:
+            ancestor_ids = self._thread_ancestor_ids(in_reply_to_id, (quest_post_id,))
+        except Exception:
+            logger.exception("스레드 일일 의뢰 조회 실패 (status_id=%s)", status_id)
+            return False
+        return quest_post_id in ancestor_ids
 
     def _quest_accept_participants(
         self,
@@ -1239,10 +1301,8 @@ class MastodonBotListener(StreamListener):
                     _update_practice_field_active_post(state, ps)
             return
 
-        # 4. 전투 준비 참전 신청 (bot 준비 게시물에 대한 답글)
-        if state.preparation_status_id is not None and normalize_post_id(
-            in_reply_to_id
-        ) == normalize_post_id(state.preparation_status_id):
+        # 4. 전투 준비 참전 신청 (bot 준비 게시물 스레드의 답글)
+        if self._in_battle_prep_thread(acct, status_id, in_reply_to_id, state):
             if acct in state.char_dict and acct not in state.pending_participants:
                 state.pending_participants.append(acct)
                 logger.info("참전 신청: %s (%s)", acct, state.char_dict[acct].name)
@@ -1271,11 +1331,9 @@ class MastodonBotListener(StreamListener):
 
         nc = state.noncombat
 
-        # 6. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글)
-        if (
-            in_reply_to_id is not None
-            and normalize_post_id(in_reply_to_id) in nc.get_daily_quest_post_ids()
-        ):
+        # 6. 일일 의뢰 판정 답글 (봇이 의뢰를 알려준 포스트에 대한 답글) — 사이에
+        # 주사위 굴림이나 사담이 끼어도 같은 스레드면 받는다.
+        if self._in_daily_quest_thread(acct, status_id, in_reply_to_id, text, state):
             roll_command = parse_roll_command(text)
             if roll_command is not None:
                 stat_name, keyword_boost = roll_command

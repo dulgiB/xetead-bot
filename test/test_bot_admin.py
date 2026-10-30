@@ -988,10 +988,28 @@ def test_battle_prep_posts_as_new_status_not_reply(monkeypatch):
     prep_post_id = state.preparation_status_id
     state.char_dict["ally_acct"] = get_test_preset("유효 캐릭터")
     listener._process_notification(
-        _make_notification("ally_acct", 2, prep_post_id, "아무 코멘트")
+        _make_notification("ally_acct", prep_post_id + 1, prep_post_id, "아무 코멘트")
     )
 
     assert "ally_acct" in state.pending_participants
+
+    # 남의 신청 답글에 이어 달아도 같은 스레드면 참전 신청으로 받는다. 게시물
+    # id는 실제처럼 부모보다 크게 준다.
+    state.char_dict["ally2_acct"] = get_test_preset("유효 캐릭터")
+    listener._process_notification(
+        _make_notification(
+            "ally2_acct", prep_post_id + 2, prep_post_id + 1, "저도 갈게요"
+        )
+    )
+    assert "ally2_acct" in state.pending_participants
+
+    # 준비 게시물과 무관한 스레드의 답글은 신청이 아니다.
+    state.char_dict["ally3_acct"] = get_test_preset("유효 캐릭터")
+    listener._threads.record(prep_post_id + 50, None, "someone")
+    listener._process_notification(
+        _make_notification("ally3_acct", prep_post_id + 51, prep_post_id + 50, "잡담")
+    )
+    assert "ally3_acct" not in state.pending_participants
 
 
 def test_malformed_notification_does_not_raise():
