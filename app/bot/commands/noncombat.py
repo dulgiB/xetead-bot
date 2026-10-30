@@ -68,14 +68,17 @@ MAX_DICE_COUNT = 20
 MAX_DICE_SIDES = 1_000_000
 # world/admin이 판정을 요구할 때 쓰는 표기: [판정: 최소 1인] [지식 7/기술 6, 실패 시 패널티]
 # 대상 칸(": 최소 1인")은 생략될 수 있고, 특정 캐릭터만 목표치가 다르면
-# [지식 7/「캐릭터」 지식 5]처럼 이름을 앞에 붙인다.
+# [지식 7/「캐릭터」 지식 5]처럼 이름을 앞에 붙인다. 스탯 자리에 스탯이 아닌
+# 텍스트를 쓰면 특수 판정이다: [판정] [「캐릭터」 판정_1 6]
 _RE_ROLL_TARGET = re.compile(
     rf"\[{whitespace_tolerant_literal('판정')}\s*(?::\s*(?P<subject>[^\]]*))?]"
     r"\s*\*{0,2}\s*\[(?P<targets>[^\]]+)]"
 )
+# 특수 판정 이름을 견줄 때 무시하는 글자.
+_RE_ROLL_NAME_IGNORED = re.compile(r"[\s「」]")
 _RE_ROLL_SUBJECT_SEPARATOR = re.compile(r"[,/·]")
 _RE_ROLL_TARGET_STAT = re.compile(
-    r"^(?:「(?P<name>[^」]+)」\s*)?(?P<stat>\S+)\s*(?P<value>\d+)$"
+    r"^(?:「(?P<name>[^」]+)」\s*)?(?P<stat>.+?)\s*(?P<value>\d+)$"
 )
 _RE_TRANSFER_ITEM = re.compile(
     rf"\[{whitespace_tolerant_literal('양도')}\s*/\s*([^\]]+)]"
@@ -145,7 +148,11 @@ def parse_roll_command(text: str) -> Optional[tuple[str, bool]]:
 
 @dataclass(frozen=True)
 class RollTarget:
-    """world/admin 게시물이 요구한 판정 목표치."""
+    """world/admin 게시물이 요구한 판정 목표치.
+
+    스탯 자리에는 비전투 스탯 이름이나 특수 판정 이름이 들어간다. 특수 판정은
+    스탯 보정 없이 1d6만으로 목표치와 견준다.
+    """
 
     thresholds: dict[str, int]
     # (world/admin이 부른 캐릭터 이름, 스탯, 목표치). thresholds보다 우선한다.
@@ -167,8 +174,13 @@ def parse_roll_target(text: str) -> Optional[RollTarget]:
         for item in chunk.split("/"):
             item = item.strip()
             stat_match = _RE_ROLL_TARGET_STAT.match(item)
-            if stat_match and stat_match.group("stat") in NON_COMBAT_STATS:
-                stat, value = stat_match.group("stat"), int(stat_match.group("value"))
+            # 스탯 이름이면 늘 일반 판정이다. 그 밖의 텍스트는 패널티 표기가
+            # 아닐 때만 특수 판정 이름으로 읽는다("실패 시 패널티 1" 등).
+            if stat_match and (
+                stat_match.group("stat") in NON_COMBAT_STATS or "패널티" not in item
+            ):
+                stat = stat_match.group("stat").strip()
+                value = int(stat_match.group("value"))
                 if stat_match.group("name"):
                     name = stat_match.group("name").strip()
                     character_thresholds.append((name, stat, value))
@@ -188,12 +200,17 @@ def parse_roll_target(text: str) -> Optional[RollTarget]:
 
 def _roll_threshold(
     target: RollTarget, stat_name: str, char_name: str, state: "BotState"
-) -> Optional[int]:
-    """이 캐릭터가 굴린 판정에 적용할 목표치. 없으면 일반 판정이다.
+) -> Optional[tuple[str, int]]:
+    """이 캐릭터가 굴린 판정에 적용할 (판정 이름, 목표치). 없으면 일반 판정이다.
 
     대상 칸이 캐릭터를 지목했다면 그 캐릭터의 판정에만 적용한다. 등록된
     캐릭터 이름이 하나도 없는 대상 칸("최소 1인" 등)은 누구나 굴릴 수 있는
     판정이다.
+
+    특수 판정 이름은 공백과 「」를 무시하고 견준다. 「이름」이 등록된 캐릭터가
+    아니면 그 캐릭터 전용 목표치가 아니라 「이름」까지 판정 이름의 일부로 본다
+    — 캐릭터가 아닌 대상을 판정 이름에 넣는 표기를 그 캐릭터 전용 목표치로
+    읽으면 아무도 굴릴 수 없는 판정이 된다.
     """
     char_names = [c.name for c in state.noncombat_char_dict.values()]
     named = {
@@ -203,10 +220,24 @@ def _roll_threshold(
     }
     if named and char_name not in named:
         return None
+    thresholds = dict(target.thresholds)
     for label, stat, value in target.character_thresholds:
-        if stat == stat_name and find_matching_key(label, [char_name]) is not None:
-            return value
-    return target.thresholds.get(stat_name)
+        if find_matching_key(label, char_names) is not None:
+            if find_matching_key(label, [char_name]) is not None and _same_roll_name(
+                stat, stat_name
+            ):
+                return stat, value
+        elif stat not in NON_COMBAT_STATS:
+            thresholds.setdefault(f"「{label}」 {stat}", value)
+    for stat, value in thresholds.items():
+        if _same_roll_name(stat, stat_name):
+            return stat, value
+    return None
+
+
+def _same_roll_name(a: str, b: str) -> bool:
+    """판정 이름을 공백과 「」 차이 없이 견준다."""
+    return _RE_ROLL_NAME_IGNORED.sub("", a) == _RE_ROLL_NAME_IGNORED.sub("", b)
 
 
 def get_cached_item_names(state: "BotState") -> frozenset[str]:
@@ -305,6 +336,11 @@ def handle_roll(
 ) -> tuple[str, Optional[NoncombatLogInfo]]:
     """[판정/스탯] → 1d6 + 스탯값 계산 후 결과 텍스트 반환.
 
+    스탯 자리가 스탯 이름이 아니면 특수 판정이다. 스레드의 world/admin
+    게시물이 그 이름으로 목표치를 요구했을 때만 받고, 스탯 보정 없이 1d6
+    그대로 목표치와 견준다. 요구가 없으면 오타일 수 있으므로 알 수 없는
+    스탯으로 거부한다.
+
     `keyword_boost`(=[판정+/스탯])면 굴리지 않고 자동 성공으로 처리하며 체력을
     소모한다.
     조건(부활 횟수·이번 진행 미사용·체력)을 만족하지 못하면 판정 자체를 하지
@@ -312,13 +348,30 @@ def handle_roll(
     위함이다.
     """
     command_text = f"[판정{'+' if keyword_boost else ''}/{stat_name}]"
-    if stat_name not in NON_COMBAT_STATS:
-        msg = f"◊ 알 수 없는 스탯입니다. 사용 가능한 스탯: {'·'.join(NON_COMBAT_STATS)}"
-        return msg, NoncombatLogInfo(command_text=command_text, result=msg)
+    unknown_stat_msg = (
+        f"◊ 알 수 없는 스탯입니다. 사용 가능한 스탯: {'·'.join(NON_COMBAT_STATS)}"
+    )
+    is_special = stat_name not in NON_COMBAT_STATS
+    if is_special and target is None:
+        return unknown_stat_msg, NoncombatLogInfo(
+            command_text=command_text, result=unknown_stat_msg
+        )
 
     char_data = state.noncombat_char_dict.get(acct)
     if char_data is None:
         return "◊ 등록된 캐릭터를 찾을 수 없습니다.", None
+
+    threshold_info = (
+        _roll_threshold(target, stat_name, char_data.name, state)
+        if target is not None
+        else None
+    )
+    if is_special and threshold_info is None:
+        return unknown_stat_msg, NoncombatLogInfo(
+            command_text=command_text, result=unknown_stat_msg
+        )
+    # 목표치 줄과 키워드 보정 줄에는 게시물이 적은 표기로 판정 이름을 쓴다.
+    roll_name, threshold = threshold_info or (stat_name, None)
 
     today = date.today().isoformat()
     if keyword_boost:
@@ -326,25 +379,24 @@ def handle_roll(
         if error is not None:
             return error, NoncombatLogInfo(command_text=command_text, result=error)
 
-    threshold = (
-        _roll_threshold(target, stat_name, char_data.name, state)
-        if target is not None
-        else None
-    )
-
     if keyword_boost:
-        reply = f"◊ 판정: {stat_name} — 키워드 보정 사용"
+        reply = f"◊ 판정: {roll_name} — 키워드 보정 사용"
         dice_roll = ""
         result = "「자동 성공」"
         if threshold is not None:
-            reply += f"\n↳ 목표치: {stat_name} {threshold} — **성공**"
+            reply += f"\n↳ 목표치: {roll_name} {threshold} — **성공**"
             result += f" 목표치 {threshold} 성공"
     else:
-        stat_val = char_data.get_noncombat_stat(NoncombatStatType(stat_name))
         dice = random.randint(1, 6)
-        total = dice + stat_val
-        reply = f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」"
-        dice_roll = f"{dice}+{stat_val}"
+        if is_special:
+            total = dice
+            reply = f"◊ 판정: {dice}[1d6] → 「{total}」"
+            dice_roll = f"{dice}"
+        else:
+            stat_val = char_data.get_noncombat_stat(NoncombatStatType(stat_name))
+            total = dice + stat_val
+            reply = f"◊ 판정: {stat_val}[{stat_name}] + {dice}[1d6] → 「{total}」"
+            dice_roll = f"{dice}+{stat_val}"
         result = f"「{total}」"
         if target is not None and threshold is not None:
             verdict = "성공" if total >= threshold else "실패"
@@ -352,7 +404,7 @@ def handle_roll(
                 " (패널티 적용)" if verdict == "실패" and target.penalty else ""
             )
             reply += (
-                f"\n↳ 목표치: {stat_name} {threshold} — **{verdict}**{penalty_note}"
+                f"\n↳ 목표치: {roll_name} {threshold} — **{verdict}**{penalty_note}"
             )
             result += f" 목표치 {threshold} {verdict}{penalty_note}"
 

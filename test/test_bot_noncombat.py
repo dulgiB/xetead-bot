@@ -416,6 +416,108 @@ def test_handle_roll_keyword_succeeds_regardless_of_threshold(
     assert log_info.result == "「자동 성공」 목표치 99 성공"
 
 
+# ── 특수 판정 (스탯 자리에 스탯이 아닌 텍스트) ───────────────────────────────────
+
+
+def test_parse_roll_target_reads_special_check_names():
+    """스탯이 아닌 텍스트도 판정 이름으로 읽고, 스탯 이름은 그대로 일반 판정이다(테스트)."""
+    target = parse_roll_target(
+        "[판정] [판정 이름 6/지식 5/「대상_1」 판정_1 4, 실패 시 패널티 1]"
+    )
+
+    assert target is not None
+    assert target.thresholds == {"판정 이름": 6, "지식": 5}
+    assert target.character_thresholds == (("대상_1", "판정_1", 4),)
+    assert target.penalty
+
+
+@pytest.mark.parametrize(("dice", "verdict"), [(6, "성공"), (5, "실패")])
+def test_handle_roll_special_check_uses_bare_dice(monkeypatch, dice, verdict):
+    """특수 판정은 스탯 보정 없이 1d6 그대로 목표치와 견준다(테스트)."""
+    state = _make_state("user1")  # stat_physical=2
+    monkeypatch.setattr(random, "randint", lambda a, b: dice)
+    target = parse_roll_target("[판정] [「동료」 판정_1 6]")
+
+    result, log_info = handle_roll("user1", "판정_1", state, target=target)
+
+    assert result.splitlines() == [
+        f"◊ 판정: {dice}[1d6] → 「{dice}」",
+        f"↳ 목표치: 판정_1 6 — **{verdict}**",
+    ]
+    assert log_info is not None
+    assert log_info.dice_roll == str(dice)
+    assert log_info.result == f"「{dice}」 목표치 6 {verdict}"
+
+
+def test_handle_roll_special_check_ignores_spacing(monkeypatch):
+    """판정 이름은 공백 차이와 무관하게 받는다(테스트)."""
+    state = _make_state("user1")
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)
+    target = parse_roll_target("[판정: 최소 1인] [오래된 판정 5]")
+
+    result, _log_info = handle_roll("user1", "오래된판정", state, target=target)
+
+    assert "↳ 목표치: 오래된 판정 5 — **성공**" in result
+
+
+def test_handle_roll_special_check_for_other_character_is_rejected():
+    """다른 캐릭터 전용 특수 판정은 굴릴 수 없다 — 일반 판정으로 바꿀 스탯이 없다(테스트)."""
+    state = _make_state("user1")  # name="동료"
+    state.noncombat_char_dict["user2"] = NoncombatCharacterDataFromSpreadsheet(
+        name="대상 캐릭터", gold=0, daily_quest_date=""
+    )
+    target = parse_roll_target("[판정] [「대상 캐릭터」 판정_1 6]")
+
+    result, _log_info = handle_roll("user1", "판정_1", state, target=target)
+
+    assert result.startswith("◊ 알 수 없는 스탯입니다.")
+
+
+@pytest.mark.parametrize("typed", ["「대상_1」 판정_1", "대상_1 판정_1"])
+def test_handle_roll_special_check_with_unregistered_name_is_part_of_name(
+    monkeypatch, typed
+):
+    """「이름」이 등록된 캐릭터가 아니면 판정 이름의 일부로 보고 누구나 굴린다(테스트)."""
+    state = _make_state("user1")
+    monkeypatch.setattr(random, "randint", lambda a, b: 4)
+    target = parse_roll_target("[판정] [「대상_1」 판정_1 4]")
+
+    result, _log_info = handle_roll("user1", typed, state, target=target)
+
+    assert "↳ 목표치: 「대상_1」 판정_1 4 — **성공**" in result
+
+
+@pytest.mark.parametrize(
+    "post", [None, "[판정: 최소 1인] [지식 7]", "[판정] [판정_2 6]"]
+)
+def test_handle_roll_special_check_without_matching_target_is_rejected(post):
+    """진행 게시물이 그 이름을 요구하지 않았으면 오타일 수 있으므로 거부한다(테스트)."""
+    state = _make_state("user1")
+    target = parse_roll_target(post) if post else None
+
+    result, log_info = handle_roll("user1", "판정_1", state, target=target)
+
+    assert result.startswith("◊ 알 수 없는 스탯입니다.")
+    assert log_info is not None
+
+
+def test_handle_roll_special_check_keyword_auto_succeeds(_stub_keyword_sheet_writes):
+    """특수 판정에도 키워드 보정을 쓸 수 있고, 판정 이름은 게시물 표기를 따른다(테스트)."""
+    state = _keyword_state("user1")
+    target = parse_roll_target("[판정] [판정 이름 99]")
+
+    result, log_info = handle_roll(
+        "user1", "판정이름", state, keyword_boost=True, target=target
+    )
+
+    lines = result.splitlines()
+    assert lines[0] == "◊ 판정: 판정 이름 — 키워드 보정 사용"
+    assert lines[1] == "↳ 목표치: 판정 이름 99 — **성공**"
+    assert lines[2].startswith("↳ 키워드 보정 사용")
+    assert log_info is not None
+    assert log_info.result == "「자동 성공」 목표치 99 성공"
+
+
 def _quest_location(
     location_id: str = "항구 마을",
     active: bool = True,
