@@ -1129,6 +1129,8 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
   견준다. 커맨드 대상은 `try_expansion_if_valid()` 첫머리에서 실제 이름으로
   치환되므로 이후 단계(답글·POST 재전개·로그)는 별명을 보지 않는다. 소환
   명단(`resolve_summon_id()`)도 같다.
+- 판정 목표치(대상 칸·「이름」): `noncombat._roll_threshold()`가 "캐릭터" 시트
+  캐릭터끼리만 `find_name_or_alias()`로 견준다.
 - 시트 명단(admin 배치, 비전투 아이템 사용·양도 대상):
   `spreadsheets.models.combat.resolve_sheet_character_name()`. 이름을 받는
   새 경로도 `resolve_matching_key()` 대신 이 둘 중 하나를 쓴다.
