@@ -518,6 +518,58 @@ def test_handle_roll_special_check_keyword_auto_succeeds(_stub_keyword_sheet_wri
     assert log_info.result == "「자동 성공」 목표치 99 성공"
 
 
+def _alias_state(aliases: tuple[str, ...]) -> BotState:
+    """user1("동료")에게 별명을 붙이고, 다른 캐릭터 user2("다른 캐릭터")를 둔다."""
+    from dataclasses import replace
+
+    state = _make_state("user1")
+    state.noncombat_char_dict["user2"] = NoncombatCharacterDataFromSpreadsheet(
+        name="다른 캐릭터", gold=0, daily_quest_date=""
+    )
+    state.name_dict = {
+        "동료": replace(get_test_preset("동료"), name_aliases=aliases),
+    }
+    return state
+
+
+@pytest.mark.parametrize(
+    ("acct", "expected"), [("user1", "↳ 목표치: 육체 5"), ("user2", "↳ 목표치: 육체 7")]
+)
+def test_handle_roll_character_threshold_accepts_alias(acct, expected):
+    """「별명」으로 지정한 캐릭터별 목표치는 그 캐릭터에게만 적용된다(테스트)."""
+    state = _alias_state(("별명_1",))
+    target = parse_roll_target("[판정: 최소 1인] [육체 7/「별명_1」 육체 5]")
+
+    result, _log_info = handle_roll(acct, "육체", state, target=target)
+
+    assert expected in result
+
+
+def test_handle_roll_special_check_accepts_alias(monkeypatch):
+    """특수 판정의 「별명」도 그 캐릭터 전용 목표치로 읽는다(테스트)."""
+    state = _alias_state(("별명_1",))
+    monkeypatch.setattr(random, "randint", lambda a, b: 6)
+    target = parse_roll_target("[판정] [「별명_1」 판정_1 6]")
+
+    own, _log_info = handle_roll("user1", "판정_1", state, target=target)
+    other, _log_info = handle_roll("user2", "판정_1", state, target=target)
+
+    assert "↳ 목표치: 판정_1 6 — **성공**" in own
+    assert other.startswith("◊ 알 수 없는 스탯입니다.")
+
+
+def test_handle_roll_subject_accepts_alias():
+    """대상 칸에 별명을 쓰면 그 캐릭터만 목표치를 받는다(테스트)."""
+    state = _alias_state(("별명_1",))
+    target = parse_roll_target("[판정: 별명_1] [육체 7]")
+
+    own, _log_info = handle_roll("user1", "육체", state, target=target)
+    other, _log_info = handle_roll("user2", "육체", state, target=target)
+
+    assert "↳ 목표치: 육체 7" in own
+    assert "목표치" not in other
+
+
 def _quest_location(
     location_id: str = "항구 마을",
     active: bool = True,

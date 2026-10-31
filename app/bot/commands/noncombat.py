@@ -24,6 +24,7 @@ from spreadsheets.models.noncombat import (
 from spreadsheets.models.quest import DailyQuestSuccessType
 from utils.name_matching import (
     find_matching_key,
+    find_name_or_alias,
     resolve_matching_key,
     whitespace_tolerant_literal,
 )
@@ -211,21 +212,25 @@ def _roll_threshold(
     아니면 그 캐릭터 전용 목표치가 아니라 「이름」까지 판정 이름의 일부로 본다
     — 캐릭터가 아닌 대상을 판정 이름에 넣는 표기를 그 캐릭터 전용 목표치로
     읽으면 아무도 굴릴 수 없는 판정이 된다.
+
+    대상 칸과 「이름」은 캐릭터 별명("name_alias")으로도 받는다.
     """
-    char_names = [c.name for c in state.noncombat_char_dict.values()]
+    # 판정은 "캐릭터" 시트 캐릭터만 굴리므로 별명도 그 캐릭터끼리만 견준다.
+    aliases_by_name = {
+        c.name: (data.name_aliases if (data := state.name_dict.get(c.name)) else ())
+        for c in state.noncombat_char_dict.values()
+    }
     named = {
         found
         for label in _RE_ROLL_SUBJECT_SEPARATOR.split(target.subject)
-        if (found := find_matching_key(label.strip(), char_names)) is not None
+        if (found := find_name_or_alias(label.strip(), aliases_by_name)) is not None
     }
     if named and char_name not in named:
         return None
     thresholds = dict(target.thresholds)
     for label, stat, value in target.character_thresholds:
-        if find_matching_key(label, char_names) is not None:
-            if find_matching_key(label, [char_name]) is not None and _same_roll_name(
-                stat, stat_name
-            ):
+        if (owner := find_name_or_alias(label, aliases_by_name)) is not None:
+            if owner == char_name and _same_roll_name(stat, stat_name):
                 return stat, value
         elif stat not in NON_COMBAT_STATS:
             thresholds.setdefault(f"「{label}」 {stat}", value)
