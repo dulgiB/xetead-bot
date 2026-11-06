@@ -80,10 +80,15 @@ class BuffContainer:
             existing.applied_at = self._next_apply_seq()
             return
 
+        # 처음 거는 경우도 상한으로 자른다 — 추가 스택 보정이나 "최대치까지
+        # 채우는" 효과가 한 번에 max_stack보다 많이 부여할 수 있다.
+        stack_value = add_event.stack_value
+        if buff_data.max_stack is not None:
+            stack_value = min(buff_data.max_stack, stack_value)
         new_buff = buff_data.to_buff_instance(
             add_event.given_by,
             add_event.applied_to,
-            add_event.stack_value,
+            stack_value,
             value_override=add_event.value_override,
         )
         new_buff.applied_at = self._next_apply_seq()
