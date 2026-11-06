@@ -224,7 +224,8 @@ def charm_config_error(
         return (
             f"부적 '{item.id}'의 패시브 '{passive.id}' 중 {names}은(는) 적용되지"
             " 않습니다 — 부적에는 버프가 걸린 라운드 동안 유지되는 효과"
-            "(SkillEffectFieldStatOffset, SkillEffectRevivalCountFloor)만 쓸 수"
+            "(SkillEffectFieldStatOffset, SkillEffectRevivalCountFloor,"
+            " SkillEffectExtraStackBonus, SkillEffectNonStackerDamageBonus)만 쓸 수"
             " 있습니다."
         )
     return None
