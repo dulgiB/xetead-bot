@@ -112,23 +112,23 @@ _ENEMY_BLOCK_BOTTOM = _HEADER_ROW - 1  # 18
 
 # 템플릿에 만들어 둔 부적 행 수. 동시에 표시할 수 있는 부적 수의 상한이며,
 # 템플릿의 행 수와 다르면 그 아래 아군 블록이 통째로 어긋난다.
-CHARM_ROW_COUNT = 1
+CHARM_ROW_COUNT = 2
 _CHARM_ROW_START = _HEADER_ROW + 1  # 20
 
-_ALLY_MAIN_ROW_START = _CHARM_ROW_START + CHARM_ROW_COUNT  # 21 (슬롯0)
-_ALLY_BLOCK_BOTTOM = _ALLY_MAIN_ROW_START + _FACTION_BLOCK_HEIGHT - 1  # 29
+_ALLY_MAIN_ROW_START = _CHARM_ROW_START + CHARM_ROW_COUNT  # 22 (슬롯0)
+_ALLY_BLOCK_BOTTOM = _ALLY_MAIN_ROW_START + _FACTION_BLOCK_HEIGHT - 1  # 30
 
-_DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J10:K18 / J20:K29)
+_DECLARE_NAME_COL = 10  # J (병합된 선언 내용 셀의 좌상단 — J10:K18 / J20:K30)
 
 # 적 범위 공격이 예고된 열에 "."을 남기는 행("아군" 띠 바로 아래). 시트의
 # 조건부 서식이 이 표시를 보고 그 열을 강조한다 — 강조 모양은 시트에서
 # 정하고 봇은 어느 열인지만 알린다.
-AOE_MARK_ROW = _ALLY_BLOCK_BOTTOM + 2  # 31
+AOE_MARK_ROW = _ALLY_BLOCK_BOTTOM + 2  # 32
 _AOE_MARK = "."
 
 # 이미지로 캡처할 마지막 행(field_sheet_image). 아군 블록 아래로 "아군"
 # 띠와 여백이 붙으므로 그만큼 더 잡는다.
-EXPORT_BOTTOM_ROW = _ALLY_BLOCK_BOTTOM + 4  # 33
+EXPORT_BOTTOM_ROW = _ALLY_BLOCK_BOTTOM + 4  # 34
 
 
 def render_public_field_sheet(

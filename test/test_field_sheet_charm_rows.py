@@ -94,15 +94,31 @@ def test_enemy_holder_is_not_drawn():
     assert merges == []
 
 
-def test_charms_beyond_the_row_count_are_left_out():
+def test_each_charm_gets_its_own_row():
     ctx = _make_context(owners=(HOLDER.name, FAR.name))
     _place(ctx, HOLDER, FactionType.ALLY, 3)
     _place(ctx, FAR, FactionType.ALLY, 5)
 
     grid, _, merges = _build_charm_rows(ctx)
 
+    assert merges == [(_ROW, 4, 6), (_ROW + 1, 6, 8)]
+    assert _cells(grid) == {
+        (0, 2): f"{CHARM_ID}[{HOLDER.name}]",
+        (1, 4): f"{CHARM_ID}[{FAR.name}]",
+    }
+
+
+def test_charms_beyond_the_row_count_are_left_out():
+    ctx = _make_context(owners=(HOLDER.name, NEAR.name, FAR.name))
+    _place(ctx, HOLDER, FactionType.ALLY, 3)
+    _place(ctx, NEAR, FactionType.ALLY, 4)
+    _place(ctx, FAR, FactionType.ALLY, 5)
+
+    grid, _, merges = _build_charm_rows(ctx)
+
+    assert CHARM_ROW_COUNT == 2
     assert len(merges) == CHARM_ROW_COUNT
-    assert _cells(grid) == {(0, 2): f"{CHARM_ID}[{HOLDER.name}]"}
+    assert len({offset for offset, _ in _cells(grid)}) == CHARM_ROW_COUNT
 
 
 def test_merge_requests_unmerge_the_row_first():
@@ -142,14 +158,22 @@ def _state_with(ctx):
 
 
 def test_capacity_warning_when_more_charms_than_rows():
-    ctx = _make_context(owners=(HOLDER.name, FAR.name))
+    ctx = _make_context(owners=(HOLDER.name, NEAR.name, FAR.name))
     _place(ctx, HOLDER, FactionType.ALLY, 3)
+    _place(ctx, NEAR, FactionType.ALLY, 4)
     _place(ctx, FAR, FactionType.ALLY, 5)
 
     warning = _check_charm_row_capacity(_state_with(ctx))
 
     assert warning is not None
-    assert f"{CHARM_ID}[{FAR.name}]" in warning
+
+
+def test_no_capacity_warning_for_two_charms():
+    ctx = _make_context(owners=(HOLDER.name, FAR.name))
+    _place(ctx, HOLDER, FactionType.ALLY, 3)
+    _place(ctx, FAR, FactionType.ALLY, 5)
+
+    assert _check_charm_row_capacity(_state_with(ctx)) is None
 
 
 def test_no_capacity_warning_within_rows():
