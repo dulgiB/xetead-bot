@@ -5,6 +5,7 @@
 - 같은 라운드에 같은 대상을 거듭 때리면 추가 대미지
   (TargetAlreadyAttackedThisRoundCondition + BuffGivenDamage)
 - 모든 공격이 도발 무시(BuffIgnoreTaunt)
+- 공격 굴림 주사위 최대치(BuffMaxAttackRoll)
 - 거리가 2 이상인 대상을 칠 때 공격력 증가
   (TargetAtLeastDistanceCondition + BuffAtk)
 - 이동하지 않은 대상을 칠 때 공격력 증가
@@ -25,6 +26,7 @@ from battle.objects.buff.buffs import (
     BuffAtk,
     BuffGivenDamage,
     BuffIgnoreTaunt,
+    BuffMaxAttackRoll,
     BuffStripBuffsOnHit,
 )
 from battle.objects.buff.conditions import (
@@ -262,6 +264,21 @@ class TestIgnoreTaunt:
         self._run(ctx, manager)
         assert _damage_taken(ctx, TARGET) > 0
         assert _damage_taken(ctx, TAUNTER) == 0
+
+
+class TestMaxAttackRoll:
+    def test_roll_is_always_six(self, monkeypatch):
+        monkeypatch.setattr("random.randint", lambda a, b: 1)
+        ctx = _context(_buff_mod_passive(BuffMaxAttackRoll))
+        manager = _manager(ctx)
+        _add(ctx, "보유자", FactionType.ALLY, 0, passive_skill_id="PassiveSkill")
+        _add(ctx, "다른 대상", FactionType.ALLY, 0)
+        _add(ctx, "대상", FactionType.ENEMY, 0)
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(parse_character_command(HOLDER, "[공격/대상]", ctx))
+        manager.process_command(parse_character_command(OTHER, "[공격/대상]", ctx))
+        # 보유자 5+6=11, 일반 캐릭터 5+1=6.
+        assert _damage_taken(ctx, TARGET) == 11 + 6
 
 
 class TestAtkAgainstDistantTarget:

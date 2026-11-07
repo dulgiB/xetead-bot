@@ -33,6 +33,7 @@ from .buff_heal_and_buff_stack_on_dealing_damage import (  # noqa: F401
 from .buff_heal_over_time import BuffHealOverTime  # noqa: F401
 from .buff_enemy_trait_mods import (  # noqa: F401
     BuffIgnoreTaunt,
+    BuffMaxAttackRoll,
     BuffStripBuffsOnHit,
 )
 from .buff_delayed_column_burst import BuffDelayedColumnBurst  # noqa: F401

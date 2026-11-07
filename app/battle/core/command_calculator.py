@@ -326,6 +326,11 @@ class CommandPartCalculator:
         # ON_ATTACK/ON_HIT와 같은 "한 번의 타격" 기준이다.
         self._reactive_hooks_fired: set[tuple[CharacterId, CharacterId]] = set()
 
+        # 이 계산기에서 공격 굴림의 주사위를 최대치로 고정할 캐릭터.
+        # MaxAttackRollEvent가 ON_ATTACK 디스패치 때 채우고, 굴림은 그 뒤
+        # apply_damage()가 값을 읽을 때 일어나므로 같은 타격에 반영된다.
+        self.max_roll_characters: set[CharacterId] = set()
+
         # 대미지를 적용한 뒤 버프를 모두 벗길 (공격자, 대상). StripBuffsOnHitEvent가
         # effect별로 채우고 _process_buff_strip()이 그 effect의 대미지 뒤에 비운다.
         self._buff_strip_requests: dict[int, set[tuple[CharacterId, CharacterId]]] = {}

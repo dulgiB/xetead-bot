@@ -15,6 +15,38 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
+class MaxAttackRollEvent(BuffEvent):
+    """holder의 공격 굴림 주사위를 이 계산기 안에서 최대치로 고정한다.
+
+    ON_ACTION은 피격 쪽에서도 불리지만, 굴림은 공격자 자신의 것만 읽으므로
+    holder를 표시해 두기만 하면 된다."""
+
+    @property
+    def priority(self) -> BuffEventCalculatePriority:
+        return BuffEventCalculatePriority.PRE
+
+    def apply(
+        self,
+        holder: CharacterId,
+        attacker_or_target: CharacterId,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
+    ) -> None:
+        calculator.max_roll_characters.add(holder)
+
+
+class BuffMaxAttackRoll(BuffBase):
+    """공격 굴림의 주사위가 항상 최대치(6)로 나온다."""
+
+    @property
+    def timing(self) -> BuffApplyTiming:
+        return BuffApplyTiming.ON_ACTION
+
+    def create_event(self) -> MaxAttackRollEvent:
+        return MaxAttackRollEvent(condition=self.condition)
+
+
+@dataclass(frozen=True)
 class IgnoreTauntEvent(BuffEvent):
     """계산 시점에는 아무것도 하지 않는다. 도발 무시는 대상을 정하는
     단계(taunt_redirect, _get_target_override)가 holder_ignores_taunt()로
