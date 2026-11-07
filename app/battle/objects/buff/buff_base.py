@@ -231,6 +231,11 @@ class BuffBase(abc.ABC):
     def get_target_override(self) -> Optional[CharacterId]:
         return None
 
+    def makes_holder_ignore_taunt(self) -> bool:
+        """True면 보유자가 하는 모든 공격이 도발을 무시한다(BuffIgnoreTaunt).
+        대상을 정하는 단계가 이 값을 읽는다 — taunt_redirect.holder_ignores_taunt()."""
+        return False
+
     @classmethod
     def snapshot_value_on_add(
         cls, context: "BattlefieldContext", applied_to: CharacterId

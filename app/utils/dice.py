@@ -42,8 +42,14 @@ class DiceRollResult:
         return result_str
 
 
-def nd6(n: int, bonus_list: list[Union[int, "IntValueModifier"]]) -> DiceRollResult:
+def nd6(
+    n: int,
+    bonus_list: list[Union[int, "IntValueModifier"]],
+    always_max: bool = False,
+) -> DiceRollResult:
+    """always_max면 굴리지 않고 모든 주사위를 6으로 둔다(굴림값이 항상
+    최대치인 패시브용). 표시는 일반 굴림과 같다."""
     res = DiceRollResult(n_sides=6, bonus_list=bonus_list)
     for i in range(n):
-        res.rolls.append(random.randint(1, 6))
+        res.rolls.append(6 if always_max else random.randint(1, 6))
     return res

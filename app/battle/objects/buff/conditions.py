@@ -296,6 +296,72 @@ class HolderDidNotMoveThisTurnCondition(Condition):
 
 
 @dataclass(frozen=True)
+class TargetAtLeastDistanceCondition(Condition):
+    """holder와 attacker_or_target의 열 거리가 value 이상일 때 True — "멀리
+    있는 대상을 칠 때" 강해지는 효과에 쓴다.
+
+    거리는 점유 열 전체 대 점유 열 전체의 최소 거리다(`can_reach()`와 같은
+    규칙). 에너미의 대미지는 적 공격 정산(POST) 시점의 위치로 재므로, 아군이
+    행동 단계에 다가오면 조건에서 벗어난다."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if attacker_or_target is None:
+            return False
+        if (
+            holder not in context.characters
+            or attacker_or_target not in context.characters
+        ):
+            return False
+        assert self.value is not None
+        return not context.can_reach(holder, attacker_or_target, self.value - 1)
+
+
+@dataclass(frozen=True)
+class TargetDidNotMoveThisTurnCondition(Condition):
+    """이번 라운드에 attacker_or_target이 이동하지 않았을 때 True.
+
+    강제 이동(밀어내기·끌어오기)도 이동으로 센다. 에너미의
+    대미지는 아군 행동 뒤 정산되므로, 아군이 행동 단계에 움직이면 피할 수
+    있다."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if attacker_or_target is None:
+            return False
+        return attacker_or_target not in context.moved_this_round
+
+
+@dataclass(frozen=True)
+class TargetAlreadyAttackedThisRoundCondition(Condition):
+    """holder가 이번 라운드에 attacker_or_target에게 이미 대미지를 넣은 적이
+    있을 때 True — "같은 라운드에 두 번째 이후로 맞는" 타격을 가린다.
+
+    `attacked_this_round`는 대미지가 실제로 적용될 때(`apply_damage()`) 쌓이므로
+    방어막·반사로 통째로 무효화된 타격은 세지 않는다. 한 커맨드 안의
+    `공격-공격`도 파트마다 계산기가 따로 돌아 두 번째 파트에서 참이 된다
+    (SameTargetAsPreviousAttackCondition과 같은 근거)."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if attacker_or_target is None:
+            return False
+        return (holder, attacker_or_target) in context.attacked_this_round
+
+
+@dataclass(frozen=True)
 class SameTargetAsLastRoundCondition(Condition):
     """직전 라운드에도 holder가 attacker_or_target을 공격했을 때 True."""
 

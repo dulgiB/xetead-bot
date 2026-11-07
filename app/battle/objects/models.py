@@ -110,6 +110,7 @@ class BaseValueIndicator:
             result = nd6(
                 calculator.context.milestone_n,
                 calculator.buffed_stats_by_character[user_id][CombatStatType.ATK],
+                always_max=user_id in calculator.max_roll_characters,
             )
             return result
 
