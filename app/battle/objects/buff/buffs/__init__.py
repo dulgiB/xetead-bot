@@ -31,6 +31,9 @@ from .buff_heal_and_buff_stack_on_dealing_damage import (  # noqa: F401
     BuffHealAndBuffStackOnDealingDamage,
 )
 from .buff_heal_over_time import BuffHealOverTime  # noqa: F401
+from .buff_enemy_trait_mods import (  # noqa: F401
+    BuffStripBuffsOnHit,
+)
 from .buff_delayed_column_burst import BuffDelayedColumnBurst  # noqa: F401
 from .buff_next_basic_attack_percent_of_target_max_hp import (  # noqa: F401
     BuffNextBasicAttackPercentOfTargetMaxHp,

@@ -28,6 +28,7 @@ from battle.objects.define import (
     ActionType,
     BuffApplyTiming,
     BuffCountDeductCondition,
+    BuffType,
     CombatStatType,
     KeywordBoostMode,
     ValueSourceType,
@@ -325,6 +326,10 @@ class CommandPartCalculator:
         # ON_ATTACK/ON_HIT와 같은 "한 번의 타격" 기준이다.
         self._reactive_hooks_fired: set[tuple[CharacterId, CharacterId]] = set()
 
+        # 대미지를 적용한 뒤 버프를 모두 벗길 (공격자, 대상). StripBuffsOnHitEvent가
+        # effect별로 채우고 _process_buff_strip()이 그 effect의 대미지 뒤에 비운다.
+        self._buff_strip_requests: dict[int, set[tuple[CharacterId, CharacterId]]] = {}
+
         _apply_keyword_boost_modifier(data.original_part, self.data_by_effect, context)
         _apply_non_stacker_damage_bonus(
             data.original_part, self.data_by_effect, context
@@ -472,6 +477,45 @@ class CommandPartCalculator:
         self._process_buff_remove(effect_seq_number, after_damage=False)
         self._process_damage(effect_seq_number)
         self._process_buff_remove(effect_seq_number, after_damage=True)
+        self._process_buff_strip(effect_seq_number)
+
+    def _process_buff_strip(
+        self: "CommandPartCalculator", effect_seq_number: int
+    ) -> None:
+        """StripBuffsOnHitEvent가 요청한 대상의 버프(BuffType.BUFF, 패시브 제외)를
+        이 effect의 대미지를 적용한 **뒤에** 전부 제거한다.
+
+        뒤에 하는 이유: "공격당한 아군은 그 시점의 버프가 해제된다"이므로 그
+        일격 자체는 방어막·반사·경감을 그대로 받는다. 앞에서 벗기면 그
+        일격이 방어 버프를 무시하는 효과가 된다.
+
+        대미지 항목이 방어막·반사로 리스트에서 빠졌어도 공격당한 것이므로
+        벗긴다. 대상이 이미 쓰러져 전장에서 빠졌으면 건너뛴다."""
+        requests = self._buff_strip_requests.pop(effect_seq_number, set())
+        effect_data = self.data_by_effect[effect_seq_number]
+        for _attacker, target in sorted(requests, key=lambda p: p[1].name):
+            if target not in self.context.characters:
+                continue
+            strippable = [
+                buff
+                for buff in self.context.buff_container.get_buffs_by(target, None)
+                if buff.buff_type == BuffType.BUFF and not buff.duration.is_passive
+            ]
+            if not strippable:
+                continue
+            labels = []
+            for buff in sorted(strippable, key=lambda b: b.applied_at):
+                labels.append(buff.display_id_label())
+                self.context.buff_container.remove(buff.uid)
+            effect_data.extra_log_entries.append(
+                BattleLogEntry(
+                    target_name=target.name,
+                    kind=BattleLogEntryKind.BUFF_CLEAR,
+                    result="모든 버프 해제 ("
+                    + ", ".join(f"[{x}]" for x in labels)
+                    + ")",
+                )
+            )
 
     def _process_buff_remove(
         self: "CommandPartCalculator",

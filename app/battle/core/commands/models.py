@@ -162,6 +162,7 @@ class BattleLogEntryKind(str, Enum):
     BUFF_ADD = "buff_add"
     BUFF_REMOVE = "buff_remove"
     DEBUFF_CLEAR = "debuff_clear"
+    BUFF_CLEAR = "buff_clear"
     FIELD_EFFECT = "field_effect"
     SUMMON = "summon"
     # 방어막/반사 등이 항목 자체를 없앴을 때 "왜 대미지가 안 보이는지"를

@@ -1,6 +1,7 @@
 """
 에너미 특성 패시브의 부품 테스트.
 
+- 공격한 대상의 버프를 모두 해제(BuffStripBuffsOnHit)
 - 같은 라운드에 같은 대상을 거듭 때리면 추가 대미지
   (TargetAlreadyAttackedThisRoundCondition + BuffGivenDamage)
 - 거리가 2 이상인 대상을 칠 때 공격력 증가
@@ -18,10 +19,11 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
-from battle.objects.buff.buff_base import BuffBase, BuffUid
+from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffUid
 from battle.objects.buff.buffs import (
     BuffAtk,
     BuffGivenDamage,
+    BuffStripBuffsOnHit,
 )
 from battle.objects.buff.conditions import (
     Condition,
@@ -121,6 +123,56 @@ def _add(ctx, name, faction, column, **kwargs):
 
 def _damage_taken(ctx: BattlefieldContext, char_id: CharacterId) -> int:
     return 100 - ctx.characters[char_id].status.curr_hp
+
+
+class TestStripBuffsOnHit:
+    def _setup(self):
+        ctx = _context(
+            _buff_mod_passive(BuffStripBuffsOnHit),
+            buff_dict={
+                "버프_1": _buff_data("버프_1", "BuffReceivedDamage", BuffType.BUFF),
+                "디버프_1": _buff_data(
+                    "디버프_1", "BuffReceivedDamage", BuffType.DEBUFF
+                ),
+                "마커_1": _buff_data("마커_1", "BuffReceivedDamage", BuffType.NEUTRAL),
+            },
+        )
+        manager = _manager(ctx)
+        _add(ctx, "보유자", FactionType.ALLY, 0, passive_skill_id="PassiveSkill")
+        _add(ctx, "대상", FactionType.ENEMY, 0)
+        _add(ctx, "다른 대상", FactionType.ENEMY, 0)
+        # 같은 부여자·같은 클래스면 하나로 합쳐지므로 부여자를 나눈다.
+        givers = {"버프_1": TARGET, "디버프_1": HOLDER, "마커_1": OTHER}
+        for target in (TARGET, OTHER):
+            for buff_id, giver in givers.items():
+                ctx.buff_container.add(
+                    BuffAddData(given_by=giver, applied_to=target, buff_id=buff_id)
+                )
+        return ctx, manager
+
+    def _ids(self, ctx, char_id):
+        return {b.id for b in ctx.buff_container.get_buffs_by(char_id, None)}
+
+    def test_only_buffs_of_the_attacked_target_are_removed(self):
+        ctx, manager = self._setup()
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(parse_character_command(HOLDER, "[공격/대상]", ctx))
+
+        assert "버프_1" not in self._ids(ctx, TARGET)
+        assert {"디버프_1", "마커_1"} <= self._ids(ctx, TARGET)
+        # 공격받지 않은 쪽은 그대로다.
+        assert "버프_1" in self._ids(ctx, OTHER)
+        log_text = " ".join(e.result for r in ctx.results for e in r.log_entries)
+        assert "모든 버프 해제" in log_text
+
+    def test_holder_own_passive_survives(self):
+        ctx, manager = self._setup()
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(parse_character_command(HOLDER, "[공격/대상]", ctx))
+        assert any(
+            b.id == "PassiveSkill"
+            for b in ctx.buff_container.get_buffs_by(HOLDER, None)
+        )
 
 
 class TestBonusOnRepeatedHitInSameRound:
