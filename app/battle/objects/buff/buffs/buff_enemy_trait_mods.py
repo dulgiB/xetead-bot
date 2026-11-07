@@ -3,7 +3,7 @@ buff_mod_event 경로(PassiveSkillData.buff_mod_event)로 쓰고, "버프" 시�
 직접 등록해 부여하는 용도가 아니다."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from battle.objects.buff.buff_base import BuffBase
 from battle.objects.buff.buff_events import BuffEvent, BuffEventCalculatePriority
@@ -12,6 +12,42 @@ from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
     from battle.core.command_calculator import CommandPartCalculator
+
+
+@dataclass(frozen=True)
+class IgnoreTauntEvent(BuffEvent):
+    """계산 시점에는 아무것도 하지 않는다. 도발 무시는 대상을 정하는
+    단계(taunt_redirect, _get_target_override)가 holder_ignores_taunt()로
+    이 표시를 읽어 처리한다 — 계산 시점에는 대상이 이미 정해져 있다."""
+
+    makes_holder_ignore_taunt: ClassVar[bool] = True
+
+    @property
+    def priority(self) -> BuffEventCalculatePriority:
+        return BuffEventCalculatePriority.NORMAL
+
+    def apply(
+        self,
+        holder: CharacterId,
+        attacker_or_target: CharacterId,
+        calculator: "CommandPartCalculator",
+        effect_seq_number: int,
+    ) -> None:
+        return
+
+
+class BuffIgnoreTaunt(BuffBase):
+    """보유자가 하는 모든 공격(기본 공격 포함)이 도발을 무시한다."""
+
+    @property
+    def timing(self) -> BuffApplyTiming:
+        return BuffApplyTiming.ON_ACTION
+
+    def create_event(self) -> IgnoreTauntEvent:
+        return IgnoreTauntEvent(condition=self.condition)
+
+    def makes_holder_ignore_taunt(self) -> bool:
+        return True
 
 
 @dataclass(frozen=True)

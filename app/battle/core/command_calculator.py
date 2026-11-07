@@ -635,6 +635,10 @@ class CommandPartCalculator:
         가장 최근에 걸리거나 갱신된 것(applied_at 최댓값)이 우선한다 —
         get_buffs_by()의 순회 순서(set 내부 순서, 사실상 무작위)에 의존하면
         어느 도발이 실제로 적용될지 실행마다 달라진다."""
+        from battle.core.taunt_redirect import holder_ignores_taunt
+
+        if holder_ignores_taunt(self.context, attacker_id):
+            return None
         best_override: Optional[CharacterId] = None
         best_seq = -1
         for buff in self.context.buff_container.get_buffs_by(

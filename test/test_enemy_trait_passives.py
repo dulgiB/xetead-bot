@@ -4,6 +4,7 @@
 - 공격한 대상의 버프를 모두 해제(BuffStripBuffsOnHit)
 - 같은 라운드에 같은 대상을 거듭 때리면 추가 대미지
   (TargetAlreadyAttackedThisRoundCondition + BuffGivenDamage)
+- 모든 공격이 도발 무시(BuffIgnoreTaunt)
 - 거리가 2 이상인 대상을 칠 때 공격력 증가
   (TargetAtLeastDistanceCondition + BuffAtk)
 - 이동하지 않은 대상을 칠 때 공격력 증가
@@ -23,6 +24,7 @@ from battle.objects.buff.buff_base import BuffAddData, BuffBase, BuffUid
 from battle.objects.buff.buffs import (
     BuffAtk,
     BuffGivenDamage,
+    BuffIgnoreTaunt,
     BuffStripBuffsOnHit,
 )
 from battle.objects.buff.conditions import (
@@ -221,6 +223,45 @@ class TestBonusOnRepeatedHitInSameRound:
         ctx.characters[HOLDER].status.curr_cost = 3
         manager.process_command(parse_character_command(HOLDER, "[공격/대상]", ctx))
         assert _damage_taken(ctx, TARGET) == 16
+
+
+class TestIgnoreTaunt:
+    def _setup(self, with_passive: bool):
+        ctx = _context(
+            _buff_mod_passive(BuffIgnoreTaunt),
+            buff_dict={"도발": _buff_data("도발", "BuffTaunt", BuffType.NEUTRAL)},
+        )
+        manager = _manager(ctx)
+        _add(
+            ctx,
+            "보유자",
+            FactionType.ENEMY,
+            0,
+            passive_skill_id="PassiveSkill" if with_passive else None,
+        )
+        _add(ctx, "대상", FactionType.ALLY, 0)
+        _add(ctx, "도발자", FactionType.ALLY, 0)
+        ctx.buff_container.add(
+            BuffAddData(given_by=TAUNTER, applied_to=HOLDER, buff_id="도발")
+        )
+        return ctx, manager
+
+    def _run(self, ctx, manager):
+        manager.process_command(parse_character_command(HOLDER, "[공격/대상]", ctx))
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+    def test_taunt_redirects_without_passive(self):
+        ctx, manager = self._setup(with_passive=False)
+        self._run(ctx, manager)
+        assert _damage_taken(ctx, TARGET) == 0
+        assert _damage_taken(ctx, TAUNTER) > 0
+
+    def test_basic_attack_ignores_taunt_with_passive(self):
+        ctx, manager = self._setup(with_passive=True)
+        self._run(ctx, manager)
+        assert _damage_taken(ctx, TARGET) > 0
+        assert _damage_taken(ctx, TAUNTER) == 0
 
 
 class TestAtkAgainstDistantTarget:

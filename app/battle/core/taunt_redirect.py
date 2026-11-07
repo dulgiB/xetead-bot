@@ -17,12 +17,26 @@ class _RedirectableInstance:
     original_target: CharacterId
 
 
+def holder_ignores_taunt(
+    context: "BattlefieldContext", attacker_id: CharacterId
+) -> bool:
+    """attacker_id가 도발을 무시하는 효과(BuffIgnoreTaunt)를 지니고 있는지."""
+    return any(
+        buff.makes_holder_ignore_taunt()
+        for buff in context.buff_container.get_buffs_by(
+            attacker_id, BuffApplyTiming.ON_ACTION
+        )
+    )
+
+
 def get_active_taunters(
     context: "BattlefieldContext", attacker_id: CharacterId
 ) -> list[CharacterId]:
     """attacker_id에게 걸린 모든 도발자를 이름순으로 반환한다. BuffContainer의
     내부 저장소는 set이라 자연 순서가 없으므로, 재현 가능한 처리 순서를 위해
-    명시적으로 정렬한다."""
+    명시적으로 정렬한다. 도발을 무시하는 공격자면 빈 목록이다."""
+    if holder_ignores_taunt(context, attacker_id):
+        return []
     taunters = {
         override
         for buff in context.buff_container.get_buffs_by(

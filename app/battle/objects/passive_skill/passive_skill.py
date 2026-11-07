@@ -322,6 +322,15 @@ class PassiveSkillWrapperBuff(BuffBase):
             return BuffApplyTiming.ALLY_DAMAGED
         return BuffApplyTiming.ON_ACTION
 
+    def makes_holder_ignore_taunt(self) -> bool:
+        # "버프_패시브" 경로로 가져온 BuffIgnoreTaunt는 래퍼 안의 이벤트로만
+        # 남으므로, 이벤트 클래스의 표시를 대신 읽어 준다.
+        if self._role != "buff_mod" or self._passive_data.buff_mod_event is None:
+            return False
+        return getattr(
+            self._passive_data.buff_mod_event, "makes_holder_ignore_taunt", False
+        )
+
     def create_event(self) -> PassiveSkillWrapperEvent:
         return PassiveSkillWrapperEvent(
             condition=self.condition,
