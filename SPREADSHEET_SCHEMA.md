@@ -193,6 +193,9 @@
 | `AllyInSameColumnCondition`             | holder와 같은 열에 같은 진영(자신 제외)이 1명 이상                                  | (없음)              |
 | `TargetAttackedHolderLastRoundCondition`| 직전 라운드에 대상이 holder를 공격함                                            | (없음)              |
 | `HolderDidNotMoveThisTurnCondition`     | 이번 라운드 holder가 이동하지 않음                                              | (없음)              |
+| `TargetAtLeastDistanceCondition`        | holder와 대상의 열 거리가 `value` 이상(다열은 가장 가까운 열 기준, 피격 시점 위치)       | 최소 거리           |
+| `TargetDidNotMoveThisTurnCondition`     | 이번 라운드 대상이 이동하지 않음(강제 이동도 이동으로 셈)                              | (없음)              |
+| `TargetAlreadyAttackedThisRoundCondition`| 이번 라운드에 holder가 그 대상에게 이미 대미지를 넣음(무효화된 타격은 세지 않음)            | (없음)              |
 | `SameTargetAsLastRoundCondition`        | 직전 라운드에도 holder가 같은 대상을 공격함                                        | (없음)              |
 | `SameTargetAsPreviousAttackCondition`   | 직전 라운드 또는 이번 라운드에 holder가 이미 그 대상을 공격함                            | (없음)              |
 | `HealedNonSelfCondition`                | holder가 자신 외 대상에게 회복을 부여하는 상황                                      | (없음)              |
