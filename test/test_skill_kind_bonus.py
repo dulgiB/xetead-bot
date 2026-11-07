@@ -12,6 +12,7 @@ from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
@@ -254,3 +255,18 @@ def test_old_class_names_still_load_from_the_sheet():
     """시트의 effect_N을 새 이름으로 바꾸기 전에 재기동해도 읽혀야 한다."""
     assert effects.SkillEffectStackSkillBonus is SkillEffectExtraStackBonus
     assert effects.SkillEffectPlainSkillDamageBonus is SkillEffectNonStackerDamageBonus
+
+
+def test_first_application_is_capped_at_max_stack():
+    """처음 거는 버프도 추가 스택 보정으로 상한을 넘지 않는다."""
+    ctx, _ = _setup()
+    ctx.buff_container.add(
+        BuffAddData(
+            buff_id=STACK_BUFF_ID,
+            given_by=STACKER,
+            applied_to=FOE,
+            stack_value=10,
+        )
+    )
+
+    assert _stack(ctx) == 10
