@@ -608,6 +608,7 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 | `SkillEffectRevivalCountFloor` | 부활 `value_N`회 상태처럼 취급(받는 대미지·턴당 코스트만) |
 | `SkillEffectAddFieldEffect` / `SkillEffectRemoveFieldEffect` | 다른 필드 효과 부여·해제 |
 | `SkillEffectExtraStackBonus` / `SkillEffectNonStackerDamageBonus` | 적층형 버프/디버프를 부여할 때마다 `value_N`스택 추가 / 적층형을 쓰지 않는 캐릭터는 대미지 `value_N`% 증가 |
+| `SkillEffectSuppressPassives` | 범위 안 캐릭터의 패시브 스킬 발동을 막음(`PassiveSkillWrapperEvent.is_applied()`·도발 무시 표시). 이미 부여된 버프는 남는다 |
 
 **스탯 증감은 `CombatStats.__getitem__`에 직접 얹는다.** 버프(`BuffedStats`)로는
 안 되는데, `BuffedStats`는 `CommandPartCalculator` 안에서만 살기 때문에 사거리

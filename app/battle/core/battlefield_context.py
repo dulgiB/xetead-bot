@@ -459,7 +459,13 @@ class BattlefieldContext:
             return False
         effects = [e for skill in character.skills for e in skill.data.effects]
         pending: list[str] = []
-        for wrapper in self.passive_wrappers_of(char_id):
+        # 무효화된 패시브는 그 동안 스택을 쌓지도 읽지도 않으므로 세지 않는다.
+        wrappers = (
+            []
+            if character.status.passives_suppressed
+            else self.passive_wrappers_of(char_id)
+        )
+        for wrapper in wrappers:
             passive = self._passive_skill_dictionary.get(wrapper.id)
             if passive is None:
                 continue

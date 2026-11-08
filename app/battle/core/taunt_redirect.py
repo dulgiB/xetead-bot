@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING, Optional
 from battle.core.commands.define import RoundPhaseType
 from battle.objects.define import BuffApplyTiming
 from battle.objects.models import CharacterId
+from battle.objects.passive_skill.passive_skill import (
+    PassiveSkillWrapperBuff,
+    passives_suppressed,
+)
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -20,12 +24,16 @@ class _RedirectableInstance:
 def holder_ignores_taunt(
     context: "BattlefieldContext", attacker_id: CharacterId
 ) -> bool:
-    """attacker_id가 도발을 무시하는 효과(BuffIgnoreTaunt)를 지니고 있는지."""
+    """attacker_id가 도발을 무시하는 효과(BuffIgnoreTaunt)를 지니고 있는지.
+    패시브가 무효화된 동안에는 패시브로 얻은 도발 무시도 꺼진다 — 이 표시는
+    이벤트 판정(is_applied)을 거치지 않고 버프에서 바로 읽기 때문이다."""
+    suppressed = passives_suppressed(context, attacker_id)
     return any(
         buff.makes_holder_ignore_taunt()
         for buff in context.buff_container.get_buffs_by(
             attacker_id, BuffApplyTiming.ON_ACTION
         )
+        if not (suppressed and isinstance(buff, PassiveSkillWrapperBuff))
     )
 
 

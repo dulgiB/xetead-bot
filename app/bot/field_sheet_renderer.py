@@ -55,7 +55,10 @@ from battle.objects.define import (
     FactionType,
 )
 from battle.objects.models import CharacterId
-from battle.objects.passive_skill.passive_skill import PassiveSkillWrapperBuff
+from battle.objects.passive_skill.passive_skill import (
+    PassiveSkillWrapperBuff,
+    passives_suppressed,
+)
 from battle.objects.skill.effects.effect_dash_to_column import dash_path_columns
 from bot import sheet_writer
 from bot.sheet_cache import SheetCache
@@ -817,6 +820,10 @@ def _format_buff_cell(
             if label in seen_passive_labels:
                 continue
             seen_passive_labels.add(label)
+            # 무효화된 패시브도 목록에서 빼지 않는다 — 사라지면 관중이 원래
+            # 없던 것인지 꺼진 것인지 구분할 수 없다.
+            if passives_suppressed(context, char_id):
+                label = f"{label} (무효)"
         icon = _BUFF_TYPE_ICON[buff.buff_type]
         stack_count = buff.stack_count if buff.max_stack is not None else None
         display_lines.append(f"{icon} {label}{buff.duration.display_text(stack_count)}")
