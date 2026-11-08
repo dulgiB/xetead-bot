@@ -102,6 +102,13 @@ def resolve_passive_targets(
     return []
 
 
+def passives_suppressed(context: "BattlefieldContext", holder: CharacterId) -> bool:
+    """holder의 패시브 스킬이 무효화된 상태인지(SkillEffectSuppressPassives).
+    필드 효과의 센티넬 홀더처럼 전장에 없는 홀더는 무효화되지 않는다."""
+    character = context.characters.get(holder)
+    return character is not None and character.status.passives_suppressed
+
+
 PassiveSkillWrapperRole = Literal["buff_mod", "effects", "effects_resolved"]
 
 
@@ -140,6 +147,18 @@ class PassiveSkillWrapperEvent(BuffEvent):
     @property
     def priority(self) -> BuffEventCalculatePriority:
         return BuffEventCalculatePriority.NORMAL
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        # 패시브의 모든 발동 경로(라운드 트리거·ON_ACTION·반응형·수치 수정자
+        # 재적용)가 이 판정을 거치므로, 무효화는 여기 한 곳에서 막는다.
+        if passives_suppressed(context, holder):
+            return False
+        return super().is_applied(context, holder, attacker_or_target)
 
     def apply(
         self,

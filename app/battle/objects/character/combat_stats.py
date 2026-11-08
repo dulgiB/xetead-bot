@@ -43,6 +43,10 @@ class CombatStats:
         # 필드 효과·부적이 얹는 적층형 사용 여부별 보정. 출처마다 하나씩
         # 되돌려야 해서 합계가 아니라 목록으로 둔다.
         self._extra_stack_bonuses: list[int] = []
+
+        # 패시브 스킬 무효화(SkillEffectSuppressPassives)를 얹은 출처 수.
+        # 같은 효과가 여러 출처에서 겹쳐도 하나씩 되돌릴 수 있게 개수로 센다.
+        self._passive_suppressions = 0
         self._non_stacker_damage_bonuses: list[int] = []
 
         self._curr_cost = self[CombatStatType.COST_PER_TURN]
@@ -202,6 +206,18 @@ class CombatStats:
     def remove_revival_count_floor(self, floor: int) -> None:
         """add_revival_count_floor()로 얹은 하한 하나를 되돌린다."""
         self._revival_count_floors.remove(floor)
+
+    @property
+    def passives_suppressed(self) -> bool:
+        """패시브 스킬이 무효화된 상태인지(SkillEffectSuppressPassives)."""
+        return self._passive_suppressions > 0
+
+    def add_passive_suppression(self) -> None:
+        self._passive_suppressions += 1
+
+    def remove_passive_suppression(self) -> None:
+        """add_passive_suppression()으로 얹은 무효화 하나를 되돌린다."""
+        self._passive_suppressions = max(0, self._passive_suppressions - 1)
 
     @property
     def revival_penalty(self) -> Optional[FloatValueModifier]:

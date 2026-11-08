@@ -51,3 +51,4 @@ from .effect_skill_kind_bonus import (  # noqa: F401
 )
 from .effect_splash_along_path import SkillEffectSplashAlongPath  # noqa: F401
 from .effect_summon import SkillEffectSummon  # noqa: F401
+from .effect_suppress_passives import SkillEffectSuppressPassives  # noqa: F401
