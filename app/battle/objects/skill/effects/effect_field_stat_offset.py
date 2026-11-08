@@ -49,7 +49,9 @@ class SkillEffectFieldStatOffset(SkillEffectBase):
     def offset(self) -> int:
         return self.value or 0
 
-    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
+    def apply_standing_state(
+        self, stats: "CombatStats", *, revert: bool, source: str = ""
+    ) -> None:
         stat_type = self.stat_type
         if stat_type is None:
             logger.warning(

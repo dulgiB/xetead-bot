@@ -89,7 +89,9 @@ class CharmBuff(BuffBase):
         return _CharmBuffEvent(condition=None)
 
     def display_id_label(self) -> str:
-        return self.aura.label
+        # 소지자 이름은 공개 "필드" 시트의 부적 행에만 적는다 — 캐릭터마다
+        # 붙는 버프 칸에까지 붙이면 너무 길어진다.
+        return self.aura.item.id
 
     def get_description(self, context: "BattlefieldContext") -> str:
         return self.aura.passive.description
@@ -105,7 +107,9 @@ class CharmBuff(BuffBase):
         if character is None:
             return
         for effect in self.aura.passive.effects:
-            effect.apply_standing_state(character.status, revert=revert)
+            effect.apply_standing_state(
+                character.status, revert=revert, source=self.aura.item.id
+            )
 
 
 class CharmAuraContainer:

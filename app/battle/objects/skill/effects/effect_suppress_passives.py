@@ -26,7 +26,9 @@ class SkillEffectSuppressPassives(SkillEffectBase):
     requires_holder_character: ClassVar[bool] = False
     is_standing_state: ClassVar[bool] = True
 
-    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
+    def apply_standing_state(
+        self, stats: "CombatStats", *, revert: bool, source: str = ""
+    ) -> None:
         if revert:
             stats.remove_passive_suppression()
         else:

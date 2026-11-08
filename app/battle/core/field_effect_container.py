@@ -171,7 +171,9 @@ class FieldEffectContainer:
             return
 
         for skill_effect in effect.data.effects:
-            skill_effect.apply_standing_state(character.status, revert=revert)
+            skill_effect.apply_standing_state(
+                character.status, revert=revert, source=effect.data.id
+            )
 
     def _apply_effects_to(
         self, effect: FieldEffect, targets: list[CharacterId]
