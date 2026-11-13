@@ -36,6 +36,10 @@ def get_test_preset(
     skill_1_id: Optional[str] = None,
     skill_2_id: Optional[str] = None,
     skill_3_id: Optional[str] = None,
+    skill_4_id: Optional[str] = None,
+    skill_5_id: Optional[str] = None,
+    skill_6_id: Optional[str] = None,
+    skill_7_id: Optional[str] = None,
     revival_count: int = 0,
     keyword_date: str = "",
     hide_hp: bool = False,
@@ -55,9 +59,16 @@ def get_test_preset(
         max_cost=max_cost,
         passive_skill_id=passive_skill_id if passive_skill_id else "",
         skill_id_list=[
-            skill_1_id if skill_1_id else "",
-            skill_2_id if skill_2_id else "",
-            skill_3_id if skill_3_id else "",
+            skill_id or ""
+            for skill_id in (
+                skill_1_id,
+                skill_2_id,
+                skill_3_id,
+                skill_4_id,
+                skill_5_id,
+                skill_6_id,
+                skill_7_id,
+            )
         ],
         hide_hp=hide_hp,
         span=span,
