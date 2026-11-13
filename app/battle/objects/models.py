@@ -109,14 +109,21 @@ class BaseValueIndicator:
         if self.value_source == ValueSourceType.STAT_ATK_ROLL:
             result = nd6(
                 calculator.context.milestone_n,
-                calculator.buffed_stats_by_character[user_id][CombatStatType.ATK],
-                always_max=user_id in calculator.max_roll_characters,
+                [
+                    *calculator.buffed_stats_by_character[user_id][CombatStatType.ATK],
+                    *calculator.scoped_atk_bonuses.get((user_id, target_id), []),
+                ],
+                always_max=user_id in calculator.max_roll_characters
+                or (user_id, target_id) in calculator.max_roll_pairs,
             )
             return result
 
         elif self.value_source == ValueSourceType.STAT_ATK:
             return calculator.buffed_stats_by_character[user_id].total(
                 CombatStatType.ATK
+            ) + sum(
+                bonus.value
+                for bonus in calculator.scoped_atk_bonuses.get((user_id, target_id), [])
             )
         elif self.value_source == ValueSourceType.STAT_RANGE:
             return calculator.context.characters[user_id].status[CombatStatType.RANGE]

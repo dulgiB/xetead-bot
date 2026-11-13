@@ -18,6 +18,7 @@ class GivenAndReceivedDamageModEvent(BuffEvent):
     컬럼(둘 다 퍼센트로 해석)에서 온다."""
 
     is_pure_damage_modifier: ClassVar[bool] = True
+    supports_target_scope: ClassVar[bool] = True
 
     given_percent: int
     received_percent: int
@@ -40,6 +41,8 @@ class GivenAndReceivedDamageModEvent(BuffEvent):
         for damage_data in calculator.data_by_effect[
             effect_seq_number
         ].damage_data_list:
+            if not calculator.in_event_scope(damage_data.base.target_id):
+                continue
             if damage_data.base.attacker_id == holder:
                 damage_data.given_modifiers.append(
                     FloatValueModifier(source_name=self.label, value=self.given_percent)

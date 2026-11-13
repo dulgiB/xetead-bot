@@ -27,6 +27,12 @@ class BuffEvent(abc.ABC):
     # 부수효과가 있는 이벤트를 True로 바꾸면 거기서 중복 발동한다.
     is_pure_damage_modifier: ClassVar[bool] = False
 
+    # 공격 쪽 디스패치에서 대상마다 따로 판정·적용할 수 있는 이벤트라는 표시.
+    # True인 이벤트의 apply()는 calculator.in_event_scope()로 지금 판정 중인
+    # 대상의 항목만 건드려야 한다 — 광역기에서 이동 여부·거리 같은 대상별
+    # 조건이 첫 대상 하나로 전원에게 정해지지 않게 하기 위해서다.
+    supports_target_scope: ClassVar[bool] = False
+
     def is_applied(
         self,
         context: "BattlefieldContext",
