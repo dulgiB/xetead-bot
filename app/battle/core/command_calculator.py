@@ -433,7 +433,10 @@ class CommandPartCalculator:
                 continue
 
             added = self.context.add_field_effect(
-                op.effect_id, FieldEffectSource.SKILL, turns=op.turns
+                op.effect_id,
+                FieldEffectSource.SKILL,
+                op.source_detail,
+                turns=op.turns,
             )
             if added is not None:
                 mutable.field_effect_results.append(

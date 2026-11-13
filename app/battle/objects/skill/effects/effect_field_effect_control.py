@@ -30,7 +30,12 @@ class _FieldEffectControlBase(SkillEffectBase):
             turns = self.value
         return [
             FieldEffectOp(
-                effect_id=self.field_effect_id, remove=self._REMOVE, turns=turns
+                effect_id=self.field_effect_id,
+                remove=self._REMOVE,
+                turns=turns,
+                # 누가 걸었는지가 "스킬"이라는 종류보다 쓸모 있으므로 시전자
+                # 이름을 출처로 남긴다(FieldEffect.display_label()).
+                source_detail="" if self._REMOVE else holder.name,
             )
         ]
 
