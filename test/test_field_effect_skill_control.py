@@ -139,6 +139,32 @@ class TestAddBySkill:
 
         assert FIELD_EFFECT_ID in ctx.field_effects
 
+    def test_label_names_the_caster_as_source(self):
+        ctx = _make_context()
+
+        _use(ctx, ADD_SKILL_ID)
+
+        effect = ctx.field_effects.get(FIELD_EFFECT_ID)
+        assert effect is not None
+        assert effect.source is FieldEffectSource.SKILL
+        assert effect.display_label() == f"{FIELD_EFFECT_ID}[시전자]"
+
+    def test_declared_without_slash_puts_the_effect_on_the_field(self):
+        ctx = _make_context()
+        manager = RoundManager(ctx)
+        manager.process_command(
+            ChangePhaseCommand(
+                type_=ActionType.ADMIN, target_phase=RoundPhaseType.ENEMY_PRE_ACTION
+            )
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+
+        manager.process_command(
+            parse_character_command(CharacterId("시전자"), f"[{ADD_SKILL_ID}]", ctx)
+        )
+
+        assert FIELD_EFFECT_ID in ctx.field_effects
+
     def test_added_effect_then_applies_on_round_start(self):
         ctx = _make_context()
         _use(ctx, ADD_SKILL_ID)

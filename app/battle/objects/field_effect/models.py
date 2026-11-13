@@ -53,6 +53,8 @@ class FieldEffectOp:
     remove: bool = False
     # 부여 요청에만 쓴다.
     turns: Optional[int] = None
+    # 부여 요청에만 쓴다. 표시 라벨 `이름[출처]`의 출처 칸에 들어갈 시전자 이름.
+    source_detail: str = ""
 
 
 @dataclass(frozen=True)
