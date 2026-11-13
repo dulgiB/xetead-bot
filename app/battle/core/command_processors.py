@@ -267,6 +267,9 @@ def _drop_targets_out_of_range(
     """
     user = context.characters[user_id]
     attack_range = _effective_attack_range(context, user, part_data.original_part)
+    # 열 범위 광역은 PRE 검증과 같이 지정한 열 하나로만 본다 — 그 열이
+    # 사거리 안이면 범위 전체가 맞고, 밖이면 전부 빗나간다.
+    area_center = _area_center_column(user, part_data.original_part)
 
     for mutable in calculator.data_by_effect:
         if not calculator._damage_processed_in_phase(
@@ -280,6 +283,12 @@ def _drop_targets_out_of_range(
         for damage_calc in mutable.damage_data_list:
             target_id = damage_calc.base.target_id
             if target_id in out_of_range or target_id not in context.characters:
+                continue
+            if area_center is not None:
+                if not is_reachable_between(
+                    columns_for_span(user_pos, user.span), (area_center,), attack_range
+                ):
+                    out_of_range.append(target_id)
                 continue
             # 시전자는 선언한 이동 목적지 기준이라 위치에서 점유 열을 다시
             # 만들고, 대상은 전장에 있는 그대로의 점유 열을 쓴다.
@@ -468,6 +477,11 @@ def try_expansion_if_valid(
                         error_attack_position_too_far(destination)
                     )
 
+        # 열 범위 광역(SkillTargetRuleColumnRange)은 지정한 열만 사거리 안이면
+        # 된다. 범위로 넓어진 나머지 열의 대상까지 사거리로 거르면 "중심 열을
+        # 사거리 안에 두고 넓게 친다"는 설계가 사거리 큰 시전자 전용이 된다.
+        area_center = _area_center_column(user, original_part)
+
         for sub_data in command_data.data_per_effect:
             if sub_data is None:
                 continue
@@ -511,6 +525,17 @@ def try_expansion_if_valid(
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
 
+                if area_center is not None:
+                    # 이동을 반영한 시전자 위치에서 지정한 열 하나만 본다.
+                    if not is_reachable_between(
+                        columns_for_span(user_pos, user.span),
+                        (area_center,),
+                        effective_range,
+                    ):
+                        raise CommandValidationError(
+                            error_attack_position_too_far(area_center)
+                        )
+                    continue
                 if not is_reachable_between(
                     columns_for_span(user_pos, user.span),
                     context.find_character_columns(target_id),
@@ -608,6 +633,21 @@ def _apply_keyword_boost_cost(
             source_labels=("키워드 보정",),
             hp_is_persistent=hp_is_persistent,
         )
+    )
+
+
+def _area_center_column(
+    user: "CombatCharacter", part: Optional[CommandPart]
+) -> Optional[BattlefieldColumnIndex]:
+    """열 범위 광역(target_count_is_area인 규칙) 스킬 파트면 지정한 중심 열,
+    아니면 None. 사거리는 이 열 하나로 검증한다."""
+    if not isinstance(part, CommandPart) or part.type_ != ActionType.SKILL:
+        return None
+    skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
+    if skill is None or not skill.target_rule.target_count_is_area:
+        return None
+    return next(
+        (t for t in part.targets if isinstance(t, BattlefieldColumnIndex)), None
     )
 
 
