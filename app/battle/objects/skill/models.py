@@ -218,9 +218,12 @@ class SkillEffectBase(abc.ABC):
 
         return self._expand(context, holder, effective_targets, raw_targets)
 
-    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
+    def apply_standing_state(
+        self, stats: "CombatStats", *, revert: bool, source: str = ""
+    ) -> None:
         """is_standing_state인 효과만 오버라이드한다. revert=True면 앞서 얹은
-        것을 정확히 같은 양만큼 되돌린다."""
+        것을 정확히 같은 양만큼 되돌린다. source는 이 상태를 건 필드 효과·부적의
+        이름으로, 계산식에 출처를 보여 주는 효과가 쓴다(되돌릴 때도 같은 값)."""
 
     def get_field_effect_ops(
         self, context: "BattlefieldContext", holder: CharacterId

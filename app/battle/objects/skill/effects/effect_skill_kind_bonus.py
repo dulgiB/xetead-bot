@@ -41,8 +41,10 @@ class SkillEffectExtraStackBonus(_StackStyleBonusBase):
     """대상이 적층형 버프/디버프를 부여할 때마다 `value_N`스택을 더 쌓는다.
     스킬·패시브·아이템 등 부여 경로를 가리지 않는다."""
 
-    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
-        stats.set_extra_stack_bonus(self.value or 0, revert=revert)
+    def apply_standing_state(
+        self, stats: "CombatStats", *, revert: bool, source: str = ""
+    ) -> None:
+        stats.set_extra_stack_bonus(self.value or 0, revert=revert, source=source)
 
 
 class SkillEffectNonStackerDamageBonus(_StackStyleBonusBase):
@@ -51,8 +53,12 @@ class SkillEffectNonStackerDamageBonus(_StackStyleBonusBase):
     기본 공격과 스킬에 붙고, 아이템과 반격 같은 파생 대미지, "고정" 대미지에는
     붙지 않는다."""
 
-    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
-        stats.set_non_stacker_damage_bonus(self.value or 0, revert=revert)
+    def apply_standing_state(
+        self, stats: "CombatStats", *, revert: bool, source: str = ""
+    ) -> None:
+        stats.set_non_stacker_damage_bonus(
+            self.value or 0, revert=revert, source=source
+        )
 
 
 # 시트의 effect_N 값을 새 이름으로 바꾸기 전까지 옛 이름도 읽히게 둔다.

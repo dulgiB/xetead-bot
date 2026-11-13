@@ -96,6 +96,7 @@ class CalculatorMutableData:
 
 
 _KEYWORD_BOOST_LABEL = "키워드 보정"
+# 출처 이름 없이 얹힌 적층형 사용 여부별 보정의 계산식 표시(테스트 등).
 _STACK_STYLE_BONUS_LABEL = "필드 효과"
 
 
@@ -179,13 +180,19 @@ def _apply_non_stacker_damage_bonus(
             attacker = context.characters.get(calc.base.attacker_id)
             if attacker is None:
                 continue
-            bonus = attacker.status.non_stacker_damage_bonus
-            if bonus and not context.uses_stacking_buffs(attacker.id):
-                calc.given_modifiers.append(
-                    FloatValueModifier(
-                        source_name=_STACK_STYLE_BONUS_LABEL, value=bonus
+            bonuses = attacker.status.non_stacker_damage_bonuses_by_source()
+            if not any(bonuses.values()) or context.uses_stacking_buffs(attacker.id):
+                continue
+            # 출처(필드 효과·부적 이름)마다 한 항씩 얹는다. 같은 계열의 주는
+            # 대미지 증감은 합연산이라 나눠 얹어도 수치는 같다.
+            for source, bonus in bonuses.items():
+                if bonus:
+                    calc.given_modifiers.append(
+                        FloatValueModifier(
+                            source_name=source or _STACK_STYLE_BONUS_LABEL,
+                            value=bonus,
+                        )
                     )
-                )
 
 
 def _add_flat_bonus(

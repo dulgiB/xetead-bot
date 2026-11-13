@@ -28,9 +28,10 @@ class CombatStats:
         self._m_res = magic_resistance
         self._is_magic_attacker = is_magic_attacker
         self._revival_count = revival_count
-        # "부활 N회 상태처럼 취급"하는 상시 효과(부적 등)가 얹는 하한. 같은
-        # 값이 여러 출처에서 겹칠 수 있어 하나씩 정확히 되돌리려면 목록이어야 한다.
-        self._revival_count_floors: list[int] = []
+        # "부활 N회 상태처럼 취급"하는 상시 효과(부적 등)가 얹는 (출처, 하한).
+        # 같은 값이 여러 출처에서 겹칠 수 있어 하나씩 정확히 되돌리려면 목록이어야
+        # 한다. 출처는 받는 대미지 계산식에 표시할 이름이다.
+        self._revival_count_floors: list[tuple[str, int]] = []
 
         self._max_cost = max_cost
 
@@ -40,14 +41,14 @@ class CombatStats:
         # 직접 읽으므로, 여기 얹지 않으면 아무 데도 반영되지 않는다.
         self._stat_offsets: dict[CombatStatType, int] = {}
 
-        # 필드 효과·부적이 얹는 적층형 사용 여부별 보정. 출처마다 하나씩
-        # 되돌려야 해서 합계가 아니라 목록으로 둔다.
-        self._extra_stack_bonuses: list[int] = []
+        # 필드 효과·부적이 얹는 적층형 사용 여부별 보정의 (출처, 값). 출처마다
+        # 하나씩 되돌려야 하고 계산식에 출처 이름을 보여야 해서 목록으로 둔다.
+        self._extra_stack_bonuses: list[tuple[str, int]] = []
 
         # 패시브 스킬 무효화(SkillEffectSuppressPassives)를 얹은 출처 수.
         # 같은 효과가 여러 출처에서 겹쳐도 하나씩 되돌릴 수 있게 개수로 센다.
         self._passive_suppressions = 0
-        self._non_stacker_damage_bonuses: list[int] = []
+        self._non_stacker_damage_bonuses: list[tuple[str, int]] = []
 
         self._curr_cost = self[CombatStatType.COST_PER_TURN]
         self._round_max_cost: Optional[int] = None
@@ -112,24 +113,36 @@ class CombatStats:
     @property
     def extra_stack_bonus(self) -> int:
         """적층형 버프/디버프를 부여할 때 더 쌓는 스택 수."""
-        return sum(self._extra_stack_bonuses)
+        return sum(value for _, value in self._extra_stack_bonuses)
 
     @property
     def non_stacker_damage_bonus(self) -> int:
         """적층형을 쓰지 않는 캐릭터의 주는 대미지 증가(%)."""
-        return sum(self._non_stacker_damage_bonuses)
+        return sum(value for _, value in self._non_stacker_damage_bonuses)
 
-    def set_extra_stack_bonus(self, value: int, *, revert: bool) -> None:
-        if revert:
-            self._extra_stack_bonuses.remove(value)
-        else:
-            self._extra_stack_bonuses.append(value)
+    def non_stacker_damage_bonuses_by_source(self) -> dict[str, int]:
+        """주는 대미지 증가(%)를 출처별로 합친 것. 계산식에 출처마다 한 항씩
+        보여 주기 위해 쓴다."""
+        by_source: dict[str, int] = {}
+        for source, value in self._non_stacker_damage_bonuses:
+            by_source[source] = by_source.get(source, 0) + value
+        return by_source
 
-    def set_non_stacker_damage_bonus(self, value: int, *, revert: bool) -> None:
+    def set_extra_stack_bonus(
+        self, value: int, *, revert: bool, source: str = ""
+    ) -> None:
         if revert:
-            self._non_stacker_damage_bonuses.remove(value)
+            self._extra_stack_bonuses.remove((source, value))
         else:
-            self._non_stacker_damage_bonuses.append(value)
+            self._extra_stack_bonuses.append((source, value))
+
+    def set_non_stacker_damage_bonus(
+        self, value: int, *, revert: bool, source: str = ""
+    ) -> None:
+        if revert:
+            self._non_stacker_damage_bonuses.remove((source, value))
+        else:
+            self._non_stacker_damage_bonuses.append((source, value))
 
     @property
     def curr_hp(self):
@@ -198,14 +211,24 @@ class CombatStats:
     @property
     def effective_revival_count(self) -> int:
         """하한을 반영한 부활 횟수. 받는 대미지와 턴당 코스트가 이 값을 쓴다."""
-        return max(self._revival_count, *self._revival_count_floors, 0)
+        return max(
+            self._revival_count, *(floor for _, floor in self._revival_count_floors), 0
+        )
 
-    def add_revival_count_floor(self, floor: int) -> None:
-        self._revival_count_floors.append(floor)
+    def _revival_count_source(self) -> str:
+        """받는 대미지 계산식에 표시할 부활 페널티의 출처. 하한이 실제 부활
+        횟수보다 커서 수치를 정하고 있으면 그 하한을 얹은 효과의 이름이다."""
+        top = max(self._revival_count_floors, key=lambda item: item[1], default=None)
+        if top is None or top[1] <= self._revival_count or not top[0]:
+            return "부활"
+        return top[0]
 
-    def remove_revival_count_floor(self, floor: int) -> None:
+    def add_revival_count_floor(self, floor: int, source: str = "") -> None:
+        self._revival_count_floors.append((source, floor))
+
+    def remove_revival_count_floor(self, floor: int, source: str = "") -> None:
         """add_revival_count_floor()로 얹은 하한 하나를 되돌린다."""
-        self._revival_count_floors.remove(floor)
+        self._revival_count_floors.remove((source, floor))
 
     @property
     def passives_suppressed(self) -> bool:
@@ -233,7 +256,7 @@ class CombatStats:
         if revival_count <= 0:
             return None
         return FloatValueModifier(
-            source_name="부활",
+            source_name=self._revival_count_source(),
             value=revival_count * REVIVAL_RECEIVED_DAMAGE_PERCENT_PER_COUNT,
             applies_to_fixed=True,
         )

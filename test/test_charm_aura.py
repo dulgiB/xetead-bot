@@ -28,6 +28,7 @@ from battle.objects.passive_skill.models import (
 from battle.objects.skill.effects import (
     SkillEffectAddBuff,
     SkillEffectDamage,
+    SkillEffectNonStackerDamageBonus,
     SkillEffectRevivalCountFloor,
 )
 from battle.objects.skill.models import SkillData
@@ -178,7 +179,8 @@ class TestRoundStartBuff:
         (buff,) = _charm_buffs(ctx, NEAR)
         assert buff.given_by == HOLDER
         assert buff.duration.remaining_turns == 1
-        assert buff.display_id_label() == f"{CHARM_ID}[{HOLDER.name}]"
+        # 소지자 이름은 부적 행에만 적고 버프 칸에는 부적 이름만 보인다.
+        assert buff.display_id_label() == CHARM_ID
         assert _charm_buffs(ctx, FAR) == []
 
     def test_round_end_removes_the_buff_and_its_effect(self):
@@ -341,6 +343,22 @@ class TestRevivalFloor:
 
         assert 100 - ctx.characters[FOE].status.curr_hp == 42  # 30 × 1.4
 
+    def test_penalty_is_labelled_with_the_charm_name(self):
+        """하한이 실제 부활 횟수보다 크면 계산식에 "부활" 대신 부적 이름이
+        보인다."""
+        ctx = _standard_field()
+
+        modifier = ctx.characters[NEAR].status.revival_penalty
+        assert modifier is not None and modifier.source_name == CHARM_ID
+
+    def test_real_revivals_keep_the_revival_label(self):
+        ctx = _make_context()
+        _place(ctx, HOLDER, FactionType.ALLY, 3, revival_count=5)
+        ctx.on_start_round()
+
+        modifier = ctx.characters[HOLDER].status.revival_penalty
+        assert modifier is not None and modifier.source_name == "부활"
+
     def test_cost_per_turn_is_refilled_at_round_start(self):
         ctx = _standard_field()
         ctx.characters[NEAR].status.remaining_cost = 0
@@ -435,3 +453,20 @@ class TestConfigError:
         passive = _charm_passive(SkillEffectAddBuff(None, None, None, "SomeBuff", None))
         error = charm_config_error(_charm_item(), passive)
         assert error is not None and "SkillEffectAddBuff" in error
+
+
+class TestStackStyleBonusLabel:
+    def test_damage_bonus_is_labelled_with_the_charm_name(self):
+        passive = _charm_passive(
+            SkillEffectNonStackerDamageBonus(None, 10, None, None, None)
+        )
+        ctx = _make_context(passive=passive)
+        _place(ctx, HOLDER, FactionType.ALLY, 3, skill_1_id="Cost2Skill")
+        _place(ctx, FOE, FactionType.ENEMY, 3)
+        ctx.on_start_round()
+
+        assert ctx.characters[HOLDER].status.non_stacker_damage_bonuses_by_source() == {
+            CHARM_ID: 10
+        }
+        ctx.on_finish_round()
+        assert ctx.characters[HOLDER].status.non_stacker_damage_bonus == 0

@@ -230,7 +230,8 @@ class TestNonStackerDamage:
         _use(ctx, manager, NON_STACKER, f"[공격/{FOE.name}]")
 
         displays = [e.roll_display or "" for r in ctx.results for e in r.log_entries]
-        assert any("필드 효과" in d for d in displays)
+        # 계산식에는 "필드 효과"가 아니라 보정을 건 필드 효과의 이름이 보인다.
+        assert any(EFFECT_ID in d for d in displays)
 
     def test_stacker_gets_no_bonus_even_with_a_non_stack_skill(self):
         ctx, manager = _setup()

@@ -29,11 +29,13 @@ class SkillEffectRevivalCountFloor(SkillEffectBase):
     def floor(self) -> int:
         return self.value or 0
 
-    def apply_standing_state(self, stats: "CombatStats", *, revert: bool) -> None:
+    def apply_standing_state(
+        self, stats: "CombatStats", *, revert: bool, source: str = ""
+    ) -> None:
         if revert:
-            stats.remove_revival_count_floor(self.floor)
+            stats.remove_revival_count_floor(self.floor, source)
         else:
-            stats.add_revival_count_floor(self.floor)
+            stats.add_revival_count_floor(self.floor, source)
 
     def _expand(
         self,
