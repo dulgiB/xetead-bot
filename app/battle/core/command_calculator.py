@@ -871,6 +871,14 @@ class CommandPartCalculator:
             damage_calc.hp_after = target.status.curr_hp
             damage_calc.max_hp = target.status[CombatStatType.MAX_HP]
 
+        # 방어막·반사가 막는 것은 대미지뿐이고 부가 효과는 그대로 적용되므로,
+        # 막힌 타격도 "공격당함"으로 센다. apply_damage()는 대미지가 실제로
+        # 들어간 항목만 기록하므로, 무효화로 빠진 항목을 여기서 채운다.
+        for damage_calc in live_damage_calcs:
+            self.context.attacked_this_round.add(
+                (damage_calc.base.attacker_id, damage_calc.base.target_id)
+            )
+
     @staticmethod
     def _is_live_heal_calc(
         context: "BattlefieldContext", heal_calc: "HealCalculateData"

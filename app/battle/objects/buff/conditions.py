@@ -345,8 +345,10 @@ class TargetAlreadyAttackedThisRoundCondition(Condition):
     """holder가 이번 라운드에 attacker_or_target에게 이미 대미지를 넣은 적이
     있을 때 True — "같은 라운드에 두 번째 이후로 맞는" 타격을 가린다.
 
-    `attacked_this_round`는 대미지가 실제로 적용될 때(`apply_damage()`) 쌓이므로
-    방어막·반사로 통째로 무효화된 타격은 세지 않는다. 한 커맨드 안의
+    `attacked_this_round`는 대미지가 적용될 때(`apply_damage()`) 쌓이고, 방어막·
+    반사로 대미지가 무효화된 타격도 같은 effect 처리 끝에 쌓인다 — 둘이 막는
+    것은 대미지뿐이고 부가 효과는 그대로라 "공격당함"으로 센다. 사거리 밖으로
+    빗나간 타격은 대미지 항목 자체가 빠지므로 세지 않는다. 한 커맨드 안의
     `공격-공격`도 파트마다 계산기가 따로 돌아 두 번째 파트에서 참이 된다
     (SameTargetAsPreviousAttackCondition과 같은 근거)."""
 
