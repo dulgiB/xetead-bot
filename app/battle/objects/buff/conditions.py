@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar, Iterator, Optional
 
 
-from battle.objects.define import BuffType, CombatStatType
+from battle.objects.define import BattlefieldColumnIndex, BuffType, CombatStatType
 from battle.objects.models import CharacterId
 
 if TYPE_CHECKING:
@@ -293,6 +293,47 @@ class HolderDidNotMoveThisTurnCondition(Condition):
         attacker_or_target: Optional[CharacterId],
     ) -> bool:
         return holder not in context.moved_this_round
+
+
+@dataclass(frozen=True)
+class HolderDeclaredMoveThisTurnCondition(Condition):
+    """이번 라운드에 holder가 스스로 이동했을 때 True — 이동 커맨드나 자기
+    자신을 옮기는 스킬(돌진 등)을 쓴 경우다.
+
+    `HolderDidNotMoveThisTurnCondition`의 반대가 아니다. 그쪽은 밀어내기·
+    끌어오기처럼 남이 옮긴 것도 이동으로 세지만, 이 조건은 세지 않는다
+    (`BattlefieldContext.move_declared_this_round`)."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        return holder in context.move_declared_this_round
+
+
+@dataclass(frozen=True)
+class HolderInEdgeColumnsCondition(Condition):
+    """holder가 전장 양 끝에서 `value`열 안쪽에 있을 때 True(`value`=2면
+    1·2·6·7열). 여러 열에 걸친 캐릭터는 점유 열 중 하나라도 걸리면 참이다 —
+    사거리·"같은 열" 판정과 같은 규칙이다."""
+
+    def is_applied(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+    ) -> bool:
+        if holder not in context.characters:
+            return False
+        assert self.value is not None
+        last = BattlefieldColumnIndex.COL7.value
+        return any(
+            column.value < self.value or column.value > last - self.value
+            for column in context.find_character_columns(holder)
+            if column != BattlefieldColumnIndex.NONE
+        )
 
 
 @dataclass(frozen=True)

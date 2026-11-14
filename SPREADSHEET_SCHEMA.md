@@ -192,7 +192,9 @@
 | `TargetHasDebuffCondition`              | 대상에게 패시브 아닌 디버프가 1개 이상                                             | (없음)              |
 | `AllyInSameColumnCondition`             | holder와 같은 열에 같은 진영(자신 제외)이 1명 이상                                  | (없음)              |
 | `TargetAttackedHolderLastRoundCondition`| 직전 라운드에 대상이 holder를 공격함                                            | (없음)              |
-| `HolderDidNotMoveThisTurnCondition`     | 이번 라운드 holder가 이동하지 않음                                              | (없음)              |
+| `HolderDidNotMoveThisTurnCondition`     | 이번 라운드 holder가 이동하지 않음(강제 이동도 이동으로 셈)                          | (없음)              |
+| `HolderDeclaredMoveThisTurnCondition`   | 이번 라운드 holder가 스스로 이동함(이동 커맨드·자신을 옮기는 스킬. 밀어내기·끌어오기·admin 강제 이동은 세지 않음) | (없음)              |
+| `HolderInEdgeColumnsCondition`          | holder가 전장 양 끝에서 `value`열 안쪽에 있음(2면 1·2·6·7열, 다열은 점유 열 중 하나라도) | 끝에서의 열 수        |
 | `TargetAtLeastDistanceCondition`        | holder와 대상의 열 거리가 `value` 이상(다열은 가장 가까운 열 기준, 피격 시점 위치)       | 최소 거리           |
 | `TargetDidNotMoveThisTurnCondition`     | 이번 라운드 대상이 이동하지 않음(강제 이동도 이동으로 셈)                              | (없음)              |
 | `TargetAlreadyAttackedThisRoundCondition`| 이번 라운드에 holder가 그 대상에게 이미 대미지를 넣음(무효화된 타격은 세지 않음)            | (없음)              |

@@ -827,8 +827,9 @@ def _sync_field_sheets(state: "BotState") -> None:
 def build_field_meta(state: "BotState") -> dict:
     """ "필드" 시트 meta_json에 실을 본 전투 부가 상태.
 
-    필드 효과는 전용 컬럼 없이 여기에 실린다 — 봇이 재기동해도 전장에 걸려
-    있던 효과가 살아남아야 하기 때문이다."""
+    필드 효과와 이번 라운드의 이동 기록은 전용 컬럼 없이 여기에 실린다 —
+    봇이 재기동해도 전장에 걸려 있던 효과와 그 효과가 읽는 기록이 살아남아야
+    하기 때문이다."""
     assert state.session is not None
     return {
         "name": state.session.name,
@@ -841,6 +842,14 @@ def build_field_meta(state: "BotState") -> dict:
             }
             for effect in state.session.context.field_effects.as_list()
         ],
+        # 라운드 종료 때 "이번 라운드에 이동했는가"를 읽는 효과가 있어, 라운드
+        # 도중 재기동해도 이동 기록이 남아야 한다.
+        "moved_this_round": sorted(
+            char_id.name for char_id in state.session.context.moved_this_round
+        ),
+        "move_declared_this_round": sorted(
+            char_id.name for char_id in state.session.context.move_declared_this_round
+        ),
     }
 
 

@@ -640,6 +640,19 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 상태" 효과는 `is_standing_state = True`를 켜고 `apply_standing_state()`로
 얹고 되돌리며, 같은 훅을 [부적](#부적-charmauracontainer)도 쓴다.
 
+### 위치·이동을 보는 필드 대미지
+
+"특정 열에 있는 캐릭터"나 "이번 라운드에 이동한/하지 않은 캐릭터"만 때리는
+효과는 `SkillEffectFieldDamage`에 `target_condition_N`을 붙여 만든다
+(`HolderInEdgeColumnsCondition`, `HolderDidNotMoveThisTurnCondition`,
+`HolderDeclaredMoveThisTurnCondition`). "이동했다"와 "이동을 선언했다"는
+다르다 — 앞은 밀어내기·끌어오기로 옮겨진 것도 세고(`moved_this_round`), 뒤는
+자기 커맨드로 움직인 것만 센다(`move_declared_this_round`). 둘을 가르는 것은
+`MoveData.is_forced`다: 이동 커맨드와 자기 자신을 옮기는 스킬 효과(돌진 등)는
+False, 남을 옮기는 효과와 admin 강제 이동은 True. 패시브·버프가 옮긴 이동은
+`is_forced`와 무관하게 선언으로 세지 않는다
+(`CommandPartCalculator._is_declared_move()`).
+
 ### 부여·제거 경로 둘
 
 - **admin**: `[필드효과/이름(/턴수)]` / `[필드효과해제/이름]`. 디스패치에서 해제를
@@ -1132,6 +1145,9 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
   남은 턴이 스냅샷보다 늘어난다. 이미 같은 uid가 있으면 새로 만들지 않고
   `BuffContainer.restore()`가 그 인스턴스를 스냅샷 값으로 맞춘다
   (`add()`는 "지금 새로 부여"라 지속시간을 리셋하므로 쓸 수 없다).
+- 이번 라운드의 이동 기록(`moved_this_round`/`move_declared_this_round`)도
+  `meta_json`에 싣는다. 라운드 종료 때 "이동했는가"를 읽는 필드 효과가
+  있어, 라운드 도중 재기동으로 비면 이미 움직인 캐릭터가 대가를 치른다.
 - 패시브 스킬 래퍼는 담지 않는다 — "버프" 시트에 없고 `on_battle_start()`이
   다시 등록한다. 시트에서 사라진 id, 필드에 없는 대상도 그 항목만 건너뛴다.
 - 행을 커맨드마다 갱신할 전투 종류는 `_PRACTICE_FIELD_TYPES`가 모드 매핑에서

@@ -149,6 +149,21 @@ def _restore_field_effects(session: "BattleSession", row: FieldRow) -> None:
             logger.warning("필드 효과 '%s' 복원 실패, 건너뜁니다: %s", effect_id, e)
 
 
+def _restore_move_records(context: "BattlefieldContext", row: FieldRow) -> None:
+    """이번 라운드에 이동한/이동을 선언한 캐릭터 기록을 되살린다.
+
+    라운드 종료 때 이 기록을 읽는 효과(이동하지 않은 캐릭터에게 대미지 등)가
+    있어, 라운드 도중 재기동으로 기록이 비면 이미 움직인 캐릭터가 대가를
+    치르거나 이동을 선언한 캐릭터가 빠진다."""
+    context.moved_this_round = {
+        CharacterId(str(name)) for name in row.meta.get("moved_this_round") or []
+    }
+    context.move_declared_this_round = {
+        CharacterId(str(name))
+        for name in row.meta.get("move_declared_this_round") or []
+    }
+
+
 def _restore_buffs(context: "BattlefieldContext", characters: list[dict]) -> int:
     """캐릭터 스냅샷에 담긴 버프를 되살리고, 되살린 개수를 반환한다.
 
@@ -246,6 +261,7 @@ def _restore_main_battle(
     session.context.on_battle_start()
     _restore_buffs(session.context, row.characters)
     session.restore_progress(row.round_n, phase)
+    _restore_move_records(session.context, row)
     session.name = row.meta.get("name")
 
     state.session = session

@@ -74,7 +74,7 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=target,
                         to_position=BattlefieldColumnIndex(self.value),
-                        is_forced=True,
+                        is_forced=target != holder,
                     )
                     for target in targets
                 ],
@@ -91,7 +91,7 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=target,
                         to_position=holder_pos,
-                        is_forced=True,
+                        is_forced=target != holder,
                     )
                     for target in targets
                 ],
@@ -107,7 +107,7 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=holder,
                         to_position=landing_column(context, target, raw_targets),
-                        is_forced=True,
+                        is_forced=False,
                     )
                     for target in targets
                 ],
@@ -130,7 +130,7 @@ class SkillEffectMove(SkillEffectBase):
                             steps,
                             _span_of(context, target),
                         ),
-                        is_forced=True,
+                        is_forced=target != holder,
                     )
                     for target in targets
                 ],
@@ -151,7 +151,7 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=target,
                         to_position=to_pos,
-                        is_forced=True,
+                        is_forced=target != holder,
                     )
                     for target in targets
                 ],
@@ -174,7 +174,7 @@ class SkillEffectMove(SkillEffectBase):
                             steps,
                             _span_of(context, target),
                         ),
-                        is_forced=True,
+                        is_forced=target != holder,
                     )
                     for target in targets
                 ],

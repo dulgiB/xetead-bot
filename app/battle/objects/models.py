@@ -386,6 +386,9 @@ class ValueWithModifiers:
 class MoveData:
     character_id: CharacterId
     to_position: BattlefieldColumnIndex
+    # 남이 옮긴 이동(밀어내기·끌어오기·admin 강제 이동)이면 True. 자기 이동
+    # 커맨드나 자기 자신을 옮기는 스킬(돌진 등)은 False로, "이동을 선언한"
+    # 캐릭터 판정(`move_declared_this_round`)이 이 값을 본다.
     is_forced: bool = False
 
 
