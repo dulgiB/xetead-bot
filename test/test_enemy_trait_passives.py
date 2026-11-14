@@ -38,6 +38,7 @@ from battle.objects.buff.conditions import (
 from battle.objects.buff.models import BuffData
 from battle.objects.define import (
     ActionType,
+    BuffCountDeductCondition,
     BattlefieldColumnIndex,
     BuffType,
     FactionType,
@@ -180,14 +181,15 @@ class TestStripBuffsOnHit:
 
 
 class TestBonusOnRepeatedHitInSameRound:
-    def _setup(self):
+    def _setup(self, buff_dict=None):
         ctx = _context(
             _buff_mod_passive(
                 BuffGivenDamage,
                 value=100,
                 value_type=ValueType.PERCENT,
                 condition=TargetAlreadyAttackedThisRoundCondition(),
-            )
+            ),
+            buff_dict=buff_dict or {},
         )
         manager = _manager(ctx)
         # 공격력 0 + 굴림 최대 6이라도 두 번째 타격은 2배여야 한다.
@@ -224,6 +226,34 @@ class TestBonusOnRepeatedHitInSameRound:
         ctx.on_start_round()
         ctx.characters[HOLDER].status.curr_cost = 3
         manager.process_command(parse_character_command(HOLDER, "[공격/대상]", ctx))
+        assert _damage_taken(ctx, TARGET) == 16
+
+    def test_hit_blocked_by_shield_still_counts(self, monkeypatch):
+        """방어막은 대미지만 막고 부가 효과는 그대로라, 막힌 첫 타격도
+        "공격당함"으로 세어 두 번째 타격이 추가 대미지를 받는다."""
+        monkeypatch.setattr("random.randint", lambda a, b: 3)
+        shield = BuffData(
+            id="방어막_1",
+            buff_class_name="BuffNoDamage",
+            duration_turn_value=2,
+            duration_count_value=1,
+            duration_count_deduct_condition=BuffCountDeductCondition.ON_HIT,
+            value_type=None,
+            value=0,
+            condition_=None,
+            condition_value=None,
+            buff_type=BuffType.BUFF,
+            description="",
+        )
+        ctx, manager = self._setup(buff_dict={"방어막_1": shield})
+        ctx.buff_container.add(
+            BuffAddData(given_by=TARGET, applied_to=TARGET, buff_id="방어막_1")
+        )
+        manager.to_phase(RoundPhaseType.ALLY_ACTION)
+        manager.process_command(
+            parse_character_command(HOLDER, "[공격/대상 - 공격/대상]", ctx)
+        )
+        # 첫 타는 방어막에 막히고, 두 번째 타가 8×2=16.
         assert _damage_taken(ctx, TARGET) == 16
 
 
