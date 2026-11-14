@@ -57,6 +57,7 @@ from battle.objects.define import (
 from battle.objects.extensions import get_total_cost
 from battle.objects.models import CharacterId, ValueWithModifiers
 from battle.objects.skill.models import landing_column
+from battle.objects.skill.target_functions import SkillTargetRuleAllyColumn
 
 if TYPE_CHECKING:
     from battle.core.round_manager import RoundManager
@@ -477,6 +478,14 @@ def try_expansion_if_valid(
                         error_attack_position_too_far(destination)
                     )
 
+        # 아군 열 광역(SkillTargetRuleAllyColumn)은 버프·회복만 주는 경우가
+        # 많아 아래 대미지 검증에 걸리지 않는다. 지정한 열마다 사거리를 본다.
+        for column in _ally_column_inputs(user, original_part):
+            if not is_reachable_between(
+                columns_for_span(user_pos, user.span), (column,), effective_range
+            ):
+                raise CommandValidationError(error_attack_position_too_far(column))
+
         # 열 범위 광역(SkillTargetRuleColumnRange)은 지정한 열만 사거리 안이면
         # 된다. 범위로 넓어진 나머지 열의 대상까지 사거리로 거르면 "중심 열을
         # 사거리 안에 두고 넓게 친다"는 설계가 사거리 큰 시전자 전용이 된다.
@@ -649,6 +658,19 @@ def _area_center_column(
     return next(
         (t for t in part.targets if isinstance(t, BattlefieldColumnIndex)), None
     )
+
+
+def _ally_column_inputs(
+    user: "CombatCharacter", part: Optional[CommandPart]
+) -> list[BattlefieldColumnIndex]:
+    """아군 열 광역(SkillTargetRuleAllyColumn) 스킬 파트면 지정한 열 목록,
+    아니면 빈 목록. 열마다 시전자 사거리 안이어야 한다."""
+    if not isinstance(part, CommandPart) or part.type_ != ActionType.SKILL:
+        return []
+    skill = next((s for s in user.skills if s.data.id == part.skill_id), None)
+    if skill is None or not isinstance(skill.target_rule, SkillTargetRuleAllyColumn):
+        return []
+    return [t for t in part.targets if isinstance(t, BattlefieldColumnIndex)]
 
 
 def _skill_data_of(user: "CombatCharacter", part: CommandPart) -> "SkillData":

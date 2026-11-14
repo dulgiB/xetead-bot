@@ -16,12 +16,15 @@ Weaken)을 쓴다. [도발]/[방어막]/[반사]는 여러 캐릭터가 공유�
 판단했다.
 """
 
+import pytest
+
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.commands.admin import ChangePhaseCommand
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import BattleLogEntryKind
 from battle.core.commands.parser import parse_character_command
 from battle.core.round_manager import RoundManager
+from battle.exceptions import CommandValidationError
 from battle.objects.buff.buff_base import BuffAddData
 from battle.objects.buff.models import BuffData
 from battle.objects.define import ActionType, BattlefieldColumnIndex, FactionType
@@ -523,6 +526,53 @@ class TestCost3Skill:
         assert ctx.buff_container.get_buff(without_team_buff, "방어막") is not None
         assert ctx.buff_container.get_buff(without_team_buff, "반사") is None
         assert ctx.buff_container.get_buff(caster, "방어막") is not None
+
+    def test_rejects_column_outside_caster_range(self):
+        """버프만 주는 아군 열 스킬도 지정한 열이 사거리 밖이면 거부한다.
+        코스트도 소모되지 않는다."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        caster = CharacterId("Guardian")
+        far_ally = CharacterId("FarAlly")
+        ctx.add_character(
+            get_test_preset("Guardian", skill_1_id="Cost3Skill", attack_range=1),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("FarAlly"), FactionType.ALLY, BattlefieldColumnIndex(3)
+        )
+        cost_before = ctx.characters[caster].status.remaining_cost
+
+        with pytest.raises(CommandValidationError):
+            manager.process_command(
+                parse_character_command(caster, "[Cost3Skill/4열]", ctx)
+            )
+
+        assert ctx.buff_container.get_buff(far_ally, "방어막") is None
+        assert ctx.characters[caster].status.remaining_cost == cost_before
+
+    def test_range_is_measured_after_preceding_move(self):
+        """앞 파트의 이동을 반영한 위치에서 사거리를 잰다."""
+        ctx = _make_context()
+        manager = _setup_ally_phase(ctx)
+        caster = CharacterId("Guardian")
+        far_ally = CharacterId("FarAlly")
+        ctx.add_character(
+            get_test_preset("Guardian", skill_1_id="Cost3Skill", attack_range=1),
+            FactionType.ALLY,
+            BattlefieldColumnIndex(0),
+        )
+        ctx.add_character(
+            get_test_preset("FarAlly"), FactionType.ALLY, BattlefieldColumnIndex(2)
+        )
+        ctx.characters[caster].status.remaining_cost = 4
+
+        manager.process_command(
+            parse_character_command(caster, "[이동/2열 - Cost3Skill/3열]", ctx)
+        )
+
+        assert ctx.buff_container.get_buff(far_ally, "방어막") is not None
 
 
 class TestReflectBuff:
