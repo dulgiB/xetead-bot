@@ -441,6 +441,60 @@ def test_retire_command_records_damage_for_settlement(monkeypatch):
     assert state.spreadsheet.hp_of(_B.name) == 80 - 40 // 2
 
 
+def test_retire_ending_duel_settles_retiree_battle_end_effects(monkeypatch):
+    """[탈락]으로 결투가 끝나도 기권자의 전투 종료 처리([잔여 대가] 등)를
+    치른다(테스트). 필드에서 빠지면 버프가 함께 사라지므로, 빠지기 전에 치르고
+    종료 게시물의 【전투 종료 처리】에 싣는다. 피해 정산에는 다시 잡히지 않는다."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(
+        hp_by_name={_A.name: 100, _B.name: 80},
+        buff_dict={"잔여 대가": _battle_end_penalty_buff()},
+    )
+    ctx.buff_container.add(
+        BuffAddData(given_by=_B, applied_to=_B, buff_id="잔여 대가", stack_value=4)
+    )
+    ctx.characters[_B].status.curr_hp = 60
+    state.practices[ps.active_post_id] = ps
+
+    _reply, _calc, game_post, _log, ended = main_module._handle_practice_command(
+        "acct_b", "[탈락]", state, ps
+    )
+
+    assert ended
+    assert game_post is not None and "승자: 1팀" in game_post
+    assert "**【전투 종료 처리】**" in game_post
+    assert f"▹ {_B.name} | -10 → 70/100※" in game_post
+    # 전투 종료 처리 절반(-10) + 받은 피해 40의 절반(-20)
+    assert state.spreadsheet.hp_of(_B.name) == 80 - 10 - 40 // 2
+
+
+def test_retire_ending_duel_also_settles_winner_battle_end_effects(monkeypatch):
+    """기권으로 끝난 결투에서 남은 쪽의 전투 종료 처리도 기권자의 것과 한
+    블록에 함께 실린다(테스트)."""
+    _silence_field_sheet(monkeypatch)
+    ctx, ps, state = _duel_state(
+        hp_by_name={_A.name: 100, _B.name: 80},
+        buff_dict={"잔여 대가": _battle_end_penalty_buff()},
+    )
+    for char_id in (_A, _B):
+        ctx.buff_container.add(
+            BuffAddData(
+                given_by=char_id, applied_to=char_id, buff_id="잔여 대가", stack_value=4
+            )
+        )
+    state.practices[ps.active_post_id] = ps
+
+    _reply, _calc, game_post, _log, _ended = main_module._handle_practice_command(
+        "acct_b", "[탈락]", state, ps
+    )
+
+    assert game_post is not None
+    assert game_post.count("**【전투 종료 처리】**") == 1
+    assert f"▹ {_B.name} | -10 → 70/100※" in game_post
+    assert f"▹ {_A.name} | -10 → 90/100※" in game_post
+    assert state.spreadsheet.hp_of(_A.name) == 90
+
+
 def test_participant_with_unknown_damage_is_reported(monkeypatch):
     """필드에도 없고 기권 기록도 없으면 피해를 정할 수 없다. 0으로 넘기지
     않고 admin에게 확인을 요청한다."""
