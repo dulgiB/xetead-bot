@@ -462,6 +462,12 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 (`_drop_targets_out_of_range()`)도 같은 기준이라, 아군이 시전자를 밀어 중심
 열이 사거리 밖이 되면 범위 전체가 빗나간다.
 
+`SkillTargetRuleAllyColumn`은 **지정한 열마다** 사거리를 본다
+(`command_processors._ally_column_inputs()`). 아군 열 스킬은 버프·회복만 주는
+경우가 많아 대미지 대상 사거리 검증에 걸리지 않으므로, 따로 보지 않으면
+"사거리 내에서 열을 지정한다"는 설명과 달리 전장 어디에나 걸 수 있다. 같은
+커맨드 앞 파트의 이동은 반영한다.
+
 ### SkillEffect
 
 `SkillEffectBase.expand(context, holder, targets, raw_targets=()) → (move_list, damage_list, heal_list, buff_add_list, buff_remove_list)`
