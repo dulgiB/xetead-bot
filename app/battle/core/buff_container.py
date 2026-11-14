@@ -425,11 +425,19 @@ class BuffContainer:
             event_pairs, target_id, calculator, effect_seq_number
         )
 
-    def on_battle_end(self) -> list[BattleLogEntry]:
+    def on_battle_end(
+        self, applied_to: Optional[CharacterId] = None
+    ) -> list[BattleLogEntry]:
         """전투 종료 시점에 모든 버프의 on_battle_end() 훅을 호출하고,
-        정산 결과가 있는 것들을 모아 반환한다."""
+        정산 결과가 있는 것들을 모아 반환한다.
+
+        `applied_to`를 주면 그 캐릭터에게 걸린 버프만 처리한다 — 전투 도중
+        자진 기권으로 먼저 빠지는 캐릭터의 전투 종료 처리를 그 자리에서
+        치르기 위해서다(빠지면 버프가 함께 사라진다)."""
         entries = []
         for buff in list(self._buffs):
+            if applied_to is not None and buff.applied_to != applied_to:
+                continue
             entry = buff.on_battle_end(self._context)
             if entry is not None:
                 entries.append(entry)

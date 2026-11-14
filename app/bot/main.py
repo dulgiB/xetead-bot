@@ -1971,22 +1971,49 @@ def _practice_round_end_text(ps: PracticeBattleState) -> str:
     return "\n\n".join(block for block in blocks if block)
 
 
-def _apply_practice_battle_end_effects(
-    state: "BotState", ps: PracticeBattleState
-) -> str:
-    """전투 종료 시점 버프 훅([잔여 대가] 등, BuffBase.on_battle_end())을 처리하고,
-    그 결과를 계산식과 함께 담은 텍스트 블록을 반환한다(발동한 효과가
-    없으면 빈 문자열). 양 팀이 모두 살아 있을 때는 **반드시 ps.winner()
-    호출보다 먼저 불러야 한다** — 이 훅으로 바뀐 HP가 승패 판정에도 반영돼야
-    하기 때문이다."""
-    battle_end_entries = ps.context.on_battle_end()
-    notices: list[str] = []
+def _run_battle_end_hooks(
+    state: "BotState",
+    ps: PracticeBattleState,
+    applied_to: Optional[CharacterId] = None,
+) -> tuple[list[BattleLogEntry], list[str]]:
+    """전투 종료 시점 버프 훅([잔여 대가] 등, BuffBase.on_battle_end())을 돌리고
+    (엔트리, 안내 블록)을 반환한다. 결투면 그 결과를 실제 체력으로 옮긴다.
+    양 팀이 모두 살아 있을 때는 **반드시 ps.winner() 호출보다 먼저 불러야
+    한다** — 이 훅으로 바뀐 HP가 승패 판정에도 반영돼야 하기 때문이다. `applied_to`를 주면 그 캐릭터의 버프만
+    처리한다(자진 기권)."""
+    battle_end_entries = ps.context.on_battle_end(applied_to)
     if ps.is_duel_match:
-        battle_end_entries, notices = _move_battle_end_hp_to_sheet(
-            state, ps, battle_end_entries
-        )
-    body, _calc = format_battle_end_log_entries(ps.context, battle_end_entries)
+        return _move_battle_end_hp_to_sheet(state, ps, battle_end_entries)
+    return battle_end_entries, []
+
+
+def _format_battle_end_block(
+    ps: PracticeBattleState, entries: list[BattleLogEntry], notices: list[str]
+) -> str:
+    body, _calc = format_battle_end_log_entries(ps.context, entries)
     return "\n\n".join(block for block in [body, *notices] if block)
+
+
+def _settle_retiree_battle_end(
+    state: "BotState", ps: PracticeBattleState, char_id: CharacterId
+) -> tuple[list[BattleLogEntry], list[str]]:
+    """[탈락]으로 필드에서 내리기 직전에, 그 캐릭터의 전투 종료 처리([잔여
+    대가] 등)를 치른다.
+
+    필드에서 빠지면 그 캐릭터에게 걸린 버프도 함께 사라지므로, 여기서 치르지
+    않으면 기권자만 전투 종료 처리를 피해 간다. 실제 체력이 걸린 결투/상시전투만
+    대상이다 — 대련은 기권자의 임시 체력이 승패에도 쓰이지 않는다.
+
+    결투는 기권 시점 피해를 `record_retirement()`로 남긴 **뒤에** 불러야 한다 —
+    이 처리로 깎이는 양은 실제 체력으로 따로 옮기므로, 피해 정산에 다시 잡히면
+    두 번 치른다. 상시전투는 바뀐 체력을 필드에서 빠지기 전에 시트에 쓴다
+    (`sheet_hp_changes()`는 필드에 있는 캐릭터만 본다)."""
+    if not ps.mode.stakes_sheet_hp:
+        return [], []
+    entries, notices = _run_battle_end_hooks(state, ps, char_id)
+    if ps.mode.uses_sheet_hp:
+        _write_back_sheet_hp(state, ps)
+    return entries, notices
 
 
 def _duel_death_notice(name: str) -> str:
@@ -2258,6 +2285,7 @@ def _finish_practice_battle(
     ps: PracticeBattleState,
     phase_value: str,
     round_end_text: str = "",
+    retiree_battle_end: tuple[list[BattleLogEntry], list[str]] = ([], []),
 ) -> str:
     """대련/상시전투/결투를 종료하고 종료 게시물 텍스트를 만든다. ps는 이
     함수가 끝나면 state.practices에서 제거된 상태다.
@@ -2265,7 +2293,11 @@ def _finish_practice_battle(
 
     `round_end_text`는 이 전투가 정상적으로 라운드를 닫은 뒤(라운드 상한
     도달 등) 끝났을 때 그 라운드 종료 처리 결과다 — 종료 게시물이 마지막
-    라운드의 정산을 삼켜 버리지 않도록 함께 싣는다."""
+    라운드의 정산을 삼켜 버리지 않도록 함께 싣는다.
+
+    `retiree_battle_end`는 이 전투를 끝낸 [탈락]의 기권자가 필드에서 빠지기
+    전에 치른 전투 종료 처리 결과다(`_settle_retiree_battle_end()`) — 나머지
+    참가자의 처리와 한 블록에 싣는다."""
     assert ps.active_post_id is not None
     damage_taken, unknown_damage = (
         ps.temp_damage_taken() if ps.is_duel_match else ({}, [])
@@ -2278,18 +2310,20 @@ def _finish_practice_battle(
         ps.total_hp_by_side(SideType.SIDE_1) > 0
         and ps.total_hp_by_side(SideType.SIDE_2) > 0
     )
+    retiree_entries, retiree_notices = retiree_battle_end
     if both_sides_alive:
-        battle_end_body = _apply_practice_battle_end_effects(state, ps)
+        entries, notices = _run_battle_end_hooks(state, ps)
         winner = ps.winner()
     else:
         # 한쪽이 쓰러져 승부가 이미 났다. 승자는 전투 종료 처리 전에 정해
         # 둔다 — 뒤에 정하면 이긴 쪽이 남은 대가로 함께 쓰러져 무승부가 된다.
         winner = ps.winner()
-        battle_end_body = (
-            _apply_practice_battle_end_effects(state, ps)
-            if ps.mode.stakes_sheet_hp
-            else ""
+        entries, notices = (
+            _run_battle_end_hooks(state, ps) if ps.mode.stakes_sheet_hp else ([], [])
         )
+    battle_end_body = _format_battle_end_block(
+        ps, [*retiree_entries, *entries], [*retiree_notices, *notices]
+    )
     settlement_body = _apply_duel_damage_settlement(state, ps, damage_taken)
     if unknown_damage:
         settlement_body = "\n\n".join(
@@ -2646,6 +2680,7 @@ def _handle_practice_command(
         retire_phase = ps.phase
         side = ps.context.get_side(char_id)
         ps.record_retirement(char_id)
+        retiree_battle_end = _settle_retiree_battle_end(state, ps, char_id)
         removed = ps.context.force_remove_character(char_id)
         reply_text = format_eliminated_characters(removed)
         battle_log = log_sheets.BattleCommandLog(
@@ -2661,6 +2696,9 @@ def _handle_practice_command(
             # 같은 편에 남은 캐릭터가 있으면 전투는 계속된다. 다만 기권한
             # 캐릭터가 이번 페이즈의 마지막 미선언자였을 수 있으므로, 페이즈
             # 전환 판정을 한 번 태워야 라운드가 멈춰 서지 않는다.
+            retiree_block = _format_battle_end_block(ps, *retiree_battle_end)
+            if retiree_block:
+                reply_text += f"\n\n{retiree_block}"
             if retire_phase is None:
                 return reply_text, "", None, battle_log, False
             game_post, ended = _finalize_practice_phase(state, ps, retire_phase)
@@ -2669,8 +2707,14 @@ def _handle_practice_command(
             return reply_text, "", game_post, battle_log, ended
 
         game_post = _finish_practice_battle(
-            state, ps, retire_phase.value if retire_phase is not None else ""
+            state,
+            ps,
+            retire_phase.value if retire_phase is not None else "",
+            retiree_battle_end=retiree_battle_end,
         )
+        # 상시전투는 남은 쪽의 전투 종료 처리로 바뀐 체력도 시트에 남아야
+        # 한다 — 정상 종료 경로는 _finalize_practice_phase()가 쓴다.
+        _write_back_sheet_hp(state, ps)
         return reply_text, "", game_post, battle_log, True
 
     current_phase = ps.phase

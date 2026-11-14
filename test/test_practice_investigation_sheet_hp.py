@@ -13,6 +13,7 @@ import os
 os.environ.setdefault("ADMIN_MASTODON_ID", "test-admin")
 os.environ.setdefault("WORLD_MASTODON_ID", "test-world")
 
+from battle.objects.buff.buff_base import BuffAddData  # noqa: E402
 from battle.objects.define import (  # noqa: E402
     KEYWORD_BOOST_HP_COST,
     BattlefieldColumnIndex,
@@ -27,14 +28,15 @@ from bot.main import BotState  # noqa: E402
 from bot.practice_state import PracticeBattleState  # noqa: E402
 from helpers import get_test_preset  # noqa: E402
 from test_practice_duel_mode import _FakeSpreadsheet  # noqa: E402
+from test_practice_round_end_report import _battle_end_penalty_buff  # noqa: E402
 
 _ALLY = CharacterId("Bearer")
 _ENEMY = CharacterId("Adversary")
 
 
-def _investigation_context() -> PracticeBattlefieldContext:
+def _investigation_context(buff_dict: dict | None = None) -> PracticeBattlefieldContext:
     return PracticeBattlefieldContext(
-        buff_dict={}, skill_dict={}, mode=PracticeBattleMode.INVESTIGATION
+        buff_dict=buff_dict or {}, skill_dict={}, mode=PracticeBattleMode.INVESTIGATION
     )
 
 
@@ -65,10 +67,15 @@ def test_enemy_uses_sheet_hp_as_is():
 
 
 def _investigation_state(
-    monkeypatch, *, ally_hp: int, enemy_hp: int = 100, revival_count: int = 0
+    monkeypatch,
+    *,
+    ally_hp: int,
+    enemy_hp: int = 100,
+    revival_count: int = 0,
+    buff_dict: dict | None = None,
 ) -> tuple[PracticeBattleState, BotState]:
     monkeypatch.setattr(main_module, "_upsert_practice_field_row", lambda *a, **k: None)
-    ctx = _investigation_context()
+    ctx = _investigation_context(buff_dict)
     ctx.add_character(
         get_test_preset(_ENEMY.name, max_hp=100, initial_hp=enemy_hp, atk=10),
         SideType.SIDE_2,
@@ -177,3 +184,32 @@ def test_keyword_boost_cost_comes_out_of_sheet_hp(monkeypatch):
     assert ally_hp == 70 - KEYWORD_BOOST_HP_COST
     assert state.spreadsheet.hp_of(_ALLY.name) == ally_hp
     assert marked == [_ALLY]
+
+
+def test_retire_ending_investigation_settles_battle_end_effects(monkeypatch):
+    """[탈락]으로 상시전투가 끝나도 기권자와 남은 쪽의 전투 종료 처리를 치르고,
+    그 체력이 시트에 남는다(테스트)."""
+    ps, state = _investigation_state(
+        monkeypatch,
+        ally_hp=70,
+        buff_dict={"잔여 대가": _battle_end_penalty_buff()},
+    )
+    for char_id, stacks in ((_ALLY, 4), (_ENEMY, 2)):
+        ps.context.buff_container.add(
+            BuffAddData(
+                given_by=char_id,
+                applied_to=char_id,
+                buff_id="잔여 대가",
+                stack_value=stacks,
+            )
+        )
+
+    _reply, _calc, game_post, _log, ended = main_module._handle_practice_command(
+        "acct_a", "[탈락]", state, ps
+    )
+
+    assert ended
+    assert game_post is not None
+    assert game_post.count("**【전투 종료 처리】**") == 1
+    assert state.spreadsheet.hp_of(_ALLY.name) == 50
+    assert state.spreadsheet.hp_of(_ENEMY.name) == 90

@@ -876,8 +876,10 @@ class BattlefieldContext:
     def on_battle_start(self) -> None:
         self.buff_container.on_battle_start()
 
-    def on_battle_end(self) -> list[BattleLogEntry]:
-        return self.buff_container.on_battle_end()
+    def on_battle_end(
+        self, applied_to: Optional[CharacterId] = None
+    ) -> list[BattleLogEntry]:
+        return self.buff_container.on_battle_end(applied_to)
 
     def get_buff_data_by_id(self, buff_id: str) -> BuffData:
         return self._buff_dictionary[buff_id]
