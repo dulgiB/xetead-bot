@@ -142,3 +142,12 @@ def test_enemy_pushed_away_from_center_misses_everyone():
     )
 
     assert _damaged(ctx) == set()
+
+
+def test_area_skill_without_column_is_rejected():
+    """열을 빠뜨린 선언은 아무도 맞히지 못한 채 코스트만 쓰지 않도록 거부한다
+    (검증 실패는 코스트 차감 전에 난다)."""
+    ctx, manager = _setup(FactionType.ENEMY, caster_column=3, attack_range=1)
+
+    with pytest.raises(CommandValidationError):
+        manager.process_command(parse_character_command(CASTER, "[광역_1]", ctx))

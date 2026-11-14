@@ -72,9 +72,12 @@ class SkillTargetRuleColumn(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
-        # 흔한 입력 실수다 — assert로 두면 답글 없이 조용히 실패하므로
-        # 입력 오류로 취급해 안내 문구를 돌려준다.
-        if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
+        # 열을 빼먹거나 이름을 넣는 것은 흔한 입력 실수다 — 빈 입력을 통과시키면
+        # 아무도 맞지 않은 채 코스트만 소모되고, assert로 두면 답글 없이 조용히
+        # 실패하므로 입력 오류로 취급해 안내 문구를 돌려준다.
+        if not targets or not all(
+            isinstance(target, BattlefieldColumnIndex) for target in targets
+        ):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
@@ -103,9 +106,12 @@ class SkillTargetRuleColumnRange(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].foe_faction
 
-        # 흔한 입력 실수다 — assert로 두면 답글 없이 조용히 실패하므로
-        # 입력 오류로 취급해 안내 문구를 돌려준다.
-        if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
+        # 열을 빼먹거나 이름을 넣는 것은 흔한 입력 실수다 — 빈 입력을 통과시키면
+        # 아무도 맞지 않은 채 코스트만 소모되고, assert로 두면 답글 없이 조용히
+        # 실패하므로 입력 오류로 취급해 안내 문구를 돌려준다.
+        if not targets or not all(
+            isinstance(target, BattlefieldColumnIndex) for target in targets
+        ):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
 
@@ -139,9 +145,12 @@ class SkillTargetRuleAllyColumn(SkillTargetRule):
         target_id_list: list[CharacterId] = []
         target_faction = self.context.characters[self.skill_holder_id].faction
 
-        # 흔한 입력 실수다 — assert로 두면 답글 없이 조용히 실패하므로
-        # 입력 오류로 취급해 안내 문구를 돌려준다.
-        if not all(isinstance(target, BattlefieldColumnIndex) for target in targets):
+        # 열을 빼먹거나 이름을 넣는 것은 흔한 입력 실수다 — 빈 입력을 통과시키면
+        # 아무도 맞지 않은 채 코스트만 소모되고, assert로 두면 답글 없이 조용히
+        # 실패하므로 입력 오류로 취급해 안내 문구를 돌려준다.
+        if not targets or not all(
+            isinstance(target, BattlefieldColumnIndex) for target in targets
+        ):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
