@@ -123,6 +123,12 @@ class BuffBase(abc.ABC):
     # 하나로 병합돼 지속시간만 갱신되고 값은 덮어쓰인다.
     PARTITION_UID_BY_VALUE: ClassVar[bool] = False
 
+    # True면 uid에 버프 id가 포함되어, 같은 부여자·대상이라도 "버프" 시트의
+    # 행(id)이 다르면 별개 인스턴스로 동시에 유지된다. 조건만 다른 공격력
+    # 증가 둘처럼 같은 클래스를 여러 행이 쓰는 버프용이다. False면 클래스가
+    # 같으면 하나로 병합된다.
+    PARTITION_UID_BY_ID: ClassVar[bool] = False
+
     # True면 부여자가 전장의 캐릭터여야 동작한다 — 공격을 부여자에게 끌어오거나
     # 부여자의 스탯으로 대미지를 굴리는 버프. admin이 부여자 없이("시스템")
     # 걸면 공격이 전장에 없는 대상으로 유도돼 사라지는 식으로 조용히 깨진다.
@@ -150,7 +156,7 @@ class BuffBase(abc.ABC):
         self.value_2 = data.value_2
 
         self.uid = self.build_uid(
-            given_by, applied_to, data.buff_class_name, self.value
+            given_by, applied_to, data.buff_class_name, self.value, buff_id=data.id
         )
 
         self.duration = BuffDurationCounter(
@@ -175,13 +181,18 @@ class BuffBase(abc.ABC):
         applied_to: CharacterId,
         class_name: str,
         value: int,
+        *,
+        buff_id: str,
     ) -> BuffUid:
         """BuffContainer.add()의 중복/재부여 판정과 __init__이 공유하는 uid
-        계산. PARTITION_UID_BY_VALUE가 False인 대부분의 버프는 value를
-        무시하고 (given_by, applied_to, class_name) 기준으로 판정한다."""
+        계산. 대부분의 버프는 value와 id를 무시하고 (given_by, applied_to,
+        class_name) 기준으로 판정한다."""
+        name = class_name
+        if cls.PARTITION_UID_BY_ID:
+            name = f"{name}@{buff_id}"
         if cls.PARTITION_UID_BY_VALUE:
-            return BuffUid(given_by, applied_to, f"{class_name}:{value}")
-        return BuffUid(given_by, applied_to, class_name)
+            name = f"{name}:{value}"
+        return BuffUid(given_by, applied_to, name)
 
     @classmethod
     def _create_bare(

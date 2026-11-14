@@ -59,6 +59,7 @@ class BuffContainer:
             add_event.applied_to,
             buff_data.buff_class_name,
             uid_value,
+            buff_id=buff_data.id,
         )
         existing = next((b for b in self._buffs if b.uid == target_uid), None)
         if existing is None and buff_data.merge_across_givers:
@@ -135,7 +136,11 @@ class BuffContainer:
         buff_data = self._context.get_buff_data_by_id(buff_id)
         uid_value = value_override if value_override is not None else buff_data.value
         target_uid = buff_data.get_buff_class().build_uid(
-            given_by, applied_to, buff_data.buff_class_name, uid_value
+            given_by,
+            applied_to,
+            buff_data.buff_class_name,
+            uid_value,
+            buff_id=buff_data.id,
         )
         buff = next((b for b in self._buffs if b.uid == target_uid), None)
         if buff is None:

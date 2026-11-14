@@ -148,6 +148,16 @@ class PassiveSkillWrapperEvent(BuffEvent):
     def priority(self) -> BuffEventCalculatePriority:
         return BuffEventCalculatePriority.NORMAL
 
+    @property
+    def supports_target_scope(self) -> bool:  # type: ignore[override]
+        # "버프_패시브"로 가져온 수정자는 그 이벤트가 대상별 판정을 지원하면
+        # 그대로 따른다. 효과(effects) 경로는 대상을 따로 해석하므로 제외한다.
+        return (
+            self.role == "buff_mod"
+            and self.passive_data.buff_mod_event is not None
+            and self.passive_data.buff_mod_event.supports_target_scope
+        )
+
     def is_applied(
         self,
         context: "BattlefieldContext",

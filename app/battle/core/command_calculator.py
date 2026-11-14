@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.admin import ADMIN_ID
@@ -48,6 +48,7 @@ from battle.objects.skill.define import SkillValueType
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
+    from battle.objects.buff.buff_events import BuffEvent
     from battle.objects.character.combat_character import CombatCharacter
 
 
@@ -337,6 +338,18 @@ class CommandPartCalculator:
         # MaxAttackRollEvent가 ON_ATTACK 디스패치 때 채우고, 굴림은 그 뒤
         # apply_damage()가 값을 읽을 때 일어나므로 같은 타격에 반영된다.
         self.max_roll_characters: set[CharacterId] = set()
+
+        # 공격 쪽 이벤트를 대상마다 따로 판정할 때(광역기), 지금 판정 중인
+        # 대상. None이면 그 effect의 보유자 대미지 전체에 적용한다 —
+        # supports_target_scope인 이벤트만 이 값을 읽는다(in_event_scope()).
+        self.event_target_scope: Optional[CharacterId] = None
+        # 대상별로 판정한 공격력 증감과 굴림 최대치. 보유자 전체에 얹는
+        # buffed_stats_by_character/max_roll_characters와 같은 역할을
+        # (공격자, 대상) 단위로 한다.
+        self.scoped_atk_bonuses: dict[
+            tuple[CharacterId, CharacterId], list[IntValueModifier]
+        ] = {}
+        self.max_roll_pairs: set[tuple[CharacterId, CharacterId]] = set()
 
         # 대미지를 적용한 뒤 버프를 모두 벗길 (공격자, 대상). StripBuffsOnHitEvent가
         # effect별로 채우고 _process_buff_strip()이 그 effect의 대미지 뒤에 비운다.
@@ -735,7 +748,10 @@ class CommandPartCalculator:
                 # 부수효과가 있는 이벤트는 이미 한 번 돌았으므로 다시 돌리지
                 # 않되, 주는 대미지 배율은 이 effect의 항목에도 얹어야 한다.
                 self._apply_pure_modifier_events(
-                    effect_seq_number, attacker_id, damage_calc.base.target_id
+                    effect_seq_number,
+                    attacker_id,
+                    damage_calc.base.target_id,
+                    scope_targets=self._attack_targets(effect_seq_number, attacker_id),
                 )
                 continue
             self._on_attack_fired.add(attacker_id)
@@ -744,6 +760,7 @@ class CommandPartCalculator:
                 attacker_id,
                 BuffCountDeductCondition.ON_ATTACK,
                 damage_calc.base.target_id,
+                scope_targets=self._attack_targets(effect_seq_number, attacker_id),
             )
 
         for damage_calc in live_damage_calcs:
@@ -964,6 +981,7 @@ class CommandPartCalculator:
         effect_seq_number: int,
         char_id: CharacterId,
         attacker_or_target: Optional[CharacterId],
+        scope_targets: Sequence[CharacterId] = (),
     ) -> None:
         """char_id의 ON_ACTION 버프 중 수치만 바꾸는 것(is_pure_damage_modifier)만
         골라 이 effect의 대미지 항목에 얹는다.
@@ -985,8 +1003,63 @@ class CommandPartCalculator:
             event = buff.create_event()
             if not event.is_pure_damage_modifier:
                 continue
-            if event.is_applied(self.context, char_id, attacker_or_target):
-                event.apply(char_id, attacker_or_target, self, effect_seq_number)
+            self._dispatch_event(
+                event, char_id, attacker_or_target, effect_seq_number, scope_targets
+            )
+
+    def _attack_targets(
+        self: "CommandPartCalculator", effect_seq_number: int, attacker_id: CharacterId
+    ) -> list[CharacterId]:
+        """이 effect에서 attacker_id가 때리는 대상들(중복 제거, 순서 유지)."""
+        return list(
+            dict.fromkeys(
+                dc.base.target_id
+                for dc in self.data_by_effect[effect_seq_number].damage_data_list
+                if dc.base.attacker_id == attacker_id
+            )
+        )
+
+    def in_event_scope(self, target_id: CharacterId) -> bool:
+        """대상별 판정 중이면 그 대상의 항목인지. 아니면 항상 True."""
+        return self.event_target_scope is None or target_id == self.event_target_scope
+
+    def _dispatch_event(
+        self: "CommandPartCalculator",
+        event: "BuffEvent",
+        char_id: CharacterId,
+        attacker_or_target: Optional[CharacterId],
+        effect_seq_number: int,
+        scope_targets: Sequence[CharacterId],
+    ) -> bool:
+        """이벤트를 판정해 적용하고, 한 번이라도 적용됐는지 돌려준다.
+
+        광역기는 대상이 여럿인데 ON_ATTACK 디스패치는 공격자당 한 번이라,
+        대상에 따라 갈리는 조건(이동 여부·거리·연타 등)을 첫 대상 하나로
+        판정하면 그 결과가 모든 대상에 똑같이 붙는다. 대상마다 따로 얹을 수
+        있는 이벤트(supports_target_scope)는 대상별로 판정하고, 그 대상의
+        항목에만 적용한다. 그렇지 않은 이벤트는 예전처럼 한 번 판정한다."""
+        if len(scope_targets) > 1 and event.supports_target_scope:
+            applied = False
+            for target_id in scope_targets:
+                if not event.is_applied(self.context, char_id, target_id):
+                    continue
+                self.event_target_scope = target_id
+                try:
+                    event.apply(char_id, target_id, self, effect_seq_number)
+                finally:
+                    self.event_target_scope = None
+                applied = True
+            return applied
+        if event.is_applied(self.context, char_id, attacker_or_target):
+            # 상대가 없는 호출(회복 등)도 예전부터 같은 경로로 None을 넘겨 왔다.
+            event.apply(
+                char_id,
+                attacker_or_target,  # type: ignore[arg-type]
+                self,
+                effect_seq_number,
+            )
+            return True
+        return False
 
     def _apply_buff_events(
         self: "CommandPartCalculator",
@@ -994,7 +1067,11 @@ class CommandPartCalculator:
         char_id: CharacterId,
         deduct_condition: Optional[BuffCountDeductCondition],
         attacker_or_target: Optional[CharacterId] = None,
+        scope_targets: Sequence[CharacterId] = (),
     ) -> None:
+        """scope_targets는 공격 쪽 디스패치에서 이 effect로 char_id가 때리는
+        대상들이다. 둘 이상이면 대상마다 따로 판정할 수 있는 이벤트를 대상별로
+        판정한다(_dispatch_event())."""
         # 전체 디스패치는 수정자 이벤트도 함께 얹으므로, 같은 effect에서
         # _apply_pure_modifier_events()가 또 얹지 않도록 여기서 표시해 둔다.
         self._pure_modifiers_applied.add((effect_seq_number, char_id))
@@ -1008,8 +1085,9 @@ class CommandPartCalculator:
         # 조건이 실제로 충족되어 발동한 버프만 지속 횟수를 소모한다.
         applied_buffs: list[BuffBase] = []
         for buff, event in buff_events:
-            if event.is_applied(self.context, char_id, attacker_or_target):
-                event.apply(char_id, attacker_or_target, self, effect_seq_number)
+            if self._dispatch_event(
+                event, char_id, attacker_or_target, effect_seq_number, scope_targets
+            ):
                 applied_buffs.append(buff)
 
         if deduct_condition is not None:

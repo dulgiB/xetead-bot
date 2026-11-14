@@ -17,6 +17,7 @@ class GivenDamageAgainstDebuffModEvent(BuffEvent):
     더한다."""
 
     is_pure_damage_modifier: ClassVar[bool] = True
+    supports_target_scope: ClassVar[bool] = True
 
     value: FloatValueModifier
     bonus_value: FloatValueModifier
@@ -46,7 +47,9 @@ class GivenDamageAgainstDebuffModEvent(BuffEvent):
         for damage_data in calculator.data_by_effect[
             effect_seq_number
         ].damage_data_list:
-            if damage_data.base.attacker_id == holder:
+            if damage_data.base.attacker_id == holder and calculator.in_event_scope(
+                damage_data.base.target_id
+            ):
                 damage_data.given_modifiers.append(self.value)
                 if target_has_bonus_buff:
                     damage_data.given_modifiers.append(self.bonus_value)

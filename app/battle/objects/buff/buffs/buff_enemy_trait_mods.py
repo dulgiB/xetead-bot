@@ -1,6 +1,6 @@
-"""에너미 특성 패시브용 모디파이어. 모두 "버프_패시브" 시트의
-buff_mod_event 경로(PassiveSkillData.buff_mod_event)로 쓰고, "버프" 시트에
-직접 등록해 부여하는 용도가 아니다."""
+"""에너미 특성용 모디파이어. "버프_패시브" 시트의 buff_mod_event 경로
+(PassiveSkillData.buff_mod_event)로 상시 특성을 만들 수도 있고, "버프" 시트에
+등록해 스킬로 몇 턴 동안 부여할 수도 있다."""
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, ClassVar
@@ -21,6 +21,8 @@ class MaxAttackRollEvent(BuffEvent):
     ON_ACTION은 피격 쪽에서도 불리지만, 굴림은 공격자 자신의 것만 읽으므로
     holder를 표시해 두기만 하면 된다."""
 
+    supports_target_scope: ClassVar[bool] = True
+
     @property
     def priority(self) -> BuffEventCalculatePriority:
         return BuffEventCalculatePriority.PRE
@@ -32,6 +34,10 @@ class MaxAttackRollEvent(BuffEvent):
         calculator: "CommandPartCalculator",
         effect_seq_number: int,
     ) -> None:
+        scope = calculator.event_target_scope
+        if scope is not None:
+            calculator.max_roll_pairs.add((holder, scope))
+            return
         calculator.max_roll_characters.add(holder)
 
 
@@ -91,6 +97,8 @@ class StripBuffsOnHitEvent(BuffEvent):
     ON_ACTION은 공격자/피격자 양쪽에서 호출되므로 attacker_id == holder인
     항목만 고른다."""
 
+    supports_target_scope: ClassVar[bool] = True
+
     @property
     def priority(self) -> BuffEventCalculatePriority:
         return BuffEventCalculatePriority.NORMAL
@@ -107,6 +115,8 @@ class StripBuffsOnHitEvent(BuffEvent):
         for damage_data in effect_data.damage_data_list:
             base = damage_data.base
             if base.attacker_id != holder or base.target_id == holder:
+                continue
+            if not calculator.in_event_scope(base.target_id):
                 continue
             requests.add((holder, base.target_id))
 

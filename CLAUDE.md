@@ -370,6 +370,16 @@ Condition들은 `_characters_in_holder_scope()` 헬퍼로 캐릭터 순회·필�
 공유한다. 새 범위 기반 Condition을 추가할 때는 이 헬퍼에 predicate만
 넘기는 방식을 우선 검토한다.
 
+**광역기에서 공격 쪽 이벤트는 대상마다 따로 판정한다.** ON_ATTACK 디스패치는
+공격자당 한 번이라, 예전에는 첫 대상 하나로 조건(이동 여부·거리·연타 등)을
+판정해 그 결과가 전원에게 붙었다. `BuffEvent.supports_target_scope`인 이벤트는
+`CommandPartCalculator._dispatch_event()`가 대상별로 판정하고, 그 동안
+`event_target_scope`를 세워 둔다 — 이벤트의 `apply()`는
+`calculator.in_event_scope()`로 그 대상의 항목만 건드린다. 공격력 증가는
+`scoped_atk_bonuses`, 굴림 최대치는 `max_roll_pairs`로 (공격자, 대상) 단위에
+얹는다. 대상에 따라 결과가 갈릴 수 있는 공격 쪽 이벤트를 새로 만들면 이 표시를
+켜고 범위를 지킨다. 지속 횟수 차감은 여전히 한 번이다.
+
 이 훅들은 대미지 항목이 아니라 **"한 번의 타격"당 한 번** 발동한다
 (`CommandPartCalculator._reactive_hooks_fired`, ON_ATTACK/ON_HIT와 같은 기준).
 effect를 여러 개 써서 같은 대상을 때리는 스킬에서 반격·추가 대미지가 구성요소
@@ -444,6 +454,13 @@ FIXED 값이나 커스텀 `roll_display`가 필요한 대미지(`BuffDamageOverT
 통과하면 실제로 아군에게도 대미지가 들어간다(`command_expanders.py`의
 `ActionType.ATTACK` 분기, `command_processors.py`의 사전 검증 항목 어디에도
 진영 확인이 없음).
+
+`SkillTargetRuleColumnRange`의 사거리는 **지정한 중심 열 하나**로만 본다
+(`command_processors._area_center_column()`). 그 열이 사거리 안이면 범위로
+넓어진 나머지 열의 대상은 사거리와 무관하게 맞는다 — 대상마다 재면 넓은
+범위가 사거리 큰 시전자 전용이 된다. 에너미의 POST 재검증
+(`_drop_targets_out_of_range()`)도 같은 기준이라, 아군이 시전자를 밀어 중심
+열이 사거리 밖이 되면 범위 전체가 빗나간다.
 
 ### SkillEffect
 
@@ -1242,6 +1259,10 @@ Google Sheets는 **서비스 계정당 분당 쓰기 60회**로 제한하고, �
 `PARTITION_UID_BY_VALUE: ClassVar[bool] = True`를 오버라이드한다. 기본값
 `False`는 기존처럼 (given_by, applied_to, buff_class_name) 기준으로만
 재부여를 판정한다(값이 달라도 지속시간만 갱신하고 값을 덮어씀).
+
+같은 클래스를 여러 행(id)이 쓰고, 같은 부여자가 그 행들을 함께 걸 수 있는
+버프(조건만 다른 공격력 증가 — `BuffAtk`)는 `PARTITION_UID_BY_ID = True`로
+행마다 따로 유지한다. 같은 행을 다시 걸면 여전히 갱신이다.
 
 부여자가 전장의 캐릭터여야 동작하는 버프(부여자에게 공격을 유도하거나
 부여자의 스탯으로 대미지를 굴리는 것 — `BuffTaunt`/`BuffSacrifice`/
