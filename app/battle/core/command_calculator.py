@@ -483,10 +483,22 @@ class CommandPartCalculator:
             character.status.refill_cost_for_round()
             mutable.summoned_list.append(summon)
 
+    def _is_declared_move(self: "CommandPartCalculator", move_data: MoveData) -> bool:
+        """이 이동이 그 캐릭터가 스스로 선언한 이동인지.
+
+        캐릭터 커맨드(이동·공격·스킬·아이템) 안에서 자기 자신을 옮긴 경우만
+        센다. 패시브·버프가 만든 계산기(`action_type`이 None)와 admin 강제
+        이동은 선언이 아니고, 밀어내기·끌어오기는 `is_forced`로 걸러진다."""
+        if self.action_type is None or self.action_type == ActionType.ADMIN:
+            return False
+        return not move_data.is_forced
+
     def _process_move(self: "CommandPartCalculator", effect_seq_number: int) -> None:
         for move_data in self.data_by_effect[effect_seq_number].move_list:
             self.context.move_character_to(
-                move_data.character_id, move_data.to_position
+                move_data.character_id,
+                move_data.to_position,
+                declared=self._is_declared_move(move_data),
             )
             self.context.buff_container.on_enemy_move(
                 move_data.character_id, self, effect_seq_number

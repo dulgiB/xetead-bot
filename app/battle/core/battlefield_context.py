@@ -124,6 +124,10 @@ class BattlefieldContext:
         self.results: list[CommandPartProcessResult] = []
         self.prev_round_results: list[CommandPartProcessResult] = []
         self.moved_this_round: set[CharacterId] = set()
+        # moved_this_round 중 자기 커맨드(이동·자기 자신을 옮기는 스킬)로 움직인
+        # 캐릭터. 밀어내기·끌어오기·admin 강제 이동처럼 남이 옮긴 경우는 빠진다
+        # — "이동을 선언한" 캐릭터를 가리는 조건이 읽는다.
+        self.move_declared_this_round: set[CharacterId] = set()
         # 이번 라운드에 답글에서 효과 예고 줄을 이미 보여 준 스킬 id. 같은
         # 스킬을 여러 번 선언해도 설명이 반복되지 않게 한다.
         self.previewed_skill_ids: set[str] = set()
@@ -305,6 +309,7 @@ class BattlefieldContext:
         }
         self.prev_round_results = []
         self.moved_this_round = set()
+        self.move_declared_this_round = set()
         self.damaged_this_round = set()
         self.prev_damaged_this_round = set()
         self.attacked_this_round = set()
@@ -729,8 +734,14 @@ class BattlefieldContext:
         )
 
     def move_character_to(
-        self, char_id: CharacterId, to_position: BattlefieldColumnIndex
+        self,
+        char_id: CharacterId,
+        to_position: BattlefieldColumnIndex,
+        *,
+        declared: bool = False,
     ):
+        """`declared`는 그 캐릭터가 자기 커맨드로 움직였는지다
+        (`move_declared_this_round`). 남이 옮긴 강제 이동은 False로 둔다."""
         char = self.characters[char_id]
         occupied = columns_for_span(to_position, char.span)
         if len(occupied) < char.span:
@@ -750,6 +761,8 @@ class BattlefieldContext:
         for column in occupied:
             self.position_map[char.faction][column][empty_slot] = char_id
         self.moved_this_round.add(char_id)
+        if declared:
+            self.move_declared_this_round.add(char_id)
 
     def apply_damage(
         self,
@@ -788,6 +801,7 @@ class BattlefieldContext:
 
     def on_start_round(self):
         self.moved_this_round = set()
+        self.move_declared_this_round = set()
         self.previewed_skill_ids = set()
         self.attacked_this_round = set()
         # 지우기 전에 스냅샷해 둬야 ON_ROUND_START 조건이 지난 라운드의

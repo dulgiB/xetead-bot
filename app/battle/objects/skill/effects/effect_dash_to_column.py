@@ -90,7 +90,7 @@ class SkillEffectDashToColumn(SkillEffectBase):
                 coefficient=FloatValueModifier(source_name="계수", value=self.value),
             )
         return (
-            [MoveData(character_id=holder, to_position=destination, is_forced=True)],
+            [MoveData(character_id=holder, to_position=destination)],
             [
                 DamageData(
                     attacker_id=holder,
