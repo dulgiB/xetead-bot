@@ -226,6 +226,37 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 공개 "필드" 시트의 광역 예고 행(`_aoe_mark_row()`)도 같은 출발 열에서 경로
 전체를 표시한다.
 
+### 앞 파트의 이동을 뒤 파트가 이어받는다
+
+한 커맨드의 파트는 처리 전에 한꺼번에 전개·검증되므로, 앞 파트의 이동(이동
+커맨드, 돌진, 밀어내기·끌어오기·대상을 열로 옮기는 스킬)은 아직 전장에 없다.
+뒤 파트는 위치를 전장이 아니라 아래 보정에서 읽는다.
+
+- **시전자**: `departure_column()`(`expansion_departures`). 경로 광역·열 돌진의
+  출발 열, `SkillEffectMove`의 시전자 위치 기준 값 소스(시전자의 위치로·쪽으로·
+  반대쪽으로), `SkillTargetRuleNamedWithColumn`의 자신 지정 인접 판정이 쓴다.
+- **다른 캐릭터**: `BattlefieldContext.projected_position()`/`projected_columns()`/
+  `projected_characters_in_column()`(`expansion_positions`). 착지 열
+  (`landing_column()`), 경로 광역·열 돌진의 경로 대상, 열 광역 규칙의 대상,
+  끌어오기·밀어내기의 대상 위치, 대상 열에 거는 버프가 쓴다 —
+  `[밀어내기/대상 - 돌진/대상]`의 돌진은 밀려난 열로 들어간다. 위치를 읽는 새
+  효과·규칙도 `find_character_position()`/`position_map` 대신 이쪽을 쓴다.
+- **사전 검증**(`try_expansion_if_valid()`)은 전개가 끝난 뒤 돌므로 보정이
+  이미 비어 있다. 대신 검증 루프가 앞 파트의 이동을 따라가며 대미지 사거리와
+  착지 열 사거리를 목적지에서 잰다. 같은 파트 안에서는 반영하지 않는다
+  ("대미지를 입히고 옮긴다" 스킬의 사거리는 선언한 대상의 현재 위치 기준).
+- **코스트**는 전개 **전에** 계산해야 하므로(`expand()`가 디버프 일괄 제거 같은
+  부수효과를 즉시 일으킨다) `command_expanders.project_holder_positions()`가
+  이동만 부수효과 없이 미리 읽어 `get_total_cost(positions_after=...)`에 넘긴다.
+  이동은 효과의 `SkillEffectBase.preview_moves()`가 돌려주므로, **캐릭터를
+  옮기는 효과를 새로 만들면 이 메서드를 오버라이드한다** — 빠뜨리면 그 스킬
+  뒤의 이동이 이동 전 위치에서 코스트를 잰다.
+- **에너미 POST 재전개**(`CharacterCommand.is_resolution_reexpansion`)는 PRE의
+  이동이 끝난 전장에서 다시 펼치므로 다른 캐릭터의 보정을 쌓지 않는다(쌓으면
+  밀어내기가 두 번 반영된다). 선언 시점 위치를 전제로 한 입력 검증도
+  `BattlefieldContext.expansion_is_resolution`을 보고 건너뛴다 — 인접 열로
+  옮기는 스킬은 재전개 때 대상이 이미 그 열에 있어 "점유 열 지정"으로 보인다.
+
 ### 전장 경계
 
 기준이 가장 왼쪽 열이므로 설 수 있는 오른쪽 한계는 `7 - span`열이다.

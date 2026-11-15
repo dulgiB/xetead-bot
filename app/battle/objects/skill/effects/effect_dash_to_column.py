@@ -55,6 +55,18 @@ class SkillEffectDashToColumn(SkillEffectBase):
             (t for t in raw_targets if isinstance(t, BattlefieldColumnIndex)), None
         )
 
+    def preview_moves(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        targets: list[CharacterId],
+        raw_targets: tuple = (),
+    ) -> list[MoveData]:
+        destination = self.dash_destination(raw_targets)
+        if destination is None:
+            return []
+        return [MoveData(character_id=holder, to_position=destination)]
+
     def _expand(
         self,
         context: "BattlefieldContext",
@@ -77,9 +89,13 @@ class SkillEffectDashToColumn(SkillEffectBase):
         departure = departure_column(context, holder)
         path_columns = dash_path_columns(departure, destination, character.span)
 
-        foe_map = context.position_map[character.foe_faction]
+        # 앞 파트가 옮긴 적은 옮겨진 열에서 맞는다.
         path_targets = [
-            char_id for column in path_columns for char_id in foe_map[column].values()
+            char_id
+            for column in path_columns
+            for char_id in context.projected_characters_in_column(
+                character.foe_faction, column
+            )
         ]
 
         if self.value_source is ValueSourceType.FIXED:

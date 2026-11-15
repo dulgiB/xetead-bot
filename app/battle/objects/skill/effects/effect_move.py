@@ -5,7 +5,11 @@ from utils.battle_helpers import COLUMN_COUNT
 
 from battle.objects.define import BattlefieldColumnIndex, ValueSourceType
 from battle.objects.models import CharacterId, DamageData, HealData, MoveData
-from battle.objects.skill.models import SkillEffectBase, landing_column
+from battle.objects.skill.models import (
+    SkillEffectBase,
+    departure_column,
+    landing_column,
+)
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -49,9 +53,25 @@ def _span_of(context: "BattlefieldContext", char_id: CharacterId) -> int:
 
 
 class SkillEffectMove(SkillEffectBase):
+    """대상(또는 시전자)을 옮긴다. 시전자 위치를 기준으로 삼는 값 소스(시전자의
+    위치로·시전자 쪽으로·시전자 반대쪽으로)는 departure_column()으로 읽는다 —
+    `[이동/2열 - 끌어오기/대상]`처럼 앞 파트가 시전자를 옮겼으면 그 목적지가
+    기준이어야 하는데, 전개 시점의 전장 위치는 아직 이동 전이다. 옮겨지는
+    대상의 위치도 같은 이유로 projected_position()으로 읽는다."""
+
     @property
     def lands_on_target_column(self) -> bool:
         return self.value_source == ValueSourceType.TARGET_CURR_POSITION
+
+    def preview_moves(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        targets: list[CharacterId],
+        raw_targets: tuple = (),
+    ) -> list[MoveData]:
+        # _expand()는 부수효과가 없으므로 그대로 전개해 이동만 읽는다.
+        return self.expand(context, holder, targets, raw_targets)[0]
 
     def _expand(
         self,
@@ -85,7 +105,7 @@ class SkillEffectMove(SkillEffectBase):
             )
 
         elif self.value_source == ValueSourceType.SELF_CURR_POSITION:
-            holder_pos = context.find_character_position(holder)
+            holder_pos = departure_column(context, holder)
             return (
                 [
                     MoveData(
@@ -119,13 +139,13 @@ class SkillEffectMove(SkillEffectBase):
 
         elif self.value_source == ValueSourceType.TOWARD_HOLDER:
             steps = self.value if self.value is not None else 1
-            holder_pos = context.find_character_position(holder)
+            holder_pos = departure_column(context, holder)
             return (
                 [
                     MoveData(
                         character_id=target,
                         to_position=_move_toward(
-                            context.find_character_position(target),
+                            context.projected_position(target),
                             holder_pos,
                             steps,
                             _span_of(context, target),
@@ -163,13 +183,13 @@ class SkillEffectMove(SkillEffectBase):
 
         elif self.value_source == ValueSourceType.AWAY_FROM_HOLDER:
             steps = self.value if self.value is not None else 1
-            holder_pos = context.find_character_position(holder)
+            holder_pos = departure_column(context, holder)
             return (
                 [
                     MoveData(
                         character_id=target,
                         to_position=_move_away_from(
-                            context.find_character_position(target),
+                            context.projected_position(target),
                             holder_pos,
                             steps,
                             _span_of(context, target),

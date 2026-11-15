@@ -136,6 +136,15 @@ class BattlefieldContext:
         # 않았다 — 경로 광역 효과는 위치 대신 이 값을 읽는다
         # (skill/models.departure_column()). 전개가 끝나면 비운다.
         self.expansion_departures: dict[CharacterId, BattlefieldColumnIndex] = {}
+        # 같은 커맨드의 앞 파트가 옮긴 시전자 외 캐릭터의 목적지(밀어내기·
+        # 끌어오기·대상을 열로 옮기는 스킬). 뒤 파트의 전개가 projected_*()로
+        # 읽는다 — `[밀어내기/대상 - 돌진/대상]`의 돌진이 밀려난 열로 들어가야
+        # 한다. 전개가 끝나면 비운다(command_expanders).
+        self.expansion_positions: dict[CharacterId, BattlefieldColumnIndex] = {}
+        # 지금 전개 중인 커맨드가 에너미 POST 정산의 재전개인지. 선언 때 검증을
+        # 마친 입력을 이동이 끝난 전장에서 다시 펼치므로, 선언 시점 위치를
+        # 전제로 한 입력 검증(인접 열 등)은 건너뛴다.
+        self.expansion_is_resolution = False
         self.damaged_this_round: set[CharacterId] = set()
         # 이번 라운드에 대미지가 실제로 적용된 (공격자, 대상) 조합.
         # results는 커맨드 하나가 끝나야 채워지므로, 같은 커맨드 안에서
@@ -712,6 +721,41 @@ class BattlefieldContext:
         if char is None:
             return (BattlefieldColumnIndex.NONE,)
         return columns_for_span(self.find_character_position(char_id), char.span)
+
+    def projected_position(self, char_id: CharacterId) -> BattlefieldColumnIndex:
+        """커맨드 전개 중이면 같은 커맨드의 앞 파트가 옮긴 목적지, 아니면 현재
+        위치(expansion_positions). 시전자 자신은 departure_column()이 따로 본다."""
+        moved_to = self.expansion_positions.get(char_id)
+        if moved_to is not None:
+            return moved_to
+        return self.find_character_position(char_id)
+
+    def projected_columns(
+        self, char_id: CharacterId
+    ) -> tuple[BattlefieldColumnIndex, ...]:
+        moved_to = self.expansion_positions.get(char_id)
+        char = self.characters.get(char_id)
+        if moved_to is None or char is None:
+            return self.find_character_columns(char_id)
+        return columns_for_span(moved_to, char.span)
+
+    def projected_characters_in_column(
+        self, faction: FactionType, column: BattlefieldColumnIndex
+    ) -> list[CharacterId]:
+        """position_map[faction][column]에 앞 파트의 이동을 반영한 목록. 옮겨진
+        캐릭터는 원래 열에서 빠지고 목적지의 점유 열에 들어간다(뒤에 붙는다)."""
+        here = list(self.position_map[faction][column].values())
+        if not self.expansion_positions:
+            return here
+        result = [c for c in here if c not in self.expansion_positions]
+        result += [
+            char_id
+            for char_id in self.expansion_positions
+            if char_id in self.characters
+            and self.characters[char_id].faction == faction
+            and column in self.projected_columns(char_id)
+        ]
+        return result
 
     def can_reach(
         self,

@@ -26,6 +26,12 @@ class CharacterCommand:
     # 출발 열로 오인하지 않게 PRE가 채워 둔다. None이면 현재 위치다.
     departure_position: Optional[BattlefieldColumnIndex] = None
 
+    @property
+    def is_resolution_reexpansion(self) -> bool:
+        """에너미 POST 정산의 재전개인지. PRE가 남긴 커맨드만 departure_position을
+        가진다. 재전개는 PRE의 이동이 이미 끝난 전장에서 다시 펼친다."""
+        return self.departure_position is not None
+
 
 @dataclass(frozen=True)
 class CommandPart:

@@ -13,6 +13,7 @@ from battle.exceptions import (
 )
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
+from utils.battle_helpers import columns_for_span
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -81,7 +82,9 @@ class SkillTargetRuleColumn(SkillTargetRule):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
-            target_id_list += self.context.position_map[target_faction][column].values()
+            target_id_list += self.context.projected_characters_in_column(
+                target_faction, column
+            )
         return target_id_list
 
 
@@ -124,7 +127,9 @@ class SkillTargetRuleColumnRange(SkillTargetRule):
 
         for column_value in sorted(expanded_column_values):
             column = BattlefieldColumnIndex(column_value)
-            target_id_list += self.context.position_map[target_faction][column].values()
+            target_id_list += self.context.projected_characters_in_column(
+                target_faction, column
+            )
 
         return target_id_list
 
@@ -154,7 +159,9 @@ class SkillTargetRuleAllyColumn(SkillTargetRule):
             raise CommandValidationError(error_column_target_required())
         columns = cast(list[BattlefieldColumnIndex], targets)
         for column in columns:
-            target_id_list += self.context.position_map[target_faction][column].values()
+            target_id_list += self.context.projected_characters_in_column(
+                target_faction, column
+            )
         return target_id_list
 
 
@@ -241,10 +248,12 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
         if len(characters) != 1 or len(columns) > 1:
             raise CommandValidationError(error_invalid_command_format())
 
-        if columns:
+        # 에너미 POST 재전개는 선언 때 검증한 입력을, 대상이 이미 그 열로 옮겨진
+        # 전장에서 다시 펼친다 — 다시 재면 "점유 열 지정"으로 보여 정산이 멈춘다.
+        if columns and not self.context.expansion_is_resolution:
             # 다열 대상은 점유 열 어느 쪽에든 붙어 있으면 인접으로 본다
             # (점유 열 자체를 지정하는 것은 "이동 없음"이라 거부한다).
-            target_columns = self.context.find_character_columns(characters[0])
+            target_columns = self._current_columns(characters[0])
             distance = min(
                 abs(column.value - columns[0].value) for column in target_columns
             )
@@ -252,6 +261,21 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
                 raise CommandValidationError(error_invalid_move_destination(columns[0]))
 
         return characters
+
+    def _current_columns(
+        self, char_id: CharacterId
+    ) -> tuple[BattlefieldColumnIndex, ...]:
+        """인접 판정에 쓸 대상의 점유 열. 같은 커맨드의 앞 파트가 옮긴 위치에서
+        잰다 — 시전자 자신이면 출발 열(skill/models.departure_column()과 같은
+        값), 다른 캐릭터면 projected_columns(). 파트는 처리 전에 한꺼번에
+        전개되므로 전장 위치는 아직 이동 전이다."""
+        if char_id == self.skill_holder_id:
+            departure = self.context.expansion_departures.get(char_id)
+            if departure is not None:
+                return columns_for_span(
+                    departure, self.context.characters[char_id].span
+                )
+        return self.context.projected_columns(char_id)
 
 
 @dataclass(frozen=True)
