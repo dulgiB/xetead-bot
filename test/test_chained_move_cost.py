@@ -77,10 +77,25 @@ PULL = SkillData(
     description="",
 )
 
-SKILLS = (TARGET_DASH, COLUMN_DASH, THROW, PULL)
+COLUMN_HIT = SkillData(
+    id="ColumnHit",
+    target_rule="SkillTargetRuleColumn",
+    target_count=1,
+    cost=1,
+    effects=[
+        SkillEffectDamage(ValueSourceType.FIXED, 10, ValueType.INTEGER, None, None)
+    ],
+    description="",
+)
+
+SKILLS = (TARGET_DASH, COLUMN_DASH, THROW, PULL, COLUMN_HIT)
 
 
-def _setup(user_column: int, attack_range: int = 3) -> BattlefieldContext:
+def _setup(
+    user_column: int,
+    attack_range: int = 3,
+    faction: FactionType = FactionType.ALLY,
+) -> BattlefieldContext:
     ctx = BattlefieldContext(buff_dict={}, skill_dict={s.id: s for s in SKILLS})
     ctx.add_character(
         get_test_preset(
@@ -91,8 +106,9 @@ def _setup(user_column: int, attack_range: int = 3) -> BattlefieldContext:
             skill_2_id=COLUMN_DASH.id,
             skill_3_id=THROW.id,
             skill_4_id=PULL.id,
+            skill_5_id=COLUMN_HIT.id,
         ),
-        FactionType.ALLY,
+        faction,
         BattlefieldColumnIndex(user_column),
     )
     ctx.characters[USER].status.remaining_cost = 10
@@ -190,3 +206,109 @@ def test_attack_after_pulling_target_into_range_is_allowed():
     _add(ctx, "대상", FactionType.ENEMY, 2)
 
     assert _cost(ctx, "[Throw/대상/2열 - 공격/대상]") == 1 + 1
+
+
+def _hp(ctx: BattlefieldContext, name: str) -> int:
+    return ctx.characters[CharacterId(name)].status.curr_hp
+
+
+def _process(ctx: BattlefieldContext, text: str) -> RoundManager:
+    manager = RoundManager(ctx)
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    ctx.characters[USER].status.remaining_cost = 10
+    manager.process_command(parse_character_command(USER, text, ctx))
+    return manager
+
+
+def test_dash_after_forced_move_lands_on_moved_column():
+    """앞 파트가 옮긴 대상에게 돌진하면 옮겨진 열로 들어가고, 경로도 그
+    열까지다. 옮겨진 대상은 원래 열에서 경로 대미지를 받지 않는다."""
+    ctx = _setup(0)
+    moved = _add(ctx, "대상", FactionType.ENEMY, 1)
+    _add(ctx, "경로", FactionType.ENEMY, 1)
+
+    _process(ctx, "[Throw/대상/3열 - TargetDash/대상]")
+
+    assert ctx.find_character_position(moved) == BattlefieldColumnIndex(2)
+    assert ctx.find_character_position(USER) == BattlefieldColumnIndex(2)
+    assert _hp(ctx, "대상") == 90
+    assert _hp(ctx, "경로") == 95
+
+
+def test_dash_range_is_checked_to_the_moved_column():
+    """사거리 밖의 대상도 앞 파트가 사거리 안으로 옮겼으면 돌진할 수 있고,
+    사거리 밖으로 옮겼으면 돌진할 수 없다."""
+    ctx = _setup(0, attack_range=1)
+    _add(ctx, "끌려올 대상", FactionType.ENEMY, 2)
+    _add(ctx, "밀려날 대상", FactionType.ENEMY, 1)
+
+    assert _cost(ctx, "[Throw/끌려올 대상/2열 - TargetDash/끌려올 대상]") == 2
+    with pytest.raises(CommandValidationError):
+        _cost(ctx, "[Throw/밀려날 대상/3열 - TargetDash/밀려날 대상]")
+
+
+def test_move_after_forced_move_and_dash_costs_from_moved_column():
+    ctx = _setup(0)
+    _add(ctx, "대상", FactionType.ENEMY, 1)
+
+    # 대상을 3열로 옮김(1) · 3열로 돌진(1) · 3열→4열(1)
+    assert _cost(ctx, "[Throw/대상/3열 - TargetDash/대상 - 이동/4열]") == 3
+
+
+def test_column_dash_after_forced_move_hits_the_moved_target():
+    ctx = _setup(0)
+    _add(ctx, "들어온 대상", FactionType.ENEMY, 3)
+    _add(ctx, "나간 대상", FactionType.ENEMY, 2)
+
+    _process(
+        ctx,
+        "[Throw/들어온 대상/3열 - Throw/나간 대상/4열 - ColumnDash/3열]",
+    )
+
+    assert _hp(ctx, "들어온 대상") == 95
+    assert _hp(ctx, "나간 대상") == 100
+
+
+def test_column_skill_after_forced_move_hits_the_moved_column():
+    ctx = _setup(0)
+    _add(ctx, "대상", FactionType.ENEMY, 1)
+
+    _process(ctx, "[Throw/대상/3열 - ColumnHit/3열]")
+
+    assert _hp(ctx, "대상") == 90
+
+
+def test_enemy_forced_move_then_dash_is_not_pushed_twice_at_resolution():
+    """에너미는 선언 때 이동하고 정산 때 재전개한다. 재전개는 이미 옮겨진
+    위치에서 다시 펼치므로 같은 강제 이동을 한 번 더 반영하면 안 된다."""
+    ctx = _setup(0, faction=FactionType.ENEMY)
+    manager = RoundManager(ctx)
+    ctx.characters[USER].status.remaining_cost = 10
+    moved = _add(ctx, "대상", FactionType.ALLY, 1)
+    _add(ctx, "경로", FactionType.ALLY, 1)
+
+    manager.process_command(
+        parse_character_command(USER, "[Throw/대상/3열 - TargetDash/대상]", ctx)
+    )
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+    assert ctx.find_character_position(moved) == BattlefieldColumnIndex(2)
+    assert ctx.find_character_position(USER) == BattlefieldColumnIndex(2)
+    assert _hp(ctx, "대상") == 90
+    assert _hp(ctx, "경로") == 95
+
+
+def test_enemy_move_to_adjacent_column_skill_resolves_without_error():
+    """에너미가 대상을 인접 열로 옮기는 스킬을 쓰면 정산 재전개 때 대상은 이미
+    그 열에 있다. 인접 판정을 다시 하면 "점유 열 지정"으로 보여 정산이 멈췄다."""
+    ctx = _setup(0, faction=FactionType.ENEMY)
+    manager = RoundManager(ctx)
+    ctx.characters[USER].status.remaining_cost = 10
+    moved = _add(ctx, "대상", FactionType.ALLY, 1)
+
+    manager.process_command(parse_character_command(USER, "[Throw/대상/3열]", ctx))
+    manager.to_phase(RoundPhaseType.ALLY_ACTION)
+    manager.to_phase(RoundPhaseType.ENEMY_POST_ACTION)
+
+    assert ctx.find_character_position(moved) == BattlefieldColumnIndex(2)
