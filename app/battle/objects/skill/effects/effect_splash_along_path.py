@@ -66,9 +66,10 @@ class SkillEffectSplashAlongPath(SkillEffectBase):
         splash_targets = [
             char_id
             for value in path_columns
-            for char_id in context.position_map[foe_faction][
-                BattlefieldColumnIndex(value)
-            ].values()
+            # 앞 파트가 옮긴 적은 옮겨진 열에서 맞는다.
+            for char_id in context.projected_characters_in_column(
+                foe_faction, BattlefieldColumnIndex(value)
+            )
             # 주대상은 착지 열에서 주대상 대미지를 받으므로 그 열만 뺀다.
             if char_id != main_target or value != to_pos.value
         ]

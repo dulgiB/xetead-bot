@@ -36,7 +36,7 @@ class SkillEffectAddBuffAtTargetColumn(SkillEffectBase):
                     applied_to=target,
                     buff_id=self.buff_id,
                     add_timing=self.buff_add_timing,
-                    value_override=context.find_character_position(target).value,
+                    value_override=context.projected_position(target).value,
                 )
                 for target in targets
             ],

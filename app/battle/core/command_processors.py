@@ -467,9 +467,14 @@ def try_expansion_if_valid(
                     continue
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
+                # 앞 파트가 대상을 옮겼다면 착지 열도 그 목적지다(전개와 같다).
                 to_pos = landing_column(
                     context, target_id, tuple(original_part.targets)
                 )
+                if not any(
+                    isinstance(t, BattlefieldColumnIndex) for t in original_part.targets
+                ):
+                    to_pos = moved_positions.get(target_id, to_pos)
                 if not is_reachable_between(
                     columns_for_span(user_pos, user.span), (to_pos,), effective_range
                 ):

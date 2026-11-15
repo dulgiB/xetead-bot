@@ -35,11 +35,12 @@ def landing_column(
     """lands_on_target_column 효과가 착지할 열. 커맨드에 열을 덧붙였으면 그
     열이고, 없으면 대상의 기준 위치(가장 왼쪽 열)다. 열이 대상의 점유 열인지는
     사전 검증이 본다 — POST 재전개는 그 사이 대상이 움직였어도 선언한 열을
-    그대로 쓴다."""
+    그대로 쓴다. 같은 커맨드의 앞 파트가 대상을 옮겼다면 그 목적지가 기준
+    위치다(projected_position())."""
     for raw_target in raw_targets:
         if isinstance(raw_target, BattlefieldColumnIndex):
             return raw_target
-    return context.find_character_position(target)
+    return context.projected_position(target)
 
 
 def departure_column(
@@ -144,21 +145,21 @@ class SkillEffectBase(abc.ABC):
         (command_processors.try_expansion_if_valid())."""
         return None
 
-    def holder_destination(
+    def preview_moves(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
         raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]" = (),
-    ) -> Optional[BattlefieldColumnIndex]:
-        """이 효과가 시전자 자신을 옮긴다면 그 목적지, 아니면 None.
+    ) -> list[MoveData]:
+        """이 효과가 일으킬 이동(시전자·다른 캐릭터 모두). 기본은 이동 없음.
 
         코스트는 전개 전에 계산해야 하므로(expand()가 디버프 제거 같은
-        부수효과를 즉시 일으킨다) 시전자의 이동만 부수효과 없이 미리 읽는
-        경로다(command_expanders.project_holder_positions()). 시전자를
-        옮기는 효과는 반드시 오버라이드한다 — 빠뜨리면 그 스킬 뒤에 붙은
-        이동의 코스트가 이동 전 위치에서 계산된다."""
-        return None
+        부수효과를 즉시 일으킨다) 이동만 부수효과 없이 미리 읽는 경로다
+        (command_expanders.project_holder_positions()). 캐릭터를 옮기는
+        효과는 반드시 오버라이드한다 — 빠뜨리면 그 스킬 뒤에 붙은 이동의
+        코스트가 이동 전 위치에서 계산된다."""
+        return []
 
     @property
     def condition(self) -> Optional["Condition"]:

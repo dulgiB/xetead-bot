@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+from contextlib import contextmanager
 from dataclasses import replace
 from typing import TYPE_CHECKING, Optional, cast
 
@@ -225,17 +227,53 @@ def expand_character_command(
     # 도발/희생 방어 치환은 CommandPartCalculator가 일괄 처리한다 —
     # 여기서는 원래 지정 대상 그대로 전개한다.
     user_id = command.user_id
-    previous_departure = context.expansion_departures.get(user_id)
     departure = command.departure_position
     if departure is None and user_id in context.characters:
         departure = context.find_character_position(user_id)
-    try:
+    with _expansion_scope(context, user_id, command.is_resolution_reexpansion):
         return _expand_character_parts(command, context, departure)
+
+
+@contextmanager
+def _expansion_scope(
+    context: BattlefieldContext, user_id: CharacterId, resolution: bool = False
+):
+    """전개 동안만 쓰는 위치 보정(expansion_departures/expansion_positions)과
+    재전개 표시(expansion_is_resolution)를 끝나면 원래대로 돌린다."""
+    previous_departure = context.expansion_departures.get(user_id)
+    previous_positions = dict(context.expansion_positions)
+    previous_resolution = context.expansion_is_resolution
+    context.expansion_positions.clear()
+    context.expansion_is_resolution = resolution
+    try:
+        yield
     finally:
+        context.expansion_is_resolution = previous_resolution
         if previous_departure is None:
             context.expansion_departures.pop(user_id, None)
         else:
             context.expansion_departures[user_id] = previous_departure
+        context.expansion_positions.clear()
+        context.expansion_positions.update(previous_positions)
+
+
+def _track_moves(
+    context: BattlefieldContext,
+    command: CharacterCommand,
+    moves: "Iterable[MoveData]",
+    departure: Optional[BattlefieldColumnIndex],
+) -> Optional[BattlefieldColumnIndex]:
+    """앞 파트의 이동을 뒤 파트가 보도록 남기고, 시전자의 새 출발 열을 돌려준다.
+
+    다른 캐릭터의 목적지(expansion_positions)는 선언 시점 전개에서만 남긴다.
+    에너미의 POST 재전개(is_resolution_reexpansion)는 PRE에서 이미 옮겨진 전장
+    위치에서 다시 펼치므로, 남기면 밀어내기가 두 번 반영된 위치를 보게 된다."""
+    for move_data in moves:
+        if move_data.character_id == command.user_id:
+            departure = move_data.to_position
+        elif not command.is_resolution_reexpansion:
+            context.expansion_positions[move_data.character_id] = move_data.to_position
+    return departure
 
 
 def _skill_rule_targets(skill: "Skill", part: CommandPart) -> list[CharacterId]:
@@ -256,36 +294,32 @@ def project_holder_positions(
     않는 파트는 None).
 
     코스트는 전개 전에 계산해야 하므로(expand()가 디버프 제거 같은 부수효과를
-    즉시 일으킨다) 시전자의 이동만 부수효과 없이 미리 읽는다
-    (SkillEffectBase.holder_destination()). 이동 커맨드뿐 아니라 돌진·자신을
-    지정한 강제 이동도 뒤따르는 파트의 출발 위치가 되며, 각 파트는 전개와 같이
-    앞 파트까지 반영한 출발 열(expansion_departures)을 본다."""
+    즉시 일으킨다) 이동만 부수효과 없이 미리 읽는다
+    (SkillEffectBase.preview_moves()). 이동 커맨드뿐 아니라 돌진·자신을 지정한
+    강제 이동도 뒤따르는 파트의 출발 위치가 되며, 각 파트는 전개와 같이 앞
+    파트까지 반영한 위치(expansion_departures/expansion_positions)를 본다."""
     user_id = command.user_id
     departure = command.departure_position
     if departure is None:
         departure = context.find_character_position(user_id)
-    previous_departure = context.expansion_departures.get(user_id)
     positions: list[Optional[BattlefieldColumnIndex]] = []
-    try:
+    with _expansion_scope(context, user_id, command.is_resolution_reexpansion):
         for part in command.parts:
             context.expansion_departures[user_id] = departure
-            destination = _holder_destination_of_part(context, user_id, part)
-            positions.append(destination)
-            if destination is not None:
-                departure = destination
-    finally:
-        if previous_departure is None:
-            context.expansion_departures.pop(user_id, None)
-        else:
-            context.expansion_departures[user_id] = previous_departure
+            moved_to = _track_moves(
+                context, command, _preview_part_moves(context, user_id, part), None
+            )
+            positions.append(moved_to)
+            if moved_to is not None:
+                departure = moved_to
     return positions
 
 
-def _holder_destination_of_part(
+def _preview_part_moves(
     context: BattlefieldContext, user_id: CharacterId, part: CommandPart
-) -> Optional[BattlefieldColumnIndex]:
+) -> list[MoveData]:
     if part.type_ == ActionType.MOVE and part.targets:
-        return cast(BattlefieldColumnIndex, part.targets[0])
+        return [MoveData(user_id, cast(BattlefieldColumnIndex, part.targets[0]))]
 
     if part.type_ == ActionType.SKILL and part.skill_id is not None:
         skill = next(
@@ -297,31 +331,29 @@ def _holder_destination_of_part(
             None,
         )
         if skill is None:
-            return None  # 미등록 스킬은 사전 검증이 따로 거부한다.
+            return []  # 미등록 스킬은 사전 검증이 따로 거부한다.
         targets = _skill_rule_targets(skill, part)
-        destination = None
+        moves: list[MoveData] = []
         for effect in skill.data.effects:
-            moved_to = effect.holder_destination(
+            moves += effect.preview_moves(
                 context, user_id, targets, tuple(part.targets)
             )
-            if moved_to is not None:
-                destination = moved_to
-        return destination
+        return moves
 
     if part.type_ == ActionType.USE_ITEM and part.item_id is not None:
         item = context.get_item_data_by_id(part.item_id).to_item_instance(
             context, user_id
         )
         if item.data.effect is None:
-            return None
-        return item.data.effect.holder_destination(
+            return []
+        return item.data.effect.preview_moves(
             context,
             user_id,
             item.target_rule.get_targets(part.targets),
             tuple(part.targets),
         )
 
-    return None
+    return []
 
 
 def _expand_character_parts(
@@ -487,12 +519,17 @@ def _expand_character_parts(
         else:
             raise CommandValidationError(error_invalid_command_format())
 
-        for part_data in parts_list[parts_before:]:
-            for sub_data in part_data.data_per_effect:
-                if sub_data is None:
-                    continue
-                for move_data in sub_data.move_list:
-                    if move_data.character_id == command.user_id:
-                        departure = move_data.to_position
+        departure = _track_moves(
+            context,
+            command,
+            (
+                move_data
+                for part_data in parts_list[parts_before:]
+                for sub_data in part_data.data_per_effect
+                if sub_data is not None
+                for move_data in sub_data.move_list
+            ),
+            departure,
+        )
 
     return parts_list

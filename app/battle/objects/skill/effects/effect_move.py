@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from battle.objects.buff.buff_base import BuffAddData, BuffRemoveData
 from utils.battle_helpers import COLUMN_COUNT
@@ -56,26 +56,22 @@ class SkillEffectMove(SkillEffectBase):
     """대상(또는 시전자)을 옮긴다. 시전자 위치를 기준으로 삼는 값 소스(시전자의
     위치로·시전자 쪽으로·시전자 반대쪽으로)는 departure_column()으로 읽는다 —
     `[이동/2열 - 끌어오기/대상]`처럼 앞 파트가 시전자를 옮겼으면 그 목적지가
-    기준이어야 하는데, 전개 시점의 전장 위치는 아직 이동 전이다."""
+    기준이어야 하는데, 전개 시점의 전장 위치는 아직 이동 전이다. 옮겨지는
+    대상의 위치도 같은 이유로 projected_position()으로 읽는다."""
 
     @property
     def lands_on_target_column(self) -> bool:
         return self.value_source == ValueSourceType.TARGET_CURR_POSITION
 
-    def holder_destination(
+    def preview_moves(
         self,
         context: "BattlefieldContext",
         holder: CharacterId,
         targets: list[CharacterId],
         raw_targets: tuple = (),
-    ) -> Optional[BattlefieldColumnIndex]:
-        # _expand()는 부수효과가 없으므로 그대로 전개해 시전자의 이동만 읽는다.
-        # 자신을 대상으로 한 강제 이동(시전자 지정 가능한 밀어내기 등)도 잡힌다.
-        destination = None
-        for move in self.expand(context, holder, targets, raw_targets)[0]:
-            if move.character_id == holder:
-                destination = move.to_position
-        return destination
+    ) -> list[MoveData]:
+        # _expand()는 부수효과가 없으므로 그대로 전개해 이동만 읽는다.
+        return self.expand(context, holder, targets, raw_targets)[0]
 
     def _expand(
         self,
@@ -149,7 +145,7 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=target,
                         to_position=_move_toward(
-                            context.find_character_position(target),
+                            context.projected_position(target),
                             holder_pos,
                             steps,
                             _span_of(context, target),
@@ -193,7 +189,7 @@ class SkillEffectMove(SkillEffectBase):
                     MoveData(
                         character_id=target,
                         to_position=_move_away_from(
-                            context.find_character_position(target),
+                            context.projected_position(target),
                             holder_pos,
                             steps,
                             _span_of(context, target),
