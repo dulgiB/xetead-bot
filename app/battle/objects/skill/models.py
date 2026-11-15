@@ -144,6 +144,22 @@ class SkillEffectBase(abc.ABC):
         (command_processors.try_expansion_if_valid())."""
         return None
 
+    def holder_destination(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        targets: list[CharacterId],
+        raw_targets: "tuple[CharacterId | BattlefieldColumnIndex, ...]" = (),
+    ) -> Optional[BattlefieldColumnIndex]:
+        """이 효과가 시전자 자신을 옮긴다면 그 목적지, 아니면 None.
+
+        코스트는 전개 전에 계산해야 하므로(expand()가 디버프 제거 같은
+        부수효과를 즉시 일으킨다) 시전자의 이동만 부수효과 없이 미리 읽는
+        경로다(command_expanders.project_holder_positions()). 시전자를
+        옮기는 효과는 반드시 오버라이드한다 — 빠뜨리면 그 스킬 뒤에 붙은
+        이동의 코스트가 이동 전 위치에서 계산된다."""
+        return None
+
     @property
     def condition(self) -> Optional["Condition"]:
         if not self.condition_class_name:

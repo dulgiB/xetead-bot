@@ -14,6 +14,7 @@ from battle.core.commands.admin import (
 )
 from battle.core.commands.models import (
     CharacterCommand,
+    CommandPart,
     CommandPartData,
     CommandPartDataPerEffect,
     DamageData,
@@ -40,7 +41,7 @@ from battle.objects.skill.target_functions import (
 )
 
 if TYPE_CHECKING:
-    from battle.objects.skill.models import SkillData, SkillEffectBase
+    from battle.objects.skill.models import Skill, SkillData, SkillEffectBase
 
 
 def _mark_ignores_taunt_if_column_target(
@@ -237,6 +238,92 @@ def expand_character_command(
             context.expansion_departures[user_id] = previous_departure
 
 
+def _skill_rule_targets(skill: "Skill", part: CommandPart) -> list[CharacterId]:
+    # 착지 열은 효과가 raw_targets에서 읽는다 — 개체 지정 규칙은 열
+    # 입력을 거부하므로 넘기지 않는다(검증은 _validate_landing_column()).
+    rule_targets: list[CharacterId | BattlefieldColumnIndex] = (
+        [t for t in part.targets if not isinstance(t, BattlefieldColumnIndex)]
+        if skill.data.lands_on_target_column
+        else part.targets
+    )
+    return skill.target_rule.get_targets(rule_targets)
+
+
+def project_holder_positions(
+    command: CharacterCommand, context: BattlefieldContext
+) -> list[Optional[BattlefieldColumnIndex]]:
+    """파트마다 그 파트를 마친 뒤 시전자가 설 열을 돌려준다(시전자를 옮기지
+    않는 파트는 None).
+
+    코스트는 전개 전에 계산해야 하므로(expand()가 디버프 제거 같은 부수효과를
+    즉시 일으킨다) 시전자의 이동만 부수효과 없이 미리 읽는다
+    (SkillEffectBase.holder_destination()). 이동 커맨드뿐 아니라 돌진·자신을
+    지정한 강제 이동도 뒤따르는 파트의 출발 위치가 되며, 각 파트는 전개와 같이
+    앞 파트까지 반영한 출발 열(expansion_departures)을 본다."""
+    user_id = command.user_id
+    departure = command.departure_position
+    if departure is None:
+        departure = context.find_character_position(user_id)
+    previous_departure = context.expansion_departures.get(user_id)
+    positions: list[Optional[BattlefieldColumnIndex]] = []
+    try:
+        for part in command.parts:
+            context.expansion_departures[user_id] = departure
+            destination = _holder_destination_of_part(context, user_id, part)
+            positions.append(destination)
+            if destination is not None:
+                departure = destination
+    finally:
+        if previous_departure is None:
+            context.expansion_departures.pop(user_id, None)
+        else:
+            context.expansion_departures[user_id] = previous_departure
+    return positions
+
+
+def _holder_destination_of_part(
+    context: BattlefieldContext, user_id: CharacterId, part: CommandPart
+) -> Optional[BattlefieldColumnIndex]:
+    if part.type_ == ActionType.MOVE and part.targets:
+        return cast(BattlefieldColumnIndex, part.targets[0])
+
+    if part.type_ == ActionType.SKILL and part.skill_id is not None:
+        skill = next(
+            (
+                s
+                for s in context.characters[user_id].skills
+                if s.data.id == part.skill_id
+            ),
+            None,
+        )
+        if skill is None:
+            return None  # 미등록 스킬은 사전 검증이 따로 거부한다.
+        targets = _skill_rule_targets(skill, part)
+        destination = None
+        for effect in skill.data.effects:
+            moved_to = effect.holder_destination(
+                context, user_id, targets, tuple(part.targets)
+            )
+            if moved_to is not None:
+                destination = moved_to
+        return destination
+
+    if part.type_ == ActionType.USE_ITEM and part.item_id is not None:
+        item = context.get_item_data_by_id(part.item_id).to_item_instance(
+            context, user_id
+        )
+        if item.data.effect is None:
+            return None
+        return item.data.effect.holder_destination(
+            context,
+            user_id,
+            item.target_rule.get_targets(part.targets),
+            tuple(part.targets),
+        )
+
+    return None
+
+
 def _expand_character_parts(
     command: CharacterCommand,
     context: BattlefieldContext,
@@ -302,14 +389,7 @@ def _expand_character_parts(
             if skill_used is None:
                 raise CommandValidationError(error_skill_not_registered(part.skill_id))
 
-            # 착지 열은 효과가 raw_targets에서 읽는다 — 개체 지정 규칙은 열
-            # 입력을 거부하므로 넘기지 않는다(검증은 _validate_landing_column()).
-            rule_targets: list[CharacterId | BattlefieldColumnIndex] = (
-                [t for t in part.targets if not isinstance(t, BattlefieldColumnIndex)]
-                if skill_used.data.lands_on_target_column
-                else part.targets
-            )
-            target_characters = skill_used.target_rule.get_targets(rule_targets)
+            target_characters = _skill_rule_targets(skill_used, part)
             raw_targets = tuple(part.targets)
 
             data_per_effect_list: list[CommandPartDataPerEffect] = []

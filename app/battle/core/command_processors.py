@@ -6,7 +6,10 @@ from utils.battle_helpers import columns_for_span, is_reachable_between
 
 from battle.core.battlefield_context import BattlefieldContext
 from battle.core.command_calculator import CommandPartCalculator, build_log_entries
-from battle.core.command_expanders import expand_character_command
+from battle.core.command_expanders import (
+    expand_character_command,
+    project_holder_positions,
+)
 from battle.core.commands.define import RoundPhaseType
 from battle.core.commands.models import (
     BattleLogEntry,
@@ -421,7 +424,12 @@ def try_expansion_if_valid(
                 raise CommandValidationError(error_item_has_no_effect())
 
     # 되는 데까지 처리해주지 않고, 전체 코스트가 부족하면 아예 미처리한다.
-    needed_cost = get_total_cost(command.parts, command.user_id, context)
+    needed_cost = get_total_cost(
+        command.parts,
+        command.user_id,
+        context,
+        positions_after=project_holder_positions(command, context),
+    )
     if user.status.remaining_cost < needed_cost:
         raise CommandValidationError(
             error_no_remaining_cost(needed_cost, user.status.remaining_cost)
@@ -429,6 +437,18 @@ def try_expansion_if_valid(
 
     expanded_command_data_list = expand_character_command(command, context)
     summoned_names: set[CharacterId] = set()
+    # 앞 파트가 강제로 옮긴 캐릭터(밀어내기·끌어오기·아군 이동 스킬)는 뒤 파트가
+    # 처리될 때 이미 목적지에 있으므로, 사거리도 그 목적지에서 잰다. 시전자
+    # 자신은 user_pos가 따로 따라간다. 같은 파트 안에서는 반영하지 않는다 —
+    # "대미지를 입히고 옮긴다" 스킬의 사거리는 선언한 대상의 현재 위치 기준이다.
+    moved_positions: dict[CharacterId, BattlefieldColumnIndex] = {}
+
+    def target_columns(target_id: CharacterId) -> tuple[BattlefieldColumnIndex, ...]:
+        moved_to = moved_positions.get(target_id)
+        if moved_to is None:
+            return context.find_character_columns(target_id)
+        return columns_for_span(moved_to, context.characters[target_id].span)
+
     for command_data in expanded_command_data_list:
         effective_range = _effective_attack_range(
             context, user, command_data.original_part
@@ -490,6 +510,7 @@ def try_expansion_if_valid(
         # 된다. 범위로 넓어진 나머지 열의 대상까지 사거리로 거르면 "중심 열을
         # 사거리 안에 두고 넓게 친다"는 설계가 사거리 큰 시전자 전용이 된다.
         area_center = _area_center_column(user, original_part)
+        moved_in_part: dict[CharacterId, BattlefieldColumnIndex] = {}
 
         for sub_data in command_data.data_per_effect:
             if sub_data is None:
@@ -528,6 +549,8 @@ def try_expansion_if_valid(
                     raise CommandValidationError(error_too_many_characters(to_pos))
                 if mover_id == command.user_id:
                     user_pos = to_pos
+                else:
+                    moved_in_part[mover_id] = to_pos
 
             for damage_data in sub_data.damage_list:
                 target_id = damage_data.target_id
@@ -547,19 +570,19 @@ def try_expansion_if_valid(
                     continue
                 if not is_reachable_between(
                     columns_for_span(user_pos, user.span),
-                    context.find_character_columns(target_id),
+                    target_columns(target_id),
                     effective_range,
                 ):
                     raise CommandValidationError(
-                        error_attack_position_too_far(
-                            context.find_character_position(target_id)
-                        )
+                        error_attack_position_too_far(target_columns(target_id)[0])
                     )
 
             for heal_data in sub_data.heal_list:
                 target_id = heal_data.target_id
                 if target_id not in context.characters:
                     raise CommandValidationError(error_target_does_not_exist(target_id))
+
+        moved_positions.update(moved_in_part)
 
     # keyword_mode가 없는 스킬은 굴림 보정을 받을 대미지가 있는 스킬에만 키워드
     # 보정을 허용한다. 대미지가 실제로 나오는지는 효과 구현체마다 달라 전개해 봐야

@@ -55,6 +55,15 @@ class SkillEffectDashToColumn(SkillEffectBase):
             (t for t in raw_targets if isinstance(t, BattlefieldColumnIndex)), None
         )
 
+    def holder_destination(
+        self,
+        context: "BattlefieldContext",
+        holder: CharacterId,
+        targets: list[CharacterId],
+        raw_targets: tuple = (),
+    ) -> Optional[BattlefieldColumnIndex]:
+        return self.dash_destination(raw_targets)
+
     def _expand(
         self,
         context: "BattlefieldContext",

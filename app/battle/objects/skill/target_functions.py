@@ -13,6 +13,7 @@ from battle.exceptions import (
 )
 from battle.objects.define import BattlefieldColumnIndex
 from battle.objects.models import CharacterId
+from utils.battle_helpers import columns_for_span
 
 if TYPE_CHECKING:
     from battle.core.battlefield_context import BattlefieldContext
@@ -235,7 +236,7 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
         if columns:
             # 다열 대상은 점유 열 어느 쪽에든 붙어 있으면 인접으로 본다
             # (점유 열 자체를 지정하는 것은 "이동 없음"이라 거부한다).
-            target_columns = self.context.find_character_columns(characters[0])
+            target_columns = self._current_columns(characters[0])
             distance = min(
                 abs(column.value - columns[0].value) for column in target_columns
             )
@@ -243,6 +244,21 @@ class SkillTargetRuleNamedWithColumn(SkillTargetRule):
                 raise CommandValidationError(error_invalid_move_destination(columns[0]))
 
         return characters
+
+    def _current_columns(
+        self, char_id: CharacterId
+    ) -> tuple[BattlefieldColumnIndex, ...]:
+        """인접 판정에 쓸 대상의 점유 열. 시전자 자신을 지정했다면 같은 커맨드의
+        앞 파트 이동까지 반영한 위치(skill/models.departure_column()과 같은
+        값)에서 잰다 — 파트는 처리 전에 한꺼번에 전개되므로 전장 위치는 아직
+        이동 전이다."""
+        if char_id == self.skill_holder_id:
+            departure = self.context.expansion_departures.get(char_id)
+            if departure is not None:
+                return columns_for_span(
+                    departure, self.context.characters[char_id].span
+                )
+        return self.context.find_character_columns(char_id)
 
 
 @dataclass(frozen=True)
