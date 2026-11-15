@@ -226,6 +226,24 @@ ENEMY_PRE_ACTION  →  ALLY_ACTION  →  ENEMY_POST_ACTION  →  BUFF_UPDATE_AND
 공개 "필드" 시트의 광역 예고 행(`_aoe_mark_row()`)도 같은 출발 열에서 경로
 전체를 표시한다.
 
+### 시전자를 옮기는 파트 뒤의 코스트·위치
+
+이동 커맨드뿐 아니라 돌진(착지 열·열 돌진)과 자신을 지정한 강제 이동도
+뒤따르는 파트의 출발 위치가 된다. 코스트는 전개 **전에** 계산해야 하므로
+(`expand()`가 디버프 일괄 제거 같은 부수효과를 즉시 일으킨다)
+`command_expanders.project_holder_positions()`가 파트마다 시전자의 목적지만
+부수효과 없이 미리 읽어 `get_total_cost(positions_after=...)`에 넘긴다. 목적지는
+효과의 `SkillEffectBase.holder_destination()`이 돌려주므로, **시전자를 옮기는
+효과를 새로 만들면 이 메서드를 오버라이드한다** — 빠뜨리면 그 스킬 뒤의 이동이
+이동 전 위치에서 코스트를 잰다.
+
+같은 이유로 시전자 위치를 기준으로 삼는 강제 이동(`SkillEffectMove`의 시전자
+위치로·쪽으로·반대쪽으로)과 `SkillTargetRuleNamedWithColumn`의 자신 지정 인접
+판정은 `departure_column()`을 읽는다. 앞 파트가 **다른 캐릭터**를 옮겼다면
+사전 검증이 뒤 파트의 대미지 사거리를 그 목적지에서 잰다(같은 파트 안에서는
+선언한 대상의 현재 위치 기준). 전개 자체(착지 열·경로 대상)는 아직 이동 전
+위치를 본다.
+
 ### 전장 경계
 
 기준이 가장 왼쪽 열이므로 설 수 있는 오른쪽 한계는 `7 - span`열이다.
